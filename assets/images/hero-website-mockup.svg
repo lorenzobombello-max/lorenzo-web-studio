@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">Preview van een professionele website-opbouw</title>
+  <desc id="heroDesc">Illustratieve browsermockup met secties voor header, inhoudsblokken en contact.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fffaf4" />
+      <stop offset="100%" stop-color="#f4e5d2" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="840" fill="url(#bg)" rx="28" />
+  <rect x="110" y="110" width="980" height="620" rx="24" fill="#ffffff" stroke="#d8b993" stroke-width="5" />
+  <rect x="110" y="110" width="980" height="70" rx="24" fill="#f6ece0" />
+  <circle cx="160" cy="145" r="10" fill="#e3b07a" />
+  <circle cx="192" cy="145" r="10" fill="#d8c27d" />
+  <circle cx="224" cy="145" r="10" fill="#9db7a3" />
+  <rect x="280" y="132" width="210" height="26" rx="10" fill="#ead5bd" />
+  <rect x="550" y="132" width="120" height="18" rx="9" fill="#e8d6c3" />
+  <rect x="690" y="132" width="120" height="18" rx="9" fill="#e8d6c3" />
+  <rect x="830" y="132" width="120" height="18" rx="9" fill="#e8d6c3" />
+  <rect x="160" y="230" width="500" height="220" rx="18" fill="#f8efe4" />
+  <rect x="190" y="270" width="290" height="22" rx="11" fill="#e6c7a6" />
+  <rect x="190" y="310" width="360" height="14" rx="7" fill="#dfd1c1" />
+  <rect x="190" y="338" width="330" height="14" rx="7" fill="#dfd1c1" />
+  <rect x="190" y="374" width="160" height="34" rx="17" fill="#c7864a" />
+  <rect x="700" y="230" width="340" height="220" rx="18" fill="#fdf8f2" stroke="#ead8c5" stroke-width="3" />
+  <rect x="730" y="270" width="240" height="14" rx="7" fill="#dfd1c1" />
+  <rect x="730" y="304" width="210" height="14" rx="7" fill="#dfd1c1" />
+  <rect x="730" y="338" width="240" height="14" rx="7" fill="#dfd1c1" />
+  <rect x="160" y="485" width="880" height="190" rx="18" fill="#fff7ec" stroke="#efddc8" stroke-width="3" />
+  <rect x="190" y="520" width="200" height="15" rx="7" fill="#e1cfbe" />
+  <rect x="190" y="552" width="780" height="13" rx="6" fill="#e9dbcc" />
+  <rect x="190" y="579" width="740" height="13" rx="6" fill="#e9dbcc" />
+</svg>

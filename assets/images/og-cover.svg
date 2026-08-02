@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="ogTitle ogDesc">
+  <title id="ogTitle">Lorenzo Web Solutions - professionele websites op maat</title>
+  <desc id="ogDesc">Open Graph visual met merknaam en warme premium achtergrond.</desc>
+  <defs>
+    <linearGradient id="ogBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff9f1" />
+      <stop offset="100%" stop-color="#f1dcc2" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#ogBg)" />
+  <rect x="80" y="80" width="1040" height="470" rx="28" fill="#ffffff" fill-opacity="0.72" stroke="#ddb88f" stroke-width="4" />
+  <text x="140" y="250" font-family="Georgia, 'Times New Roman', serif" font-size="68" font-weight="700" fill="#2f2720">Lorenzo Web Solutions</text>
+  <text x="140" y="320" font-family="'Segoe UI', Tahoma, sans-serif" font-size="34" fill="#5b4b3e">Professionele websites voor zelfstandigen en kleine ondernemingen</text>
+  <text x="140" y="385" font-family="'Segoe UI', Tahoma, sans-serif" font-size="26" fill="#7d6752">Websites op maat met een heldere aanpak</text>
+</svg>

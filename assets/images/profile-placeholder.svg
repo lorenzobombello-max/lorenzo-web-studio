@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 820">
+  <rect width="700" height="820" fill="#f7efe5"/>
+  <rect x="35" y="35" width="630" height="750" rx="24" fill="#fff9f2" stroke="#e1d4c6"/>
+  <circle cx="350" cy="290" r="130" fill="#ead8c8"/>
+  <rect x="220" y="440" width="260" height="220" rx="120" fill="#ead8c8"/>
+  <rect x="120" y="680" width="460" height="16" rx="8" fill="#c9b29f"/>
+  <rect x="190" y="716" width="320" height="12" rx="6" fill="#d7c5b6"/>
+  <text x="350" y="110" text-anchor="middle" fill="#6a5d72" font-size="30" font-family="Manrope, Segoe UI, sans-serif" font-weight="700">Professionele foto</text>
+  <text x="350" y="145" text-anchor="middle" fill="#887b8f" font-size="20" font-family="Manrope, Segoe UI, sans-serif">nog toe te voegen</text>
+</svg>
