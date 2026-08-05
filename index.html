@@ -26,13 +26,12 @@
   <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
 
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/style.css" />
+  <script defer src="assets/js/cookie-consent.js"></script>
   <script defer src="assets/js/main.js"></script>
+  <script defer src="assets/js/homepage-studio.js"></script>
 </head>
-<body>
+<body class="home-studio">
   <div class="loader" id="pageLoader" aria-hidden="true"><div class="loader__spinner"></div></div>
   <a class="skip-link" href="#main-content">Ga naar inhoud</a>
 
@@ -44,7 +43,7 @@
         <a href="#home">Home</a>
         <a href="#about">Over mij</a>
         <a href="#services">Diensten</a>
-        <a href="#portfolio">Portfolio</a>
+        <a href="#demo-projects">Demo-projecten</a>
         <a href="#process">Werkwijze</a>
         <a href="#pricing">Prijzen</a>
         <a href="#faq">FAQ</a>
@@ -54,139 +53,308 @@
     </div>
   </header>
 
-  <main id="main-content">
-    <section class="hero section" id="home">
+  <main id="main-content" class="studio-main">
+    <section class="hero section hero--immersive studio-hero" id="home" aria-label="The Living Web Studio">
+      <div class="studio-hero__cinema" aria-hidden="true">
+        <span class="studio-hero__beam"></span>
+        <span class="studio-hero__beam studio-hero__beam--second"></span>
+        <span class="studio-hero__grid"></span>
+        <span class="studio-hero__cursor"></span>
+      </div>
       <div class="container hero__grid">
-        <div class="hero__content reveal">
-          <p class="eyebrow">Professionele websites voor zelfstandigen en kleine ondernemingen</p>
-          <h1>Een professionele website die jouw onderneming sterk online presenteert.</h1>
-          <p class="hero__subtitle">Moderne, snelle en mobielvriendelijke websites voor zelfstandigen en kleine ondernemingen, met persoonlijke begeleiding en duidelijke afspraken.</p>
+        <div class="hero__content reveal studio-hero__content">
+          <p class="eyebrow">The Living Web Studio</p>
+          <h1 class="studio-mask-title">Websites die jouw onderneming laten opvallen.</h1>
+          <p class="hero__subtitle">Geen vast template. Een digitale identiteit op maat van jouw onderneming, met een sterke balans tussen ontwerp, techniek en resultaat.</p>
           <div class="hero__actions">
-            <a class="btn btn--primary" href="#contact">Vraag een vrijblijvende offerte</a>
-            <a class="btn btn--ghost" href="#portfolio">Bekijk conceptontwerpen</a>
+            <a class="btn btn--primary studio-magnetic" href="#demo-projects">Bekijk ontwerpwerelden</a>
+            <a class="btn btn--ghost" href="#contact">Start jouw project</a>
           </div>
           <ul class="hero__assurances" aria-label="Geruststellende punten">
-            <li><span aria-hidden="true">VK</span>Vrijblijvende kennismaking</li>
-            <li><span aria-hidden="true">TP</span>Transparante prijsinschatting</li>
-            <li><span aria-hidden="true">RC</span>Rechtstreeks persoonlijk contact</li>
+            <li><span aria-hidden="true">01</span>Vrijblijvende kennismaking</li>
+            <li><span aria-hidden="true">02</span>Transparante prijsrichting</li>
+            <li><span aria-hidden="true">03</span>Rechtstreeks contact met Lorenzo</li>
           </ul>
         </div>
-        <div class="hero__visual reveal reveal-delay-1" aria-hidden="true">
-          <img src="assets/images/hero-website-mockup.svg" alt="Conceptmockup van een professionele website in browserframe" loading="eager" width="760" height="560" />
-        </div>
+        <aside class="studio-portal reveal reveal-delay-1" aria-label="World Portal visual">
+          <div class="studio-portal__glass">
+            <p class="studio-portal__kicker">World Portal</p>
+            <h2>Van restaurant tot garage: elke branche krijgt een eigen digitale wereld.</h2>
+            <div class="studio-portal__chips" aria-label="Voorbeeldwerelden">
+              <span>Restaurant</span>
+              <span>Cafe</span>
+              <span>Garage</span>
+              <span>Portfolio</span>
+            </div>
+            <div class="studio-portal__stack" aria-hidden="true">
+              <img class="studio-portal__device studio-portal__device--desktop" src="assets/images/hero/hero-lorenzo-web-solutions-01.jpg" alt="" width="760" height="560" loading="eager" decoding="async" />
+              <span class="studio-portal__device studio-portal__device--tablet"></span>
+              <span class="studio-portal__device studio-portal__device--phone"></span>
+              <span class="studio-portal__label studio-portal__label--restaurant">Restaurant</span>
+              <span class="studio-portal__label studio-portal__label--garage">Garage</span>
+              <span class="studio-portal__label studio-portal__label--cafe">Cafe</span>
+              <span class="studio-portal__label studio-portal__label--portfolio">Portfolio</span>
+            </div>
+          </div>
+        </aside>
       </div>
+      <a class="studio-scroll-indicator" href="#demo-projects" aria-label="Scroll naar interactieve demo showcase">
+        <span>Scroll</span>
+        <span class="studio-scroll-indicator__line" aria-hidden="true"></span>
+      </a>
     </section>
 
     <section class="proof-bar" id="proof" aria-label="Vertrouwensbalk">
-      <div class="container trust-strip reveal">
+      <div class="container trust-strip reveal studio-trust-strip">
         <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">PB</span><p>Persoonlijke begeleiding</p></article>
-        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">TP</span><p>Transparante prijsafspraak</p></article>
-        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">RD</span><p>Responsive ontwerp</p></article>
-        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">RC</span><p>Rechtstreeks contact</p></article>
+        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">TR</span><p>Transparante samenwerking</p></article>
+        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">MW</span><p>Moderne webtechnologie</p></article>
+        <article class="trust-item"><span class="trust-item__icon" aria-hidden="true">ST</span><p>Verschillende ontwerpstijlen</p></article>
       </div>
     </section>
 
-    <section class="section" id="services">
-      <div class="container section-heading reveal"><p class="eyebrow">Diensten</p><h2>Zes duidelijke diensten met praktische meerwaarde.</h2></div>
-      <div class="container services-grid services-grid--six">
-        <article class="service-card reveal"><div class="icon">BW</div><h3>Bedrijfswebsites</h3><p>Een heldere website die jouw aanbod professioneel presenteert.</p><p class="service-benefit">Voordeel: bezoekers vinden sneller de juiste info en contactoptie.</p></article>
-        <article class="service-card reveal reveal-delay-1"><div class="icon">PW</div><h3>Portfolio-websites</h3><p>Een visuele opbouw die je werk en stijl sterker toont.</p><p class="service-benefit">Voordeel: je expertise wordt sneller geloofwaardig voor nieuwe klanten.</p></article>
-        <article class="service-card reveal reveal-delay-2"><div class="icon">LO</div><h3>Websites voor lokale ondernemingen</h3><p>Praktische pagina's voor openingsuren, diensten en contact.</p><p class="service-benefit">Voordeel: klanten vinden snel wat ze nodig hebben, vooral op mobiel.</p></article>
-        <article class="service-card reveal"><div class="icon">RW</div><h3>Responsive webdesign</h3><p>Elke pagina werkt vlot op smartphone, tablet en desktop.</p><p class="service-benefit">Voordeel: betere leesbaarheid en bruikbaarheid op elk toestel.</p></article>
-        <article class="service-card reveal reveal-delay-1"><div class="icon">SEO</div><h3>Technische SEO-basis</h3><p>Semantische structuur, metadata en indexeerbare opbouw.</p><p class="service-benefit">Voordeel: je website is technisch klaar voor vindbaarheid.</p></article>
-        <article class="service-card reveal reveal-delay-2"><div class="icon">ON</div><h3>Onderhoud en uitbreidingen</h3><p>Gerichte updates en uitbreidingen na oplevering.</p><p class="service-benefit">Voordeel: je site blijft actueel zonder technische zorgen.</p></article>
+    <section class="section studio-section section-alt" id="demo-projects">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Interactieve demo showcase</p>
+        <h2>Niet één template, maar verschillende ontwerpwerelden.</h2>
+        <p>Selecteer een project en bekijk hoe kleur, typografie en sfeer veranderen per branche binnen één consistente kwaliteitsstandaard.</p>
       </div>
-    </section>
-
-    <section class="section section-alt" id="portfolio">
-      <div class="container section-heading reveal">
-        <p class="eyebrow">Portfolio</p>
-        <h2>Conceptprojecten in verschillende stijlen.</h2>
-        <p>Deze conceptprojecten tonen verschillende mogelijkheden. Elk ontwerp kan volledig worden aangepast aan de identiteit en behoeften van jouw onderneming.</p>
-      </div>
-      <div class="container portfolio-grid">
-        <article class="portfolio-card reveal"><img src="assets/images/portfolio-1.svg" alt="Conceptwebsite voor een garage in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptwebsite voor een garage</h3><p>Doel: snel naar afspraak en service-info.</p><a class="btn btn--ghost btn--small" href="pages/project-1.html">Bekijk conceptcase</a></div></article>
-        <article class="portfolio-card reveal reveal-delay-1"><img src="assets/images/portfolio-2.svg" alt="Conceptwebsite voor een restaurant in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptwebsite voor een restaurant</h3><p>Doel: menu, reservatie en bereikbaarheid.</p><a class="btn btn--ghost btn--small" href="pages/project-2.html">Bekijk conceptcase</a></div></article>
-        <article class="portfolio-card reveal reveal-delay-2"><img src="assets/images/portfolio-3.svg" alt="Conceptwebsite voor een technisch bedrijf in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptwebsite voor een technisch bedrijf</h3><p>Doel: snelle hulpaanvraag en duidelijke diensten.</p><a class="btn btn--ghost btn--small" href="pages/project-3.html">Bekijk conceptcase</a></div></article>
-        <article class="portfolio-card reveal"><img src="assets/images/portfolio-4.svg" alt="Conceptwebsite voor een lokale winkel in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptwebsite voor een lokale winkel</h3><p>Doel: assortiment en praktische info overzichtelijk.</p><a class="btn btn--ghost btn--small" href="pages/project-4.html">Bekijk conceptcase</a></div></article>
-        <article class="portfolio-card reveal reveal-delay-1"><img src="assets/images/portfolio-5.svg" alt="Conceptportfolio voor een freelancer in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptportfolio voor een freelancer</h3><p>Doel: cases en aanvraagflow centraal.</p><a class="btn btn--ghost btn--small" href="pages/project-5.html">Bekijk conceptcase</a></div></article>
-        <article class="portfolio-card reveal reveal-delay-2"><img src="assets/images/portfolio-6.svg" alt="Conceptwebsite voor een professionele dienstverlener in browserframe" loading="lazy" width="600" height="420" /><div><p class="portfolio-label">Conceptproject</p><h3>Conceptwebsite voor een dienstverlener</h3><p>Doel: vertrouwen opbouwen en offertevragen.</p><a class="btn btn--ghost btn--small" href="pages/project-6.html">Bekijk conceptcase</a></div></article>
-      </div>
-    </section>
-
-    <section class="section" id="process">
-      <div class="container section-heading reveal"><p class="eyebrow">Werkwijze</p><h2>Een duidelijk traject in zes stappen.</h2></div>
-      <div class="container timeline" aria-label="Tijdlijn van projectstappen">
-        <article class="timeline__item reveal"><span>1</span><h3>Kennismaking</h3><p>We bespreken jouw onderneming, verwachtingen en prioriteiten.</p></article>
-        <article class="timeline__item reveal reveal-delay-1"><span>2</span><h3>Analyse van jouw wensen</h3><p>Ik vertaal je input naar een heldere inhouds- en paginastructuur.</p></article>
-        <article class="timeline__item reveal reveal-delay-2"><span>3</span><h3>Voorstel en prijsafspraak</h3><p>Je krijgt een transparante scope, planning en prijskader.</p></article>
-        <article class="timeline__item reveal"><span>4</span><h3>Ontwerp en ontwikkeling</h3><p>Het ontwerp wordt zorgvuldig uitgewerkt en technisch opgebouwd.</p></article>
-        <article class="timeline__item reveal reveal-delay-1"><span>5</span><h3>Controle en correcties</h3><p>We verwerken feedback in de afgesproken correctierondes.</p></article>
-        <article class="timeline__item reveal reveal-delay-2"><span>6</span><h3>Publicatie en ondersteuning</h3><p>Na livegang blijft ondersteuning mogelijk voor updates en vragen.</p></article>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="pricing">
-      <div class="container section-heading reveal">
-        <p class="eyebrow">Prijzen</p>
-        <h2>Transparante prijsniveaus met duidelijke scope.</h2>
-        <p>De uiteindelijke prijs wordt bepaald door het aantal pagina's, de gewenste functies, de aangeleverde inhoud en de ondersteuning na oplevering.</p>
-      </div>
-      <div class="container pricing-grid">
-        <article class="pricing-card reveal">
-          <h3>Starter</h3>
-          <p class="price">Vanaf EUR ...</p>
-          <ul><li>Tot 5 pagina's</li><li>1 correctieronde inbegrepen</li><li>Technische SEO-basis</li><li>Hosting en domein niet inbegrepen</li><li>Onderhoud apart beschikbaar</li></ul>
-          <a class="btn btn--primary" href="#contact">Vraag offerte</a>
-        </article>
-        <article class="pricing-card pricing-card--featured reveal reveal-delay-1">
-          <p class="badge">Professional</p>
-          <h3>Professional</h3>
-          <p class="price">Vanaf EUR ...</p>
-          <ul><li>Tot 12 pagina's</li><li>2 correctierondes inbegrepen</li><li>Uitgebreidere pagina-opbouw</li><li>Hosting en domein niet inbegrepen</li><li>Onderhoud apart beschikbaar</li></ul>
-          <a class="btn btn--primary" href="#contact">Vraag offerte</a>
-        </article>
-        <article class="pricing-card reveal reveal-delay-2">
-          <h3>Maatwerk</h3>
-          <p class="price">Prijs op aanvraag</p>
-          <ul><li>Complexere websites en functionaliteiten</li><li>Scope op maat van jouw project</li><li>Planning en correcties in overleg</li><li>Hosting en domein niet inbegrepen</li></ul>
-          <a class="btn btn--primary" href="#contact">Vraag offerte</a>
-        </article>
-      </div>
-    </section>
-
-    <section class="section" id="about">
-      <div class="container section-heading reveal"><p class="eyebrow">Persoonlijke aanpak</p><h2>Persoonlijk contact van idee tot oplevering</h2></div>
-      <div class="container approach-grid reveal">
-        <div class="approach-content">
-          <p>Je bespreekt jouw project rechtstreeks met de persoon die de website ontwerpt en bouwt. Wensen, inhoud, timing en budget worden vooraf duidelijk afgesproken. Tijdens het traject krijg je begrijpelijke uitleg en ruimte om het ontwerp te beoordelen.</p>
-          <ul class="approach-list"><li>Rechtstreeks contact</li><li>Duidelijke communicatie</li><li>Transparante afspraken</li><li>Ontwerp op maat van de onderneming</li></ul>
+      <div class="container studio-showcase reveal" id="studioShowcase" data-active-index="0">
+        <div class="studio-showcase__index" role="tablist" aria-label="Kies een demo-wereld">
+          <button class="studio-showcase__tab is-active" type="button" role="tab" aria-selected="true" data-index="0" data-theme="industrial" data-title="AXIOM Industrial Services" data-label="Operationeel · Technisch" data-status="Live demo" data-description="Een krachtige technische serviceomgeving met focus op continuiteit, onderhoud en heldere interventieflow." data-image="assets/images/industrial/hero/hero-production-hall-01.jpg" data-link="pages/demos/industrieel-elektriciteit/index.html" data-traits="Technisch|Operationeel|Robuust">AXIOM Industrial Services</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="1" data-theme="restaurant" data-title="Restaurant Demo" data-label="Sfeer · Reservatie" data-status="Live demo" data-description="Warme hospitality-flow met menukaart, sfeerbeeld en conversiegerichte reservatie-ervaring." data-image="assets/images/restaurant/hero/hero-restaurant-interior-01.jpg" data-link="pages/demos/restaurant/index.html" data-traits="Warm|Hospitality|Sfeervol">Restaurant Demo</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="2" data-theme="mediterranean" data-title="Casa Solea" data-label="Premium · Editorial" data-status="Live demo" data-description="Een premium Mediterranean beleving met verfijnde visuele ritmes en content met restaurantkarakter." data-image="assets/images/mediterranean-brasserie/hero/hero-dining-room-evening-01.jpg" data-link="pages/demos/mediterranean-brasserie/index.html" data-traits="Premium|Editorial|Culinair">Casa Solea</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="3" data-theme="personal" data-title="Personal Portfolio" data-label="Identiteit · Cases" data-status="Live demo" data-description="Portfolio-opbouw voor professionals met sterke positionering, cases en persoonlijke contactflow." data-image="assets/images/personal/hero/hero-lorenzo-web-developer-office.jpg" data-link="pages/demos/personal-portfolio/index.html" data-traits="Editorial|Persoonlijk|Professioneel">Personal Portfolio</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="4" data-theme="cafe" data-title="Cafe Amber" data-label="Warm · Toegankelijk" data-status="Live demo" data-description="Een toegankelijke Cafe-ervaring die sfeer, aanbod en praktische info direct combineert." data-image="assets/images/cafe/hero/hero-cafe-terrace-sunset-01.jpg" data-link="pages/demos/cafe/index.html" data-traits="Warm|Community|Toegankelijk">Cafe Amber</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="5" data-theme="garage" data-title="TorquePoint Garage" data-label="Performance · Voorraad" data-status="Live demo" data-description="Automotive showcase met dynamische visuele stijl en duidelijke voorraad- en afspraakroutes." data-image="assets/images/garage/hero/hero-garage-bmw-blauw-showroom.jpg" data-link="pages/demos/garage/index.html" data-traits="Technisch|Performance|Premium">TorquePoint Garage</button>
+          <button class="studio-showcase__tab" type="button" role="tab" aria-selected="false" data-index="6" data-theme="future" data-title="Toekomstige demo's" data-label="In voorbereiding" data-status="Op aanvraag" data-description="Nieuwe demo-werelden voor extra branches kunnen doelgericht worden toegevoegd na intake." data-image="assets/images/portfolio-6.svg" data-link="#contact" data-traits="Flexibel|Schaalbaar|Merkgericht">Toekomstige demo's</button>
         </div>
-        <figure class="approach-photo" aria-label="Plaats voor professionele foto"><img src="assets/images/profile-placeholder.svg" alt="Placeholder voor professionele foto" loading="lazy" width="500" height="560" /><figcaption>Tijdelijke placeholder - vervang door een professionele foto.</figcaption></figure>
+        <article class="studio-showcase__preview" aria-live="polite" aria-atomic="true">
+          <div class="studio-showcase__media-wrap">
+            <img id="showcaseImage" src="assets/images/industrial/hero/hero-production-hall-01.jpg" alt="Preview van geselecteerde demo" width="1280" height="720" loading="lazy" />
+            <span class="studio-showcase__status" id="showcaseStatus">Live demo</span>
+          </div>
+          <div class="studio-showcase__meta">
+            <p class="studio-showcase__label" id="showcaseLabel">Operationeel · Technisch</p>
+            <h3 id="showcaseTitle">AXIOM Industrial Services</h3>
+            <p id="showcaseDescription">Een krachtige technische serviceomgeving met focus op continuiteit, onderhoud en heldere interventieflow.</p>
+            <div class="studio-showcase__insights">
+              <p class="studio-showcase__insight-title">World Traits</p>
+              <ul class="studio-showcase__traits" id="showcaseTraits" aria-label="World Traits van actieve demo"></ul>
+              <p class="studio-showcase__fit"><strong>Use Case Fit:</strong> <span id="showcaseFit"></span></p>
+              <p class="studio-showcase__benefit"><strong>Commercieel voordeel:</strong> <span id="showcaseBenefit"></span></p>
+            </div>
+            <div class="studio-showcase__controls">
+              <button type="button" class="btn btn--ghost btn--small" id="showcasePrev" aria-label="Vorig project">Vorige</button>
+              <button type="button" class="btn btn--ghost btn--small" id="showcaseNext" aria-label="Volgend project">Volgende</button>
+              <a class="btn btn--primary btn--small" id="showcaseLink" href="pages/demos/industrieel-elektriciteit/index.html">Open volledige demo</a>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
 
-    <section class="section" id="faq">
-      <div class="container section-heading reveal"><p class="eyebrow">FAQ</p><h2>Veelgestelde vragen</h2></div>
-      <div class="container faq-list reveal">
-        <details><summary>Hoe lang duurt een websiteproject?</summary><p>Dat hangt af van de omvang, inhoud en feedbacktempo. Je krijgt vooraf een duidelijke timing.</p></details>
-        <details><summary>Kan ik later uitbreiden?</summary><p>Ja, de website wordt modulair opgebouwd zodat uitbreidingen mogelijk blijven.</p></details>
-        <details><summary>Is de website mobielvriendelijk?</summary><p>Ja, elk ontwerp wordt getest op smartphone, tablet en desktop.</p></details>
-        <details><summary>Kan ik mijn bestaande website vernieuwen?</summary><p>Ja, een redesign kan met behoud van bruikbare inhoud en stijl.</p></details>
-        <details><summary>Wat zit in de technische SEO-basis?</summary><p>Semantische structuur, metadata, indexeerbaarheid en basisconfiguratie voor sitemap en robots.</p></details>
+    <section class="section studio-section" id="design-spectrum">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Design spectrum</p>
+        <h2>Welke uitstraling past bij jouw onderneming?</h2>
+      </div>
+      <div class="container spectrum reveal" id="spectrumBlock" data-style="minimalistisch">
+        <div class="spectrum__rail" role="tablist" aria-label="Kies een ontwerpstijl">
+          <button class="spectrum__chip is-active" type="button" role="tab" aria-selected="true" data-style="minimalistisch" data-copy="Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.">Minimalistisch</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="premium" data-copy="Rijke details, elegante typografie en verfijnde materiaalbeleving voor een premium positionering.">Premium</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="technisch" data-copy="Strakke structuur met technische labels, schema's en prestatiegerichte communicatie.">Technisch</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="warm" data-copy="Menselijke toon, zachte vormen en uitnodigende sfeer die vertrouwen en nabijheid opbouwt.">Warm en persoonlijk</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="dynamisch" data-copy="Beweging, ritme en contrast voor merken die snelheid en energie willen uitstralen.">Dynamisch</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="editorial" data-copy="Content-first storytelling met sterke hierarchie voor merken met een redactionele identiteit.">Editorial</button>
+          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="speels" data-copy="Toegankelijk, expressief en onderscheidend zonder professionele geloofwaardigheid te verliezen.">Speels</button>
+        </div>
+        <div class="spectrum__preview" id="spectrumPreview" aria-live="polite">
+          <p class="spectrum__meta">Actieve stijl: <span id="spectrumStyleLabel">Minimalistisch</span></p>
+          <h3 id="spectrumTitle">Designrichting op maat van jouw merk</h3>
+          <p id="spectrumDescription">Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.</p>
+          <div class="spectrum__sample" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="section section-alt" id="contact">
-      <div class="container section-heading reveal"><p class="eyebrow">Contact</p><h2>Vraag een vrijblijvende offerte aan.</h2><p>Beschrijf je project kort en ontvang een persoonlijke, realistische prijsinschatting.</p></div>
-      <div class="container contact-grid">
-        <form class="contact-form reveal" id="contactForm" aria-label="Offerte formulier" novalidate>
+    <section class="section studio-section section-alt" id="services">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Websitebouwblokken</p>
+        <h2>Diensten als verbonden bouwstenen in plaats van losse kaarten.</h2>
+      </div>
+      <div class="container studio-modules reveal" id="serviceModules">
+        <div class="studio-modules__canvas" role="list" aria-label="Interactieve websitebouwblokken">
+          <button type="button" role="listitem" class="studio-node is-active" data-key="strategie">Strategie</button>
+          <button type="button" role="listitem" class="studio-node" data-key="structuur">Structuur</button>
+          <button type="button" role="listitem" class="studio-node" data-key="webdesign">Webdesign</button>
+          <button type="button" role="listitem" class="studio-node" data-key="responsive">Responsive ontwikkeling</button>
+          <button type="button" role="listitem" class="studio-node" data-key="seo">Technische SEO</button>
+          <button type="button" role="listitem" class="studio-node" data-key="formulieren">Formulieren en conversie</button>
+          <button type="button" role="listitem" class="studio-node" data-key="onderhoud">Onderhoud</button>
+          <button type="button" role="listitem" class="studio-node" data-key="uitbreidingen">Uitbreidingen</button>
+          <span class="studio-modules__line" aria-hidden="true"></span>
+        </div>
+        <article class="studio-modules__details" aria-live="polite">
+          <p class="studio-modules__label">Actief bouwblok</p>
+          <h3 id="moduleTitle">Strategie</h3>
+          <p id="moduleDescription">We bepalen focus, doelgroep en prioriteiten zodat de website bezoekers gericht naar actie begeleidt.</p>
+          <ul id="moduleBenefits">
+            <li>Duidelijke richting voor inhoud en structuur</li>
+            <li>Betere beslissingen tijdens ontwerp en ontwikkeling</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section studio-section" id="process">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Projectreis</p>
+        <h2>Van eerste gesprek tot livegang in een leesbare scrollervaring.</h2>
+      </div>
+      <div class="container journey" id="journey">
+        <aside class="journey__side">
+          <p class="journey__kicker">Actuele fase</p>
+          <p class="journey__current" id="journeyCurrent">1. Kennismaking</p>
+          <div class="journey__track" aria-hidden="true"><span id="journeyProgress"></span></div>
+          <ol class="journey__steps">
+            <li class="is-active">1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li>
+          </ol>
+        </aside>
+        <div class="journey__story">
+          <article class="journey-scene" data-step="1" id="journey-step-1"><p class="journey-scene__meta">Fase 1</p><h3>Kennismaking</h3><p>We bespreken doelen, doelgroep en gewenste uitstraling van je onderneming.</p><div class="journey-scene__visual">Intake</div></article>
+          <article class="journey-scene" data-step="2" id="journey-step-2"><p class="journey-scene__meta">Fase 2</p><h3>Analyse en structuur</h3><p>Inhoud, pagina-opbouw en navigatie worden uitgewerkt tot een logisch fundament.</p><div class="journey-scene__visual">Sitemap</div></article>
+          <article class="journey-scene" data-step="3" id="journey-step-3"><p class="journey-scene__meta">Fase 3</p><h3>Visuele richting</h3><p>Stijlkeuzes voor typografie, kleur en ritme worden afgestemd op jouw merkverhaal.</p><div class="journey-scene__visual">Moodboard</div></article>
+          <article class="journey-scene" data-step="4" id="journey-step-4"><p class="journey-scene__meta">Fase 4</p><h3>Ontwerp en ontwikkeling</h3><p>Design en code groeien samen tot een performante, responsieve website.</p><div class="journey-scene__visual">Build</div></article>
+          <article class="journey-scene" data-step="5" id="journey-step-5"><p class="journey-scene__meta">Fase 5</p><h3>Controle en correcties</h3><p>We verfijnen inhoud en details op basis van feedback en functionele tests.</p><div class="journey-scene__visual">QA</div></article>
+          <article class="journey-scene" data-step="6" id="journey-step-6"><p class="journey-scene__meta">Fase 6</p><h3>Publicatie en ondersteuning</h3><p>Na livegang volgt begeleiding voor updates, uitbreidingen en continu onderhoud.</p><div class="journey-scene__visual">Launch</div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section studio-section section-alt" id="idea-lab">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Van idee naar website</p>
+        <h2>Drie lagen: van ruwe notitie naar professionele digitale presentatie.</h2>
+      </div>
+      <div class="container idea-lab reveal" id="ideaLab">
+        <div class="idea-lab__tabs" role="tablist" aria-label="Kies een projectlaag">
+          <button class="idea-lab__tab is-active" type="button" role="tab" aria-selected="true" data-layer="notitie">Ruwe notitie</button>
+          <button class="idea-lab__tab" type="button" role="tab" aria-selected="false" data-layer="wireframe">Wireframe</button>
+          <button class="idea-lab__tab" type="button" role="tab" aria-selected="false" data-layer="resultaat">Afgewerkte website</button>
+        </div>
+        <div class="idea-lab__panels" aria-live="polite">
+          <article class="idea-layer is-active" data-layer="notitie"><h3>Start met kernideeen</h3><p>Doelgroep, aanbod en contactdoel worden in heldere taal vastgelegd als startpunt.</p></article>
+          <article class="idea-layer" data-layer="wireframe"><h3>Structuur wordt zichtbaar</h3><p>Belangrijke paginaonderdelen krijgen een logische hierarchie en duidelijke navigatieflow.</p></article>
+          <article class="idea-layer" data-layer="resultaat"><h3>Professionele live presentatie</h3><p>Een performante website met eigen stijl, heldere conversiepaden en technische basis voor groei.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section studio-section" id="about">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Persoonlijke studio-aanpak</p>
+        <h2>Rechtstreeks contact van eerste idee tot oplevering.</h2>
+      </div>
+      <div class="container studio-about reveal">
+        <figure class="studio-about__photo">
+          <img src="assets/images/personal/team/lorenzo-profile-office-01.jpg" alt="Lorenzo in kantooromgeving tijdens ontwerpsessie" loading="lazy" width="700" height="840" />
+          <figcaption>Persoonlijke begeleiding in duidelijke stappen, zonder tussenpersonen.</figcaption>
+        </figure>
+        <div class="studio-about__content">
+          <p class="studio-about__lead">Je werkt rechtstreeks met de persoon die jouw website ontwerpt en ontwikkelt. Zo blijven keuzes helder, snelheid hoog en communicatie menselijk.</p>
+          <div class="studio-about__chips" aria-label="Kernwoorden van de aanpak">
+            <span>Rechtstreeks contact</span><span>Duidelijke feedbackrondes</span><span>Transparante planning</span><span>Techniek zonder jargon</span>
+          </div>
+          <ol class="studio-about__timeline" aria-label="Korte tijdlijn van idee tot oplevering">
+            <li>Intake en doelafspraak</li>
+            <li>Structuur en stijlrichting</li>
+            <li>Bouw, controle en livegang</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="section studio-section section-alt" id="pricing">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Prijsverkenner</p>
+        <h2>Interactie met transparante prijsrichting, geen bindende offerte.</h2>
+      </div>
+      <div class="container studio-pricing reveal" id="priceExplorer">
+        <form class="studio-pricing__form" aria-label="Interactieve prijsverkenner" novalidate>
+          <div class="field"><label for="explorer-type">Type website</label><select id="explorer-type"><option value="1">Bedrijfswebsite</option><option value="1.15">Portfolio website</option><option value="1.25">Lokale onderneming met meerdere diensten</option><option value="1.45">Uitgebreid maatwerkconcept</option></select></div>
+          <div class="field"><label for="explorer-pages">Aantal pagina's</label><select id="explorer-pages"><option value="1">Tot 5</option><option value="1.2">6 tot 10</option><option value="1.35">11 tot 18</option><option value="1.55">Meer dan 18</option></select></div>
+          <div class="field"><label for="explorer-language">Meertaligheid</label><select id="explorer-language"><option value="1">Niet nodig</option><option value="1.12">2 talen</option><option value="1.28">3 talen of meer</option></select></div>
+          <div class="field"><label for="explorer-forms">Formulieren en conversie</label><select id="explorer-forms"><option value="1">Basis contactformulier</option><option value="1.14">Meerdere formulieren</option><option value="1.26">Geavanceerde flows</option></select></div>
+          <div class="field"><label for="explorer-demo">Demo of portfolio-integratie</label><select id="explorer-demo"><option value="1">Standaard</option><option value="1.12">Uitgebreide demo-sectie</option><option value="1.22">Interactie op maat</option></select></div>
+          <div class="field"><label for="explorer-maintenance">Onderhoud</label><select id="explorer-maintenance"><option value="1">Geen vast onderhoud</option><option value="1.1">Lichte opvolging</option><option value="1.2">Doorlopende ondersteuning</option></select></div>
+          <div class="field field--full"><label for="explorer-timing">Gewenste timing</label><select id="explorer-timing"><option value="1">Flexibel</option><option value="1.1">Binnen 2 tot 3 maanden</option><option value="1.28">Snelle oplevering</option></select></div>
+        </form>
+        <article class="studio-pricing__result" aria-live="polite" id="pricingResult">
+          <p class="studio-pricing__result-kicker">Prijsrichting (demonstratief)</p>
+          <h3 id="pricingBand">Projectcategorie: Starter tot Professional</h3>
+          <p id="pricingRange">Indicatie: EUR 1.800 - EUR 3.200</p>
+          <p id="pricingFactors">Belangrijkste factoren: pagina-omvang, interactiecomplexiteit en gewenste timing.</p>
+          <p class="studio-pricing__disclaimer">Dit is een demonstratieve prijsrichting, geen bindende offerte.</p>
+          <a class="btn btn--primary" href="#contact">Bespreek jouw project persoonlijk</a>
+        </article>
+      </div>
+      <div class="container pricing-grid pricing-fallback" aria-label="Fallback prijsniveaus zonder JavaScript">
+        <article class="pricing-card"><h3>Starter</h3><p class="price">Vanaf EUR ...</p><ul><li>Tot 5 pagina's</li><li>Heldere basisstructuur</li><li>Technische SEO-basis</li></ul></article>
+        <article class="pricing-card pricing-card--featured"><p class="badge">Professional</p><h3>Professional</h3><p class="price">Vanaf EUR ...</p><ul><li>Tot 12 pagina's</li><li>Extra interacties en contentlagen</li><li>Meer begeleiding en correcties</li></ul></article>
+        <article class="pricing-card"><h3>Maatwerk</h3><p class="price">Prijs op aanvraag</p><ul><li>Complexe opbouw en flows</li><li>Design op maat van je sector</li><li>Planning op projectniveau</li></ul></article>
+      </div>
+    </section>
+
+    <section class="section studio-section" id="faq">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Knowledge wall</p>
+        <h2>Antwoorden per thema: planning, kosten, techniek, onderhoud en inhoud.</h2>
+      </div>
+      <div class="container knowledge-wall reveal" id="knowledgeWall">
+        <div class="knowledge-wall__topics" role="tablist" aria-label="Kies een FAQ-thema">
+          <button class="knowledge-wall__topic is-active" type="button" role="tab" aria-selected="true" data-topic="planning">Planning</button>
+          <button class="knowledge-wall__topic" type="button" role="tab" aria-selected="false" data-topic="kosten">Kosten</button>
+          <button class="knowledge-wall__topic" type="button" role="tab" aria-selected="false" data-topic="techniek">Techniek</button>
+          <button class="knowledge-wall__topic" type="button" role="tab" aria-selected="false" data-topic="onderhoud">Onderhoud</button>
+          <button class="knowledge-wall__topic" type="button" role="tab" aria-selected="false" data-topic="inhoud">Inhoud</button>
+        </div>
+        <article class="knowledge-wall__answers" id="knowledgeAnswers" aria-live="polite">
+          <h3 id="knowledgeTitle">Planning</h3>
+          <p id="knowledgeBody">De timing hangt af van scope, feedbacktempo en inhoud. Je krijgt vooraf een realistische planning met duidelijke fases.</p>
+        </article>
+      </div>
+      <div class="container faq-list knowledge-wall__mobile" aria-label="FAQ mobile accordion">
+        <details><summary>Planning: Hoe lang duurt een websiteproject?</summary><p>De timing hangt af van scope, feedbacktempo en inhoud. Je krijgt vooraf een realistische planning met duidelijke fases.</p></details>
+        <details><summary>Kosten: Hoe wordt de prijs bepaald?</summary><p>De prijsrichting wordt bepaald door type website, omvang, functies, timing en eventuele onderhoudsbehoefte.</p></details>
+        <details><summary>Techniek: Is de website mobielvriendelijk en snel?</summary><p>Ja. Responsive gedrag, performantie en basis SEO worden standaard meegenomen in de technische opbouw.</p></details>
+        <details><summary>Onderhoud: Kan ik later uitbreiden?</summary><p>Ja. De structuur blijft modulair zodat uitbreidingen gecontroleerd kunnen worden toegevoegd.</p></details>
+        <details><summary>Inhoud: Helpen jullie met structuur van teksten?</summary><p>Ja. Tijdens analyse en wireframing begeleiden we de inhoudshierarchie en conversielogica.</p></details>
+      </div>
+    </section>
+
+    <section class="section section-alt studio-section studio-contact-zone" id="contact">
+      <div class="container section-heading reveal studio-heading">
+        <p class="eyebrow">Projectstart</p>
+        <h2>Vertel je idee. Ontvang een persoonlijke reactie. Start met richting.</h2>
+        <p>Van eerste projectschets tot duidelijke prijsbespreking in een transparant traject.</p>
+      </div>
+      <div class="container studio-contact reveal">
+        <aside class="studio-contact__route" aria-label="Traject van idee naar start">
+          <p>Vertel je idee</p>
+          <p>Ontvang een persoonlijke reactie</p>
+          <p>Bespreek richting en prijs</p>
+          <p>Start na akkoord</p>
+        </aside>
+        <form class="contact-form studio-contact__form" id="contactForm" aria-label="Offerte formulier" novalidate>
           <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" required /></div>
           <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" /></div>
           <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
           <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" /></div>
-          <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Andere</option></select></div>
-          <div class="field"><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+          <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Demo of showcase concept</option><option>Andere</option></select></div>
+          <div class="field"><label for="budget">Budgetrichting</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
           <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
           <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" required></textarea></div>
           <div class="field field--full consent-field"><input id="privacy" name="privacy" type="checkbox" required /><label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label></div>
@@ -198,12 +366,6 @@
           <button class="btn btn--primary" id="submitButton" type="submit">Verstuur aanvraag</button>
           <p class="form-note" id="formMessage" aria-live="polite"></p>
         </form>
-
-        <aside class="contact-side reveal reveal-delay-1" aria-label="Waarom contact opnemen">
-          <h3>Waarom contact opnemen?</h3>
-          <ul><li>Vrijblijvende eerste bespreking</li><li>Persoonlijk antwoord</li><li>Transparante prijsinschatting</li><li>Geen verplichtingen</li></ul>
-          <div class="contact-placeholders"><p><strong>E-mailadres:</strong> [nog in te vullen]</p><p><strong>Telefoon:</strong> [nog in te vullen]</p><p><strong>Werkregio:</strong> [nog in te vullen]</p></div>
-        </aside>
       </div>
     </section>
   </main>
@@ -214,9 +376,9 @@
         <a class="logo" href="#home">Lorenzo <span>Web Solutions</span></a>
         <p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p>
       </div>
-      <div><h3>Navigatie</h3><ul><li><a href="#home">Home</a></li><li><a href="#services">Diensten</a></li><li><a href="#portfolio">Portfolio</a></li><li><a href="#contact">Contact</a></li></ul></div>
+      <div><h3>Navigatie</h3><ul><li><a href="#home">Home</a></li><li><a href="#services">Diensten</a></li><li><a href="#demo-projects">Demo-projecten</a></li><li><a href="#contact">Contact</a></li></ul></div>
       <div><h3>Diensten</h3><ul><li>Bedrijfswebsites</li><li>Portfolio-websites</li><li>Responsive webdesign</li><li>Onderhoud en uitbreidingen</li></ul></div>
-      <div><h3>Info</h3><ul><li>Contactgegevens: [nog in te vullen]</li><li><a href="pages/privacy.html">Privacy</a></li><li><a href="pages/voorwaarden.html">Algemene voorwaarden</a></li></ul></div>
+      <div><h3>Info</h3><ul><li>Contactgegevens: [nog in te vullen]</li><li><a href="pages/privacy.html">Privacyverklaring</a></li><li><a href="pages/cookies.html">Cookiebeleid</a></li><li><a href="pages/algemene-voorwaarden.html">Algemene voorwaarden</a></li><li><button type="button" class="cookie-preferences-link" id="cookiePreferencesLink" aria-haspopup="dialog" aria-controls="cookieModal">Cookievoorkeuren</button></li></ul></div>
     </div>
     <div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions. Alle rechten voorbehouden.</p></div>
   </footer>
