@@ -2223,90 +2223,241 @@ summary:focus-visible {
   object-position: center 22%;
 }
 
-.home-studio .spectrum {
+/* ─── Design Spectrum Selector ─────────────────────────────────────── */
+.home-studio .spectrum-intro {
+  margin-top: 0.4rem;
+  max-width: 52ch;
+  color: var(--color-text-soft);
+  font-size: 0.94rem;
+}
+
+.home-studio .spectrum-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.home-studio .spectrum-card {
   border: 1px solid var(--studio-line);
   border-radius: 1rem;
-  padding: 1rem;
-  background: linear-gradient(160deg, rgba(255, 253, 249, 0.88), rgba(255, 248, 239, 0.62));
-}
-
-.home-studio .spectrum__rail {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-bottom: 0.3rem;
-}
-
-.home-studio .spectrum__chip {
-  border: 1px solid var(--studio-line);
-  border-radius: 999px;
-  min-height: 44px;
-  padding: 0.62rem 0.92rem;
   background: var(--color-surface);
   cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.home-studio .spectrum-card:hover,
+.home-studio .spectrum-card:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px rgba(38, 28, 46, 0.12);
+  border-color: var(--studio-copper);
+}
+
+.home-studio .spectrum-card.is-active {
+  border-color: var(--studio-copper);
+  box-shadow: 0 0 0 2px rgba(183, 106, 74, 0.22), 0 12px 26px rgba(38, 28, 46, 0.11);
+}
+
+.home-studio .spectrum-card:focus-visible {
+  box-shadow: 0 0 0 3px var(--focus-ring), 0 8px 20px rgba(38, 28, 46, 0.1);
+}
+
+/* Canvas — visual preview area */
+.home-studio .spectrum-card__canvas {
+  height: 130px;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: height 240ms ease;
+}
+
+.home-studio .spectrum-card:hover .spectrum-card__canvas,
+.home-studio .spectrum-card.is-active .spectrum-card__canvas {
+  height: 150px;
+}
+
+.home-studio .spectrum-card__vis {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.08) 100%);
+  pointer-events: none;
+}
+
+/* Card body */
+.home-studio .spectrum-card__body {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.home-studio .spectrum-card__tag {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--studio-copper);
+  opacity: 0.85;
+  margin: 0;
+}
+
+.home-studio .spectrum-card__name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.home-studio .spectrum-card__desc {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--color-text-soft);
+  margin: 0;
+}
+
+.home-studio .spectrum-card__audience {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.home-studio .spectrum-card__audience-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--color-text-soft);
+  opacity: 0.7;
+}
+
+.home-studio .spectrum-card__audience-val {
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+
+.home-studio .spectrum-card__sectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.home-studio .spectrum-card__sectors li {
+  font-size: 0.67rem;
+  padding: 0.17rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--studio-line);
+  background: rgba(183, 106, 74, 0.05);
+  color: var(--studio-copper);
   white-space: nowrap;
 }
 
-.home-studio .spectrum__chip.is-active {
-  border-color: var(--studio-copper);
-  background: var(--tone-soft-bg);
-  color: var(--tone-soft-text);
-}
-
-.home-studio .spectrum__preview {
-  margin-top: 0.9rem;
-  border: 1px solid var(--studio-line);
-  border-radius: 0.9rem;
-  padding: 0.9rem;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.home-studio .spectrum__meta {
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.73rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #75513d;
-}
-
-.home-studio .spectrum__sample {
-  margin-top: 0.8rem;
-  display: grid;
+.home-studio .spectrum-card__cta {
+  display: inline-flex;
+  align-items: center;
   gap: 0.35rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--studio-copper);
+  text-decoration: none;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
 }
 
-.home-studio .spectrum__sample span {
-  display: block;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(183, 106, 74, 0.72), rgba(94, 67, 100, 0.18));
+.home-studio .spectrum-card.is-active .spectrum-card__cta,
+.home-studio .spectrum-card:hover .spectrum-card__cta {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
-.home-studio .spectrum[data-style="premium"] .spectrum__preview {
-  background: linear-gradient(165deg, rgba(56, 40, 62, 0.92), rgba(138, 86, 60, 0.85));
-  color: #fff4ea;
+.home-studio .spectrum-card__cta:hover {
+  text-decoration: underline;
 }
 
-.home-studio .spectrum[data-style="technisch"] .spectrum__preview {
-  background: linear-gradient(165deg, rgba(29, 37, 48, 0.96), rgba(63, 77, 92, 0.9));
-  color: #e6edf7;
+/* ── Canvas visuals per style — echte demo-previews ───────────────── */
+
+/* Minimalistisch → Personal Portfolio */
+.home-studio .spectrum-card[data-style="minimalistisch"] .spectrum-card__canvas {
+  background: url('../images/personal/hero/hero-personal-portfolio.jpg') center top / cover no-repeat;
 }
 
-.home-studio .spectrum[data-style="warm"] .spectrum__preview {
-  background: linear-gradient(165deg, rgba(213, 170, 134, 0.42), rgba(255, 236, 221, 0.92));
+/* Premium → Mediterranean Brasserie */
+.home-studio .spectrum-card[data-style="premium"] .spectrum-card__canvas {
+  background: url('../images/mediterranean-brasserie/hero/hero-dining-room-evening-01.jpg') center center / cover no-repeat;
 }
 
-.home-studio .spectrum[data-style="dynamisch"] .spectrum__preview {
-  background: linear-gradient(120deg, rgba(44, 34, 54, 0.9), rgba(190, 107, 74, 0.86));
-  color: #fdf1e7;
+/* Technisch → AXIOM Industrial */
+.home-studio .spectrum-card[data-style="technisch"] .spectrum-card__canvas {
+  background: url('../images/industrial/hero/hero-production-hall-01.jpg') center center / cover no-repeat;
 }
 
-.home-studio .spectrum[data-style="editorial"] .spectrum__preview {
-  background: linear-gradient(180deg, rgba(248, 238, 228, 0.95), rgba(221, 206, 191, 0.85));
+/* Warm → Café Amber */
+.home-studio .spectrum-card[data-style="warm"] .spectrum-card__canvas {
+  background: url('../images/cafe/hero/hero-cafe-terrace-sunset-01.jpg') center center / cover no-repeat;
 }
 
-.home-studio .spectrum[data-style="speels"] .spectrum__preview {
-  background: linear-gradient(140deg, rgba(255, 246, 236, 0.95), rgba(248, 222, 190, 0.9));
+/* Dynamisch → Restaurant */
+.home-studio .spectrum-card[data-style="dynamisch"] .spectrum-card__canvas {
+  background: url('../images/restaurant/hero/hero-restaurant-interior-01.jpg') center center / cover no-repeat;
+}
+
+/* Editorial → Personal Portfolio studio shot */
+.home-studio .spectrum-card[data-style="editorial"] .spectrum-card__canvas {
+  background: url('../images/personal/hero/hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
+}
+
+/* Speels → Kapsalon */
+.home-studio .spectrum-card[data-style="speels"] .spectrum-card__canvas {
+  background: url('../images/kapsalon/hero/hero-salon-styling-01.png') center top / cover no-repeat;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .home-studio .spectrum-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .home-studio .spectrum-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .home-studio .spectrum-cards {
+    grid-template-columns: 1fr;
+  }
+  .home-studio .spectrum-card__canvas {
+    height: 100px;
+  }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .home-studio .spectrum-card,
+  .home-studio .spectrum-card__canvas,
+  .home-studio .spectrum-card__cta {
+    transition: none;
+  }
+  .home-studio .spectrum-card:hover .spectrum-card__canvas,
+  .home-studio .spectrum-card.is-active .spectrum-card__canvas {
+    height: 130px;
+  }
 }
 
 .home-studio .studio-modules {

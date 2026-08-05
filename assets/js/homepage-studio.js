@@ -263,23 +263,31 @@
     const styleLabel = document.getElementById("spectrumStyleLabel");
     const description = document.getElementById("spectrumDescription");
 
-    if (!chips.length || !styleLabel || !description) return;
+    if (!chips.length) return;
 
     function activateChip(chip) {
-      chips.forEach((button) => {
-        const isActive = button === chip;
-        button.classList.toggle("is-active", isActive);
-        button.setAttribute("aria-selected", String(isActive));
+      chips.forEach((card) => {
+        const isActive = card === chip;
+        card.classList.toggle("is-active", isActive);
+        card.setAttribute("aria-selected", String(isActive));
+        const cta = card.querySelector(".spectrum-card__cta");
+        if (cta) cta.setAttribute("tabindex", isActive ? "0" : "-1");
       });
       root.setAttribute("data-style", chip.dataset.style || "minimalistisch");
-      styleLabel.textContent = chip.textContent || "Minimalistisch";
-      description.textContent = chip.dataset.copy || "";
+      if (styleLabel) styleLabel.textContent = chip.dataset.name || chip.dataset.style || "";
+      if (description) description.textContent = chip.dataset.copy || "";
     }
 
     chips.forEach((chip) => {
       chip.addEventListener("mouseenter", () => activateChip(chip));
       chip.addEventListener("focus", () => activateChip(chip));
       chip.addEventListener("click", () => activateChip(chip));
+      chip.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activateChip(chip);
+        }
+      });
     });
   }
 

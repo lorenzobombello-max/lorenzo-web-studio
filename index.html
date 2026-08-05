@@ -158,24 +158,148 @@
       <div class="container section-heading reveal studio-heading">
         <p class="eyebrow">Design spectrum</p>
         <h2>Welke uitstraling past bij jouw onderneming?</h2>
+        <p class="spectrum-intro">Elk merk spreekt zijn eigen visuele taal. Selecteer een ontwerpwereld om te ontdekken of hij bij jou past.</p>
       </div>
-      <div class="container spectrum reveal" id="spectrumBlock" data-style="minimalistisch">
-        <div class="spectrum__rail" role="tablist" aria-label="Kies een ontwerpstijl">
-          <button class="spectrum__chip is-active" type="button" role="tab" aria-selected="true" data-style="minimalistisch" data-copy="Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.">Minimalistisch</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="premium" data-copy="Rijke details, elegante typografie en verfijnde materiaalbeleving voor een premium positionering.">Premium</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="technisch" data-copy="Strakke structuur met technische labels, schema's en prestatiegerichte communicatie.">Technisch</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="warm" data-copy="Menselijke toon, zachte vormen en uitnodigende sfeer die vertrouwen en nabijheid opbouwt.">Warm en persoonlijk</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="dynamisch" data-copy="Beweging, ritme en contrast voor merken die snelheid en energie willen uitstralen.">Dynamisch</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="editorial" data-copy="Content-first storytelling met sterke hierarchie voor merken met een redactionele identiteit.">Editorial</button>
-          <button class="spectrum__chip" type="button" role="tab" aria-selected="false" data-style="speels" data-copy="Toegankelijk, expressief en onderscheidend zonder professionele geloofwaardigheid te verliezen.">Speels</button>
-        </div>
-        <div class="spectrum__preview" id="spectrumPreview" aria-live="polite">
-          <p class="spectrum__meta">Actieve stijl: <span id="spectrumStyleLabel">Minimalistisch</span></p>
-          <h3 id="spectrumTitle">Designrichting op maat van jouw merk</h3>
-          <p id="spectrumDescription">Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.</p>
-          <div class="spectrum__sample" aria-hidden="true">
-            <span></span><span></span><span></span>
+
+      <div class="container spectrum-selector reveal" id="spectrumBlock" data-style="minimalistisch">
+        <div class="spectrum-cards" role="tablist" aria-label="Kies een ontwerpstijl">
+
+          <div class="spectrum-card spectrum__chip is-active"
+               role="tab" tabindex="0" aria-selected="true"
+               data-style="minimalistisch" data-name="Minimalistisch"
+               data-copy="Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Helder · Rustig · Doelgericht</p>
+              <h3 class="spectrum-card__name">Minimalistisch</h3>
+              <p class="spectrum-card__desc">Geen overbodige details — enkel wat telt. Bouwt vertrouwen door helderheid en rust.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Consultants, advocaten, ICT</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>ICT</li><li>Advocatuur</li><li>Finance</li><li>Coaching</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="0">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
           </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="premium" data-name="Premium"
+               data-copy="Rijke details, elegante typografie en verfijnde materiaalbeleving voor een premium positionering.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Verfijnd · Exclusief · Indrukwekkend</p>
+              <h3 class="spectrum-card__name">Premium</h3>
+              <p class="spectrum-card__desc">Rijke details en elegante typografie die kwaliteit uitstralen vóór een woord gelezen is.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Restaurants, hotels, architecten</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Horeca</li><li>Architectuur</li><li>Luxe</li><li>Events</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="technisch" data-name="Technisch"
+               data-copy="Strakke structuur met technische labels, schema's en prestatiegerichte communicatie.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Strak · Gestructureerd · Betrouwbaar</p>
+              <h3 class="spectrum-card__name">Technisch</h3>
+              <p class="spectrum-card__desc">Heldere schema's en technische labels die vakkennis direct zichtbaar maken.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Elektriciens, garages, industrie</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Elektriciteit</li><li>Automotive</li><li>HVAC</li><li>Industrie</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="warm" data-name="Warm en persoonlijk"
+               data-copy="Menselijke toon, zachte vormen en uitnodigende sfeer die vertrouwen en nabijheid opbouwt.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Menselijk · Uitnodigend · Nabij</p>
+              <h3 class="spectrum-card__name">Warm en persoonlijk</h3>
+              <p class="spectrum-card__desc">Zachte vormen en een warme toon die bezoekers meteen op hun gemak stellen.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Kappers, bakkers, zorgverleners</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Kapsalon</li><li>Bakkerij</li><li>Zorg</li><li>Café</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="dynamisch" data-name="Dynamisch"
+               data-copy="Beweging, ritme en contrast voor merken die snelheid en energie willen uitstralen.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Gedurfd · Energiek · Onvergetelijk</p>
+              <h3 class="spectrum-card__name">Dynamisch</h3>
+              <p class="spectrum-card__desc">Beweging, ritme en contrastrijke energie voor merken die willen opvallen en in actie zetten.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Sportclubs, food trucks, events</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Sport</li><li>Food</li><li>Events</li><li>Nightlife</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="editorial" data-name="Editorial"
+               data-copy="Content-first storytelling met sterke hierarchie voor merken met een redactionele identiteit.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Verhaal · Inhoud · Karakter</p>
+              <h3 class="spectrum-card__name">Editorial</h3>
+              <p class="spectrum-card__desc">Content-first storytelling met sterke hiërarchie voor merken met een redactionele identiteit.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Studios, bureaus, media, fashion</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Media</li><li>Fashion</li><li>Creatief</li><li>PR</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+          <div class="spectrum-card spectrum__chip"
+               role="tab" tabindex="0" aria-selected="false"
+               data-style="speels" data-name="Speels"
+               data-copy="Toegankelijk, expressief en onderscheidend zonder professionele geloofwaardigheid te verliezen.">
+            <div class="spectrum-card__canvas" aria-hidden="true"><div class="spectrum-card__vis"></div></div>
+            <div class="spectrum-card__body">
+              <p class="spectrum-card__tag">Expressief · Toegankelijk · Onderscheidend</p>
+              <h3 class="spectrum-card__name">Speels</h3>
+              <p class="spectrum-card__desc">Levendig en toegankelijk zonder professionele geloofwaardigheid te verliezen. Sterk in herinnering.</p>
+              <div class="spectrum-card__audience">
+                <span class="spectrum-card__audience-label">Doelgroep</span>
+                <span class="spectrum-card__audience-val">Kinderopvang, educatie, creatieven</span>
+              </div>
+              <ul class="spectrum-card__sectors" aria-label="Sectoren"><li>Kinderopvang</li><li>Educatie</li><li>Speelgoed</li><li>Creatief</li></ul>
+              <a class="spectrum-card__cta" href="pages/contact.html" tabindex="-1">Past bij mijn merk <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Preserved IDs for JS and accessibility -->
+        <div class="sr-only" aria-live="polite">
+          Actieve ontwerpstijl: <span id="spectrumStyleLabel">Minimalistisch</span>.
+          <span id="spectrumDescription">Helder, rustig en doelgericht. Ideaal voor duidelijke informatie en snelle beslissingen.</span>
+        </div>
+        <div hidden aria-hidden="true">
+          <span id="spectrumTitle">Designrichting op maat van jouw merk</span>
+          <div id="spectrumPreview"></div>
         </div>
       </div>
     </section>
