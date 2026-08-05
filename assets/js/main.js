@@ -15,19 +15,28 @@
   const navLinks = document.querySelectorAll(".site-nav a");
   const sectionNavLinks = document.querySelectorAll('.site-nav a[href^="#"]');
 
+  function canUseFunctionalStorage() {
+    if (!window.LwsConsent || typeof window.LwsConsent.isAllowed !== "function") {
+      return true;
+    }
+    return window.LwsConsent.isAllowed("functional");
+  }
+
   function hideLoader() {
     if (loader) loader.classList.add("is-hidden");
   }
 
   function initTheme() {
-    try {
-      const saved = localStorage.getItem("site-theme");
-      if (saved === "dark" || saved === "light") {
-        root.setAttribute("data-theme", saved);
-        return;
+    if (canUseFunctionalStorage()) {
+      try {
+        const saved = localStorage.getItem("site-theme");
+        if (saved === "dark" || saved === "light") {
+          root.setAttribute("data-theme", saved);
+          return;
+        }
+      } catch (_error) {
+        // Keep default behavior when storage is unavailable.
       }
-    } catch (_error) {
-      // Keep default behavior when storage is unavailable.
     }
 
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -38,6 +47,9 @@
     const current = root.getAttribute("data-theme") || "light";
     const next = current === "dark" ? "light" : "dark";
     root.setAttribute("data-theme", next);
+
+    if (!canUseFunctionalStorage()) return;
+
     try {
       localStorage.setItem("site-theme", next);
     } catch (_error) {
@@ -69,8 +81,17 @@
   }
 
   function initRevealObserver() {
-    const revealNodes = document.querySelectorAll(".reveal");
+    const revealNodes = document.querySelectorAll(
+      ".reveal, .reveal-industrial, .reveal-restaurant, .reveal-mediterranean"
+    );
     if (!revealNodes.length) return;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      revealNodes.forEach((node) => node.classList.add("in-view"));
+      return;
+    }
+
+    body.classList.add("motion-ready");
 
     const observer = new IntersectionObserver(
       (entries, obs) => {
@@ -277,6 +298,25 @@
   if (yearNode) yearNode.textContent = String(new Date().getFullYear());
 
   initTheme();
+
+  document.addEventListener("lws:consent-changed", (event) => {
+    const detail = event.detail;
+    if (!detail || !detail.categories) return;
+
+    if (!detail.categories.functional) {
+      initTheme();
+      return;
+    }
+
+    const current = root.getAttribute("data-theme");
+    if (current === "dark" || current === "light") {
+      try {
+        localStorage.setItem("site-theme", current);
+      } catch (_error) {
+        // Ignore storage write errors in private contexts.
+      }
+    }
+  });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeMobileNav();

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Restaurant Demo v1.0 | Lorenzo Web Solutions</title>
+  <meta name="description" content="Restaurant Demo v1.0 met warme menupresentatie, reservatieaanvraag, sfeersecties en mobiele conversieroute." />
+  <link rel="canonical" href="https://lorenzowebsolutions.be/pages/demos/restaurant/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="nl_BE" />
+  <meta property="og:site_name" content="Lorenzo Web Solutions" />
+  <meta property="og:title" content="Restaurant Demo v1.0 | Lorenzo Web Solutions" />
+  <meta property="og:description" content="Restaurant Demo v1.0 met menu, reservatieflow, sfeerweergave en sterke mobiele structuur." />
+  <meta property="og:url" content="https://lorenzowebsolutions.be/pages/demos/restaurant/" />
+  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Restaurant Demo v1.0 | Lorenzo Web Solutions" />
+  <meta name="twitter:description" content="Restaurant Demo v1.0 met menu, reservatieflow, sfeerweergave en sterke mobiele structuur." />
+  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" type="image/svg+xml" href="../../../assets/icons/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../assets/css/style.css" />
+  <link rel="stylesheet" href="../../../assets/css/demos/restaurant.css" />
+  <script defer src="../../../assets/js/cookie-consent.js"></script>
+  <script defer src="../../../assets/js/main.js"></script>
+</head>
+<body class="restaurant-demo">
+  <div class="loader" id="pageLoader" aria-hidden="true"><div class="loader__spinner"></div></div>
+  <a class="skip-link" href="#home">Ga naar inhoud</a>
+
+  <header class="site-header" id="siteHeader">
+    <div class="container nav-wrap">
+      <a class="demo-back-link" href="../../../index.html" aria-label="Terug naar Solution.be">← Terug naar Solution.be</a>
+      <a class="logo" href="#home" aria-label="Restaurant Demo home">Restaurant <span>Demo</span></a>
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="siteNav"><span></span><span></span><span></span></button>
+      <nav id="siteNav" class="site-nav" aria-label="Hoofdnavigatie">
+        <a href="#home">Home</a>
+        <a href="#menu">Menu</a>
+        <a href="#reservatie">Reservatie</a>
+        <a href="#over">Over ons</a>
+        <a href="#sfeer">Sfeer</a>
+        <a href="#reviews">Reviews</a>
+        <a href="#openingsuren">Openingsuren</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="section restaurant-hero" id="home">
+      <div class="container restaurant-hero-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Restaurant Demo v1.0</p>
+          <h1>Warme restaurantbeleving met menu en reservatieflow.</h1>
+          <p>Deze demo toont hoe een restaurantwebsite structuur, sfeer en conversie samenbrengt in een professioneel en mobielgericht ontwerp.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="#reservatie">Vraag reservatie aan</a>
+            <a class="btn btn--ghost" href="#menu">Bekijk menu</a>
+          </div>
+          <ul class="restaurant-kpi" aria-label="Belangrijke punten">
+            <li>Duidelijke menustructuur</li>
+            <li>Compacte reservatieaanvraag</li>
+            <li>Sterke mobiele presentatie</li>
+          </ul>
+        </div>
+        <figure class="restaurant-visual reveal-restaurant reveal-scale">
+          <img src="../../../assets/images/restaurant/hero/hero-restaurant-interior-01.jpg" alt="Warme restaurantinterieur preview voor de demopagina" loading="eager" fetchpriority="high" decoding="async" />
+        </figure>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="menu">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Menu-opbouw</p>
+        <h2>Vier menucategorieen in een heldere, scanbare structuur.</h2>
+        <p>De kaart is opgebouwd om bezoekers snel te laten kiezen, met compacte uitleg per gerecht en duidelijke visuele begeleiding.</p>
+      </div>
+      <div class="container services-grid services-grid--four menu-grid reveal-restaurant reveal-up reveal-stagger-1">
+        <article class="service-card reveal">
+          <figure class="menu-media"><img src="../../../assets/images/restaurant/service/service-signature-dish-01.jpg" alt="Voorgerecht in restaurantstijl" loading="lazy" decoding="async" /><figcaption>Voorgerechten</figcaption></figure>
+          <span class="restaurant-tag">Voorgerecht</span>
+          <h3>Frisse starters</h3>
+          <p>Korte gerechten met lichte smaken voor een sterke start van de service.</p>
+        </article>
+        <article class="service-card reveal reveal-delay-1">
+          <figure class="menu-media"><img src="../../../assets/images/restaurant/service/service-signature-dish-02.jpg" alt="Hoofdgerecht in restaurantstijl" loading="lazy" decoding="async" /><figcaption>Hoofdgerechten</figcaption></figure>
+          <span class="restaurant-tag">Hoofdgerecht</span>
+          <h3>Signatuur van de keuken</h3>
+          <p>Uitgebalanceerde hoofdgerechten die het culinaire profiel van de zaak tonen.</p>
+        </article>
+        <article class="service-card reveal reveal-delay-2">
+          <figure class="menu-media"><img src="../../../assets/images/restaurant/service/service-signature-dish-03.jpg" alt="Dessert in restaurantstijl" loading="lazy" decoding="async" /><figcaption>Desserts</figcaption></figure>
+          <span class="restaurant-tag">Dessert</span>
+          <h3>Afsluiten met finesse</h3>
+          <p>Nette dessertpresentatie met focus op detail en een zachte smaakbeleving.</p>
+        </article>
+        <article class="service-card reveal">
+          <figure class="menu-media"><img src="../../../assets/images/restaurant/service/service-signature-dish-04.jpg" alt="Seizoensgerecht in restaurantstijl" loading="lazy" decoding="async" /><figcaption>Seizoenssuggestie</figcaption></figure>
+          <span class="restaurant-tag">Seizoenskeuze</span>
+          <h3>Wisselende suggestie</h3>
+          <p>Extra menublok voor tijdelijke gerechten, chefkeuzes of servicegerichte specials.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="reservatie">
+      <div class="container restaurant-reservation-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Reservatieflow</p>
+          <h2>Een aanvraag in enkele velden, met heldere opvolging.</h2>
+          <p>De flow toont bewust het verschil tussen aanvraag en bevestigde reservatie. Zo blijft de verwachting voor bezoekers correct en professioneel.</p>
+          <p>Ook private dining en groepsreservaties kunnen via dezelfde aanvraagroute correct worden voorgelegd.</p>
+          <p class="restaurant-helptext"><strong>Belangrijk:</strong> deze knop verstuurt een aanvraag. Een bevestiging volgt altijd na controle.</p>
+        </div>
+        <article class="restaurant-reservation-card reveal reveal-delay-1" aria-label="Reservatieaanvraag voorbeeld">
+          <h3>Vraag reservatie aan</h3>
+          <form class="restaurant-reservation-form" novalidate>
+            <div class="field"><label for="res-name">Naam</label><input id="res-name" type="text" autocomplete="name" /></div>
+            <div class="field"><label for="res-people">Aantal personen</label><input id="res-people" type="number" min="1" max="20" /></div>
+            <div class="field"><label for="res-date">Datum</label><input id="res-date" type="date" /></div>
+            <div class="field"><label for="res-time">Uur</label><input id="res-time" type="time" /></div>
+            <div class="field"><label for="res-mail">E-mailadres</label><input id="res-mail" type="email" autocomplete="email" /></div>
+            <div class="field"><label for="res-phone">Telefoon</label><input id="res-phone" type="tel" autocomplete="tel" /></div>
+            <div class="field field--full"><label for="res-note">Opmerking of allergenen</label><textarea id="res-note" rows="3"></textarea></div>
+            <div class="field field--full"><button class="btn btn--primary" type="button">Verstuur reservatieaanvraag</button></div>
+          </form>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="over">
+      <div class="container restaurant-story-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Over het restaurant</p>
+          <h2>Menselijke, geloofwaardige storytelling met keuken en service.</h2>
+          <p>Deze sectie is bedoeld om de keukenvisie, serviceaanpak en teamdynamiek van een echte zaak professioneel te tonen zonder overdreven claims.</p>
+          <p>De componenten zijn voorbereid voor echte bedrijfsgegevens, echte teaminformatie en een duidelijk, commercieel verhaal.</p>
+        </div>
+        <div class="restaurant-story-media reveal reveal-delay-1">
+          <img src="../../../assets/images/restaurant/team/team-chef-portrait-01.jpg" alt="Chefportret als onderdeel van de restaurantstory" loading="lazy" decoding="async" />
+          <img src="../../../assets/images/restaurant/team/team-host-portrait-01.jpg" alt="Portret van gastvrije bediening in restaurantcontext" loading="lazy" decoding="async" />
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sfeer">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Sfeer en galerij</p>
+        <h2>Beeldgrid dat rust, kwaliteit en restaurantbeleving uitstraalt.</h2>
+      </div>
+      <div class="container restaurant-gallery-grid reveal-restaurant reveal-up reveal-stagger-2">
+        <article><img src="../../../assets/images/restaurant/gallery/gallery-dining-room-01.jpg" alt="Overzicht van de eetruimte in warme restaurantstijl" loading="lazy" decoding="async" /></article>
+        <article><img src="../../../assets/images/restaurant/gallery/gallery-private-dining-table-01.jpg" alt="Private dining tafelopstelling voor groepsreservaties in warme restaurantstijl" loading="lazy" decoding="async" /></article>
+        <article><img src="../../../assets/images/restaurant/team/team-host-portrait-02.jpg" alt="Restaurantteam in een gastvrije setting" loading="lazy" decoding="async" /></article>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="reviews">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Reviews</p>
+        <h2>Ontwerp klaar voor echte gastfeedback.</h2>
+        <p>Deze demosectie gebruikt geen fictieve scores of platformbadges. Echte reviews kunnen later in dit component worden geplaatst.</p>
+      </div>
+      <div class="container restaurant-review-grid reveal">
+        <article class="pricing-card"><h3>Reviewcomponent 01</h3><p>Voorzien voor korte quote, naam en context zodra echte feedback beschikbaar is.</p></article>
+        <article class="pricing-card"><h3>Reviewcomponent 02</h3><p>Identieke opbouw voor consistente presentatie van meerdere gastreacties.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="openingsuren">
+      <div class="container restaurant-hours-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Openingsuren</p>
+          <h2>Compacte, mobiel leesbare structuur voor lunch en diner.</h2>
+          <p>De layout is uitgewerkt om echte openingsuren snel scanbaar te tonen zodra de zaakgegevens ingevuld worden.</p>
+        </div>
+        <article class="restaurant-hours-card reveal reveal-delay-1" aria-label="Openingsuren structuur">
+          <h3>Urenweergave in deze demo</h3>
+          <ul class="hours-list">
+            <li>Lunchservice - apart blok per dag</li>
+            <li>Avondservice - apart blok per dag</li>
+            <li>Gesloten dagen - duidelijk gemarkeerd</li>
+            <li>Extra opmerkingen - piekmomenten of afwijkingen</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="contact">
+      <div class="container restaurant-contact-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Locatie en contact</p>
+          <h2>Praktische contactroute met duidelijke CTA-volgorde.</h2>
+          <p>De contactcomponent is ontworpen voor adres, telefoon, e-mail en route, met reservatie als primaire actie.</p>
+          <ul class="restaurant-contact-list">
+            <li>Adresweergave als eerste informatielaag</li>
+            <li>Klikbare telefoon voor snelle actie op mobiel</li>
+            <li>E-mail als secundaire route</li>
+            <li>Routeknop als directe bezoekactie</li>
+          </ul>
+        </div>
+        <form class="contact-form reveal reveal-delay-1" id="contactForm" aria-label="Vraag deze restaurantdemo aan" novalidate>
+          <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" required /></div>
+          <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" /></div>
+          <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
+          <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" /></div>
+          <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Restaurantwebsite</option><option>Horeca website</option><option>Andere</option></select></div>
+          <div class="field"><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+          <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
+          <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" required></textarea></div>
+          <div class="field field--full consent-field"><input id="privacy" name="privacy" type="checkbox" required /><label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label></div>
+          <div class="field field--full sr-only" aria-hidden="true">
+            <label for="website">Laat dit veld leeg</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+          <p class="privacy-note field--full">Je aanvraag wordt veilig verwerkt en uitsluitend gebruikt om je aanvraag op te volgen.</p>
+          <button class="btn btn--primary" id="submitButton" type="submit">Verstuur aanvraag</button>
+          <p class="form-note" id="formMessage" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="section restaurant-final-cta" id="eindcta">
+      <div class="container center-narrow reveal-restaurant reveal-up reveal-stagger-2 restaurant-cta-panel">
+        <p class="eyebrow">Eind-CTA</p>
+        <h2>Maak van deze restaurantdemo jouw eigen commerciële website.</h2>
+        <p>De structuur, componenten en mobiele flow zijn klaar om op echte zaakgegevens en echte content te worden toegepast.</p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href="#reservatie">Vraag reservatieflow aan</a>
+          <a class="btn btn--ghost" href="#contact">Neem contact op</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="logo" href="#home">Restaurant <span>Demo</span></a>
+        <p>Restaurant Demo v1.0 als verkoopbare branchestandaard binnen Lorenzo Web Studio.</p>
+      </div>
+      <div>
+        <h3>Navigatie</h3>
+        <ul>
+          <li><a href="#home">Home</a></li>
+          <li><a href="#menu">Menu</a></li>
+          <li><a href="#reservatie">Reservatie</a></li>
+          <li><a href="#over">Over ons</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Overzicht</h3>
+        <ul>
+          <li><a href="../../../index.html#demo-projects">Terug naar demo-overzicht</a></li>
+          <li><a href="../../../pages/contact.html">Contact Lorenzo Web Solutions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Juridisch</h3>
+        <ul>
+          <li><a href="../../../pages/privacy.html">Privacy</a></li>
+          <li><a href="../../../pages/voorwaarden.html">Algemene voorwaarden</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions. Alle rechten voorbehouden.</p></div>
+  </footer>
+
+  <a class="btn btn--primary restaurant-mobile-action" href="#reservatie">Vraag reservatie aan</a>
+  <button class="back-to-top" id="backToTop" aria-label="Ga terug naar boven">Omhoog</button>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Personal Portfolio Demo | Lorenzo Web Solutions</title>
+  <meta name="description" content="Personal Portfolio Demo voor technische profielen, freelancers, consultants en professionals met focus op projecten, certificaten en contactflow." />
+  <link rel="canonical" href="https://lorenzowebsolutions.be/pages/demos/personal-portfolio/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="nl_BE" />
+  <meta property="og:site_name" content="Lorenzo Web Solutions" />
+  <meta property="og:title" content="Personal Portfolio Demo | Lorenzo Web Solutions" />
+  <meta property="og:description" content="Professionele portfolio demo met sterke projectpresentatie, certificatenstructuur en mobiele contactflow." />
+  <meta property="og:url" content="https://lorenzowebsolutions.be/pages/demos/personal-portfolio/" />
+  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Personal Portfolio Demo | Lorenzo Web Solutions" />
+  <meta name="twitter:description" content="Professionele portfolio demo voor technische en zelfstandige profielen." />
+  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" type="image/svg+xml" href="../../../assets/icons/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../assets/css/style.css" />
+  <link rel="stylesheet" href="../../../assets/css/demos/personal-portfolio.css" />
+  <script defer src="../../../assets/js/cookie-consent.js"></script>
+  <script defer src="../../../assets/js/main.js"></script>
+</head>
+<body class="personal-demo">
+  <div class="loader" id="pageLoader" aria-hidden="true"><div class="loader__spinner"></div></div>
+  <a class="skip-link" href="#home">Ga naar inhoud</a>
+
+  <header class="site-header" id="siteHeader">
+    <div class="container nav-wrap">
+      <a class="logo" href="#home" aria-label="Personal Portfolio Demo home">Personal <span>Portfolio</span></a>
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="siteNav"><span></span><span></span><span></span></button>
+      <nav id="siteNav" class="site-nav" aria-label="Hoofdnavigatie">
+        <a href="#home">Home</a>
+        <a href="#diensten">Diensten</a>
+        <a href="#projecten">Projecten</a>
+        <a href="#certificaten">Certificaten</a>
+        <a href="#werkwijze">Werkwijze</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="section personal-hero" id="home">
+      <div class="container personal-hero-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Personal Portfolio Demo</p>
+          <h1>Professionele portfolio-website voor technische en zelfstandige profielen.</h1>
+          <p>Deze demo combineert projectcases, expertiseblokken, certificatenstructuur en een snelle contactflow in een verkoopbare branchestijl.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="#projecten">Bekijk projecten</a>
+            <a class="btn btn--ghost" href="#contact">Neem contact op</a>
+          </div>
+          <ul class="portfolio-list" aria-label="Sterke punten">
+            <li>Duidelijke expertise-opbouw per discipline</li>
+            <li>Projectpresentatie met resultaatgerichte structuur</li>
+            <li>Mobiele contactflow voor snelle aanvragen</li>
+          </ul>
+        </div>
+        <div class="personal-hero-panel reveal reveal-delay-1" aria-hidden="true">
+          <div class="wireframe-head"></div>
+          <div class="wireframe-line line-medium"></div>
+          <div class="wireframe-line line-short"></div>
+          <div class="wireframe-grid">
+            <div class="wireframe-card">
+              <div class="wireframe-badge"></div>
+              <div class="wireframe-tile"></div>
+            </div>
+            <div class="wireframe-card">
+              <div class="wireframe-badge"></div>
+              <div class="wireframe-tile"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="diensten">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Diensten en expertise</p>
+        <h2>Opbouw voor consultants, engineers en technische professionals.</h2>
+      </div>
+      <div class="container services-grid services-grid--four">
+        <article class="service-card reveal"><div class="icon">PX</div><h3>Portfolio op maat</h3><p>Gerichte profilering van expertise, projecten en professionele meerwaarde.</p><p class="service-benefit">Voordeel: bezoekers begrijpen snel jouw profiel en aanbod.</p></article>
+        <article class="service-card reveal reveal-delay-1"><div class="icon">PR</div><h3>Projectcases</h3><p>Gestructureerde casepresentatie met context, aanpak en resultaat.</p><p class="service-benefit">Voordeel: hogere geloofwaardigheid bij opdrachtgevers.</p></article>
+        <article class="service-card reveal reveal-delay-2"><div class="icon">CF</div><h3>Certificatenblok</h3><p>Duidelijke componenten om opleidingen, attesten en competenties te tonen.</p><p class="service-benefit">Voordeel: professionele onderbouwing zonder overvolle pagina.</p></article>
+        <article class="service-card reveal"><div class="icon">UX</div><h3>Mobiele contactflow</h3><p>Korte route naar contact, intake en nieuwe opdrachten.</p><p class="service-benefit">Voordeel: betere conversie op smartphone en tablet.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="projecten">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Projecten</p>
+        <h2>Drie portfolioformats die direct verkoopbaar zijn als demonstratie.</h2>
+      </div>
+      <div class="container portfolio-grid personal-projects-grid">
+        <article class="portfolio-card reveal">
+          <div>
+            <p class="portfolio-label">Projectformat 01</p>
+            <h3>Technische consultancycase</h3>
+            <p>Case-opbouw met opdrachtcontext, analyse, uitvoering en aantoonbare impact.</p>
+          </div>
+        </article>
+        <article class="portfolio-card reveal reveal-delay-1">
+          <div>
+            <p class="portfolio-label">Projectformat 02</p>
+            <h3>Freelance onderhoudsproject</h3>
+            <p>Praktijkgerichte weergave van interventies, planning en resultaat per opdracht.</p>
+          </div>
+        </article>
+        <article class="portfolio-card reveal reveal-delay-2">
+          <div>
+            <p class="portfolio-label">Projectformat 03</p>
+            <h3>Engineering en optimalisatie</h3>
+            <p>Portfoliosectie voor verbetertrajecten met duidelijke technische samenvatting.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="certificaten">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Certificaten en opleidingen</p>
+        <h2>Gestructureerde componenten voor echte competentiebewijzen.</h2>
+        <p>Deze sectie toont geen fictieve certificaten, maar is klaar om echte attesten en opleidingen professioneel te presenteren.</p>
+      </div>
+      <div class="container credential-grid reveal reveal-delay-1">
+        <article class="credential-card"><h3>Technische certificaten</h3><ul class="credential-list"><li>Ruimte voor maximaal 6 attestitems</li><li>Heldere datum- en geldigheidsslot</li><li>Koppeling met relevante projectcases</li></ul></article>
+        <article class="credential-card"><h3>Opleidingen</h3><ul class="credential-list"><li>Overzicht per domein of specialisatie</li><li>Duidelijke leesvolgorde voor recruiters</li><li>Compacte mobiele weergave</li></ul></article>
+        <article class="credential-card"><h3>Professionele focus</h3><ul class="credential-list"><li>Korte uitleg van expertisegebieden</li><li>Directe link naar contact en intake</li><li>Consistente componentarchitectuur</li></ul></article>
+      </div>
+    </section>
+
+    <section class="section" id="werkwijze">
+      <div class="container section-heading reveal">
+        <p class="eyebrow">Werkwijze</p>
+        <h2>Een duidelijke route van intake tot oplevering.</h2>
+      </div>
+      <div class="container timeline" aria-label="Werkwijze">
+        <article class="timeline__item process-step reveal"><span>1</span><h3>Intake</h3><p>Doelen, profiel en type opdrachten worden in kaart gebracht.</p></article>
+        <article class="timeline__item process-step reveal reveal-delay-1"><span>2</span><h3>Structuur</h3><p>Pagina-opbouw en contentblokken worden afgestemd op doelgroep en conversie.</p></article>
+        <article class="timeline__item process-step reveal reveal-delay-2"><span>3</span><h3>Visualisering</h3><p>Casecomponenten, bewijssecties en contactflow worden uitgewerkt.</p></article>
+        <article class="timeline__item process-step reveal"><span>4</span><h3>Publicatieklaar</h3><p>Responsive controle en finale kwaliteitscheck voor oplevering.</p></article>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="contact">
+      <div class="container personal-contact-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Contactflow</p>
+          <h2>Vraag deze portfolio-demo aan voor jouw profiel of doelgroep.</h2>
+          <p>De componenten zijn gebouwd voor technische profielen, freelancers, consultants en professionals die een geloofwaardige online presentatie nodig hebben.</p>
+        </div>
+        <form class="contact-form reveal reveal-delay-1" id="contactForm" aria-label="Vraag personal portfolio demo aan" novalidate>
+          <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" required /></div>
+          <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" /></div>
+          <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
+          <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" /></div>
+          <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Personal portfolio</option><option>Technische profielsite</option><option>Consultancy website</option><option>Andere</option></select></div>
+          <div class="field"><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+          <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
+          <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" required></textarea></div>
+          <div class="field field--full consent-field"><input id="privacy" name="privacy" type="checkbox" required /><label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label></div>
+          <div class="field field--full sr-only" aria-hidden="true">
+            <label for="website">Laat dit veld leeg</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+          <p class="privacy-note field--full">Je aanvraag wordt veilig verwerkt en uitsluitend gebruikt om je aanvraag op te volgen.</p>
+          <button class="btn btn--primary" id="submitButton" type="submit">Verstuur aanvraag</button>
+          <p class="form-note" id="formMessage" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="logo" href="#home">Personal <span>Portfolio</span></a>
+        <p>Verkoopbare portfolio-demo voor technische en professionele profielen binnen Lorenzo Web Studio.</p>
+      </div>
+      <div>
+        <h3>Navigatie</h3>
+        <ul>
+          <li><a href="#home">Home</a></li>
+          <li><a href="#diensten">Diensten</a></li>
+          <li><a href="#projecten">Projecten</a></li>
+          <li><a href="#certificaten">Certificaten</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Overzicht</h3>
+        <ul>
+          <li><a href="../../../index.html#demo-projects">Terug naar demo-overzicht</a></li>
+          <li><a href="../../../pages/contact.html">Contact Lorenzo Web Solutions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Juridisch</h3>
+        <ul>
+          <li><a href="../../../pages/privacy.html">Privacy</a></li>
+          <li><a href="../../../pages/voorwaarden.html">Algemene voorwaarden</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions. Alle rechten voorbehouden.</p></div>
+  </footer>
+
+  <a class="btn btn--primary personal-mobile-action" href="#contact">Vraag deze demo aan</a>
+  <button class="back-to-top" id="backToTop" aria-label="Ga terug naar boven">Omhoog</button>
+</body>
+</html>

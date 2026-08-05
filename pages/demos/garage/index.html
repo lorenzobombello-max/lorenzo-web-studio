@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TorquePoint Garage Demo | Lorenzo Web Solutions</title>
+  <meta name="description" content="TorquePoint Garage demo: automotive showroom-concept met voertuigzoeker, voorraad, werkplaatsmodule en afspraakflow." />
+  <link rel="canonical" href="https://lorenzowebsolutions.be/pages/demos/garage/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="nl_BE" />
+  <meta property="og:site_name" content="Lorenzo Web Solutions" />
+  <meta property="og:title" content="TorquePoint Garage Demo | Lorenzo Web Solutions" />
+  <meta property="og:description" content="TorquePoint Garage demo: automotive showroom-concept met voertuigzoeker, voorraad, werkplaatsmodule en afspraakflow." />
+  <meta property="og:url" content="https://lorenzowebsolutions.be/pages/demos/garage/" />
+  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="TorquePoint Garage Demo | Lorenzo Web Solutions" />
+  <meta name="twitter:description" content="TorquePoint Garage demo: automotive showroom-concept met voertuigzoeker, voorraad, werkplaatsmodule en afspraakflow." />
+  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" type="image/svg+xml" href="../../../assets/icons/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../assets/css/style.css" />
+  <link rel="stylesheet" href="../../../assets/css/demos/garage.css" />
+  <script defer src="../../../assets/js/cookie-consent.js"></script>
+  <script defer src="../../../assets/js/main.js"></script>
+  <script defer src="../../../assets/js/demos/garage.js"></script>
+</head>
+<body class="garage-demo">
+  <div class="loader" id="pageLoader" aria-hidden="true"><div class="loader__spinner"></div></div>
+  <a class="skip-link" href="#home">Ga naar inhoud</a>
+
+  <div class="torque-utility-bar">
+    <div class="container torque-utility-inner">
+      <div class="torque-utility-info">
+        <span><span class="torque-status-dot" aria-hidden="true"></span> Nu open — sluit om 18:00</span>
+        <span>Kaaistraat 42, 9000 Gent</span>
+        <span>+32 9 123 45 67</span>
+      </div>
+      <div class="torque-utility-actions">
+        <a class="torque-chip-btn" href="#werkplaats">Plan onderhoud</a>
+        <a class="torque-chip-btn torque-chip-btn--urgent" href="#contact">Pech / dringend</a>
+      </div>
+    </div>
+  </div>
+
+  <header class="site-header" id="siteHeader">
+    <div class="container nav-wrap">
+      <a class="demo-back-link" href="../../../index.html" aria-label="Terug naar Solution.be">← Terug naar Solution.be</a>
+      <a class="logo" href="#home" aria-label="TorquePoint Garage home">TorquePoint <span>Garage</span></a>
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="siteNav"><span></span><span></span><span></span></button>
+      <nav id="siteNav" class="site-nav" aria-label="Hoofdnavigatie">
+        <a href="#voorraad">Voorraad</a>
+        <a href="#werkplaats">Onderhoud</a>
+        <a href="#vertrouwen">Over ons</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <a class="torque-nav-cta" href="#werkplaats">Afspraak plannen</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="torque-hero" id="home">
+      <div class="torque-hero-bg" aria-hidden="true"></div>
+      <div class="container torque-hero-content reveal">
+        <p class="torque-hero-eyebrow">TorquePoint Garage Demo</p>
+        <h1>Jouw volgende wagen. Technisch gecontroleerd en rijklaar.</h1>
+        <p>Deze demo toont hoe een automotive platform voorraad, onderhoud en vertrouwen samenbrengt in één krachtig, zoekgericht geheel — geen standaard bedrijfswebsite, maar een showroom- en serviceplatform.</p>
+        <ul class="torque-hero-benefits">
+          <li>141-punts technische controle</li>
+          <li>Transparante prijszetting</li>
+          <li>12 maanden garantie</li>
+        </ul>
+        <div class="torque-hero-actions">
+          <a class="btn btn--primary" href="#voorraad">Bekijk voorraad</a>
+          <a class="btn btn--ghost" href="#contact">Vraag deze demo aan</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="container">
+      <form class="torque-search reveal" id="vehicleSearch" aria-label="Voertuigzoeker">
+        <div class="torque-search-grid">
+          <div class="torque-search-field">
+            <label for="searchBrand">Merk</label>
+            <select id="searchBrand" name="brand">
+              <option value="">Alle merken</option>
+              <option value="nova">Nova</option>
+              <option value="meridian">Meridian</option>
+              <option value="atlas">Atlas</option>
+              <option value="volt">Volt</option>
+              <option value="cargo">Cargo</option>
+              <option value="prime">Prime</option>
+            </select>
+          </div>
+          <div class="torque-search-field">
+            <label for="searchFuel">Brandstof</label>
+            <select id="searchFuel" name="fuel">
+              <option value="">Alle brandstoffen</option>
+              <option value="benzine">Benzine</option>
+              <option value="diesel">Diesel</option>
+              <option value="elektrisch">Elektrisch</option>
+            </select>
+          </div>
+          <div class="torque-search-field">
+            <label for="searchPrice">Prijsklasse</label>
+            <select id="searchPrice" name="price">
+              <option value="">Alle prijzen</option>
+              <option value="0-20000">Tot € 20.000</option>
+              <option value="20000-30000">€ 20.000 – € 30.000</option>
+              <option value="30000-40000">€ 30.000 – € 40.000</option>
+              <option value="40000-999999">Meer dan € 40.000</option>
+            </select>
+          </div>
+          <div class="torque-search-field">
+            <label for="searchTransmission">Transmissie</label>
+            <select id="searchTransmission" name="transmission">
+              <option value="">Alle transmissies</option>
+              <option value="manueel">Manueel</option>
+              <option value="automaat">Automaat</option>
+            </select>
+          </div>
+          <div class="torque-search-field">
+            <label for="searchCondition">Staat</label>
+            <select id="searchCondition" name="condition">
+              <option value="">Nieuw of tweedehands</option>
+              <option value="nieuw">Nieuw</option>
+              <option value="tweedehands">Tweedehands</option>
+            </select>
+          </div>
+          <button class="btn btn--primary torque-search-submit" type="submit">Bekijk beschikbare wagens</button>
+        </div>
+        <p class="torque-form-status" id="searchStatus" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <section class="torque-section" id="voorraad">
+      <div class="container torque-heading torque-heading--split reveal">
+        <div>
+          <span class="torque-eyebrow">Voorraad</span>
+          <h2>Zes voertuigen, rechtstreeks uit de showroom.</h2>
+          <p>Demonstratieve voorraad met fictieve wagens. Voertuiggegevens en prijzen zijn demonstratieve inhoud. De zoeker hierboven filtert deze selectie live.</p>
+        </div>
+        <div class="torque-showroom-nav">
+          <button type="button" id="showroomPrev" aria-label="Vorige wagens"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" /></svg></button>
+          <button type="button" id="showroomNext" aria-label="Volgende wagens"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6" /></svg></button>
+        </div>
+      </div>
+      <div class="container">
+        <div class="torque-showroom-track" id="showroomTrack" role="list">
+          <article class="torque-vehicle-card" role="listitem" data-brand="nova" data-fuel="benzine" data-transmission="manueel" data-condition="nieuw" data-category="stadswagen" data-price="18900">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Nieuw binnen</span><img src="../../../assets/images/garage/hero/hero-garage-bmw-blauw-showroom-4.jpg" alt="Zwarte BMW sedan in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>BMW Sedan</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2026</li><li>5 km</li><li>Benzine</li><li>Manueel</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 18.900</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+          <article class="torque-vehicle-card" role="listitem" data-brand="meridian" data-fuel="diesel" data-transmission="automaat" data-condition="tweedehands" data-category="gezinswagen" data-price="24500">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Garantie</span><img src="../../../assets/images/garage/hero/hero-garage-bmw-blauw-showroom.jpg" alt="Blauwe BMW touring in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>BMW Touring</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2022</li><li>48.000 km</li><li>Diesel</li><li>Automaat</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 24.500</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+          <article class="torque-vehicle-card" role="listitem" data-brand="atlas" data-fuel="benzine" data-transmission="automaat" data-condition="nieuw" data-category="suv" data-price="39900">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Nieuw binnen</span><img src="../../../assets/images/garage/hero/hero-garage-bmw-blauw-showroom-3.jpg" alt="Donkerblauwe BMW performance sedan in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>BMW Performance Sedan</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2026</li><li>10 km</li><li>Benzine</li><li>Automaat</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 39.900</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+          <article class="torque-vehicle-card" role="listitem" data-brand="volt" data-fuel="elektrisch" data-transmission="automaat" data-condition="nieuw" data-category="elektrisch" data-price="34900">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Elektrisch</span><img src="../../../assets/images/garage/hero/hero-garage-bmw-bordou-showroom.jpg" alt="Bordeaux BMW executive sedan in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>BMW Executive Sedan</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2026</li><li>15 km</li><li>Elektrisch</li><li>Automaat</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 34.900</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+          <article class="torque-vehicle-card" role="listitem" data-brand="cargo" data-fuel="diesel" data-transmission="manueel" data-condition="nieuw" data-category="bedrijfswagen" data-price="27900">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Nieuw binnen</span><img src="../../../assets/images/garage/hero/hero-garage-bmw-wit-showroom.jpg" alt="Witte BMW sport sedan in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>BMW Sport Sedan</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2025</li><li>120 km</li><li>Diesel</li><li>Manueel</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 27.900</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+          <article class="torque-vehicle-card" role="listitem" data-brand="prime" data-fuel="benzine" data-transmission="manueel" data-condition="tweedehands" data-category="tweedehands" data-price="15900">
+            <div class="torque-vehicle-media"><span class="torque-vehicle-badge">Garantie</span><img src="../../../assets/images/garage/hero/hero-garage-ford-mondeo-black-showroom.jpg" alt="Zwarte Ford Mondeo in de TorquePoint-showroom" loading="lazy" decoding="async" /></div>
+            <div class="torque-vehicle-body">
+              <h3>Ford Mondeo</h3>
+              <ul class="torque-vehicle-specs">
+                <li>2020</li><li>76.000 km</li><li>Benzine</li><li>Manueel</li>
+              </ul>
+              <p class="torque-vehicle-price torque-mono">€ 15.900</p>
+              <a class="btn btn--ghost" href="#contact">Bekijk wagen</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="torque-section torque-section--raised" id="categorieen">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Snelle categorieën</span>
+        <h2>Rechtstreeks naar het segment dat past.</h2>
+      </div>
+      <div class="container torque-categories-grid reveal">
+        <button type="button" class="torque-category-tile torque-category-tile--a" data-filter-category="stadswagen">
+          <img class="torque-category-image" src="../../../assets/images/garage/hero/category-garage-stadswagen-01.jpg" alt="Compacte stadswagen in een lichte stedelijke setting" loading="lazy" decoding="async" />
+          <span>Stadswagens</span>
+        </button>
+        <button type="button" class="torque-category-tile torque-category-tile--b" data-filter-category="gezinswagen">
+          <img class="torque-category-image" src="../../../assets/images/garage/hero/category-garage-gezinswagen-01.jpg" alt="Gezinswagen geparkeerd in een rustige woonomgeving" loading="lazy" decoding="async" />
+          <span>Gezinswagens</span>
+        </button>
+        <button type="button" class="torque-category-tile torque-category-tile--c" data-filter-category="suv">
+          <img class="torque-category-image" src="../../../assets/images/garage/hero/category-garage-suv-volvo-xc40-01.jpg" alt="Volvo XC40 SUV in een premium showroomomgeving" loading="lazy" decoding="async" />
+          <span>SUV</span>
+        </button>
+        <button type="button" class="torque-category-tile torque-category-tile--d" data-filter-category="elektrisch">
+          <img class="torque-category-image" src="../../../assets/images/garage/hero/category-garage-elektrisch-01.jpg" alt="Elektrische wagen met heldere premium uitstraling" loading="lazy" decoding="async" />
+          <span>Elektrisch</span>
+        </button>
+        <button type="button" class="torque-category-tile torque-category-tile--e" data-filter-category="bedrijfswagen">
+          <img class="torque-category-image" src="../../../assets/images/garage/categories/category-garage-bedrijfswagen-volvo-01.jpg" alt="Glanzende Volvo bedrijfswagen in moderne showroom" loading="lazy" decoding="async" />
+          <svg viewBox="0 0 24 24"><rect x="3" y="8" width="14" height="8" rx="1" /><path d="M17 11h3l1 2v3h-4" /><circle cx="7" cy="17" r="1.6" /><circle cx="17" cy="17" r="1.6" /></svg>
+          <span>Bedrijfswagens</span>
+        </button>
+        <button type="button" class="torque-category-tile torque-category-tile--f" data-filter-category="tweedehands">
+          <img class="torque-category-image" src="../../../assets/images/garage/categories/category-garage-tweedehands-volvo-01.jpg" alt="Premium tweedehands Volvo in moderne showroom" loading="lazy" decoding="async" />
+          <span>Tweedehands</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="torque-section torque-workshop" id="werkplaats">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Werkplaats</span>
+        <h2>Een technisch dashboard voor onderhoud en herstelling.</h2>
+        <p>Kies een dienst en vraag demonstratief een afspraak aan — dit formulier valideert lokaal en verstuurt niets.</p>
+      </div>
+      <div class="container torque-workshop-grid">
+        <ul class="torque-service-list reveal">
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><path d="M14 3a2 2 0 0 0-2 2v3h-2a2 2 0 0 0-2 2v4h4v5h2a2 2 0 0 0 2-2v-3h2a2 2 0 0 0 2-2V9h-4V5a2 2 0 0 0-2-2z" /></svg> Onderhoud</li>
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="1.5" /><path d="M7 10l3 3 3-5 4 4" /></svg> Diagnose</li>
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /></svg> Remmen</li>
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 4v2M12 18v2M4 12h2M18 12h2" /></svg> Banden</li>
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><path d="M4 10h16v7H4z" /><path d="M8 6h8v4H8z" /></svg> Airco</li>
+          <li class="torque-service-chip"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z" /><path d="M9 12l2 2 4-4" /></svg> Technische keuring</li>
+        </ul>
+        <form class="torque-appointment-form reveal reveal-delay-1" id="appointmentForm" novalidate>
+          <div class="field">
+            <label for="apptPlate">Nummerplaat</label>
+            <input id="apptPlate" name="plate" type="text" placeholder="1-ABC-123" required />
+          </div>
+          <div class="field">
+            <label for="apptService">Gewenste dienst</label>
+            <select id="apptService" name="service" required>
+              <option value="">Selecteer</option>
+              <option>Onderhoud</option>
+              <option>Diagnose</option>
+              <option>Remmen</option>
+              <option>Banden</option>
+              <option>Airco</option>
+              <option>Technische keuring</option>
+            </select>
+          </div>
+          <div class="field field--full">
+            <label for="apptDate">Voorkeursdatum</label>
+            <input id="apptDate" name="date" type="date" required />
+          </div>
+          <div class="field field--full">
+            <button class="btn btn--primary" type="submit">Vraag afspraak aan</button>
+            <p class="torque-form-status" id="appointmentStatus" aria-live="polite"></p>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="torque-section" id="proces">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Werkwijze</span>
+        <h2>Van afspraak tot ophaling, stap voor stap gevolgd.</h2>
+      </div>
+      <div class="container torque-process reveal">
+        <div class="torque-process-track">
+          <svg class="torque-process-line" viewBox="0 0 1000 4" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 2 L1000 2" />
+          </svg>
+          <div class="torque-process-step">
+            <span class="torque-process-index">01</span>
+            <h3>Afspraak</h3>
+            <p>Snelle aanmelding via de werkplaatsmodule of telefonisch.</p>
+          </div>
+          <div class="torque-process-step">
+            <span class="torque-process-index">02</span>
+            <h3>Diagnose</h3>
+            <p>Technische controle met heldere terugkoppeling.</p>
+          </div>
+          <div class="torque-process-step">
+            <span class="torque-process-index">03</span>
+            <h3>Prijsbevestiging</h3>
+            <p>Transparante offerte vóór er werk wordt uitgevoerd.</p>
+          </div>
+          <div class="torque-process-step">
+            <span class="torque-process-index">04</span>
+            <h3>Herstelling</h3>
+            <p>Uitvoering volgens protocol, met opvolging.</p>
+          </div>
+          <div class="torque-process-step">
+            <span class="torque-process-index">05</span>
+            <h3>Ophaling</h3>
+            <p>Controle, korte toelichting, rijklare wagen.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="torque-section torque-section--raised" id="vertrouwen">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Vertrouwen</span>
+        <h2>Cijfers die de technische betrouwbaarheid onderbouwen.</h2>
+      </div>
+      <div class="container torque-trust-grid reveal">
+        <div class="torque-gauge">
+          <svg viewBox="0 0 100 100">
+            <circle class="torque-gauge-ring-bg" cx="50" cy="50" r="40" />
+            <circle class="torque-gauge-ring" cx="50" cy="50" r="40" data-gauge-percent="90" />
+            <text class="torque-gauge-value" x="50" y="56" text-anchor="middle" data-counter-target="18" data-counter-suffix="j">0</text>
+          </svg>
+          <p class="torque-gauge-label">Jaar ervaring</p>
+        </div>
+        <div class="torque-gauge">
+          <svg viewBox="0 0 100 100">
+            <circle class="torque-gauge-ring-bg" cx="50" cy="50" r="40" />
+            <circle class="torque-gauge-ring" cx="50" cy="50" r="40" data-gauge-percent="96" />
+            <text class="torque-gauge-value" x="50" y="56" text-anchor="middle">4,8</text>
+          </svg>
+          <p class="torque-gauge-label">Klantenscore / 5</p>
+        </div>
+        <div class="torque-gauge">
+          <svg viewBox="0 0 100 100">
+            <circle class="torque-gauge-ring-bg" cx="50" cy="50" r="40" />
+            <circle class="torque-gauge-ring" cx="50" cy="50" r="40" data-gauge-percent="100" />
+            <text class="torque-gauge-value" x="50" y="56" text-anchor="middle" data-counter-target="3200" data-counter-suffix="">0</text>
+          </svg>
+          <p class="torque-gauge-label">Onderhouden uitgevoerd</p>
+        </div>
+        <div class="torque-gauge">
+          <svg viewBox="0 0 100 100">
+            <circle class="torque-gauge-ring-bg" cx="50" cy="50" r="40" />
+            <circle class="torque-gauge-ring" cx="50" cy="50" r="40" data-gauge-percent="100" />
+            <text class="torque-gauge-value" x="50" y="56" text-anchor="middle" data-counter-target="12" data-counter-suffix="m">0</text>
+          </svg>
+          <p class="torque-gauge-label">Maanden garantie</p>
+        </div>
+      </div>
+      <p class="container torque-trust-note">Bovenstaande cijfers zijn neutrale demonstratiewaarden voor deze demo, geen echte bedrijfscijfers.</p>
+    </section>
+
+    <section class="torque-section torque-section--raised" id="reviews">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Reviews</span>
+        <h2>Ontwerp klaar voor echte klantfeedback.</h2>
+        <p>Deze demosectie gebruikt geen fictieve platformbadges. Echte reviews kunnen later in dit component worden geplaatst.</p>
+      </div>
+      <div class="container torque-reviews-grid reveal">
+        <figure class="torque-review-featured">
+          <blockquote>"Duidelijke communicatie, eerlijke prijs en de wagen was sneller klaar dan verwacht."</blockquote>
+          <cite>— Voorbeeldreview, demo-inhoud</cite>
+        </figure>
+        <div class="torque-review-ticker" tabindex="0" aria-label="Doorlopende lijst met voorbeeldreviews">
+          <div class="torque-review-ticker-track">
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 01</strong>Snelle diagnose, transparante opvolging.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 02</strong>Vervangwagen was meteen geregeld.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 03</strong>Prijsbevestiging vóór het werk begon.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 04</strong>Duidelijke uitleg bij het ophalen.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 01</strong>Snelle diagnose, transparante opvolging.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 02</strong>Vervangwagen was meteen geregeld.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 03</strong>Prijsbevestiging vóór het werk begon.</div>
+            <div class="torque-review-ticker-item"><strong>Voorbeeldreview 04</strong>Duidelijke uitleg bij het ophalen.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="torque-section torque-contact" id="contact">
+      <div class="container torque-heading reveal">
+        <span class="torque-eyebrow">Locatie en contact</span>
+        <h2>Een operationele contactzone, geen standaardformulier.</h2>
+      </div>
+      <div class="container torque-contact-grid reveal">
+        <div>
+          <div class="torque-map-placeholder">Kaartplaceholder — Kaaistraat 42, 9000 Gent</div>
+          <div class="torque-contact-panels" style="margin-top:0.9rem;">
+            <div class="torque-contact-panel"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z" /></svg><div><strong>Openingsuren</strong><span>Ma–Vr 8:00–18:00, Za 9:00–13:00</span></div></div>
+            <div class="torque-contact-panel"><svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.8 2.2Z" /></svg><div><strong>Telefoon</strong><span>+32 9 123 45 67</span></div></div>
+            <div class="torque-contact-panel"><svg viewBox="0 0 24 24"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0 1 18 0Z" /><circle cx="12" cy="10" r="3" /></svg><div><strong>Route</strong><span>Kaaistraat 42, 9000 Gent</span></div></div>
+            <div class="torque-contact-panel"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01" /><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg><div><strong>Noodcontact</strong><span>Dringende pech: zie utility-balk bovenaan</span></div></div>
+          </div>
+        </div>
+        <div class="torque-contact-form-panel">
+          <h3>Vraag deze demo aan</h3>
+          <p>Interesse in een website zoals deze voor je eigen zaak? Deze aanvraag gaat rechtstreeks naar Lorenzo Web Solutions.</p>
+          <form class="contact-form" id="contactForm" aria-label="Vraag deze garagedemo aan" novalidate>
+            <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" required /></div>
+            <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" /></div>
+            <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
+            <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" /></div>
+            <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Automotive website</option><option>Technische dienstensite</option><option>Andere</option></select></div>
+            <div class="field"><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+            <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
+            <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="4" required></textarea></div>
+            <div class="field field--full consent-field"><input id="privacy" name="privacy" type="checkbox" required /><label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label></div>
+            <div class="field field--full sr-only" aria-hidden="true">
+              <label for="website">Laat dit veld leeg</label>
+              <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+            </div>
+            <p class="privacy-note field--full">Je aanvraag wordt veilig verwerkt en uitsluitend gebruikt om je aanvraag op te volgen.</p>
+            <button class="btn btn--primary" id="submitButton" type="submit">Verstuur aanvraag</button>
+            <p class="form-note" id="formMessage" aria-live="polite"></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="torque-section torque-final" id="eindcta">
+      <div class="container reveal">
+        <span class="torque-eyebrow">Klaar voor de weg</span>
+        <h2>Klaar om opnieuw zorgeloos de baan op te gaan?</h2>
+        <p>De structuur, componenten en mobiele flow zijn klaar om op echte zaakgegevens en echte content te worden toegepast.</p>
+        <div class="torque-final-actions">
+          <a class="btn btn--primary" href="#werkplaats">Plan onderhoud</a>
+          <a class="btn btn--ghost" href="#voorraad">Bekijk voorraad</a>
+          <a class="btn btn--ghost" href="tel:+3291234567">Bel de garage</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="logo" href="#home">TorquePoint <span>Garage</span></a>
+        <p>TorquePoint Garage Demo als verkoopbare branchestandaard binnen Lorenzo Web Studio.</p>
+      </div>
+      <div>
+        <h3>Navigatie</h3>
+        <ul>
+          <li><a href="#voorraad">Voorraad</a></li>
+          <li><a href="#werkplaats">Onderhoud</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Overzicht</h3>
+        <ul>
+          <li><a href="../../../index.html#demo-projects">Terug naar demo-overzicht</a></li>
+          <li><a href="../../../pages/contact.html">Contact Lorenzo Web Solutions</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Juridisch</h3>
+        <ul>
+          <li><a href="../../../pages/privacy.html">Privacy</a></li>
+          <li><a href="../../../pages/voorwaarden.html">Algemene voorwaarden</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions. Alle rechten voorbehouden.</p></div>
+  </footer>
+
+  <div class="torque-sticky-actions" id="stickyActions">
+    <a class="btn btn--primary" href="#werkplaats">Plan onderhoud</a>
+    <a class="btn btn--ghost" href="#voorraad">Bekijk voorraad</a>
+  </div>
+  <button class="back-to-top" id="backToTop" aria-label="Ga terug naar boven">Omhoog</button>
+</body>
+</html>

@@ -1,0 +1,1309 @@
+/* TorquePoint Garage — fully independent design system, scoped under .garage-demo.
+   Dark graphite is the flagship look; [data-theme="light"] provides the alternate. */
+
+.garage-demo {
+  --color-bg: #14171a;
+  --color-surface: #1b1f23;
+  --color-surface-raised: #21262b;
+  --color-text: #eef1f0;
+  --color-text-soft: #a8b0b5;
+  --color-border: #2c3238;
+  --color-border-soft: rgba(44, 50, 56, 0.8);
+  --color-accent: #b6ff3c;
+  --color-accent-contrast: #0c0e10;
+  --color-signal: #ff8a1e;
+  --color-steel: #8a9298;
+  --focus-ring: #b6ff3c;
+  --shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.34);
+  --shadow-hover: 0 20px 44px rgba(0, 0, 0, 0.44);
+  --container: 1240px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow-x: hidden;
+  font-family: "Manrope", sans-serif;
+}
+
+[data-theme="light"] .garage-demo {
+  --color-bg: #f4f6f7;
+  --color-surface: #ffffff;
+  --color-surface-raised: #eef1f2;
+  --color-text: #14171a;
+  --color-text-soft: #4c565c;
+  --color-border: #dbe0e2;
+  --color-border-soft: rgba(219, 224, 226, 0.85);
+  --color-accent: #5c9400;
+  --color-accent-contrast: #ffffff;
+  --color-signal: #c2570a;
+  --color-steel: #5c666c;
+  --focus-ring: #5c9400;
+  --shadow-soft: 0 14px 30px rgba(20, 23, 26, 0.1);
+  --shadow-hover: 0 20px 40px rgba(20, 23, 26, 0.16);
+}
+
+.garage-demo * {
+  font-family: inherit;
+}
+
+.garage-demo .loader {
+  background: var(--color-bg);
+}
+
+.garage-demo h1,
+.garage-demo h2,
+.garage-demo h3 {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.garage-demo .torque-mono {
+  font-family: var(--mono);
+}
+
+/* ---------- Utility bar ---------- */
+
+.garage-demo .torque-utility-bar {
+  background: var(--color-accent-contrast, #0c0e10);
+  background: color-mix(in srgb, var(--color-bg) 92%, black);
+  color: var(--color-steel);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.garage-demo .torque-utility-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.garage-demo .torque-utility-info {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.garage-demo .torque-utility-info span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.garage-demo .torque-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  display: inline-block;
+}
+
+.garage-demo .torque-utility-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.garage-demo .torque-chip-btn {
+  border: 1px solid var(--color-border);
+  border-radius: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-soft);
+  transition: border-color 200ms ease, color 200ms ease;
+}
+
+.garage-demo .torque-chip-btn:hover,
+.garage-demo .torque-chip-btn:focus-visible {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
+.garage-demo .torque-chip-btn--urgent {
+  color: var(--color-signal);
+  border-color: color-mix(in srgb, var(--color-signal) 50%, var(--color-border));
+}
+
+/* ---------- Header ---------- */
+
+.garage-demo .site-header {
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  border-bottom-color: var(--color-border-soft);
+  transition: padding 220ms ease, box-shadow 220ms ease;
+}
+
+.garage-demo .site-header.torque-is-compact {
+  box-shadow: var(--shadow-soft);
+}
+
+.garage-demo .site-header.torque-is-compact .nav-wrap {
+  min-height: 58px;
+}
+
+.garage-demo .logo span {
+  color: var(--color-accent);
+}
+
+.garage-demo .demo-back-link {
+  color: var(--color-text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.garage-demo .demo-back-link:hover {
+  color: var(--color-accent);
+}
+
+.garage-demo .site-nav a {
+  color: var(--color-text-soft);
+}
+
+.garage-demo .site-nav a:hover,
+.garage-demo .site-nav a:focus-visible,
+.garage-demo .site-nav a.is-active {
+  color: var(--color-text);
+}
+
+.garage-demo .site-nav a::after {
+  background: var(--color-accent);
+}
+
+.garage-demo .theme-toggle {
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  color: var(--color-text-soft);
+  border-color: var(--color-border);
+}
+
+.garage-demo .torque-nav-cta {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-radius: 0.3rem;
+  padding: 0.55rem 1rem;
+  font-weight: 800;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.garage-demo .torque-nav-cta:hover,
+.garage-demo .torque-nav-cta:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+
+/* ---------- Hero (full-bleed, no split grid) ---------- */
+
+.garage-demo .torque-hero {
+  position: relative;
+  min-height: min(86vh, 780px);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  background: #0c0e10;
+}
+
+.garage-demo .torque-hero-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url("../../images/garage/hero/hero-garage-bmw-blauw-showroom-4.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.garage-demo .torque-hero-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(12, 14, 16, 0.15) 0%, rgba(12, 14, 16, 0.55) 68%, rgba(12, 14, 16, 0.92) 100%);
+}
+
+.garage-demo .torque-hero-content {
+  position: relative;
+  z-index: 2;
+  color: #eef1f0;
+  padding-block: clamp(3rem, 8vw, 5rem) clamp(6.5rem, 12vw, 9rem);
+  max-width: 760px;
+}
+
+.garage-demo .torque-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 1rem;
+}
+
+.garage-demo .torque-hero-content h1 {
+  font-size: clamp(2.6rem, 5.6vw, 4.4rem);
+  line-height: 1.02;
+  max-width: 16ch;
+  color: #ffffff;
+}
+
+.garage-demo .torque-hero-content p {
+  color: #c7ced1;
+  font-size: 1.05rem;
+  max-width: 52ch;
+  margin-top: 1rem;
+  line-height: 1.65;
+}
+
+.garage-demo .torque-hero-benefits {
+  display: flex;
+  gap: 1.4rem;
+  margin-top: 1.4rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: #c7ced1;
+}
+
+.garage-demo .torque-hero-benefits li::before {
+  content: "▹ ";
+  color: var(--color-accent);
+}
+
+.garage-demo .torque-hero-actions {
+  display: flex;
+  gap: 0.9rem;
+  margin-top: 1.8rem;
+  flex-wrap: wrap;
+}
+
+/* ---------- Buttons (new visual language: sharp corners, no pill shape) ---------- */
+
+.garage-demo .btn {
+  border-radius: 0.3rem;
+  min-height: 3.1rem;
+  padding: 0.85rem 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: none;
+}
+
+.garage-demo .btn--primary {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.garage-demo .btn--primary:hover,
+.garage-demo .btn--primary:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 85%, white);
+  transform: translateY(-2px);
+}
+
+.garage-demo .btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(238, 241, 240, 0.4);
+  color: inherit;
+}
+
+[data-theme="light"] .garage-demo .btn--ghost {
+  border-color: var(--color-border);
+}
+
+.garage-demo .btn--ghost:hover,
+.garage-demo .btn--ghost:focus-visible {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+}
+
+/* ---------- Vehicle search module (breaks out of the hero) ---------- */
+
+.garage-demo .torque-search {
+  position: relative;
+  z-index: 3;
+  margin-top: -5.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow-hover);
+  padding: clamp(1.2rem, 2.4vw, 1.8rem);
+}
+
+.garage-demo .torque-search-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  gap: 0.9rem;
+  align-items: end;
+}
+
+.garage-demo .torque-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.garage-demo .torque-search-field label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-soft);
+}
+
+.garage-demo .torque-search-field select {
+  border-radius: 0.3rem;
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.garage-demo .torque-search-submit {
+  height: 3rem;
+}
+
+/* ---------- Sections shared spacing ---------- */
+
+.garage-demo .torque-section {
+  padding-block: clamp(3.5rem, 6vw, 5.5rem);
+  scroll-margin-top: 96px;
+}
+
+.garage-demo .torque-section--raised {
+  background: var(--color-surface);
+}
+
+.garage-demo .torque-heading {
+  max-width: 640px;
+  margin-bottom: 1.6rem;
+}
+
+.garage-demo .torque-heading .torque-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  display: block;
+  margin-bottom: 0.6rem;
+}
+
+.garage-demo .torque-heading h2 {
+  font-size: clamp(1.8rem, 3.1vw, 2.6rem);
+  line-height: 1.08;
+}
+
+.garage-demo .torque-heading p {
+  color: var(--color-text-soft);
+  margin-top: 0.7rem;
+  line-height: 1.65;
+}
+
+.garage-demo .torque-heading--split {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.4rem;
+  flex-wrap: wrap;
+}
+
+/* ---------- Showroom carousel ---------- */
+
+.garage-demo .torque-showroom-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(320px, 82vw);
+  gap: 1.1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-block: 0.4rem 1rem;
+  scrollbar-width: thin;
+}
+
+.garage-demo .torque-vehicle-card {
+  scroll-snap-align: start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: transform 260ms ease, border-color 260ms ease;
+}
+
+.garage-demo .torque-vehicle-card:hover,
+.garage-demo .torque-vehicle-card:focus-within {
+  transform: translateY(-6px);
+  border-color: var(--color-accent);
+}
+
+.garage-demo .torque-vehicle-media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: color-mix(in srgb, var(--color-surface-raised) 100%, transparent);
+  overflow: hidden;
+}
+
+.garage-demo .torque-vehicle-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover !important;
+  object-position: center !important;
+}
+
+.garage-demo .torque-vehicle-media::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(182, 255, 60, 0.14) 50%, transparent 60%);
+  transform: translateX(-120%);
+  transition: transform 700ms ease;
+}
+
+.garage-demo .torque-vehicle-card:hover .torque-vehicle-media::before {
+  transform: translateX(120%);
+}
+
+.garage-demo .torque-vehicle-badge {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.28rem 0.55rem;
+  border-radius: 0.25rem;
+}
+
+.garage-demo .torque-vehicle-body {
+  padding: 1.1rem 1.2rem 1.3rem;
+}
+
+.garage-demo .torque-vehicle-body h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.3rem;
+}
+
+.garage-demo .torque-vehicle-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--color-text-soft);
+  margin: 0.6rem 0 0.9rem;
+  padding: 0;
+  list-style: none;
+}
+
+.garage-demo .torque-vehicle-price {
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  margin-bottom: 0.8rem;
+}
+
+.garage-demo .torque-showroom-nav {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.garage-demo .torque-showroom-nav button {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 200ms ease, color 200ms ease;
+}
+
+.garage-demo .torque-showroom-nav button:hover,
+.garage-demo .torque-showroom-nav button:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.garage-demo .torque-vehicle-card[hidden] {
+  display: none;
+}
+
+/* ---------- Categories (asymmetric collage, not equal cards) ---------- */
+
+.garage-demo .torque-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 100px;
+  gap: 0.9rem;
+}
+
+.garage-demo .torque-category-tile {
+  position: relative;
+  grid-column: span 2;
+  grid-row: span 2;
+  border-radius: 0.4rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 1rem;
+  overflow: hidden;
+  transition: transform 240ms ease, border-color 240ms ease;
+}
+
+.garage-demo .torque-category-tile:hover,
+.garage-demo .torque-category-tile:focus-visible {
+  transform: translateY(-4px);
+  border-color: var(--color-accent);
+}
+
+.garage-demo .torque-category-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(12, 14, 16, 0.08) 0%, rgba(12, 14, 16, 0.14) 48%, rgba(12, 14, 16, 0.82) 100%);
+  z-index: 1;
+}
+
+.garage-demo .torque-category-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.garage-demo .torque-category-tile--a .torque-category-image {
+  object-position: center 42%;
+}
+
+.garage-demo .torque-category-tile--b .torque-category-image {
+  object-position: center 48%;
+}
+
+.garage-demo .torque-category-tile--c .torque-category-image {
+  object-position: center 50%;
+}
+
+.garage-demo .torque-category-tile--d .torque-category-image {
+  object-position: center 44%;
+}
+
+.garage-demo .torque-category-tile--f .torque-category-image {
+  object-position: center 50%;
+}
+
+.garage-demo .torque-category-tile--e .torque-category-image {
+  object-position: center 50%;
+}
+
+.garage-demo .torque-category-tile--e svg,
+.garage-demo .torque-category-tile--e span {
+  position: relative;
+  z-index: 2;
+}
+
+.garage-demo .torque-category-tile--a { grid-column: span 3; grid-row: span 3; }
+.garage-demo .torque-category-tile--b { grid-column: span 3; grid-row: span 2; }
+.garage-demo .torque-category-tile--c { grid-column: span 2; grid-row: span 3; }
+.garage-demo .torque-category-tile--d { grid-column: span 4; grid-row: span 2; }
+.garage-demo .torque-category-tile--e { grid-column: span 3; grid-row: span 2; }
+.garage-demo .torque-category-tile--f { grid-column: span 3; grid-row: span 2; }
+
+.garage-demo .torque-category-tile svg {
+  width: 1.6rem;
+  height: 1.6rem;
+  stroke: var(--color-accent);
+  fill: none;
+  stroke-width: 1.6;
+  margin-bottom: 0.5rem;
+}
+
+.garage-demo .torque-category-tile span {
+  position: relative;
+  z-index: 2;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Workshop / dashboard module ---------- */
+
+.garage-demo .torque-workshop {
+  background: linear-gradient(160deg, #0f1214, #1b1f23);
+  color: #eef1f0;
+}
+
+[data-theme="light"] .garage-demo .torque-workshop {
+  background: linear-gradient(160deg, #10131a, #1b2027);
+  color: #eef1f0;
+}
+
+.garage-demo .torque-workshop .torque-heading .torque-eyebrow {
+  color: var(--color-accent);
+}
+
+.garage-demo .torque-workshop .torque-heading p {
+  color: #b9c0c4;
+}
+
+.garage-demo .torque-workshop-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(1.6rem, 3vw, 2.6rem);
+  align-items: start;
+}
+
+.garage-demo .torque-service-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  padding: 0;
+  list-style: none;
+  margin: 0;
+}
+
+.garage-demo .torque-service-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid rgba(238, 241, 240, 0.14);
+  border-radius: 0.35rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.garage-demo .torque-service-chip svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  stroke: var(--color-accent);
+  fill: none;
+  stroke-width: 1.7;
+  flex-shrink: 0;
+}
+
+.garage-demo .torque-appointment-form {
+  background: rgba(238, 241, 240, 0.04);
+  border: 1px solid rgba(238, 241, 240, 0.14);
+  border-radius: 0.5rem;
+  padding: clamp(1.2rem, 2.2vw, 1.7rem);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.garage-demo .torque-appointment-form .field {
+  margin-bottom: 0;
+}
+
+.garage-demo .torque-appointment-form .field--full {
+  grid-column: 1 / -1;
+}
+
+.garage-demo .torque-appointment-form label {
+  color: #c7ced1;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.garage-demo .torque-appointment-form input,
+.garage-demo .torque-appointment-form select {
+  background: rgba(238, 241, 240, 0.06);
+  border-color: rgba(238, 241, 240, 0.18);
+  color: #eef1f0;
+  border-radius: 0.3rem;
+}
+
+.garage-demo .torque-form-status {
+  font-size: 0.86rem;
+  min-height: 1.2em;
+}
+
+.garage-demo .torque-form-status[data-state="error"] {
+  color: var(--color-signal);
+}
+
+.garage-demo .torque-form-status[data-state="success"] {
+  color: var(--color-accent);
+}
+
+/* ---------- Process timeline ---------- */
+
+.garage-demo .torque-process-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-top: 1.6rem;
+}
+
+.garage-demo .torque-process-line {
+  position: absolute;
+  top: 1.5rem;
+  left: 4%;
+  right: 4%;
+  height: 2px;
+}
+
+.garage-demo .torque-process-line path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  stroke-width: 2;
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .garage-demo .torque-process.reveal.in-view .torque-process-line path {
+    animation: torque-line-draw 1.1s ease-out forwards;
+  }
+}
+
+.garage-demo .torque-process.reveal .torque-process-line path {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .garage-demo .torque-process.reveal .torque-process-line path {
+    stroke-dashoffset: 1000;
+  }
+}
+
+@keyframes torque-line-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.garage-demo .torque-process-step {
+  position: relative;
+  z-index: 1;
+}
+
+.garage-demo .torque-process-index {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: var(--color-bg);
+  border: 2px solid var(--color-accent);
+  color: var(--color-accent);
+  font-family: var(--mono);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.8rem;
+}
+
+.garage-demo .torque-process-step h3 {
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+}
+
+.garage-demo .torque-process-step p {
+  color: var(--color-text-soft);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+/* ---------- Trust / gauges ---------- */
+
+.garage-demo .torque-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-top: 1.4rem;
+}
+
+.garage-demo .torque-gauge {
+  text-align: center;
+}
+
+.garage-demo .torque-gauge svg {
+  width: 100%;
+  max-width: 140px;
+}
+
+.garage-demo .torque-gauge-ring-bg {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 8;
+}
+
+.garage-demo .torque-gauge-ring {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  stroke-dasharray: 251.2;
+  stroke-dashoffset: 251.2;
+  transition: stroke-dashoffset 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.garage-demo .torque-gauge-value {
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  fill: var(--color-text);
+}
+
+.garage-demo .torque-gauge-label {
+  margin-top: 0.6rem;
+  font-size: 0.86rem;
+  color: var(--color-text-soft);
+}
+
+.garage-demo .torque-trust-note {
+  margin-top: 1.4rem;
+  font-size: 0.78rem;
+  color: var(--color-text-soft);
+  font-style: italic;
+}
+
+/* ---------- Reviews ---------- */
+
+.garage-demo .torque-reviews-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 1.4rem;
+  align-items: stretch;
+}
+
+.garage-demo .torque-review-featured {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: clamp(1.4rem, 2.4vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.garage-demo .torque-review-featured blockquote {
+  margin: 0;
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.garage-demo .torque-review-featured cite {
+  display: block;
+  margin-top: 1rem;
+  font-style: normal;
+  color: var(--color-text-soft);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.garage-demo .torque-review-ticker {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  max-height: 280px;
+  overflow: hidden;
+  position: relative;
+}
+
+.garage-demo .torque-review-ticker-track {
+  display: grid;
+  gap: 0.8rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .garage-demo .torque-review-ticker-track {
+    animation: torque-ticker-scroll 14s linear infinite;
+  }
+
+  .garage-demo .torque-review-ticker:hover .torque-review-ticker-track,
+  .garage-demo .torque-review-ticker:focus-within .torque-review-ticker-track {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes torque-ticker-scroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+.garage-demo .torque-review-ticker-item {
+  border-bottom: 1px solid var(--color-border-soft);
+  padding-bottom: 0.7rem;
+  font-size: 0.86rem;
+  color: var(--color-text-soft);
+}
+
+.garage-demo .torque-review-ticker-item strong {
+  color: var(--color-text);
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.9rem;
+}
+
+/* ---------- Operational contact zone ---------- */
+
+.garage-demo .torque-contact {
+  background: var(--color-surface);
+}
+
+.garage-demo .torque-contact-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(1.4rem, 2.6vw, 2.2rem);
+}
+
+.garage-demo .torque-contact-panels {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.garage-demo .torque-contact-panel {
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.garage-demo .torque-contact-panel svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  stroke: var(--color-accent);
+  fill: none;
+  stroke-width: 1.6;
+  flex-shrink: 0;
+}
+
+.garage-demo .torque-contact-panel strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.garage-demo .torque-contact-panel span {
+  display: block;
+  color: var(--color-text-soft);
+  font-size: 0.82rem;
+}
+
+.garage-demo .torque-map-placeholder {
+  border-radius: 0.4rem;
+  border: 1px dashed var(--color-border);
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-soft);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  background:
+    repeating-linear-gradient(45deg, transparent, transparent 10px, color-mix(in srgb, var(--color-border) 60%, transparent) 10px, color-mix(in srgb, var(--color-border) 60%, transparent) 11px);
+}
+
+.garage-demo .torque-contact-form-panel {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: clamp(1.2rem, 2.2vw, 1.8rem);
+}
+
+.garage-demo .torque-contact-form-panel h3 {
+  margin-bottom: 0.3rem;
+}
+
+.garage-demo .torque-contact-form-panel > p {
+  color: var(--color-text-soft);
+  margin-bottom: 1.1rem;
+  font-size: 0.92rem;
+}
+
+.garage-demo .contact-form {
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.garage-demo input,
+.garage-demo select,
+.garage-demo textarea {
+  border-radius: 0.3rem;
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 0.8rem 0.9rem;
+}
+
+/* ---------- Final CTA ---------- */
+
+.garage-demo .torque-final {
+  background: linear-gradient(155deg, #0c0e10, #1b1f23);
+  color: #eef1f0;
+  text-align: center;
+}
+
+.garage-demo .torque-final h2 {
+  font-size: clamp(1.9rem, 3.6vw, 3rem);
+  max-width: 20ch;
+  margin-inline: auto;
+}
+
+.garage-demo .torque-final p {
+  color: #b9c0c4;
+  margin-top: 0.9rem;
+}
+
+.garage-demo .torque-final-actions {
+  display: flex;
+  gap: 0.9rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.6rem;
+}
+
+/* ---------- Sticky action bar ---------- */
+
+.garage-demo .torque-sticky-actions {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translate(-50%, 140%);
+  z-index: 45;
+  display: flex;
+  gap: 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  padding: 0.5rem;
+  box-shadow: var(--shadow-hover);
+  transition: transform 260ms ease;
+}
+
+.garage-demo .torque-sticky-actions.torque-is-visible {
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .garage-demo .torque-sticky-actions {
+    transition: none;
+  }
+}
+
+.garage-demo .torque-sticky-actions .btn {
+  min-height: 2.6rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.86rem;
+}
+
+/* ---------- Footer restyle ---------- */
+
+.garage-demo .site-footer {
+  background: #0c0e10;
+  color: #c7ced1;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.garage-demo .site-footer h3 {
+  color: #eef1f0;
+}
+
+.garage-demo .site-footer a {
+  color: #c7ced1;
+}
+
+.garage-demo .site-footer a:hover {
+  color: var(--color-accent);
+}
+
+.garage-demo .back-to-top {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+/* ---------- Focus visibility (explicit, automotive dashboard style) ---------- */
+
+.garage-demo a:focus-visible,
+.garage-demo button:focus-visible,
+.garage-demo input:focus-visible,
+.garage-demo select:focus-visible,
+.garage-demo textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1100px) {
+  .garage-demo .nav-wrap {
+    min-height: 74px;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+  }
+
+  .garage-demo .logo {
+    font-size: 1.05rem;
+  }
+
+  .garage-demo .nav-toggle {
+    display: flex;
+    padding: 0.55rem;
+    gap: 6px;
+  }
+
+  .garage-demo .nav-toggle span {
+    width: 26px;
+    height: 2.4px;
+  }
+
+  .garage-demo .theme-toggle {
+    margin-left: auto;
+    font-size: 0.81rem;
+    padding: 0.4rem 0.72rem;
+  }
+
+  .garage-demo .site-nav {
+    position: absolute;
+    top: 74px;
+    left: 0;
+    right: 0;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    display: grid;
+    gap: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform 180ms ease, opacity 180ms ease, visibility 180ms ease;
+    z-index: 40;
+  }
+
+  .garage-demo .site-nav a {
+    padding: 1rem 1rem;
+    border-top: 1px solid var(--color-border-soft);
+    font-size: 1.02rem;
+  }
+
+  .garage-demo .site-nav.is-open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: scaleY(1);
+  }
+
+  .garage-demo .demo-back-link {
+    order: -1;
+    width: 100%;
+    padding-top: 0.45rem;
+    padding-bottom: 0;
+  }
+
+  .garage-demo .torque-nav-cta {
+    order: 2;
+  }
+
+  .garage-demo .torque-search-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .garage-demo .torque-search-submit {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 980px) {
+  .garage-demo .torque-utility-info span:nth-child(3) {
+    display: none;
+  }
+
+  .garage-demo .torque-workshop-grid,
+  .garage-demo .torque-contact-grid,
+  .garage-demo .torque-reviews-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .garage-demo .torque-appointment-form {
+    grid-template-columns: 1fr;
+  }
+
+  .garage-demo .torque-process-track {
+    grid-template-columns: repeat(5, minmax(160px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 0.6rem;
+  }
+
+  .garage-demo .torque-process-line {
+    display: none;
+  }
+
+  .garage-demo .torque-trust-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 2rem;
+  }
+
+  .garage-demo .torque-categories-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 120px;
+  }
+
+  .garage-demo .torque-category-tile,
+  .garage-demo .torque-category-tile--a,
+  .garage-demo .torque-category-tile--b,
+  .garage-demo .torque-category-tile--c,
+  .garage-demo .torque-category-tile--d,
+  .garage-demo .torque-category-tile--e,
+  .garage-demo .torque-category-tile--f {
+    grid-column: span 1;
+    grid-row: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .garage-demo .torque-hero {
+    min-height: 92vh;
+    align-items: flex-end;
+  }
+
+  .garage-demo .torque-hero-content {
+    padding-bottom: 8.5rem;
+  }
+
+  .garage-demo .torque-search {
+    margin-top: -6.5rem;
+  }
+
+  .garage-demo .torque-search-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .garage-demo .torque-showroom-track {
+    grid-auto-columns: 84vw;
+  }
+
+  .garage-demo .torque-hero-actions .btn {
+    width: 100%;
+  }
+
+  .garage-demo .torque-final-actions .btn {
+    width: 100%;
+  }
+
+  .garage-demo .torque-utility-inner {
+    justify-content: center;
+    text-align: center;
+  }
+}

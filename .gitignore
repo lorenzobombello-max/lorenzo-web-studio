@@ -28,3 +28,9 @@ backup/
 
 # Temporary audit artifacts (Lighthouse reports, screenshots)
 .tmp/
+
+# Local tool configuration
+.claude/
+
+# Audit screenshots (temporary, not project assets)
+assets/images/audit-*.png

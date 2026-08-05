@@ -1,0 +1,13 @@
+bestandsnaam,categorie,oriëntatie,bron/licentie,generatiedatum_of_aankoopdatum,licentiestatus,gebruiksstatus,sha256,aanbevolen_sectie
+hero/hero-automation-panel-01.jpg,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,B5390FC4F24261BE9A1D6AC81D6A35ABBE18372A1983DE98B79515984EE358DD,hero;diensten
+hero/hero-automation-technician-01.webp,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,CD36CF1D27C91E51F320EB493F83D82590916FD66D203A019E9C4FF4FA0CA216,hero;diensten
+hero/hero-control-cabinet-01.jpg,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,19B8AE025E7CA392673846F902612D0F5A3FAA4D402216C45B611697ED07E2B1,hero;diensten
+hero/hero-electrical-panel-01.avif,hero,square,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,018B1022901D63AAE0774FC8073AAF6D74623BD6D0FA23C7B21BFB724148FBD9,hero;diensten
+hero/hero-production-hall-01.jpg,hero,square,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,98583451A4F442CA19719C40F2E23F4A626EAC2F9AE9EFD99E79B594E4D24E2A,hero;diensten
+hero/hero-technician-02.avif,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,C3D71061255880B7B71832C2FAE6A7F6FF7460E3D90833C441E44AD12681EF69,hero;diensten
+hero/hero-technician-03.jpg,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,71DDAF341FBFA1EAA942420B0344CFAC302D91AB07559E5426F5B2D91AA5D6BC,hero;diensten
+hero/hero-technician-04.jpg,hero,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,FBC5068F72CE01016F148FC6C631E80FBC27E32B377FB6C305AC2B5EBA317BFC,hero;diensten
+project/project-control-cabinet-01.jpg,project,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,D514DDE3E4132440DDF44359098B7801DBBBA2515424F1C042E98039DCF4250C,projecten
+service/service-electrical-wiring-01.jpg,service,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,52706C34E2A2AF606675FC184D314D307E8E8FA9134F8B4139B703329DB66672,diensten;projecten
+service/service-installation-upgrade-01.jpg,service,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,05333FC9EFC41EC9002DE9E479FFB9DF0A66C9A6CAC27696DA4EA338FD03953A,diensten;projecten
+service/service-machine-wiring-01.jpg,service,landscape,AI-generated for Lorenzo Web Studio,,geverifieerd,in-gebruik,41C244D58B2E3B610595C0F18E2D2A3EBA7573DEF41DBF088063B906E8F54825,diensten;projecten

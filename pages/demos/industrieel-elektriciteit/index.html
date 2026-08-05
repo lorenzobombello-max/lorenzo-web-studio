@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AXIOM Industrial Services Demo | Lorenzo Web Solutions</title>
+  <meta name="description" content="Fictieve demo van een industrieel serviceplatform voor storingen, onderhoud, installaties en shutdown-ondersteuning." />
+  <link rel="canonical" href="https://lorenzowebsolutions.be/pages/demos/industrieel-elektriciteit/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="nl_BE" />
+  <meta property="og:site_name" content="Lorenzo Web Solutions" />
+  <meta property="og:title" content="AXIOM Industrial Services Demo | Lorenzo Web Solutions" />
+  <meta property="og:description" content="Fictieve demo van een industrieel serviceplatform voor storingen, onderhoud, installaties en shutdown-ondersteuning." />
+  <meta property="og:url" content="https://lorenzowebsolutions.be/pages/demos/industrieel-elektriciteit/" />
+  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AXIOM Industrial Services Demo | Lorenzo Web Solutions" />
+  <meta name="twitter:description" content="Fictieve demo van een industrieel serviceplatform voor storingen, onderhoud, installaties en shutdown-ondersteuning." />
+  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/og-cover.svg" />
+  <link rel="icon" type="image/svg+xml" href="../../../assets/icons/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../assets/css/demos/industrieel-elektriciteit.css" />
+  <script defer src="../../../assets/js/cookie-consent.js"></script>
+  <script defer src="../../../assets/js/demos/industrieel-elektriciteit.js"></script>
+</head>
+<body class="industrial-maintenance-demo">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+
+  <div class="ops-bar" aria-label="Operationele statusbalk">
+    <div class="ops-bar__inner">
+      <p class="ops-pill"><span class="status-dot" aria-hidden="true"></span>Status: interventiedienst beschikbaar</p>
+      <p>Regio: Belgie en omliggende regio's</p>
+      <a href="tel:+32000000000" aria-label="Bel noodinterventie">Noodinterventie: +32 0 00 00 00 00</a>
+      <a href="#storingen" class="ops-link">Meld storing</a>
+      <a href="#onderhoud" class="ops-link">Plan onderhoud</a>
+    </div>
+  </div>
+
+  <header class="industrial-header" id="industrialHeader">
+    <div class="industrial-header__inner">
+      <a class="brand" href="#home" aria-label="AXIOM Industrial Services home">
+        <span class="brand__main">AXIOM</span>
+        <span class="brand__sub">Industrial Services</span>
+      </a>
+
+      <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="site-nav" id="siteNav" aria-label="Industriële hoofdnavigatie">
+        <a href="#diensten">Diensten</a>
+        <a href="#storingen">Storingen</a>
+        <a href="#onderhoud">Onderhoud</a>
+        <a href="#installaties">Installaties</a>
+        <a href="#shutdowns">Shutdowns</a>
+        <a href="#veiligheid">Veiligheid</a>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      <div class="header-actions">
+        <a class="btn btn--secondary" href="#onderhoud">Plan onderhoud</a>
+        <a class="btn btn--urgent" href="#storingen">Meld een storing</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="hero" id="home" aria-label="Technische positionering">
+      <div class="hero__overlay"></div>
+      <div class="hero__content">
+        <p class="kicker">Fictieve website-demo voor industriële serviceverlening</p>
+        <h1>Industriele installaties operationeel houden.</h1>
+        <p class="hero__intro">Diagnose, onderhoud en technische interventies voor productieomgevingen waar stilstand geen optie is.</p>
+        <div class="hero__actions">
+          <a class="btn btn--urgent" href="#storingen">Meld een storing</a>
+          <a class="btn btn--secondary" href="#onderhoud">Plan onderhoud</a>
+        </div>
+        <ul class="hero-promises" aria-label="Drie servicebeloftes">
+          <li>Snelle storingsanalyse</li>
+          <li>Preventief onderhoud</li>
+          <li>Veilige uitvoering</li>
+        </ul>
+      </div>
+
+      <aside class="hero-status" aria-label="Operationele statusinformatie">
+        <h2>Operationele status</h2>
+        <p class="hero-status__meta">Alle waarden in dit paneel zijn demonstratief voor deze website-demo.</p>
+        <dl>
+          <div><dt>Service</dt><dd><span class="lamp lamp--green" aria-hidden="true"></span>Beschikbaar</dd></div>
+          <div><dt>Gem. reactietijd</dt><dd>02:15 uur (demo)</dd></div>
+          <div><dt>Regio</dt><dd>Belgie</dd></div>
+          <div><dt>Techniekers inzetbaar</dt><dd>12 (demo)</dd></div>
+        </dl>
+      </aside>
+    </section>
+
+    <section class="incident-module" id="storingen" aria-labelledby="incidentTitle">
+      <div class="incident-module__head">
+        <p class="kicker">Centrale storingsflow</p>
+        <h2 id="incidentTitle">Storing melden met duidelijke urgentie-inschatting</h2>
+        <p>Deze module is demonstratief en simuleert lokale intake-validatie. Er wordt geen echte interventie aangemaakt.</p>
+      </div>
+
+      <div class="incident-module__grid">
+        <form id="incidentForm" class="incident-form" novalidate aria-describedby="incidentSafetyNote">
+          <fieldset class="urgency-selector">
+            <legend>Urgentieniveau</legend>
+            <div class="urgency-options" role="radiogroup" aria-label="Urgentieniveaus">
+              <button type="button" role="radio" aria-checked="false" data-urgency="laag">Laag</button>
+              <button type="button" role="radio" aria-checked="false" data-urgency="beperking">Productiebeperking</button>
+              <button type="button" role="radio" aria-checked="true" data-urgency="stop">Productiestop</button>
+              <button type="button" role="radio" aria-checked="false" data-urgency="kritisch">Veiligheidskritisch</button>
+            </div>
+            <input type="hidden" id="urgency" name="urgency" value="stop" />
+          </fieldset>
+
+          <div class="form-grid">
+            <label>Type installatie
+              <select name="installationType" required>
+                <option value="">Selecteer type</option>
+                <option>Transportlijn</option>
+                <option>Pompstation</option>
+                <option>Robotcel</option>
+                <option>Hydraulische unit</option>
+                <option>Elektromotor</option>
+              </select>
+            </label>
+
+            <label>Type storing
+              <select name="faultType" required>
+                <option value="">Selecteer storing</option>
+                <option>Installatie start niet</option>
+                <option>Oververhitting</option>
+                <option>Trilling of lawaai</option>
+                <option>Sensorfout</option>
+                <option>Luchtverlies</option>
+              </select>
+            </label>
+
+            <fieldset>
+              <legend>Productie stilgevallen</legend>
+              <label><input type="radio" name="productionDown" value="ja" required /> Ja</label>
+              <label><input type="radio" name="productionDown" value="nee" /> Nee</label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Veiligheidsrisico</legend>
+              <label><input type="radio" name="safetyRisk" value="ja" required /> Ja</label>
+              <label><input type="radio" name="safetyRisk" value="nee" /> Nee</label>
+            </fieldset>
+
+            <label>Locatie
+              <input name="location" type="text" required />
+            </label>
+
+            <label>Contactpersoon
+              <input name="contactPerson" type="text" autocomplete="name" required />
+            </label>
+
+            <label>Telefoonnummer
+              <input name="phone" type="tel" autocomplete="tel" required />
+            </label>
+
+            <label class="field--wide">Korte foutomschrijving
+              <textarea name="faultDescription" rows="4" required></textarea>
+            </label>
+          </div>
+
+          <p id="incidentSafetyNote" class="safety-line">Alle werkzaamheden moeten worden uitgevoerd door bevoegde personen volgens de geldende veiligheidsprocedures.</p>
+          <button type="submit" class="btn btn--urgent">Verstuur storingsmelding (demo)</button>
+          <p class="form-feedback" id="incidentFeedback" aria-live="polite"></p>
+        </form>
+
+        <aside class="incident-side" aria-label="Noodcontact en flow">
+          <h3>Storingsdienst-route</h3>
+          <ol>
+            <li>Technische intake op basis van storingsniveau</li>
+            <li>Inschatting van veiligheid, impact en inzet</li>
+            <li>Interventieplanning of shutdown-koppeling</li>
+          </ol>
+          <p class="incident-side__note">Deze flow is een fictieve demonstratie voor webpresentatie.</p>
+          <a href="tel:+32000000000" class="btn btn--secondary">Bel noodinterventie</a>
+        </aside>
+      </div>
+    </section>
+
+    <section class="status-dashboard" id="installaties" aria-labelledby="dashboardTitle">
+      <div class="section-head">
+        <p class="kicker">Installatiestatus</p>
+        <h2 id="dashboardTitle">Diagnosedashboard met demonstratieve operationele data</h2>
+        <p>Alle meetwaarden hieronder zijn fictieve demo-inhoud en dienen uitsluitend ter illustratie van de interface.</p>
+      </div>
+
+      <div class="dashboard-filter" role="group" aria-label="Filter op status">
+        <button type="button" data-filter="all" class="is-active">Alle</button>
+        <button type="button" data-filter="operationeel">Operationeel</button>
+        <button type="button" data-filter="observatie">Onder observatie</button>
+        <button type="button" data-filter="gepland">Onderhoud gepland</button>
+        <button type="button" data-filter="storing">Storing</button>
+      </div>
+
+      <div class="dashboard-grid">
+        <article class="asset-card" data-state="operationeel"><h3>Transportlijn 01</h3><p><span class="lamp lamp--green"></span>Operationeel</p><ul><li>Temp: 54 C</li><li>Trilling: 2.1 mm/s</li><li>Bedrijfsuren: 12034</li><li>Onderhoud: 12/09/2026</li></ul></article>
+        <article class="asset-card" data-state="observatie"><h3>Pompstation 02</h3><p><span class="lamp lamp--amber"></span>Onder observatie</p><ul><li>Temp: 63 C</li><li>Trilling: 3.9 mm/s</li><li>Bedrijfsuren: 9430</li><li>Onderhoud: 22/08/2026</li></ul></article>
+        <article class="asset-card" data-state="gepland"><h3>Persluchtgroep</h3><p><span class="lamp lamp--blue"></span>Onderhoud gepland</p><ul><li>Temp: 49 C</li><li>Trilling: 1.8 mm/s</li><li>Bedrijfsuren: 15022</li><li>Onderhoud: 09/08/2026</li></ul></article>
+        <article class="asset-card" data-state="storing"><h3>Robotcel 04</h3><p><span class="lamp lamp--red"></span>Storing</p><ul><li>Temp: 71 C</li><li>Trilling: 6.2 mm/s</li><li>Bedrijfsuren: 11118</li><li>Onderhoud: n.v.t.</li></ul></article>
+        <article class="asset-card" data-state="operationeel"><h3>Hydraulische unit</h3><p><span class="lamp lamp--green"></span>Operationeel</p><ul><li>Temp: 57 C</li><li>Trilling: 2.7 mm/s</li><li>Bedrijfsuren: 8074</li><li>Onderhoud: 18/10/2026</li></ul></article>
+        <article class="asset-card" data-state="observatie"><h3>Elektromotor M12</h3><p><span class="lamp lamp--amber"></span>Onder observatie</p><ul><li>Temp: 66 C</li><li>Trilling: 4.2 mm/s</li><li>Bedrijfsuren: 13107</li><li>Onderhoud: 05/09/2026</li></ul></article>
+      </div>
+    </section>
+
+    <section class="ops-imagery" aria-labelledby="imageryTitle">
+      <div class="section-head">
+        <p class="kicker">Operationele beeldlaag</p>
+        <h2 id="imageryTitle">Industriële context voor installaties, bekabeling en interventies</h2>
+      </div>
+      <div class="ops-imagery__grid">
+        <figure>
+          <img src="../../../assets/images/industrial/hero/hero-control-cabinet-01.jpg" alt="Industriële schakelkast met geopende panelen" loading="lazy" />
+          <figcaption>Schakelkasten en verdeelborden</figcaption>
+        </figure>
+        <figure>
+          <img src="../../../assets/images/industrial/service/service-machine-wiring-01.jpg" alt="Technicus tijdens machinebekabeling" loading="lazy" />
+          <figcaption>Machinebekabeling op locatie</figcaption>
+        </figure>
+        <figure>
+          <img src="../../../assets/images/industrial/service/service-electrical-wiring-01.jpg" alt="Technische aansluitingen in industriële omgeving" loading="lazy" />
+          <figcaption>Elektrotechnische aansluiting en controle</figcaption>
+        </figure>
+        <figure>
+          <img src="../../../assets/images/industrial/hero/hero-automation-technician-01.webp" alt="Technicus bij storingsanalyse aan installatie" loading="lazy" />
+          <figcaption>Storingsanalyse en diagnose</figcaption>
+        </figure>
+      </div>
+      <p class="capacity-note">Beelden uit de lokale industrial beeldmap met geverifieerde status in het manifest.</p>
+    </section>
+
+    <section class="service-matrix" id="diensten" aria-labelledby="servicesTitle">
+      <div class="section-head">
+        <p class="kicker">Technische servicematrix</p>
+        <h2 id="servicesTitle">Diensten geordend als onderhouds- en interventieclassificatie</h2>
+      </div>
+
+      <div class="service-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Domein</th>
+              <th scope="col">Typische symptomen</th>
+              <th scope="col">Mogelijke interventie</th>
+              <th scope="col">Actie</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Preventief onderhoud</td><td>Toenemende slijtage, afwijkend geluid</td><td>Inspectie, smering, vervangingsplan</td><td><a href="#onderhoud">Plan onderhoud</a></td></tr>
+            <tr><td>Correctief onderhoud</td><td>Uitval tijdens productie</td><td>Storingsanalyse en doelgericht herstel</td><td><a href="#storingen">Meld storing</a></td></tr>
+            <tr><td>Storingsanalyse</td><td>Onregelmatige werking, alarmsignalen</td><td>Controle van voeding, besturing en componenten</td><td><a href="#analyzer">Analyse starten</a></td></tr>
+            <tr><td>Mechanische herstellingen</td><td>Speling, uitlijningverlies, overbelasting</td><td>Demontage, uitlijning, herstel van delen</td><td><a href="#contact">Technische vraag</a></td></tr>
+            <tr><td>Elektrotechnische diagnose</td><td>Sensorfouten, onstabiele motorsturing</td><td>Meting, foutlokalisatie, componentcontrole</td><td><a href="#storingen">Meld storing</a></td></tr>
+            <tr><td>Pneumatiek en elektropneumatiek</td><td>Drukverlies, trage actuatoren</td><td>Lekcontrole, ventielcontrole, afstelling</td><td><a href="#analyzer">Diagnosehulp</a></td></tr>
+            <tr><td>Uitlijning en lagercontrole</td><td>Trilling, temperatuurstijging</td><td>Uitlijning, lagerinspectie, vervangingsadvies</td><td><a href="#onderhoud">Plan onderhoud</a></td></tr>
+            <tr><td>Sensoren en actuatoren</td><td>Intermitterende signalen</td><td>Signaaltest, vervangingscontrole, resetplan</td><td><a href="#contact">Technische vraag</a></td></tr>
+            <tr><td>Productieondersteuning</td><td>Capaciteitsverlies tijdens piek</td><td>Bijsturing op locatie en operationele support</td><td><a href="#shutdowns">Bespreek scope</a></td></tr>
+            <tr><td>Technische inspecties</td><td>Onzeker onderhoudsbeeld</td><td>Inspectierapport en prioriteitenlijst</td><td><a href="#onderhoud">Inspectie plannen</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="fault-analyzer" id="analyzer" aria-labelledby="analyzerTitle">
+      <div class="section-head">
+        <p class="kicker">Interactieve storingsanalyse</p>
+        <h2 id="analyzerTitle">Demo-foutzoeker voor eerste technische oriëntatie</h2>
+      </div>
+      <div class="analyzer-grid">
+        <div class="analyzer-options" role="group" aria-label="Kies een storingsbeeld">
+          <button type="button" data-symptom="start">Installatie start niet</button>
+          <button type="button" data-symptom="move">Onregelmatige beweging</button>
+          <button type="button" data-symptom="air">Luchtverlies</button>
+          <button type="button" data-symptom="heat">Oververhitting</button>
+          <button type="button" data-symptom="vibration">Trilling of lawaai</button>
+          <button type="button" data-symptom="sensor">Sensorfout</button>
+          <button type="button" data-symptom="drive">Aandrijving valt uit</button>
+        </div>
+        <div class="analyzer-result" aria-live="polite">
+          <h3 id="analyzerResultTitle">Selecteer een storingsbeeld</h3>
+          <ul id="analyzerChecklist">
+            <li>Voeding</li>
+            <li>Beveiligingen</li>
+            <li>Sensoren</li>
+          </ul>
+          <p class="analyzer-note">Informatief overzicht. Schakel een bevoegde technieker in en volg de geldende lockout/tagout-procedure.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="maintenance-plan" id="onderhoud" aria-labelledby="maintenanceTitle">
+      <div class="section-head">
+        <p class="kicker">Onderhoudsplan</p>
+        <h2 id="maintenanceTitle">Inspectieritme van dagelijkse checks tot shutdown-revisie</h2>
+      </div>
+
+      <div class="maintenance-track" role="list" aria-label="Onderhoudsritme">
+        <article role="listitem"><h3>Dagelijks</h3><p>Visuele inspectie, lekcontrole, statusalarm check</p></article>
+        <article role="listitem"><h3>Wekelijks</h3><p>Smering, controle van mechanische koppelingen</p></article>
+        <article role="listitem"><h3>Maandelijks</h3><p>Lagercontrole, thermische inspectie, verbindingen</p></article>
+        <article role="listitem"><h3>Per kwartaal</h3><p>Uitlijning, sensortest, veiligheidscircuits</p></article>
+        <article role="listitem"><h3>Jaarlijks</h3><p>Revisiecheck en preventieve vervangingsplanning</p></article>
+        <article role="listitem"><h3>Shutdown</h3><p>Scope-gebonden totaalinspectie en heropstartcontrole</p></article>
+      </div>
+    </section>
+
+    <section class="shutdown-panel" id="shutdowns" aria-labelledby="shutdownTitle">
+      <div class="section-head">
+        <p class="kicker">Shutdown &amp; turnaround</p>
+        <h2 id="shutdownTitle">Geplande onderhoudsstops met projectcontrole per fase</h2>
+      </div>
+
+      <div class="shutdown-line" role="list" aria-label="Shutdown proceslijn">
+        <div role="listitem"><strong>01</strong><span>Werkvoorbereiding</span></div>
+        <div role="listitem"><strong>02</strong><span>Scopebepaling</span></div>
+        <div role="listitem"><strong>03</strong><span>Risicoanalyse</span></div>
+        <div role="listitem"><strong>04</strong><span>Onderdelenplanning</span></div>
+        <div role="listitem"><strong>05</strong><span>Uitvoering</span></div>
+        <div role="listitem"><strong>06</strong><span>Controle</span></div>
+        <div role="listitem"><strong>07</strong><span>Heropstart</span></div>
+        <div role="listitem"><strong>08</strong><span>Rapportage</span></div>
+      </div>
+
+      <a class="btn btn--urgent" href="#contact">Bespreek een onderhoudsstop</a>
+    </section>
+
+    <section class="safety" id="veiligheid" aria-labelledby="safetyTitle">
+      <div class="section-head">
+        <p class="kicker">Veiligheid als kernproces</p>
+        <h2 id="safetyTitle">Veilig uitvoeren is onderdeel van elke interventie- en onderhoudsflow</h2>
+      </div>
+      <ul class="safety-grid">
+        <li>Lockout/tagout</li>
+        <li>Werkvergunningen</li>
+        <li>LMRA</li>
+        <li>Afscherming</li>
+        <li>Elektrische veiligheid</li>
+        <li>Drukloos maken</li>
+        <li>Rapportage</li>
+        <li>Test voor vrijgave</li>
+      </ul>
+      <p class="safety-line">Alle werkzaamheden moeten worden uitgevoerd door bevoegde personen volgens de geldende veiligheidsprocedures.</p>
+    </section>
+
+    <section class="case-dossier" aria-labelledby="caseTitle">
+      <div class="section-head">
+        <p class="kicker">Technische case</p>
+        <h2 id="caseTitle">Fictieve demonstratiecase: onregelmatige stilstand van een transportlijn</h2>
+      </div>
+      <div class="dossier-grid">
+        <article><h3>Symptoom</h3><p>Korte stops en resetmeldingen tijdens piekbelasting.</p></article>
+        <article><h3>Diagnose</h3><p>Combinatie van verhoogde trilling en wisselende sensorrespons in de aandrijflijn.</p></article>
+        <article><h3>Oorzaak</h3><p>Slijtage in koppeling met bijkomende afwijking in sensorbevestiging.</p></article>
+        <article><h3>Interventie</h3><p>Mechanische correctie, componentcontrole en functionele test voor vrijgave.</p></article>
+        <article><h3>Resultaat</h3><p>Stabilere lijnwerking en minder ongeplande onderbrekingen.</p></article>
+        <article><h3>Preventieve maatregel</h3><p>Kortere inspectiecyclus op kritieke componenten en periodieke uitlijning.</p></article>
+      </div>
+    </section>
+
+    <section class="parts-panel" aria-labelledby="partsTitle">
+      <div class="section-head">
+        <p class="kicker">Onderdelen en herstelvoorbereiding</p>
+        <h2 id="partsTitle">Componentgroepen voor snelle technische ondersteuning</h2>
+      </div>
+      <ul class="parts-list" aria-label="Onderdelencategorieen">
+        <li>Lagers</li>
+        <li>Koppelingen</li>
+        <li>Sensoren</li>
+        <li>Cilinders</li>
+        <li>Ventielen</li>
+        <li>Motoren</li>
+        <li>Aandrijfcomponenten</li>
+        <li>Bevestigingsmateriaal</li>
+      </ul>
+      <p>Geen webshopfunctie: dit paneel ondersteunt herstelplanning en interventievoorbereiding.</p>
+    </section>
+
+    <section class="capacity" aria-labelledby="capacityTitle">
+      <div class="section-head">
+        <p class="kicker">Technische capaciteit</p>
+        <h2 id="capacityTitle">Demonstratieve waarden voor deze website-demo</h2>
+      </div>
+      <div class="capacity-grid">
+        <article><h3>Interventies/jaar</h3><p class="metric">480</p><div class="meter"><span class="meter-fill meter-fill--78"></span></div></article>
+        <article><h3>Ondersteunde installatietypes</h3><p class="metric">34</p><div class="meter"><span class="meter-fill meter-fill--66"></span></div></article>
+        <article><h3>Geplande onderhoudstaken</h3><p class="metric">1.250</p><div class="meter"><span class="meter-fill meter-fill--84"></span></div></article>
+        <article><h3>Gemiddelde responstijd</h3><p class="metric">02:15u</p><div class="meter"><span class="meter-fill meter-fill--71"></span></div></article>
+      </div>
+      <p class="capacity-note">Demonstratieve waarden voor deze website-demo.</p>
+    </section>
+
+    <section class="contact-zone" id="contact" aria-labelledby="contactTitle">
+      <div class="section-head">
+        <p class="kicker">Operationele servicezone</p>
+        <h2 id="contactTitle">Kies de juiste route: dringend, gepland of algemeen</h2>
+      </div>
+      <div class="contact-grid">
+        <article>
+          <h3>Dringend</h3>
+          <p>Voor productie-uitval of veiligheidskritische storingen.</p>
+          <a class="btn btn--urgent" href="#storingen">Meld storing</a>
+        </article>
+        <article>
+          <h3>Gepland onderhoud</h3>
+          <p>Voor onderhoudsvensters, inspecties en periodieke opvolging.</p>
+          <a class="btn btn--secondary" href="#onderhoud">Plan onderhoud</a>
+        </article>
+        <article>
+          <h3>Algemene technische vraag</h3>
+          <p>Voor scopebespreking, capaciteit of technische afstemming.</p>
+          <a class="btn btn--secondary" href="mailto:demo@axiom-industrial.example">Stuur e-mail</a>
+        </article>
+      </div>
+
+      <div class="contact-meta">
+        <p><strong>Telefoon:</strong> +32 0 00 00 00 00</p>
+        <p><strong>E-mail:</strong> demo@axiom-industrial.example</p>
+        <p><strong>Werkregio:</strong> Belgie en omliggende regio's</p>
+        <p><strong>Beschikbaarheid:</strong> demonstratieve statusweergave</p>
+      </div>
+
+      <div class="map-placeholder" aria-label="Kaartplaceholder">
+        <p>Kaartplaceholder - in een echt project komt hier een locatie-integratie.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="industrial-footer">
+    <div class="industrial-footer__inner">
+      <div>
+        <p class="brand-footer">AXIOM Industrial Services</p>
+        <p>Fictieve demonstratiewebsite binnen Lorenzo Web Solutions.</p>
+      </div>
+      <nav aria-label="Footer navigatie">
+        <a href="#diensten">Diensten</a>
+        <a href="#storingen">Storingsdienst</a>
+        <a href="#onderhoud">Onderhoud</a>
+        <a href="#veiligheid">Veiligheid</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <div>
+        <p class="footer-note">Alle prestaties, reactietijden, cases en waarden op deze pagina zijn demonstratief.</p>
+        <a href="../../../index.html">Terug naar Lorenzo Web Solutions</a>
+      </div>
+    </div>
+    <p class="copy">&copy; <span id="year"></span> Lorenzo Web Solutions</p>
+  </footer>
+
+  <a class="mobile-alert" href="#storingen">Meld storing</a>
+</body>
+</html>
