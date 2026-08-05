@@ -124,6 +124,10 @@
         fit: "Geschikt voor garages met afspraken, voorraad en diagnose.",
         benefit: "Versnelt de route naar afspraken en werkplaatsvragen.",
       },
+      luna: {
+        fit: "Geschikt voor premium kapsalons, schoonheidssalons en luxury beauty-merken.",
+        benefit: "Straalt verfijning en vertrouwen uit — precies wat klanten zoeken bij een premium kapsalon.",
+      },
       future: {
         fit: "Geschikt voor nieuwe branches die een unieke digitale identiteit willen.",
         benefit: "Laat je snel een branchegerichte demo valideren.",

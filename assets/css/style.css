@@ -2013,6 +2013,21 @@ summary:focus-visible {
   --world-muted: #405770;
 }
 
+.home-studio .studio-showcase[data-theme="luna"] {
+  --world-accent: #c5a46a;
+  --world-accent-rgb: 197, 164, 106;
+  --world-bg: linear-gradient(162deg, rgba(247, 243, 236, 0.96), rgba(252, 248, 242, 0.94));
+  --world-line: rgba(197, 164, 106, 0.28);
+  --world-tab-bg: rgba(197, 164, 106, 0.06);
+  --world-tab-active-bg: rgba(197, 164, 106, 0.16);
+  --world-chip-bg: rgba(197, 164, 106, 0.12);
+  --world-chip-text: #7a5a2c;
+  --world-status-bg: rgba(27, 17, 8, 0.78);
+  --world-status-text: #e4c98a;
+  --world-surface: #fdfaf6;
+  --world-muted: #9a8060;
+}
+
 .home-studio .studio-showcase[data-theme="future"] {
   --world-accent: #6a5688;
   --world-accent-rgb: 106, 86, 136;
@@ -2483,7 +2498,7 @@ summary:focus-visible {
 
 /* Speels → Kapsalon */
 .home-studio .spectrum-card[data-style="speels"] .spectrum-card__canvas {
-  background: url('../images/kapsalon/hero/hero-salon-styling-01.png') center top / cover no-repeat;
+  background: url('../images/luna-hair-studio/hero/hero-salon-styling-01.png') center top / cover no-repeat;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
