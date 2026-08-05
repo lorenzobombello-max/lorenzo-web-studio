@@ -1,6 +1,7 @@
 const STRICT_ORIGINS = new Set([
   "https://lorenzowebsolutions.be",
   "https://www.lorenzowebsolutions.be",
+  "https://lorenzobombello-max.github.io",
 ]);
 
 function isLocalOrigin(origin: string): boolean {
