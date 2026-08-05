@@ -1636,17 +1636,15 @@ summary:focus-visible {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: revealMask 900ms ease-out both;
+  animation: revealTitle 820ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes revealMask {
+@keyframes revealTitle {
   from {
-    clip-path: inset(0 100% 0 0);
-    transform: translateY(8px);
+    transform: translateY(14px);
     opacity: 0;
   }
   to {
-    clip-path: inset(0 0 0 0);
     transform: translateY(0);
     opacity: 1;
   }
@@ -1757,8 +1755,10 @@ summary:focus-visible {
   width: 52%;
   height: 34%;
   background:
-    linear-gradient(140deg, rgba(53, 37, 30, 0.72), rgba(26, 18, 24, 0.88)),
-    linear-gradient(180deg, rgba(255, 220, 191, 0.2), rgba(255, 220, 191, 0));
+    linear-gradient(180deg, rgba(16, 11, 14, 0.08), rgba(16, 11, 14, 0.28)),
+    url("../images/cafe/hero/hero-cafe-terrace-sunset-01.jpg");
+  background-size: cover;
+  background-position: center 58%;
 }
 
 .home-studio .studio-portal__device--phone {
@@ -1767,26 +1767,10 @@ summary:focus-visible {
   width: 25%;
   height: 50%;
   background:
-    linear-gradient(160deg, rgba(34, 53, 84, 0.76), rgba(16, 23, 39, 0.9)),
-    linear-gradient(180deg, rgba(185, 221, 255, 0.18), rgba(185, 221, 255, 0));
-}
-
-@media (min-width: 820px) {
-  .home-studio .studio-portal__device--tablet {
-    background:
-      linear-gradient(180deg, rgba(16, 11, 14, 0.08), rgba(16, 11, 14, 0.28)),
-      url("../images/cafe/hero/hero-cafe-terrace-sunset-01.jpg");
-    background-size: cover;
-    background-position: center 58%;
-  }
-
-  .home-studio .studio-portal__device--phone {
-    background:
-      linear-gradient(180deg, rgba(13, 16, 24, 0.1), rgba(13, 16, 24, 0.3)),
-      url("../images/personal/hero/hero-lorenzo-web-developer-office.jpg");
-    background-size: cover;
-    background-position: center top;
-  }
+    linear-gradient(160deg, rgba(13, 16, 24, 0.1), rgba(13, 16, 24, 0.3)),
+    url("../images/personal/hero/hero-personal-portfolio.jpg");
+  background-size: cover;
+  background-position: center top;
 }
 
 .home-studio .studio-portal__device--tablet::before,
@@ -3032,6 +3016,11 @@ summary:focus-visible {
     padding-bottom: 6rem;
   }
 
+  /* Extra top-padding to prevent content being cut by fixed header on small viewports */
+  .home-studio .studio-hero .hero__content {
+    padding-top: clamp(1.4rem, 4vw, 2rem);
+  }
+
   .home-studio .studio-portal__glass {
     padding: 0.85rem;
   }
@@ -3106,7 +3095,8 @@ summary:focus-visible {
   .home-studio .studio-main::before,
   .home-studio .studio-hero__beam,
   .home-studio .studio-hero__cursor,
-  .home-studio .studio-scroll-indicator__line {
+  .home-studio .studio-scroll-indicator__line,
+  .home-studio .studio-mask-title {
     animation: none !important;
   }
 
