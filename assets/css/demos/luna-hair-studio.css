@@ -756,6 +756,10 @@
 .luna-review__service { font-size: 0.76rem; color: var(--luna-text-muted); margin: 0; }
 
 /* ── Instagram ───────────────────────────────────────────────── */
+.luna-insta {
+  padding-block: clamp(3rem, 6vw, 4.5rem);
+}
+
 .luna-insta__handle { margin: 0.6rem 0 0; }
 .luna-insta__link {
   font-family: var(--luna-font-body);
@@ -771,7 +775,6 @@
 .luna-insta__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 1fr);
   gap: 4px;
   border-radius: var(--luna-radius);
   overflow: hidden;
@@ -781,32 +784,54 @@
   aspect-ratio: 1;
   overflow: hidden;
   text-decoration: none;
+  background: #2c1a08;
 }
 .luna-insta__img {
-  width: 100%; height: 100%;
-  transition: transform 400ms ease;
-  display: block;
-}
-.luna-insta__img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 400ms ease;
 }
-.luna-insta__item:hover .luna-insta__img { transform: scale(1.06); }
 
-.luna-insta__overlay {
+.luna-insta__caption {
   position: absolute;
-  inset: 0;
-  background: rgba(27, 17, 8, 0.48);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(27, 17, 8, 0) 0%, rgba(27, 17, 8, 0.85) 82%);
+  line-height: 1.35;
+}
+
+.luna-insta__icon {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  background: rgba(27, 17, 8, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  opacity: 0;
-  transition: opacity 280ms ease;
+  pointer-events: none;
 }
-.luna-insta__item:hover .luna-insta__overlay { opacity: 1; }
+
+.luna-insta__item:hover .luna-insta__img,
+.luna-insta__item:focus-visible .luna-insta__img {
+  transform: scale(1.03);
+}
+
+.luna-insta__item:focus-visible {
+  outline: 2px solid var(--luna-gold);
+  outline-offset: -2px;
+}
 
 /* ── Booking ─────────────────────────────────────────────────── */
 .luna-booking {
@@ -1048,7 +1073,7 @@
 
 @media (max-width: 480px) {
   .luna-hero__heading-script { font-size: clamp(4rem, 18vw, 6rem); }
-  .luna-insta__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .luna-insta__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .luna-stats { flex-direction: column; gap: 1rem; }
   .luna-booking__form { padding: 1.2rem; }
 }
