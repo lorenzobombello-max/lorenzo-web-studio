@@ -32,5 +32,12 @@ backup/
 # Local tool configuration
 .claude/
 
+# Local-only workspace folders and temp files
+.venv/
+Bedrijfsdocumenten/
+AI Workspace/
+*.tmp
+*.bak
+
 # Audit screenshots (temporary, not project assets)
 assets/images/audit-*.png
