@@ -279,8 +279,6 @@
         const isActive = card === chip;
         card.classList.toggle("is-active", isActive);
         card.setAttribute("aria-selected", String(isActive));
-        const cta = card.querySelector(".spectrum-card__cta");
-        if (cta) cta.setAttribute("tabindex", isActive ? "0" : "-1");
       });
       root.setAttribute("data-style", chip.dataset.style || "minimalistisch");
       if (styleLabel) styleLabel.textContent = chip.dataset.name || chip.dataset.style || "";
