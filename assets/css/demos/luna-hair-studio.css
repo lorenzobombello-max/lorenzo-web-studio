@@ -480,6 +480,7 @@
 .luna-services__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
   gap: 1.5px;
   background: rgba(197, 164, 106, 0.1);
   border: 1px solid var(--luna-gold-border);
@@ -513,15 +514,13 @@
 .luna-service:hover .luna-service__photo img { transform: scale(1.04); }
 
 .luna-service__body {
-  padding: 1.8rem;
+  padding: 1.5rem 1.8rem 1.8rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  flex: 1;
+  gap: 0.75rem;
 }
 .luna-service__icon {
   color: var(--luna-gold);
-  margin-bottom: 0.8rem;
   display: flex;
 }
 .luna-service__name {
@@ -529,13 +528,13 @@
   font-size: 1.5rem;
   font-weight: 400;
   color: var(--luna-cream-soft);
-  margin: 0 0 0.6rem;
+  margin: 0;
 }
 .luna-service__desc {
   font-size: 0.86rem;
   line-height: 1.6;
   color: rgba(253, 250, 246, 0.55);
-  margin: 0 0 1rem;
+  margin: 0;
 }
 .luna-service__price {
   font-size: 0.78rem;
