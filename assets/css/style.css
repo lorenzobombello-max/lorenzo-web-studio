@@ -2481,9 +2481,9 @@ summary:focus-visible {
   background: url('../images/industrial/hero/hero-production-hall-01.jpg') center center / cover no-repeat;
 }
 
-/* Warm → Café Amber */
+/* Warm en persoonlijk → Luna Hair Studio */
 .home-studio .spectrum-card[data-style="warm"] .spectrum-card__canvas {
-  background: url('../images/cafe/hero/hero-cafe-terrace-sunset-01.jpg') center center / cover no-repeat;
+  background: url('../images/luna-hair-studio/hero/hero-luna-hair-studio.jpg') center center / cover no-repeat;
 }
 
 /* Dynamisch → Restaurant */
