@@ -131,7 +131,29 @@
         </div>
         <article class="studio-showcase__preview" aria-live="polite" aria-atomic="true">
           <div class="studio-showcase__media-wrap">
-            <img id="showcaseImage" src="assets/images/industrial/hero/hero-production-hall-01.jpg" alt="Preview van geselecteerde demo" width="1280" height="720" loading="lazy" />
+            <div class="studio-showcase__iframe-container" id="showcaseIframeContainer">
+              <iframe
+                id="showcaseIframe"
+                class="studio-showcase__iframe"
+                src="pages/demos/industrieel-elektriciteit/index.html"
+                title="Interactieve preview van AXIOM Industrial Services"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                loading="lazy"
+              ></iframe>
+              <div class="studio-showcase__iframe-loading" id="showcaseIframeLoading" aria-label="Demo wordt geladen">
+                <span class="studio-showcase__iframe-spinner" aria-hidden="true"></span>
+                <span class="sr-only">Demo wordt geladen…</span>
+              </div>
+              <div class="studio-showcase__iframe-fallback" id="showcaseIframeFallback" hidden>
+                <p>De interactieve preview kon niet worden geladen.</p>
+                <a id="showcaseFallbackLink" href="pages/demos/industrieel-elektriciteit/index.html" class="btn btn--ghost btn--small">Open de volledige demo</a>
+              </div>
+              <div class="studio-showcase__iframe-placeholder" id="showcaseIframePlaceholder" hidden>
+                <p class="studio-showcase__placeholder-title">Demo in voorbereiding</p>
+                <p class="studio-showcase__placeholder-sub">Neem contact op voor een maatwerkdemo op basis van uw branche.</p>
+              </div>
+            </div>
+            <p class="studio-showcase__iframe-label" id="showcaseIframeLabel" aria-hidden="true"><span aria-hidden="true">↕</span> Interactieve preview — scroll in het venster</p>
             <span class="studio-showcase__status" id="showcaseStatus">Live demo</span>
           </div>
           <div class="studio-showcase__meta">
@@ -493,6 +515,22 @@
       </div>
     </section>
   </main>
+
+  <div id="successModal" class="success-modal" role="dialog" aria-modal="true" aria-labelledby="successModalTitle" aria-describedby="successModalDesc" hidden>
+    <div class="success-modal__overlay" id="successModalOverlay"></div>
+    <div class="success-modal__panel" id="successModalPanel" tabindex="-1">
+      <button class="success-modal__close" id="successModalClose" type="button" aria-label="Sluit dit venster"><span aria-hidden="true">✕</span></button>
+      <div class="success-modal__icon" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+          <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="2"/>
+          <path d="M14 24.5l7 7 13-14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2 id="successModalTitle" class="success-modal__title">Aanvraag succesvol verzonden</h2>
+      <p id="successModalDesc" class="success-modal__message">Bedankt. Je aanvraag is veilig ontvangen en wordt persoonlijk nagekeken. Je krijgt zo snel mogelijk een antwoord.</p>
+      <p class="success-modal__timer" id="successModalTimer" aria-live="polite">Dit venster sluit automatisch binnen 5 seconden.</p>
+    </div>
+  </div>
 
   <footer class="site-footer">
     <div class="container footer-grid">

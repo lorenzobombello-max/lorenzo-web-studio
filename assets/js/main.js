@@ -11,6 +11,38 @@
   const contactForm = document.getElementById("contactForm") || document.querySelector(".contact-form");
   const formMessage = document.getElementById("formMessage");
   const submitButton = document.getElementById("submitButton");
+
+  let modalTimer = null;
+
+  function showSuccessModal() {
+    const modal = document.getElementById("successModal");
+    const panel = document.getElementById("successModalPanel");
+    const closeBtn = document.getElementById("successModalClose");
+    const overlay = document.getElementById("successModalOverlay");
+    if (!modal || !panel) return;
+
+    if (modalTimer) { window.clearTimeout(modalTimer); modalTimer = null; }
+
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    panel.focus();
+
+    function closeModal() {
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      if (modalTimer) { window.clearTimeout(modalTimer); modalTimer = null; }
+      if (submitButton) submitButton.focus();
+      document.removeEventListener("keydown", handleEscape);
+    }
+
+    function handleEscape(e) { if (e.key === "Escape") closeModal(); }
+
+    document.addEventListener("keydown", handleEscape);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal, { once: true });
+    if (overlay) overlay.addEventListener("click", closeModal, { once: true });
+
+    modalTimer = window.setTimeout(closeModal, 5000);
+  }
   const functionsBaseMeta = document.querySelector('meta[name="lws-functions-base-url"]');
   const navLinks = document.querySelectorAll(".site-nav a");
   const sectionNavLinks = document.querySelectorAll('.site-nav a[href^="#"]');
@@ -237,11 +269,8 @@
         throw new Error("Request failed");
       }
 
-      setFormMessage(
-        "Bedankt. Je aanvraag is veilig ontvangen en wordt persoonlijk nagekeken.",
-        "success"
-      );
       contactForm.reset();
+      showSuccessModal();
     } catch {
       setFormMessage(
         "De aanvraag kon momenteel niet worden verzonden. Probeer later opnieuw of neem rechtstreeks contact op.",

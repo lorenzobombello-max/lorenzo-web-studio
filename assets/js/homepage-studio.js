@@ -64,7 +64,12 @@
     if (!root) return;
 
     const tabs = Array.from(root.querySelectorAll(".studio-showcase__tab"));
-    const imageNode = document.getElementById("showcaseImage");
+    const iframeNode = document.getElementById("showcaseIframe");
+    const iframeLoading = document.getElementById("showcaseIframeLoading");
+    const iframeFallback = document.getElementById("showcaseIframeFallback");
+    const iframePlaceholder = document.getElementById("showcaseIframePlaceholder");
+    const iframeLabel = document.getElementById("showcaseIframeLabel");
+    const fallbackLink = document.getElementById("showcaseFallbackLink");
     const statusNode = document.getElementById("showcaseStatus");
     const labelNode = document.getElementById("showcaseLabel");
     const titleNode = document.getElementById("showcaseTitle");
@@ -78,7 +83,7 @@
 
     if (
       !tabs.length ||
-      !imageNode ||
+      !iframeNode ||
       !statusNode ||
       !labelNode ||
       !titleNode ||
@@ -93,8 +98,6 @@
 
     let activeIndex = 0;
     let touchStartX = 0;
-    let swapTimer = 0;
-    let settleTimer = 0;
 
     const worldInsights = {
       industrial: {
@@ -140,36 +143,44 @@
         .slice(0, 4);
     }
 
-    function setPreviewImage(nextImageUrl, nextTitle) {
-      if (!nextImageUrl || imageNode.src.endsWith(nextImageUrl)) {
-        imageNode.alt = `Preview van ${nextTitle}`;
+    // Wire iframe load/error handlers once
+    iframeNode.addEventListener("load", () => {
+      if (iframeLoading) iframeLoading.hidden = true;
+      if (iframeFallback) iframeFallback.hidden = true;
+    });
+    iframeNode.addEventListener("error", () => {
+      if (iframeLoading) iframeLoading.hidden = true;
+      iframeNode.hidden = true;
+      if (iframeFallback) iframeFallback.hidden = false;
+    });
+
+    function setPreviewIframe(src, title, isFuture) {
+      if (isFuture) {
+        iframeNode.hidden = true;
+        if (iframeLoading) iframeLoading.hidden = true;
+        if (iframeFallback) iframeFallback.hidden = true;
+        if (iframePlaceholder) iframePlaceholder.hidden = false;
+        if (iframeLabel) iframeLabel.hidden = true;
+        root.setAttribute("data-preview-mode", "placeholder");
         return;
       }
 
-      if (prefersReducedMotion) {
-        imageNode.src = nextImageUrl;
-        imageNode.alt = `Preview van ${nextTitle}`;
-        return;
+      if (iframePlaceholder) iframePlaceholder.hidden = true;
+      if (iframeFallback) iframeFallback.hidden = true;
+      if (iframeLabel) iframeLabel.hidden = false;
+      iframeNode.hidden = false;
+      root.setAttribute("data-preview-mode", "iframe");
+
+      iframeNode.title = `Interactieve preview van ${title}`;
+      iframeNode.setAttribute("aria-label", `Interactieve preview van ${title}`);
+      if (fallbackLink) fallbackLink.href = src;
+
+      // Only reload when src actually changes
+      if (iframeNode.dataset.currentSrc !== src) {
+        iframeNode.dataset.currentSrc = src;
+        if (iframeLoading) iframeLoading.hidden = false;
+        iframeNode.src = src;
       }
-
-      window.clearTimeout(swapTimer);
-      window.clearTimeout(settleTimer);
-
-      root.classList.add("is-transitioning");
-      imageNode.classList.remove("is-fading-in");
-      imageNode.classList.add("is-fading-out");
-
-      swapTimer = window.setTimeout(() => {
-        imageNode.src = nextImageUrl;
-        imageNode.alt = `Preview van ${nextTitle}`;
-        imageNode.classList.remove("is-fading-out");
-        imageNode.classList.add("is-fading-in");
-      }, 220);
-
-      settleTimer = window.setTimeout(() => {
-        imageNode.classList.remove("is-fading-in");
-        root.classList.remove("is-transitioning");
-      }, 620);
     }
 
     function applyTab(index) {
@@ -183,11 +194,12 @@
         button.setAttribute("aria-selected", String(isActive));
       });
 
-      const imageUrl = tab.dataset.image || "";
+      const isFuture = tab.dataset.status === "Op aanvraag";
+      const demoSrc = tab.dataset.link || "";
       const title = tab.dataset.title || tab.textContent || "Demo";
       const traits = parseTraits(tab.dataset.traits || "");
 
-      setPreviewImage(imageUrl, title);
+      setPreviewIframe(demoSrc, title, isFuture);
       statusNode.textContent = tab.dataset.status || "Live demo";
       labelNode.textContent = tab.dataset.label || "Demo";
       titleNode.textContent = title;
@@ -199,18 +211,11 @@
       fitNode.textContent = insight.fit;
       benefitNode.textContent = insight.benefit;
 
-      linkNode.setAttribute("href", tab.dataset.link || "#contact");
-      linkNode.textContent = tab.dataset.status === "Op aanvraag" ? "Vraag deze demo aan" : "Open volledige demo";
+      linkNode.setAttribute("href", isFuture ? "#contact" : demoSrc);
+      linkNode.textContent = isFuture ? "Vraag deze demo aan" : "Open volledige demo";
 
       root.setAttribute("data-theme", themeKey);
       root.setAttribute("data-active-index", String(activeIndex));
-
-      if (!prefersReducedMotion) {
-        imageNode.style.setProperty("--showcase-scale", "1.02");
-        window.setTimeout(() => {
-          imageNode.style.setProperty("--showcase-scale", "1");
-        }, 220);
-      }
     }
 
     tabs.forEach((tab, index) => {
