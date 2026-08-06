@@ -192,6 +192,10 @@
 
       pair.addEventListener("dragstart", (event) => {
         event.preventDefault();
+      }, true);
+
+      pair.addEventListener("selectstart", (event) => {
+        event.preventDefault();
       });
 
       pair.addEventListener("pointerdown", (event) => {

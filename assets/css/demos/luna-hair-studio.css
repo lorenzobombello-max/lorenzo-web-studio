@@ -640,6 +640,7 @@
   height: 280px;
   margin-bottom: 0.75rem;
   --luna-before-after-pos: 50%;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -648,6 +649,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -665,6 +667,8 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -680,6 +684,7 @@
   z-index: 3;
   cursor: ew-resize;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
 }
