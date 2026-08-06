@@ -248,7 +248,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 .ne-hero {
   position: relative;
-  min-height: min(96vh, 920px);
+  min-height: clamp(560px, 78vh, 740px);
   display: grid;
   align-items: center;
   overflow: hidden;
@@ -398,6 +398,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .ne-card__media {
   position: relative;
   aspect-ratio: 4 / 3;
+  max-height: 520px;
   overflow: hidden;
 }
 
@@ -650,10 +651,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-lifestyle__gallery img {
+  width: 100%;
   border-radius: 1rem;
   border: 1px solid rgba(15, 75, 76, 0.14);
   box-shadow: var(--ne-shadow);
-  min-height: 220px;
+  aspect-ratio: 4 / 3;
+  height: auto;
+  max-height: 520px;
   object-fit: cover;
 }
 
@@ -875,7 +879,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 .ne-detail-hero {
   position: relative;
-  min-height: min(74vh, 720px);
+  min-height: clamp(540px, 70vh, 700px);
   display: grid;
   align-items: end;
   overflow: hidden;
@@ -1081,9 +1085,12 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-gallery-grid img {
+  width: 100%;
   border-radius: 0.86rem;
   border: 1px solid rgba(15, 75, 76, 0.14);
-  min-height: 180px;
+  aspect-ratio: 4 / 3;
+  height: auto;
+  max-height: 520px;
   object-fit: cover;
 }
 
@@ -1118,14 +1125,20 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-split--detail img {
+  width: 100%;
+  height: auto;
+  max-height: 520px;
   border-radius: 0.84rem;
   border: 1px solid rgba(15, 75, 76, 0.16);
 }
 
 .ne-map-placeholder img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  max-height: 520px;
   border-radius: 0.82rem;
   border: 1px solid rgba(15, 75, 76, 0.14);
-  min-height: 220px;
   object-fit: cover;
 }
 
@@ -1186,6 +1199,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-agent-card img {
+  width: 100%;
+  height: auto;
+  max-height: 600px;
   border-radius: 0.82rem;
   border: 1px solid rgba(15, 75, 76, 0.16);
   aspect-ratio: 1 / 1;
@@ -1468,7 +1484,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 .ne-page-hero {
   position: relative;
-  min-height: min(72vh, 760px);
+  min-height: clamp(540px, 72vh, 720px);
   display: grid;
   align-items: end;
   overflow: hidden;
@@ -1619,10 +1635,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 .ne-project-visual img,
 .ne-office-gallery img,
 .ne-contact-map img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  max-height: 520px;
   border-radius: 0.9rem;
   border: 1px solid rgba(15, 75, 76, 0.16);
   box-shadow: var(--ne-shadow);
-  min-height: 180px;
   object-fit: cover;
 }
 
@@ -1796,6 +1815,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-team-grid img {
+  width: 100%;
+  max-height: 600px;
   border-radius: 0.8rem;
   border: 1px solid rgba(15, 75, 76, 0.15);
   aspect-ratio: 4 / 3;
@@ -1818,6 +1839,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 .ne-mag-feature img,
 .ne-mag-card img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  max-height: 520px;
+  object-fit: cover;
   border-radius: 0.8rem;
   border: 1px solid rgba(15, 75, 76, 0.15);
   margin-bottom: 0.56rem;
@@ -1867,7 +1893,19 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .ne-contact-map img {
-  min-height: 250px;
+  aspect-ratio: 16 / 10;
+  max-height: 520px;
+}
+
+@media (min-width: 1200px) {
+  .ne-hero {
+    min-height: clamp(650px, 72vh, 740px);
+  }
+
+  .ne-page-hero,
+  .ne-detail-hero {
+    min-height: clamp(640px, 68vh, 720px);
+  }
 }
 
 @keyframes neHeroGlow {
@@ -1944,7 +1982,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 @media (max-width: 640px) {
-  .ne-hero { min-height: 90vh; }
+  .ne-hero { min-height: clamp(460px, 72vh, 620px); }
   .ne-hero__content h1 { max-width: 16ch; }
   .ne-grid { grid-template-columns: 1fr; }
   .ne-search { grid-template-columns: 1fr; }
