@@ -148,6 +148,90 @@
     sections.forEach((s) => observer.observe(s));
   }
 
+  /* ── Before/after result sliders ───────────────────────────── */
+  function initBeforeAfterSliders() {
+    const pairs = document.querySelectorAll(".luna-result__pair");
+    if (!pairs.length) return;
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    pairs.forEach((pair, index) => {
+      const divider = pair.querySelector(".luna-result__divider");
+      if (!divider) return;
+
+      const sliderId = `lunaResultSlider${index + 1}`;
+      let dragging = false;
+
+      function setPosition(percent) {
+        const safe = clamp(percent, 0, 100);
+        pair.style.setProperty("--luna-before-after-pos", `${safe}%`);
+        divider.setAttribute("aria-valuenow", String(Math.round(safe)));
+      }
+
+      function updateFromClientX(clientX) {
+        const rect = pair.getBoundingClientRect();
+        if (!rect.width) return;
+        const pct = ((clientX - rect.left) / rect.width) * 100;
+        setPosition(pct);
+      }
+
+      divider.id = sliderId;
+      divider.removeAttribute("aria-hidden");
+      divider.setAttribute("role", "slider");
+      divider.setAttribute("tabindex", "0");
+      divider.setAttribute("aria-label", "Vergelijk voor en na");
+      divider.setAttribute("aria-valuemin", "0");
+      divider.setAttribute("aria-valuemax", "100");
+      divider.setAttribute("aria-valuenow", "50");
+
+      pair.addEventListener("pointerdown", (event) => {
+        dragging = true;
+        try {
+          pair.setPointerCapture?.(event.pointerId);
+        } catch (_error) {
+          /* Some synthetic/non-primary pointers cannot be captured. */
+        }
+        updateFromClientX(event.clientX);
+      });
+
+      pair.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        updateFromClientX(event.clientX);
+      });
+
+      function stopDragging(event) {
+        dragging = false;
+        if (event?.pointerId !== undefined) {
+          try {
+            pair.releasePointerCapture?.(event.pointerId);
+          } catch (_error) {
+            /* Ignore missing capture state. */
+          }
+        }
+      }
+
+      pair.addEventListener("pointerup", stopDragging);
+      pair.addEventListener("pointercancel", stopDragging);
+      pair.addEventListener("pointerleave", stopDragging);
+
+      divider.addEventListener("keydown", (event) => {
+        const current = Number.parseFloat(divider.getAttribute("aria-valuenow") || "50");
+        let next = current;
+
+        if (event.key === "ArrowLeft") next = current - 5;
+        else if (event.key === "ArrowRight") next = current + 5;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = 100;
+        else return;
+
+        event.preventDefault();
+        setPosition(next);
+      });
+
+      setPosition(50);
+    });
+  }
+
   /* ── Init ───────────────────────────────────────────────────── */
   function init() {
     initReveal();
@@ -156,6 +240,7 @@
     initSmoothScroll();
     initForm();
     initActiveNav();
+    initBeforeAfterSliders();
   }
 
   if (document.readyState === "loading") {
