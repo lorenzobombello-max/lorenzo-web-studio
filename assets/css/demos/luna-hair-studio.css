@@ -640,12 +640,16 @@
   height: 280px;
   margin-bottom: 0.75rem;
   --luna-before-after-pos: 50%;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .luna-result__before,
 .luna-result__after {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .luna-result__before { z-index: 1; }
 .luna-result__after {
@@ -661,6 +665,8 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .luna-result__divider {
@@ -674,6 +680,8 @@
   z-index: 3;
   cursor: ew-resize;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .luna-result__divider::after {
   content: "⇄";

@@ -184,8 +184,21 @@
       divider.setAttribute("aria-valuemax", "100");
       divider.setAttribute("aria-valuenow", "50");
 
+      pair.querySelectorAll("img").forEach((img) => {
+        img.addEventListener("dragstart", (event) => {
+          event.preventDefault();
+        });
+      });
+
+      pair.addEventListener("dragstart", (event) => {
+        event.preventDefault();
+      });
+
       pair.addEventListener("pointerdown", (event) => {
         dragging = true;
+        if (event.pointerType === "mouse") {
+          event.preventDefault();
+        }
         try {
           pair.setPointerCapture?.(event.pointerId);
         } catch (_error) {
