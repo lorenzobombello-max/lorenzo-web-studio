@@ -212,9 +212,18 @@ figure {
 .aurelis-hero__grid {
   position: relative;
   display: grid;
-  grid-template-columns: 1.15fr 1fr 0.62fr;
+  width: min(1600px, 95vw);
+  grid-template-columns: minmax(0, 1.18fr) minmax(14rem, 0.42fr);
+  grid-template-areas:
+    "copy index"
+    "visual visual";
   gap: clamp(1rem, 2.6vw, 2rem);
-  align-items: end;
+  align-items: start;
+}
+
+.aurelis-hero__copy {
+  grid-area: copy;
+  padding-top: clamp(0.3rem, 1vw, 0.8rem);
 }
 
 .aurelis-kicker {
@@ -323,13 +332,21 @@ figure {
 }
 
 .aurelis-hero__visual {
-  min-height: clamp(360px, 48vw, 620px);
+  grid-area: visual;
+  width: 100%;
+  height: clamp(540px, 39vw, 620px);
+}
+
+.aurelis-hero__visual img {
+  object-position: center 58%;
 }
 
 .aurelis-hero__index {
+  grid-area: index;
   border-left: 1px solid var(--a-line);
   padding-left: 1rem;
-  align-self: stretch;
+  align-self: end;
+  min-width: 0;
 }
 
 .aurelis-index__title {
@@ -369,7 +386,7 @@ figure {
 }
 
 .aurelis-works {
-  padding: 2rem 0;
+  padding: 1.25rem 0 2rem;
 }
 
 .aurelis-grid {
@@ -739,18 +756,27 @@ body.aurelis.has-cursor .aurelis-hero::after {
 
 @media (max-width: 1140px) {
   .aurelis-hero__grid {
-    grid-template-columns: 1fr 1fr;
+    width: min(94vw, 1320px);
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "copy"
+      "visual"
+      "index";
   }
 
   .aurelis-hero__index {
-    grid-column: 1 / -1;
     border-left: none;
     border-top: 1px solid var(--a-line);
     padding: 0.9rem 0 0;
+    align-self: start;
   }
 
   .aurelis-hero__index ol {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+   .aurelis-hero__visual {
+    height: clamp(460px, 46vw, 520px);
   }
 
   .aurelis-grid {
@@ -809,6 +835,10 @@ body.aurelis.has-cursor .aurelis-hero::after {
     grid-template-columns: 1fr;
   }
 
+  .aurelis-hero__visual {
+    height: clamp(460px, 52vw, 500px);
+  }
+
   .aurelis-timeline {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.9rem 0.5rem;
@@ -836,6 +866,19 @@ body.aurelis.has-cursor .aurelis-hero::after {
   .aurelis-grid {
     grid-template-columns: 1fr;
     grid-template-areas: none;
+  }
+
+  .aurelis-hero__grid {
+    width: min(100%, 94vw);
+    gap: 1rem;
+  }
+
+  .aurelis-hero__visual {
+    height: clamp(420px, 118vw, 500px);
+  }
+
+  .aurelis-hero__visual img {
+    object-position: center 52%;
   }
 
   .aurelis-project,
