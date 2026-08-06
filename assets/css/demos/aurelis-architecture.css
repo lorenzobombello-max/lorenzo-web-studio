@@ -225,12 +225,15 @@ figure {
   grid-area: copy;
   position: relative;
   z-index: 3;
-  width: min(100%, 42rem);
+  width: min(100%, 43.75rem);
   margin-top: clamp(-5.5rem, -7vw, -3rem);
-  padding: clamp(1.3rem, 2vw, 1.9rem) clamp(1.15rem, 1.8vw, 1.9rem) 0 0;
-  background: linear-gradient(135deg, rgba(251, 248, 242, 0.94), rgba(251, 248, 242, 0.78));
-  border-top-right-radius: 1.35rem;
-  box-shadow: 0 18px 40px rgba(25, 23, 21, 0.08);
+  margin-left: clamp(1rem, 2.4vw, 2.15rem);
+  padding: clamp(1.35rem, 2vw, 1.95rem) clamp(1.35rem, 2.2vw, 2.2rem) clamp(1.2rem, 1.8vw, 1.65rem);
+  background: linear-gradient(135deg, rgba(251, 248, 242, 0.97), rgba(251, 248, 242, 0.84));
+  border-radius: 1.625rem;
+  box-shadow:
+    0 14px 34px rgba(34, 30, 24, 0.045),
+    0 30px 74px rgba(34, 30, 24, 0.07);
 }
 
 .aurelis-kicker {
@@ -262,7 +265,7 @@ figure {
 .aurelis-hero__lead {
   margin-top: 1rem;
   color: var(--a-muted);
-  max-width: 44ch;
+  max-width: 50ch;
   line-height: 1.74;
 }
 
@@ -778,9 +781,10 @@ body.aurelis.has-cursor .aurelis-hero::after {
   }
 
   .aurelis-hero__copy {
-    width: min(100%, 46rem);
+    width: min(100%, 49rem);
     margin-top: -2.2rem;
-    padding: 1.2rem 1.15rem 0 0;
+    margin-left: clamp(0.6rem, 1.8vw, 1.2rem);
+    padding: 1.22rem 1.35rem 1.2rem;
   }
 
   .aurelis-hero__index {
@@ -868,7 +872,9 @@ body.aurelis.has-cursor .aurelis-hero::after {
 
   .aurelis-hero__copy {
     margin-top: -1.6rem;
-    padding-top: 1rem;
+    margin-left: 0.35rem;
+    width: min(100%, 95%);
+    padding: 1.08rem 1.2rem 1.12rem;
   }
 
   .aurelis-timeline {
@@ -911,10 +917,11 @@ body.aurelis.has-cursor .aurelis-hero::after {
   .aurelis-hero__copy {
     width: 100%;
     margin-top: 0;
-    padding: 0;
-    background: transparent;
-    border-top-right-radius: 0;
-    box-shadow: none;
+    margin-left: 0;
+    padding: 1.15rem 1rem 1rem;
+    background: linear-gradient(135deg, rgba(251, 248, 242, 0.97), rgba(251, 248, 242, 0.88));
+    border-radius: 1.5rem;
+    box-shadow: 0 12px 28px rgba(34, 30, 24, 0.055), 0 22px 44px rgba(34, 30, 24, 0.075);
   }
 
   .aurelis-hero__visual {
