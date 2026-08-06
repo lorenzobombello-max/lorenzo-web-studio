@@ -61,15 +61,29 @@
       const placeholder = figure.querySelector(".aurelis-placeholder");
       if (!img || !placeholder) return;
 
+      function hideFallback() {
+        figure.classList.add("is-loaded");
+        figure.classList.remove("is-missing");
+        img.hidden = false;
+        placeholder.hidden = true;
+      }
+
       function showFallback() {
+        figure.classList.remove("is-loaded");
+        figure.classList.add("is-missing");
         img.hidden = true;
         placeholder.hidden = false;
       }
 
-      if (img.complete && (!img.naturalWidth || img.naturalWidth === 0)) {
-        showFallback();
+      if (img.complete) {
+        if (img.naturalWidth && img.naturalWidth > 0) {
+          hideFallback();
+        } else {
+          showFallback();
+        }
       }
 
+      img.addEventListener("load", hideFallback, { once: true });
       img.addEventListener("error", showFallback, { once: true });
       img.setAttribute("draggable", "false");
     });

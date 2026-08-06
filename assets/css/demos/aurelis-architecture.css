@@ -317,6 +317,11 @@ figure {
   font-size: 0.9rem;
 }
 
+.aurelis-placeholder[hidden],
+.aurelis-media.is-loaded .aurelis-placeholder {
+  display: none !important;
+}
+
 .aurelis-hero__visual {
   min-height: clamp(360px, 48vw, 620px);
 }
