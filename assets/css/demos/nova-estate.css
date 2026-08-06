@@ -1711,6 +1711,14 @@ ul { margin: 0; padding: 0; list-style: none; }
   gap: 0.45rem;
 }
 
+.ne-project-card > img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  max-height: 520px;
+  object-fit: cover;
+}
+
 .ne-phase-line {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
