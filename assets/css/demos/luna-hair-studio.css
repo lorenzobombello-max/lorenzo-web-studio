@@ -803,7 +803,6 @@
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  text-decoration: none;
   background: #2c1a08;
 }
 .luna-insta__img {
@@ -846,11 +845,6 @@
 .luna-insta__item:hover .luna-insta__img,
 .luna-insta__item:focus-visible .luna-insta__img {
   transform: scale(1.03);
-}
-
-.luna-insta__item:focus-visible {
-  outline: 2px solid var(--luna-gold);
-  outline-offset: -2px;
 }
 
 /* ── Booking ─────────────────────────────────────────────────── */
