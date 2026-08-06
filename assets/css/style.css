@@ -2487,6 +2487,11 @@ summary:focus-visible {
   background: url('../images/personal/hero/hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
 }
 
+/* Architectuur & Interieur → AURELIS cinematic villa preview */
+.home-studio .spectrum-card[data-style="architectuur"] .spectrum-card__canvas {
+  background: url('../images/demos/aurelis-architecture/hero-aurelis-modern-villa.jpg') center 58% / cover no-repeat;
+}
+
 /* Speels → Kapsalon */
 .home-studio .spectrum-card[data-style="speels"] .spectrum-card__canvas {
   background: url('../images/luna-hair-studio/hero/hero-salon-styling-01.png') center top / cover no-repeat;
