@@ -126,8 +126,16 @@
 .cafe-demo select,
 .cafe-demo textarea { min-height: 44px; }
 
-.cafe-demo .cafe-header__call { border-color: rgba(255, 248, 238, 0.42); }
-.cafe-demo .site-header.is-condensed .cafe-header__call { border-color: var(--cafe-line-strong); }
+.cafe-demo .cafe-header__call {
+	background: #fffaf2;
+	color: #2f1c12;
+	border-color: rgba(68, 41, 24, 0.24);
+}
+
+.cafe-demo .site-header.is-condensed .cafe-header__call {
+	color: #2f1c12;
+	border-color: var(--cafe-line-strong);
+}
 
 .cafe-demo .theme-toggle {
 	background: color-mix(in srgb, rgba(255, 255, 255, 0.16) 76%, transparent);
@@ -185,6 +193,23 @@
 .cafe-demo .btn--ghost:focus-visible {
 	border-color: var(--cafe-amber);
 	color: var(--cafe-amber);
+}
+
+.cafe-demo .cafe-header__call.btn--ghost,
+.cafe-demo .site-header.is-condensed .cafe-header__call.btn--ghost {
+	color: #2f1c12;
+	background: #fffaf2;
+}
+
+.cafe-demo .cafe-header__call.btn--ghost:hover,
+.cafe-demo .cafe-header__call.btn--ghost:focus-visible,
+.cafe-demo .cafe-header__call.btn--ghost:active,
+.cafe-demo .site-header.is-condensed .cafe-header__call.btn--ghost:hover,
+.cafe-demo .site-header.is-condensed .cafe-header__call.btn--ghost:focus-visible,
+.cafe-demo .site-header.is-condensed .cafe-header__call.btn--ghost:active {
+	color: #2f1c12;
+	background: #f3e9dc;
+	border-color: var(--cafe-amber);
 }
 
 .cafe-demo :focus-visible {
