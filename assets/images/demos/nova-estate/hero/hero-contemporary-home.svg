@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Nova Estate contemporary home</title>
+  <desc id="desc">Strakke woning met brede glaspartijen en landschappelijke tuin.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#204a61"/>
+      <stop offset="100%" stop-color="#95a58a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect y="630" width="1600" height="270" fill="#3b6f5a"/>
+  <rect x="310" y="320" width="980" height="300" fill="#20393c"/>
+  <rect x="360" y="370" width="320" height="180" fill="#d6e8e7"/>
+  <rect x="730" y="370" width="510" height="180" fill="#bad6d3"/>
+  <rect x="520" y="260" width="430" height="60" fill="#2a4f55"/>
+  <circle cx="1280" cy="210" r="52" fill="#e0bf88" opacity="0.82"/>
+</svg>

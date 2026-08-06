@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="nl-BE">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nova Estate | Aanbod</title>
+  <meta name="description" content="Overzicht van premium woningen met filters, highlights en directe toegang tot uitgebreide vastgoedfiches.">
+  <meta name="robots" content="noindex,follow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../assets/css/demos/nova-estate.css">
+</head>
+<body>
+  <a class="ne-skip" href="#ne-main">Spring naar de inhoud</a>
+  <header class="ne-header" id="neHeader">
+    <div class="ne-shell ne-nav">
+      <a class="demo-back-link" href="../../../index.html" aria-label="Terug naar Lorenzo Web Solutions">← Terug naar Lorenzo Web Solutions</a>
+      <a class="ne-brand" href="./index.html">Nova Estate<span>Prime Residential Belgium</span></a>
+      <button id="neNavToggle" class="ne-nav-toggle" type="button" aria-expanded="false" aria-controls="neNavLinks" aria-label="Open het menu"><span></span><span></span><span></span></button>
+      <nav id="neNavLinks" class="ne-nav__links" aria-label="Hoofdnavigatie">
+        <a href="./index.html">Home</a>
+        <a href="./aanbod.html" aria-current="page">Aanbod</a>
+        <a href="./new-build.html">Nieuwbouw</a>
+        <a href="./sell-property.html">Verkopen</a>
+        <a href="./insights.html">Inzichten</a>
+        <a href="./about.html">Over Nova</a>
+        <a href="./contact.html">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="ne-main">
+    <section class="ne-section ne-listing-hero">
+      <div class="ne-shell">
+        <div class="ne-heading ne-reveal">
+          <p class="ne-eyebrow">Featured Properties</p>
+          <h1 class="ne-display">Ontdek woningen die esthetiek en inhoud samenbrengen.</h1>
+          <p>Filter op regio, budget en woonprofiel. Elke selectie toont direct de belangrijkste vastgoedgegevens.</p>
+        </div>
+        <div class="ne-listing-topline ne-reveal" aria-label="Aanbod quick insights">
+          <p><strong>32</strong> premium woningen actief</p>
+          <p><strong>11</strong> nieuwe dossiers deze maand</p>
+          <p><strong>96%</strong> transacties binnen doelrange</p>
+        </div>
+        <form id="neQuickSearch" class="ne-search ne-search--listing" aria-label="Zoek in aanbod">
+          <label>
+            Locatie
+            <input id="neLocation" name="locatie" type="text" placeholder="Antwerpen, Gent, Knokke">
+          </label>
+          <label>
+            Type vastgoed
+            <select id="neType" name="type">
+              <option value="">Alle types</option>
+              <option value="Villa">Villa</option>
+              <option value="Appartement">Appartement</option>
+              <option value="Penthouse">Penthouse</option>
+              <option value="Nieuwbouw">Nieuwbouw</option>
+            </select>
+          </label>
+          <label>
+            Budget
+            <select id="neBudget" name="budget">
+              <option value="">Elk budget</option>
+              <option value="tot 500K">tot EUR 500.000</option>
+              <option value="500K - 1M">EUR 500.000 - 1.000.000</option>
+              <option value="1M+">vanaf EUR 1.000.000</option>
+            </select>
+          </label>
+          <label>
+            Slaapkamers
+            <select id="neBeds" name="slaapkamers">
+              <option value="">Ongeacht</option>
+              <option value="2+">2+</option>
+              <option value="3+">3+</option>
+              <option value="4+">4+</option>
+            </select>
+          </label>
+          <button type="submit">Zoek panden</button>
+        </form>
+        <p id="neSearchOutput" class="ne-listing-output" aria-live="polite"></p>
+        <div class="ne-filter-chips ne-reveal" aria-label="Snelfilters">
+          <button type="button">Direct beschikbaar</button>
+          <button type="button">Tuin & buitenruimte</button>
+          <button type="button">Penthouse collecties</button>
+          <button type="button">Investeringswaardig</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="ne-section">
+      <div class="ne-shell">
+        <div class="ne-grid ne-grid--listing">
+          <article class="ne-card ne-card--editorial ne-reveal" data-card-float>
+            <div class="ne-card__media">
+              <img fetchpriority="high" decoding="async" height="1024" width="1536" alt="Villa Parkzicht Residence" data-fallback-label="Parkzicht Residence" data-image-candidates="../../../assets/images/demos/nova-estate/properties/property-modern-villa-03.jpg" src="../../../assets/images/demos/nova-estate/properties/property-modern-villa-03.jpg" loading="eager">
+              <button class="ne-favorite" type="button" aria-label="Voeg toe aan favorieten" aria-pressed="false" data-favorite-toggle><span aria-hidden="true">♡</span></button>
+              <span class="ne-badge ne-badge--new">Nieuw</span>
+            </div>
+            <div class="ne-card__body">
+              <p class="ne-card__type">Villa</p>
+              <h2 class="ne-card__title">Parkzicht Residence</h2>
+              <p class="ne-card__meta">Brasschaat · Kapelsesteenweg district</p>
+              <p class="ne-card__story">Rustige zichtassen, wellnessniveau en een tuinarchitectuur die privacy als luxe vertaalt.</p>
+              <ul class="ne-card__facts" aria-label="Kenmerken Parkzicht Residence">
+                <li><span>Woonopp.</span><strong>402 m2</strong></li>
+                <li><span>Perceel</span><strong>1.180 m2</strong></li>
+                <li><span>Slaapkamers</span><strong>5</strong></li>
+                <li><span>Badkamers</span><strong>3</strong></li>
+                <li><span>Garage</span><strong>2 wagens</strong></li>
+                <li><span>EPC</span><strong>A</strong></li>
+              </ul>
+              <p class="ne-card__price">EUR 1.295.000</p>
+              <a class="ne-btn ne-btn--ghost" href="./woning-parkzicht-residence.html">Open editorial fiche</a>
+            </div>
+          </article>
+
+          <article class="ne-card ne-card--editorial ne-reveal" data-card-float>
+            <div class="ne-card__media">
+              <img decoding="async" height="1024" width="1536" alt="Leie Skyline 8 penthouse" data-fallback-label="Leie Skyline" data-image-candidates="../../../assets/images/demos/nova-estate/properties/property-penthouse-01.jpg" src="../../../assets/images/demos/nova-estate/properties/property-penthouse-01.jpg" loading="lazy">
+              <button class="ne-favorite" type="button" aria-label="Voeg toe aan favorieten" aria-pressed="false" data-favorite-toggle><span aria-hidden="true">♡</span></button>
+              <span class="ne-badge ne-badge--exclusive">Exclusief</span>
+            </div>
+            <div class="ne-card__body">
+              <p class="ne-card__type">Penthouse</p>
+              <h2 class="ne-card__title">Leie Skyline 8</h2>
+              <p class="ne-card__meta">Gent · Leiebocht centrumas</p>
+              <p class="ne-card__story">Panoramische terrassen, verfijnde indeling en een stadswoning met hotelniveau comfort.</p>
+              <ul class="ne-card__facts" aria-label="Kenmerken Leie Skyline 8">
+                <li><span>Woonopp.</span><strong>196 m2</strong></li>
+                <li><span>Terras</span><strong>74 m2</strong></li>
+                <li><span>Slaapkamers</span><strong>3</strong></li>
+                <li><span>Badkamers</span><strong>2</strong></li>
+                <li><span>Garage</span><strong>1 wagen</strong></li>
+                <li><span>EPC</span><strong>A+</strong></li>
+              </ul>
+              <p class="ne-card__price">EUR 875.000</p>
+              <a class="ne-btn ne-btn--ghost" href="./woning-parkzicht-residence.html">Open editorial fiche</a>
+            </div>
+          </article>
+
+          <article class="ne-card ne-card--editorial ne-reveal" data-card-float>
+            <div class="ne-card__media">
+              <img decoding="async" height="1024" width="1536" alt="Harbor Lofts Brugge" data-fallback-label="Harbor Lofts" data-image-candidates="../../../assets/images/demos/nova-estate/architecture/architecture-side-view.jpg" src="../../../assets/images/demos/nova-estate/architecture/architecture-side-view.jpg" loading="lazy">
+              <button class="ne-favorite" type="button" aria-label="Voeg toe aan favorieten" aria-pressed="false" data-favorite-toggle><span aria-hidden="true">♡</span></button>
+              <span class="ne-badge ne-badge--option">Onder optie</span>
+            </div>
+            <div class="ne-card__body">
+              <p class="ne-card__type">Nieuwbouw</p>
+              <h2 class="ne-card__title">Harbor Lofts Brugge</h2>
+              <p class="ne-card__meta">Brugge · waterfront projectzone</p>
+              <p class="ne-card__story">Cohesieve projectarchitectuur met BEN-ambitie, waterfront beleving en langetermijnpotentieel.</p>
+              <ul class="ne-card__facts" aria-label="Kenmerken Harbor Lofts Brugge">
+                <li><span>Typologie</span><strong>22 units</strong></li>
+                <li><span>Perceel</span><strong>3.450 m2</strong></li>
+                <li><span>Slaapkamers</span><strong>2-4</strong></li>
+                <li><span>Badkamers</span><strong>1-3</strong></li>
+                <li><span>Garage</span><strong>Ondergronds</strong></li>
+                <li><span>EPC</span><strong>A++</strong></li>
+              </ul>
+              <p class="ne-card__price">vanaf EUR 465.000</p>
+              <a class="ne-btn ne-btn--ghost" href="./woning-parkzicht-residence.html">Open editorial fiche</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="ne-section ne-section--soft">
+      <div class="ne-shell ne-cta ne-reveal">
+        <p class="ne-eyebrow">Nog niet gevonden wat je zoekt?</p>
+        <h2>Vraag een discrete search op maat van jouw woonprofiel.</h2>
+        <p>We cureren een shortlist op basis van leefstijl, budget, locatievoorkeur en timing.</p>
+        <ul class="ne-cta__meta" aria-label="Voordelen van search op maat">
+          <li>Shortlist binnen 72 uur</li>
+          <li>Technische pre-screening inbegrepen</li>
+          <li>Focus op woonkwaliteit én waardevastheid</li>
+        </ul>
+        <div class="ne-actions">
+          <a class="ne-btn ne-btn--primary" href="./contact.html">Plan een intake</a>
+          <a class="ne-btn ne-btn--ghost" href="./index.html">Terug naar home</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="ne-footer">
+    <div class="ne-shell">
+      <p class="ne-footer__bottom">&copy; <span data-current-year></span> Nova Estate Demo.</p>
+    </div>
+  </footer>
+  <script src="../../../assets/js/demos/nova-estate.js" defer></script>
+</body>
+</html>
+
+
+
+
+
+
+

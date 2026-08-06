@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Penthouse property card</title>
+  <desc id="desc">Penthousevolume met skyline en groot terras.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#17384f"/>
+      <stop offset="100%" stop-color="#7a8f7e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#sky)"/>
+  <rect y="620" width="1200" height="280" fill="#2c5356"/>
+  <rect x="140" y="320" width="920" height="290" fill="#1f3940"/>
+  <rect x="200" y="380" width="240" height="170" fill="#dcebea"/>
+  <rect x="470" y="380" width="520" height="170" fill="#b8d5d3"/>
+  <rect x="760" y="280" width="220" height="55" fill="#2a5962"/>
+</svg>

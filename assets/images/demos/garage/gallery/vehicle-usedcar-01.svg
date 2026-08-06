@@ -1,0 +1,13 @@
+<svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t6">
+  <title id="t6">Tweedehands sedan, driekwart zij-aanzicht silhouet met gekeurd-badge</title>
+  <ellipse cx="400" cy="430" rx="260" ry="20" fill="#000" opacity="0.18" />
+  <path d="M180 366 L206 306 Q218 288 240 288 L556 288 Q576 288 588 306 L610 366 L630 366 Q652 366 652 390 L652 412 L160 412 L160 390 Q160 366 182 366 Z" fill="#2b3136" />
+  <path d="M240 300 L282 300 L270 350 L216 350 Z" fill="#b6ff3c" opacity="0.5" />
+  <path d="M294 300 L552 300 L572 350 L282 350 Z" fill="#b6ff3c" opacity="0.5" />
+  <circle cx="256" cy="412" r="38" fill="#15181b" stroke="#8a9298" stroke-width="4" />
+  <circle cx="256" cy="412" r="15" fill="#3a4046" />
+  <circle cx="548" cy="412" r="38" fill="#15181b" stroke="#8a9298" stroke-width="4" />
+  <circle cx="548" cy="412" r="15" fill="#3a4046" />
+  <circle cx="606" cy="270" r="34" fill="#0c0e10" stroke="#b6ff3c" stroke-width="3" />
+  <path d="M592 270 l10 10 l18 -20" fill="none" stroke="#b6ff3c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Villa property card</title>
+  <desc id="desc">Moderne villa met groot raamvlak en tuinzone.</desc>
+  <rect width="1200" height="900" fill="#1c4f55"/>
+  <rect y="620" width="1200" height="280" fill="#3d765e"/>
+  <rect x="170" y="320" width="860" height="280" fill="#1f3d42"/>
+  <rect x="220" y="370" width="280" height="180" fill="#d9e9e8"/>
+  <rect x="540" y="370" width="430" height="180" fill="#b3d0ce"/>
+  <rect x="620" y="250" width="260" height="70" fill="#2d585f"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t2">
+  <title id="t2">Gezinswagen (stationwagen), driekwart zij-aanzicht silhouet</title>
+  <ellipse cx="400" cy="430" rx="270" ry="20" fill="#000" opacity="0.18" />
+  <path d="M160 362 L182 300 Q194 284 214 284 L560 284 Q580 284 590 302 L612 362 L636 362 Q658 362 658 386 L658 412 L142 412 L142 386 Q142 362 164 362 Z" fill="#2b3136" />
+  <path d="M214 296 L252 296 L242 348 L190 348 Z" fill="#b6ff3c" opacity="0.5" />
+  <path d="M264 296 L556 296 L578 348 L252 348 Z" fill="#b6ff3c" opacity="0.5" />
+  <circle cx="242" cy="412" r="38" fill="#15181b" stroke="#8a9298" stroke-width="4" />
+  <circle cx="242" cy="412" r="15" fill="#3a4046" />
+  <circle cx="560" cy="412" r="38" fill="#15181b" stroke="#8a9298" stroke-width="4" />
+  <circle cx="560" cy="412" r="15" fill="#3a4046" />
+</svg>

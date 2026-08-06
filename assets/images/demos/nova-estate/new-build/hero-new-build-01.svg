@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">New build project card</title>
+  <desc id="desc">Nieuwbouwcluster met volumes en groene verbindingszone.</desc>
+  <rect width="1200" height="900" fill="#1c4951"/>
+  <rect x="120" y="180" width="960" height="560" fill="#2d5d63" rx="24"/>
+  <rect x="190" y="250" width="220" height="180" fill="#e3d8c2"/>
+  <rect x="450" y="250" width="220" height="180" fill="#d2e2e1"/>
+  <rect x="710" y="250" width="220" height="180" fill="#e9ede7"/>
+  <rect x="190" y="470" width="220" height="180" fill="#d7e4cf"/>
+  <rect x="450" y="470" width="220" height="180" fill="#d5cab5"/>
+  <rect x="710" y="470" width="220" height="180" fill="#bad8d6"/>
+</svg>

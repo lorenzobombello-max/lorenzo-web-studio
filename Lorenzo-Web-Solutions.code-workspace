@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "lorenzo-web-studio",
+      "path": "."
+    },
+    {
+      "name": "LWS-private-docs",
+      "path": "../LWS-private-docs"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true
+    }
+  }
+}

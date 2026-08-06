@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Villa property variant</title>
+  <desc id="desc">Woning met hoekvolume en verdiepte tuin.</desc>
+  <rect width="1200" height="900" fill="#26404c"/>
+  <rect y="610" width="1200" height="290" fill="#557f64"/>
+  <rect x="190" y="350" width="760" height="250" fill="#1f373d"/>
+  <rect x="980" y="410" width="120" height="190" fill="#203d46"/>
+  <rect x="240" y="395" width="280" height="160" fill="#d6e6e3"/>
+  <rect x="550" y="395" width="330" height="160" fill="#bdd7d5"/>
+</svg>
