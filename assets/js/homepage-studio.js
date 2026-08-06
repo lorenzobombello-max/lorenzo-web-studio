@@ -128,6 +128,10 @@
         fit: "Geschikt voor premium kapsalons, schoonheidssalons en luxury beauty-merken.",
         benefit: "Straalt verfijning en vertrouwen uit — precies wat klanten zoeken bij een premium kapsalon.",
       },
+      aurelis: {
+        fit: "Geschikt voor architecten, interieurstudio's en ontwerpgerichte bureaus met projectgedreven positionering.",
+        benefit: "Versterkt premium perceptie met editorial storytelling en materiaalgerichte projectpresentatie.",
+      },
       future: {
         fit: "Geschikt voor nieuwe branches die een unieke digitale identiteit willen.",
         benefit: "Laat je snel een branchegerichte demo valideren.",
