@@ -29,6 +29,10 @@ backup/
 # Temporary audit artifacts (Lighthouse reports, screenshots)
 .tmp/
 
+# Generated static deploy output
+dist/
+dist-verification-report.json
+
 # Local tool configuration
 .claude/
 
