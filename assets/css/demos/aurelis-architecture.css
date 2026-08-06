@@ -1,0 +1,870 @@
+:root {
+  --a-bg: #f3eee6;
+  --a-surface: #fbf8f2;
+  --a-text: #26221c;
+  --a-muted: #665f54;
+  --a-line: #d6c8b6;
+  --a-accent: #9f704d;
+  --a-accent-soft: #c2a287;
+  --a-deep: #191715;
+  --a-stone: #d8cec2;
+  --a-concrete: #c8c3bb;
+  --a-wood: #b28a66;
+  --a-metal: #9da3a7;
+  --a-radius: 1rem;
+  --a-shell: min(1220px, 92vw);
+  --a-shadow: 0 20px 60px rgba(34, 30, 24, 0.12);
+  --a-grid: rgba(38, 34, 28, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body.aurelis {
+  margin: 0;
+  color: var(--a-text);
+  background:
+    linear-gradient(170deg, #f6f1e8 0%, #f1ebdf 46%, #ece4d7 100%);
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+  user-select: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+p,
+ol,
+ul,
+figure {
+  margin: 0;
+}
+
+.aurelis-shell {
+  width: var(--a-shell);
+  margin-inline: auto;
+}
+
+.aurelis-skip {
+  position: absolute;
+  left: 1rem;
+  top: 0;
+  padding: 0.6rem 1rem;
+  background: var(--a-deep);
+  color: #fff;
+  transform: translateY(-140%);
+  z-index: 300;
+}
+
+.aurelis-skip:focus-visible {
+  transform: translateY(1rem);
+}
+
+.aurelis-nav {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  border-bottom: 1px solid rgba(22, 18, 14, 0.14);
+  background: rgba(246, 241, 232, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.aurelis-nav__inner {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.aurelis-back {
+  font-size: 0.86rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--a-muted);
+}
+
+.aurelis-wordmark {
+  justify-self: center;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 1.16rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.aurelis-wordmark span {
+  display: block;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--a-muted);
+}
+
+.aurelis-nav__links {
+  display: flex;
+  gap: 0.95rem;
+  justify-self: end;
+  font-size: 0.92rem;
+}
+
+.aurelis-nav__links a {
+  position: relative;
+  padding: 0.24rem;
+  color: var(--a-muted);
+}
+
+.aurelis-nav__links a::after {
+  content: "";
+  position: absolute;
+  left: 0.24rem;
+  right: 0.24rem;
+  bottom: -0.12rem;
+  height: 1px;
+  background: var(--a-text);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 220ms ease;
+}
+
+.aurelis-nav__links a:hover::after,
+.aurelis-nav__links a:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.aurelis-nav__toggle {
+  display: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  border-radius: 999px;
+  place-items: center;
+  padding: 0;
+}
+
+.aurelis-nav__toggle span {
+  display: block;
+  width: 1.1rem;
+  height: 1px;
+  background: var(--a-text);
+  margin: 3px auto;
+}
+
+.aurelis-hero {
+  position: relative;
+  padding: clamp(3rem, 7vw, 5rem) 0 3rem;
+  overflow: clip;
+}
+
+.aurelis-hero__blueprint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.aurelis-hero__blueprint .line {
+  position: absolute;
+  background: linear-gradient(90deg, transparent, var(--a-grid), transparent);
+  opacity: 0.7;
+}
+
+.line-a {
+  top: 14%;
+  left: -10%;
+  width: 70%;
+  height: 1px;
+  animation: blueprint-slide 14s linear infinite;
+}
+
+.line-b {
+  top: 48%;
+  left: 22%;
+  width: 1px;
+  height: 56%;
+  background: linear-gradient(180deg, transparent, var(--a-grid), transparent);
+  animation: blueprint-pulse 8s ease-in-out infinite;
+}
+
+.line-c {
+  top: 70%;
+  right: -8%;
+  width: 58%;
+  height: 1px;
+  animation: blueprint-slide-reverse 12s linear infinite;
+}
+
+.aurelis-hero__grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 0.62fr;
+  gap: clamp(1rem, 2.6vw, 2rem);
+  align-items: end;
+}
+
+.aurelis-kicker {
+  color: var(--a-accent);
+  text-transform: uppercase;
+  font-size: 0.76rem;
+  letter-spacing: 0.13em;
+  margin-bottom: 0.9rem;
+  font-weight: 700;
+}
+
+.aurelis-hero h1,
+.aurelis-section-head h2,
+.aurelis-focus h2,
+.aurelis-studio h2,
+.aurelis-materials h2,
+.aurelis-contact h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.aurelis-hero h1 {
+  font-size: clamp(2.2rem, 5.4vw, 4.5rem);
+  max-width: 12ch;
+}
+
+.aurelis-hero__lead {
+  margin-top: 1.1rem;
+  color: var(--a-muted);
+  max-width: 48ch;
+  line-height: 1.74;
+}
+
+.aurelis-hero__cta {
+  margin-top: 1.6rem;
+  display: flex;
+  gap: 0.78rem;
+  flex-wrap: wrap;
+}
+
+.aurelis-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.72rem 1.2rem;
+  font-size: 0.94rem;
+  transition: transform 220ms ease, background-color 220ms ease, border-color 220ms ease;
+}
+
+.aurelis-btn:hover,
+.aurelis-btn:focus-visible {
+  transform: translateY(-2px);
+}
+
+.aurelis-btn--primary {
+  background: var(--a-deep);
+  color: #fff;
+}
+
+.aurelis-btn--ghost {
+  border-color: var(--a-line);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.aurelis-media {
+  position: relative;
+  background: #eee6db;
+  border: 1px solid rgba(28, 24, 19, 0.1);
+  border-radius: var(--a-radius);
+  overflow: hidden;
+  box-shadow: var(--a-shadow);
+}
+
+.aurelis-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.aurelis-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 1rem;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(198, 195, 187, 0.65),
+    rgba(198, 195, 187, 0.65) 12px,
+    rgba(234, 226, 214, 0.9) 12px,
+    rgba(234, 226, 214, 0.9) 24px
+  );
+  color: #4f483d;
+  font-size: 0.9rem;
+}
+
+.aurelis-hero__visual {
+  min-height: clamp(360px, 48vw, 620px);
+}
+
+.aurelis-hero__index {
+  border-left: 1px solid var(--a-line);
+  padding-left: 1rem;
+  align-self: stretch;
+}
+
+.aurelis-index__title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--a-muted);
+  margin-bottom: 0.9rem;
+}
+
+.aurelis-hero__index ol {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.88rem;
+}
+
+.aurelis-hero__index li {
+  font-size: 0.94rem;
+  color: var(--a-muted);
+}
+
+.aurelis-hero__index span {
+  display: inline-block;
+  min-width: 2rem;
+  color: var(--a-accent);
+  font-family: "Iowan Old Style", Georgia, serif;
+}
+
+.aurelis-section-head {
+  margin-bottom: 1.6rem;
+}
+
+.aurelis-section-head h2 {
+  font-size: clamp(1.7rem, 3.2vw, 2.8rem);
+  max-width: 20ch;
+}
+
+.aurelis-works {
+  padding: 2rem 0;
+}
+
+.aurelis-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-areas:
+    "wide cardA"
+    "wide cardB";
+  gap: 1rem;
+}
+
+.aurelis-project {
+  position: relative;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.aurelis-project--wide {
+  grid-area: wide;
+}
+
+.aurelis-project:nth-of-type(2) {
+  grid-area: cardA;
+}
+
+.aurelis-project:nth-of-type(3) {
+  grid-area: cardB;
+}
+
+.aurelis-project .aurelis-media {
+  min-height: 280px;
+}
+
+.aurelis-project--wide .aurelis-media {
+  min-height: 580px;
+}
+
+.aurelis-project__meta {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.aurelis-project__nr {
+  color: var(--a-accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.aurelis-project__meta h3 {
+  font-family: "Iowan Old Style", Georgia, serif;
+  font-size: 1.36rem;
+}
+
+.aurelis-project__meta p {
+  color: var(--a-muted);
+  font-size: 0.9rem;
+}
+
+.aurelis-project__hover {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 4.4rem;
+  padding: 0.72rem 0.88rem;
+  border: 1px solid rgba(250, 247, 241, 0.46);
+  background: rgba(17, 15, 13, 0.68);
+  color: #f3ede4;
+  transform: translateY(8px);
+  opacity: 0;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.aurelis-project:hover .aurelis-project__hover,
+.aurelis-project:focus-within .aurelis-project__hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.aurelis-focus,
+.aurelis-studio,
+.aurelis-process,
+.aurelis-materials,
+.aurelis-contact {
+  padding: 2.6rem 0;
+}
+
+.aurelis-focus__grid,
+.aurelis-studio__grid,
+.aurelis-materials__grid,
+.aurelis-contact__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(1rem, 2.2vw, 2rem);
+  align-items: start;
+}
+
+.aurelis-focus h2,
+.aurelis-studio h2,
+.aurelis-materials h2,
+.aurelis-contact h2 {
+  font-size: clamp(1.6rem, 2.7vw, 2.5rem);
+  margin-bottom: 0.8rem;
+}
+
+.aurelis-focus__content > p,
+.aurelis-studio__copy > p,
+.aurelis-materials__copy > p,
+.aurelis-contact__copy > p {
+  color: var(--a-muted);
+  line-height: 1.72;
+}
+
+.aurelis-metrics {
+  margin-top: 1.05rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.aurelis-metrics div {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0.8rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--a-line);
+}
+
+.aurelis-metrics dt {
+  color: var(--a-muted);
+}
+
+.aurelis-tabs {
+  margin-top: 1.2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.aurelis-tab {
+  border: 1px solid var(--a-line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.44rem 0.78rem;
+  font-size: 0.86rem;
+}
+
+.aurelis-tab.is-active {
+  border-color: var(--a-deep);
+  background: var(--a-deep);
+  color: #fff;
+}
+
+.aurelis-panel {
+  margin-top: 0.75rem;
+  min-height: 4.5rem;
+}
+
+.aurelis-stats {
+  margin-top: 1.1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.aurelis-stats li {
+  border: 1px solid var(--a-line);
+  border-radius: var(--a-radius);
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.aurelis-stats span {
+  display: block;
+  font-family: "Iowan Old Style", Georgia, serif;
+  font-size: clamp(1.6rem, 2.8vw, 2.1rem);
+  line-height: 1;
+}
+
+.aurelis-stats small {
+  color: var(--a-muted);
+}
+
+.aurelis-timeline {
+  margin-top: 1rem;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0;
+  position: relative;
+}
+
+.aurelis-timeline::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1.2rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--a-line), transparent);
+}
+
+.aurelis-timeline li {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.aurelis-timeline span {
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 999px;
+  display: grid;
+  place-content: center;
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  font-family: "Iowan Old Style", Georgia, serif;
+}
+
+.aurelis-timeline p {
+  font-size: 0.9rem;
+  color: var(--a-muted);
+}
+
+.aurelis-materials {
+  transition: background-color 360ms ease;
+}
+
+.aurelis-materials[data-tone="concrete"] {
+  background: linear-gradient(180deg, rgba(200, 195, 187, 0.2), transparent);
+}
+
+.aurelis-materials[data-tone="stone"] {
+  background: linear-gradient(180deg, rgba(216, 206, 194, 0.26), transparent);
+}
+
+.aurelis-materials[data-tone="wood"] {
+  background: linear-gradient(180deg, rgba(178, 138, 102, 0.21), transparent);
+}
+
+.aurelis-materials[data-tone="metal"] {
+  background: linear-gradient(180deg, rgba(157, 163, 167, 0.22), transparent);
+}
+
+.aurelis-swatches {
+  margin: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.aurelis-swatch {
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 0.42rem 0.76rem;
+  font-size: 0.88rem;
+}
+
+.aurelis-swatch.is-active {
+  background: var(--a-text);
+  color: #fff;
+  border-color: var(--a-text);
+}
+
+.aurelis-materials__detail {
+  min-height: 230px;
+}
+
+.aurelis-contact__note {
+  margin: 0.75rem 0 0.9rem;
+  padding: 0.66rem 0.74rem;
+  border-left: 3px solid var(--a-accent);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.aurelis-form {
+  display: grid;
+  gap: 0.66rem;
+}
+
+.aurelis-form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.aurelis-form input,
+.aurelis-form select,
+.aurelis-form textarea {
+  width: 100%;
+  border: 1px solid var(--a-line);
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 0.62rem 0.7rem;
+  color: var(--a-text);
+}
+
+.aurelis-form input:focus-visible,
+.aurelis-form select:focus-visible,
+.aurelis-form textarea:focus-visible,
+.aurelis-btn:focus-visible,
+.aurelis-tab:focus-visible,
+.aurelis-swatch:focus-visible,
+.aurelis-nav__links a:focus-visible,
+.aurelis-nav__toggle:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(159, 112, 77, 0.22);
+  color: var(--a-text);
+}
+
+.aurelis-footer {
+  border-top: 1px solid var(--a-line);
+  padding: 1.3rem 0 2rem;
+  color: var(--a-muted);
+}
+
+.aurelis-footer .aurelis-shell {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 520ms ease, transform 520ms ease;
+}
+
+[data-reveal].is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+body.aurelis.has-cursor .aurelis-hero::after {
+  content: "";
+  position: absolute;
+  inset: -24%;
+  background:
+    radial-gradient(circle at var(--cursor-x, 40%) var(--cursor-y, 40%), rgba(255, 250, 240, 0.26), transparent 24%);
+  pointer-events: none;
+}
+
+@keyframes blueprint-slide {
+  from { transform: translateX(-14%); }
+  to { transform: translateX(14%); }
+}
+
+@keyframes blueprint-slide-reverse {
+  from { transform: translateX(12%); }
+  to { transform: translateX(-12%); }
+}
+
+@keyframes blueprint-pulse {
+  0%, 100% { opacity: 0.24; }
+  50% { opacity: 0.76; }
+}
+
+@media (max-width: 1140px) {
+  .aurelis-hero__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .aurelis-hero__index {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid var(--a-line);
+    padding: 0.9rem 0 0;
+  }
+
+  .aurelis-hero__index ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .aurelis-grid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "wide wide"
+      "cardA cardB";
+  }
+
+  .aurelis-project--wide .aurelis-media {
+    min-height: 460px;
+  }
+}
+
+@media (max-width: 920px) {
+  .aurelis-nav__inner {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .aurelis-wordmark {
+    justify-self: start;
+  }
+
+  .aurelis-nav__toggle {
+    display: inline-grid;
+    justify-self: end;
+  }
+
+  .aurelis-nav__links {
+    position: absolute;
+    left: 4vw;
+    right: 4vw;
+    top: 64px;
+    flex-direction: column;
+    background: rgba(251, 248, 242, 0.98);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-radius);
+    padding: 0.8rem;
+    transform: scaleY(0.94);
+    opacity: 0;
+    pointer-events: none;
+    transform-origin: top;
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+
+  .aurelis-nav__links.is-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scaleY(1);
+  }
+
+  .aurelis-focus__grid,
+  .aurelis-studio__grid,
+  .aurelis-materials__grid,
+  .aurelis-contact__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .aurelis-timeline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem 0.5rem;
+  }
+
+  .aurelis-timeline::before {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .aurelis-nav__inner {
+    min-height: 64px;
+  }
+
+  .aurelis-wordmark {
+    font-size: 0.98rem;
+  }
+
+  .aurelis-back {
+    display: none;
+  }
+
+  .aurelis-hero__grid,
+  .aurelis-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+  }
+
+  .aurelis-project,
+  .aurelis-project:nth-of-type(2),
+  .aurelis-project:nth-of-type(3),
+  .aurelis-project--wide {
+    grid-area: auto;
+  }
+
+  .aurelis-project .aurelis-media,
+  .aurelis-project--wide .aurelis-media {
+    min-height: 300px;
+  }
+
+  .aurelis-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}
