@@ -281,6 +281,14 @@ ul { margin: 0; padding: 0; list-style: none; }
   padding: clamp(2.8rem, 6vw, 4.8rem) 0;
 }
 
+@media (min-width: 1090px) {
+  .ne-search,
+  .ne-hero__kpis {
+    width: min(var(--ne-container), 92vw);
+    max-width: min(var(--ne-container), 92vw);
+  }
+}
+
 .ne-hero__content h1 {
   font-family: "Source Serif 4", Georgia, serif;
   font-size: clamp(2.2rem, 5vw, 4.6rem);
