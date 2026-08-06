@@ -132,6 +132,10 @@
         fit: "Geschikt voor architecten, interieurstudio's en ontwerpgerichte bureaus met projectgedreven positionering.",
         benefit: "Versterkt premium perceptie met editorial storytelling en materiaalgerichte projectpresentatie.",
       },
+      nova: {
+        fit: "Geschikt voor vastgoedkantoren en residentiële premium projecten met een sterke focus op beleving en vertrouwen.",
+        benefit: "Verhoogt de kwaliteit van vastgoedaanvragen met een rustige, high-end presentatieflow.",
+      },
       future: {
         fit: "Geschikt voor nieuwe branches die een unieke digitale identiteit willen.",
         benefit: "Laat je snel een branchegerichte demo valideren.",
