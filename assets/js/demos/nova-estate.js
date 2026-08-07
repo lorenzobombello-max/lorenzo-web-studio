@@ -5,6 +5,14 @@
   const yearNodes = document.querySelectorAll("[data-current-year]");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  function initContrastStylesheet() {
+    if (document.querySelector('link[data-nova-contrast="true"]')) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "../../../assets/css/demos/nova-estate-contrast.css";
+    link.setAttribute("data-nova-contrast", "true");
+    document.head.appendChild(link);
+  }
 
   function initTheme() {
     const root = document.documentElement;
@@ -291,6 +299,7 @@
     });
   }
 
+  initContrastStylesheet();
   initTheme();
   initThemeToggle();
   initYear();
