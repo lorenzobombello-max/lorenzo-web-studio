@@ -1,0 +1,78 @@
+/* AXIOM light-mode contrast correction.
+   Color/surface overrides only: no layout, spacing or responsive changes. */
+[data-theme="light"] .industrial-header {
+  background: rgba(244, 248, 251, 0.96);
+}
+
+[data-theme="light"] .btn--secondary {
+  background: #ffffff;
+  color: #16222e;
+  border-color: #9fb0c0;
+}
+
+[data-theme="light"] .hero {
+  color: #f3f7fb;
+}
+
+[data-theme="light"] .hero__intro,
+[data-theme="light"] .hero-status h2,
+[data-theme="light"] .hero-status dd,
+[data-theme="light"] .hero-promises li {
+  color: #e7eef6;
+}
+
+[data-theme="light"] .hero-status dt {
+  color: #9fb4c8;
+}
+
+[data-theme="light"] .incident-form,
+[data-theme="light"] .incident-side,
+[data-theme="light"] .dashboard-panel,
+[data-theme="light"] .shutdown-panel,
+[data-theme="light"] .parts-panel,
+[data-theme="light"] .asset-card,
+[data-theme="light"] .analyzer-options,
+[data-theme="light"] .analyzer-result,
+[data-theme="light"] .maintenance-track article,
+[data-theme="light"] .shutdown-line div,
+[data-theme="light"] .dossier-grid article {
+  background: #ffffff;
+  color: #16222e;
+  box-shadow: 0 12px 24px rgba(22, 34, 46, 0.08);
+}
+
+[data-theme="light"] .urgency-selector,
+[data-theme="light"] .form-grid fieldset {
+  background: #f7fafc;
+}
+
+[data-theme="light"] .urgency-selector legend,
+[data-theme="light"] .form-grid legend {
+  color: #31465a;
+}
+
+[data-theme="light"] .demo--industrial-electricity input,
+[data-theme="light"] .demo--industrial-electricity select,
+[data-theme="light"] .demo--industrial-electricity textarea {
+  background: #ffffff;
+  color: #16222e;
+  border-color: #9fb0c0;
+}
+
+[data-theme="light"] .safety-line {
+  background: #fff4df;
+  color: #6d4a13;
+}
+
+[data-theme="light"] .service-table-wrap {
+  background: #ffffff;
+}
+
+[data-theme="light"] .shutdown-line div,
+[data-theme="light"] .capacity-grid article,
+[data-theme="light"] .contact-grid article,
+[data-theme="light"] .parts-list li,
+[data-theme="light"] .safety-grid li,
+[data-theme="light"] .ops-imagery figure {
+  border-color: #b8c7d5;
+}
