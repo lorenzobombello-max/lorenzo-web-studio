@@ -1756,7 +1756,7 @@ summary:focus-visible {
   height: 34%;
   background:
     linear-gradient(180deg, rgba(16, 11, 14, 0.08), rgba(16, 11, 14, 0.28)),
-    url("../images/cafe/hero/hero-cafe-terrace-sunset-01.jpg");
+    url("../images/demos/cafe/hero/hero-cafe-terrace-sunset-01.jpg");
   background-size: cover;
   background-position: center 58%;
 }
@@ -1768,7 +1768,7 @@ summary:focus-visible {
   height: 50%;
   background:
     linear-gradient(160deg, rgba(13, 16, 24, 0.1), rgba(13, 16, 24, 0.3)),
-    url("../images/personal/hero/hero-personal-portfolio.jpg");
+    url("../images/demos/personal/hero/hero-personal-portfolio.jpg");
   background-size: cover;
   background-position: center top;
 }
@@ -2459,32 +2459,32 @@ summary:focus-visible {
 
 /* Minimalistisch → Personal Portfolio */
 .home-studio .spectrum-card[data-style="minimalistisch"] .spectrum-card__canvas {
-  background: url('../images/personal/hero/hero-personal-portfolio.jpg') center top / cover no-repeat;
+  background: url('../images/demos/personal/hero/hero-personal-portfolio.jpg') center top / cover no-repeat;
 }
 
 /* Premium → Mediterranean Brasserie */
 .home-studio .spectrum-card[data-style="premium"] .spectrum-card__canvas {
-  background: url('../images/mediterranean-brasserie/hero/hero-dining-room-evening-01.jpg') center center / cover no-repeat;
+  background: url('../images/demos/mediterranean-brasserie/hero/hero-dining-room-evening-01.jpg') center center / cover no-repeat;
 }
 
 /* Technisch → AXIOM Industrial */
 .home-studio .spectrum-card[data-style="technisch"] .spectrum-card__canvas {
-  background: url('../images/industrial/hero/hero-production-hall-01.jpg') center center / cover no-repeat;
+  background: url('../images/demos/industrial/hero/hero-production-hall-01.jpg') center center / cover no-repeat;
 }
 
 /* Warm en persoonlijk → Luna Hair Studio */
 .home-studio .spectrum-card[data-style="warm"] .spectrum-card__canvas {
-  background: url('../images/luna-hair-studio/hero/hero-luna-hair-studio.jpg') center center / cover no-repeat;
+  background: url('../images/demos/luna-hair-studio/hero/hero-luna-hair-studio.jpg') center center / cover no-repeat;
 }
 
 /* Dynamisch → Restaurant */
 .home-studio .spectrum-card[data-style="dynamisch"] .spectrum-card__canvas {
-  background: url('../images/restaurant/hero/hero-restaurant-interior-01.jpg') center center / cover no-repeat;
+  background: url('../images/demos/restaurant/hero/hero-restaurant-interior-01.jpg') center center / cover no-repeat;
 }
 
 /* Editorial → Personal Portfolio studio shot */
 .home-studio .spectrum-card[data-style="editorial"] .spectrum-card__canvas {
-  background: url('../images/personal/hero/hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
+  background: url('../images/demos/personal/hero/hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
 }
 
 /* Architectuur & Interieur → AURELIS cinematic villa preview */
@@ -2494,7 +2494,7 @@ summary:focus-visible {
 
 /* Speels → Kapsalon */
 .home-studio .spectrum-card[data-style="speels"] .spectrum-card__canvas {
-  background: url('../images/luna-hair-studio/hero/hero-salon-styling-01.png') center top / cover no-repeat;
+  background: url('../images/demos/luna-hair-studio/hero/hero-salon-styling-01.png') center top / cover no-repeat;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
