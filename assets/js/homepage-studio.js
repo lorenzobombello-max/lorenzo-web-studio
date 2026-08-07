@@ -5,54 +5,6 @@
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   body.classList.add("js-home-studio");
 
-  function initOfficialBranding() {
-    const logoLinks = document.querySelectorAll(".site-header .logo, .site-footer .logo");
-
-    logoLinks.forEach((link) => {
-      const inFooter = Boolean(link.closest(".site-footer"));
-      link.textContent = "";
-      link.setAttribute("aria-label", "Lorenzo Web Solutions Home");
-      Object.assign(link.style, {
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        lineHeight: "0",
-        padding: inFooter ? "0.42rem 0.56rem" : "0.16rem 0.28rem",
-        borderRadius: inFooter ? "0.75rem" : "0.6rem",
-        background: "rgba(255, 255, 255, 0.96)",
-      });
-
-      const image = document.createElement("img");
-      image.src = "assets/images/hero/lorenzo-web-solution-logo.svg";
-      image.alt = "";
-      image.width = 867;
-      image.height = 502;
-      image.decoding = "async";
-      if (inFooter) image.loading = "lazy";
-      Object.assign(image.style, {
-        display: "block",
-        width: inFooter ? "172px" : "clamp(88px, 9vw, 108px)",
-        height: "auto",
-      });
-      link.appendChild(image);
-    });
-
-    const footerLogo = document.querySelector(".site-footer .logo");
-    const footerBrandColumn = footerLogo ? footerLogo.parentElement : null;
-    if (footerBrandColumn && !footerBrandColumn.querySelector("[data-brand-owner]")) {
-      const owner = document.createElement("p");
-      owner.dataset.brandOwner = "true";
-      owner.textContent = "Lorenzo Bombello";
-      Object.assign(owner.style, {
-        margin: "0.72rem 0 0.28rem",
-        color: "#fff",
-        fontWeight: "700",
-        letterSpacing: "0.015em",
-      });
-      footerLogo.insertAdjacentElement("afterend", owner);
-    }
-  }
-
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
@@ -203,6 +155,7 @@
         .slice(0, 4);
     }
 
+    // Wire iframe load/error handlers once
     iframeNode.addEventListener("load", () => {
       if (iframeLoading) iframeLoading.hidden = true;
       if (iframeFallback) iframeFallback.hidden = true;
@@ -234,6 +187,7 @@
       iframeNode.setAttribute("aria-label", `Interactieve preview van ${title}`);
       if (fallbackLink) fallbackLink.href = src;
 
+      // Only reload when src actually changes
       if (iframeNode.dataset.currentSrc !== src) {
         iframeNode.dataset.currentSrc = src;
         if (iframeLoading) iframeLoading.hidden = false;
@@ -623,7 +577,6 @@
     initKnowledgeWall();
   }
 
-  initOfficialBranding();
   initCursorGlow();
   initMagneticButtons();
   initHeroDepthShift();
