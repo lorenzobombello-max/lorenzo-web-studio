@@ -236,7 +236,7 @@ a:focus-visible {
   align-items: end;
   gap: 1rem;
   padding: clamp(3.8rem, 9vw, 6rem) min(5vw, 4rem) 2rem;
-  background-image: url("../../../assets/images/industrial/hero/hero-production-hall-01.jpg");
+  background-image: url("../../../assets/images/demos/industrial/hero/hero-production-hall-01.jpg");
   background-size: cover;
   background-position: center;
   border-bottom: 1px solid var(--line);
