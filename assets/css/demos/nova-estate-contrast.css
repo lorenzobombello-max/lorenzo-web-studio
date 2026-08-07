@@ -1,0 +1,71 @@
+/* Nova Estate — dark-mode readability corrections only.
+   No layout, spacing, sizing, imagery or responsive behavior is changed. */
+
+[data-theme="dark"] .ne-about-story,
+[data-theme="dark"] .ne-contact-card,
+[data-theme="dark"] .ne-values-grid article,
+[data-theme="dark"] .ne-team-grid article,
+[data-theme="dark"] .ne-faq-grid article {
+  background: var(--ne-surface);
+  border-color: var(--ne-line);
+  color: var(--ne-ink);
+}
+
+[data-theme="dark"] .ne-about-story p,
+[data-theme="dark"] .ne-contact-card p,
+[data-theme="dark"] .ne-contact-card label,
+[data-theme="dark"] .ne-values-grid p,
+[data-theme="dark"] .ne-team-grid p,
+[data-theme="dark"] .ne-faq-grid p,
+[data-theme="dark"] .ne-review p,
+[data-theme="dark"] .ne-insight p,
+[data-theme="dark"] .ne-service p,
+[data-theme="dark"] .ne-city-panels p,
+[data-theme="dark"] .ne-project-card p,
+[data-theme="dark"] .ne-process-step p,
+[data-theme="dark"] .ne-mag-card p,
+[data-theme="dark"] .ne-mag-feature p {
+  color: var(--ne-muted);
+}
+
+[data-theme="dark"] .ne-about-story h2,
+[data-theme="dark"] .ne-about-story h3,
+[data-theme="dark"] .ne-contact-card h2,
+[data-theme="dark"] .ne-contact-card h3,
+[data-theme="dark"] .ne-values-grid h2,
+[data-theme="dark"] .ne-values-grid h3,
+[data-theme="dark"] .ne-team-grid h2,
+[data-theme="dark"] .ne-team-grid h3,
+[data-theme="dark"] .ne-faq-grid h2,
+[data-theme="dark"] .ne-faq-grid h3,
+[data-theme="dark"] .ne-review strong,
+[data-theme="dark"] .ne-insight h3,
+[data-theme="dark"] .ne-service h3,
+[data-theme="dark"] .ne-project-card h3,
+[data-theme="dark"] .ne-process-step h3,
+[data-theme="dark"] .ne-mag-card h3,
+[data-theme="dark"] .ne-mag-feature h2,
+[data-theme="dark"] .ne-mag-feature h3 {
+  color: var(--ne-ink);
+}
+
+[data-theme="dark"] .ne-review span,
+[data-theme="dark"] .ne-review__score,
+[data-theme="dark"] .ne-contact-card .ne-eyebrow,
+[data-theme="dark"] .ne-faq-grid .ne-eyebrow {
+  color: var(--ne-primary);
+}
+
+[data-theme="dark"] .ne-contact-card input,
+[data-theme="dark"] .ne-contact-card select,
+[data-theme="dark"] .ne-contact-card textarea {
+  background: #0e1b1c;
+  color: var(--ne-ink);
+  border-color: var(--ne-line);
+}
+
+[data-theme="dark"] .ne-contact-card input::placeholder,
+[data-theme="dark"] .ne-contact-card textarea::placeholder {
+  color: #8fa3a0;
+  opacity: 1;
+}
