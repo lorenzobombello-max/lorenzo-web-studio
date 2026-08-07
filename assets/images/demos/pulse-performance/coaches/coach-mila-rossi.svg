@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 760" role="img" aria-label="AI generated portrait coach 3">
+  <rect width="640" height="760" fill="#12183b"/>
+  <circle cx="320" cy="270" r="172" fill="#263774"/>
+  <circle cx="320" cy="250" r="96" fill="#f0c4aa"/>
+  <rect x="190" y="360" width="260" height="250" rx="120" fill="#ff2da5" opacity="0.34"/>
+  <path d="M245 240 Q320 175 395 240" stroke="#211217" stroke-width="8" fill="none"/>
+  <circle cx="284" cy="255" r="10" fill="#1f1621"/>
+  <circle cx="355" cy="255" r="10" fill="#1f1621"/>
+  <path d="M282 306 Q320 334 358 306" stroke="#1f1621" stroke-width="6" fill="none"/>
+  <text x="78" y="700" fill="#d8ebff" font-size="34" font-family="Outfit,Segoe UI,sans-serif">AI Coach Portrait - Mila</text>
+</svg>

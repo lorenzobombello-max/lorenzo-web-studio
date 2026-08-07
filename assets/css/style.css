@@ -1022,7 +1022,13 @@ textarea:disabled {
   width: min(980px, 92%);
   margin: 0 auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
+}
+
+.legal-content > *,
+.legal-table-wrap {
+  min-width: 0;
 }
 
 .legal-meta {
@@ -1049,6 +1055,8 @@ textarea:disabled {
 .legal-block p,
 .legal-block li {
   color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .legal-block ul {
@@ -1416,7 +1424,11 @@ summary:focus-visible {
   .footer-grid,
   .contact-form,
   .approach-grid,
-  .trust-strip { grid-template-columns: 1fr; }
+  .trust-strip { grid-template-columns: minmax(0, 1fr); }
+
+  .approach-grid > * {
+    min-width: 0;
+  }
   .hero {
     min-height: min(94vh, 940px);
   }
@@ -1542,6 +1554,8 @@ summary:focus-visible {
 
 .home-studio .studio-hero {
   isolation: isolate;
+  min-height: clamp(54vh, 56vh, 58vh);
+  padding: clamp(2.4rem, 4vw, 3.6rem) 0 clamp(3rem, 4.8vw, 4.2rem);
 }
 
 .home-studio .studio-hero::before {
@@ -1620,6 +1634,7 @@ summary:focus-visible {
 .home-studio .studio-hero .hero__grid {
   grid-template-columns: minmax(0, 1.07fr) minmax(320px, 0.93fr);
   gap: clamp(1.1rem, 2.5vw, 2.6rem);
+  min-height: 0;
 }
 
 .home-studio .studio-hero__content {
@@ -1768,7 +1783,7 @@ summary:focus-visible {
   height: 50%;
   background:
     linear-gradient(160deg, rgba(13, 16, 24, 0.1), rgba(13, 16, 24, 0.3)),
-    url("../images/demos/personal/hero/hero-personal-portfolio.jpg");
+    url("../images/home/showcase/personal-hero-personal-portfolio.jpg");
   background-size: cover;
   background-position: center top;
 }
@@ -2459,7 +2474,7 @@ summary:focus-visible {
 
 /* Minimalistisch → Personal Portfolio */
 .home-studio .spectrum-card[data-style="minimalistisch"] .spectrum-card__canvas {
-  background: url('../images/demos/personal/hero/hero-personal-portfolio.jpg') center top / cover no-repeat;
+  background: url('../images/home/showcase/personal-hero-personal-portfolio.jpg') center top / cover no-repeat;
 }
 
 /* Premium → Mediterranean Brasserie */
@@ -2469,7 +2484,7 @@ summary:focus-visible {
 
 /* Technisch → AXIOM Industrial */
 .home-studio .spectrum-card[data-style="technisch"] .spectrum-card__canvas {
-  background: url('../images/demos/industrial/hero/hero-production-hall-01.jpg') center center / cover no-repeat;
+  background: url('../images/home/showcase/industrial-hero-production-hall-01.jpg') center center / cover no-repeat;
 }
 
 /* Warm en persoonlijk → Luna Hair Studio */
@@ -2484,7 +2499,7 @@ summary:focus-visible {
 
 /* Editorial → Personal Portfolio studio shot */
 .home-studio .spectrum-card[data-style="editorial"] .spectrum-card__canvas {
-  background: url('../images/demos/personal/hero/hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
+  background: url('../images/home/showcase/personal-hero-lorenzo-web-developer-office.jpg') center top / cover no-repeat;
 }
 
 /* Architectuur & Interieur → AURELIS cinematic villa preview */
@@ -2986,8 +3001,40 @@ summary:focus-visible {
 }
 
 @media (max-width: 1180px) {
+  .home-studio .studio-hero {
+    min-height: clamp(60vh, 63vh, 65vh);
+    padding-top: clamp(1.4rem, 2.4vw, 2rem);
+    padding-bottom: clamp(2rem, 3.4vw, 2.8rem);
+  }
+
   .home-studio .studio-hero .hero__grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1.16fr) minmax(260px, 0.84fr);
+  }
+
+  .home-studio .studio-hero__content {
+    padding: 0.95rem;
+  }
+
+  .home-studio .studio-hero .hero__content h1 {
+    font-size: clamp(2.15rem, 4vw, 3.1rem);
+    margin-bottom: 0.84rem;
+  }
+
+  .home-studio .studio-hero .hero__subtitle {
+    margin-bottom: 1rem;
+    line-height: 1.58;
+  }
+
+  .home-studio .studio-hero .hero__actions {
+    margin-bottom: 0.8rem;
+  }
+
+  .home-studio .studio-hero__content .hero__assurances {
+    gap: 0.45rem 0.55rem;
+  }
+
+  .home-studio .studio-hero__content .hero__assurances li {
+    padding: 0.4rem 0.68rem 0.4rem 0.4rem;
   }
 
   .home-studio .studio-portal {
@@ -3018,6 +3065,37 @@ summary:focus-visible {
 }
 
 @media (max-width: 900px) {
+  .home-studio .studio-hero .hero__grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .home-studio .studio-hero__content {
+    padding: 0.95rem;
+  }
+
+  .home-studio .studio-portal {
+    max-width: 560px;
+  }
+
+  .home-studio .studio-portal__stack {
+    min-height: 250px;
+  }
+
+  .home-studio .studio-portal__glass h2 {
+    font-size: clamp(1rem, 2.8vw, 1.18rem);
+    margin-bottom: 0.6rem;
+  }
+
+  .home-studio .studio-portal__chips {
+    margin-bottom: 0.7rem;
+  }
+
+  .home-studio .studio-portal__chips span {
+    font-size: 0.68rem;
+    padding: 0.18rem 0.44rem;
+  }
+
   .home-studio .studio-showcase {
     width: min(98vw, 1120px);
     grid-template-columns: 1fr;
@@ -3058,21 +3136,84 @@ summary:focus-visible {
   }
 
   .home-studio .studio-hero {
-    min-height: min(95vh, 960px);
-    padding-bottom: 6rem;
+    min-height: clamp(55vh, 58vh, 60vh);
+    padding-top: clamp(2.1rem, 5vw, 2.8rem);
+    padding-bottom: clamp(2.4rem, 6vw, 3.2rem);
   }
 
   /* Extra top-padding to prevent content being cut by fixed header on small viewports */
   .home-studio .studio-hero .hero__content {
-    padding-top: clamp(1.4rem, 4vw, 2rem);
+    padding: 1rem 0.9rem;
   }
 
   .home-studio .studio-portal__glass {
-    padding: 0.85rem;
+    padding: 0.82rem;
+  }
+
+  .home-studio .studio-hero .hero__content h1 {
+    font-size: clamp(1.82rem, 8.2vw, 2.28rem);
+    line-height: 1.03;
+    margin-bottom: 0.68rem;
+  }
+
+  .home-studio .studio-hero .hero__subtitle {
+    font-size: 0.92rem;
+    line-height: 1.48;
+    margin-bottom: 0.82rem;
+  }
+
+  .home-studio .studio-hero .hero__actions {
+    gap: 0.5rem;
+    margin-bottom: 0.72rem;
+  }
+
+  .home-studio .studio-hero .hero__actions .btn {
+    width: auto;
+    flex: 1 1 0;
+  }
+
+  .home-studio .studio-hero .hero__assurances {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 100%;
+  }
+
+  .home-studio .studio-hero .hero__assurances li {
+    width: auto;
+  }
+
+  .home-studio .studio-hero .hero__assurances li:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .home-studio .studio-hero .hero__assurances li {
+    padding: 0.36rem 0.62rem 0.36rem 0.36rem;
+    font-size: 0.79rem;
+  }
+
+  .home-studio .studio-hero__content .hero__assurances li span {
+    width: 1.26rem;
+    height: 1.26rem;
+    font-size: 0.66rem;
   }
 
   .home-studio .studio-portal__stack {
-    min-height: 245px;
+    min-height: 184px;
+  }
+
+  .home-studio .studio-portal__glass h2 {
+    font-size: 0.94rem;
+    margin: 0.42rem 0 0.52rem;
+  }
+
+  .home-studio .studio-portal__chips {
+    gap: 0.34rem;
+    margin-bottom: 0.56rem;
+  }
+
+  .home-studio .studio-portal__chips span {
+    font-size: 0.62rem;
+    padding: 0.16rem 0.4rem;
   }
 
   .home-studio .studio-portal__device--tablet {

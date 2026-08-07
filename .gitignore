@@ -45,3 +45,13 @@ AI Workspace/
 
 # Audit screenshots (temporary, not project assets)
 assets/images/audit-*.png
+
+# Node dependencies
+node_modules/
+
+# Temporary visual-diff and one-off audit artifacts
+.tmp-visual-diff/
+.tmp-restaurant-css-diff.txt
+.tmp-restaurant-sections.json
+pulse-performance-usage-audit-readonly.txt
+scripts/_tmp_*.mjs

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" role="img" aria-label="AI generated conditioning concept">
+  <rect width="800" height="560" fill="#10183a"/>
+  <g opacity="0.9">
+    <path d="M80 430 C180 240 320 510 430 230 C520 70 640 220 740 120" fill="none" stroke="#00f2ff" stroke-width="10"/>
+    <path d="M80 470 C190 280 310 560 430 270 C530 110 650 260 740 150" fill="none" stroke="#79ff3c" stroke-width="6"/>
+    <path d="M80 505 C200 320 330 590 430 310 C540 140 660 300 740 190" fill="none" stroke="#ff2da5" stroke-width="4"/>
+  </g>
+  <rect x="88" y="78" width="624" height="404" rx="24" fill="none" stroke="#42558f"/>
+  <text x="94" y="520" fill="#d9e6ff" font-size="34" font-family="Outfit,Segoe UI,sans-serif">AI Conditioning Lab Visual</text>
+</svg>

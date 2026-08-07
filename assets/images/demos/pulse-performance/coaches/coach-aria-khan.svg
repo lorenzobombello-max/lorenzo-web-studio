@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 760" role="img" aria-label="AI generated portrait coach 1">
+  <rect width="640" height="760" fill="#0d1430"/>
+  <circle cx="320" cy="270" r="170" fill="#1d2a58"/>
+  <circle cx="320" cy="250" r="96" fill="#f0b89e"/>
+  <rect x="190" y="360" width="260" height="250" rx="120" fill="#00f2ff" opacity="0.42"/>
+  <path d="M245 250 Q320 190 395 250" stroke="#25131c" stroke-width="8" fill="none"/>
+  <circle cx="285" cy="255" r="10" fill="#1f1621"/>
+  <circle cx="355" cy="255" r="10" fill="#1f1621"/>
+  <path d="M280 305 Q320 335 360 305" stroke="#1f1621" stroke-width="6" fill="none"/>
+  <text x="78" y="700" fill="#d8ebff" font-size="34" font-family="Outfit,Segoe UI,sans-serif">AI Coach Portrait - Aria</text>
+</svg>

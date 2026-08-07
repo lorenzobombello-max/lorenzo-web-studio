@@ -5,6 +5,31 @@
   const yearNodes = document.querySelectorAll("[data-current-year]");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+
+  function initTheme() {
+    const root = document.documentElement;
+    let saved = null;
+    try { saved = localStorage.getItem("site-theme"); } catch (error) { saved = null; }
+    if (saved === "light" || saved === "dark") {
+      root.setAttribute("data-theme", saved);
+      return;
+    }
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", prefersDark ? "dark" : "light");
+  }
+
+  function initThemeToggle() {
+    const toggle = document.getElementById("themeToggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", function () {
+      const root = document.documentElement;
+      const current = root.getAttribute("data-theme") || "light";
+      const next = current === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("site-theme", next); } catch (error) {}
+    });
+  }
+
   function initYear() {
     const year = String(new Date().getFullYear());
     yearNodes.forEach((node) => {
@@ -266,6 +291,8 @@
     });
   }
 
+  initTheme();
+  initThemeToggle();
   initYear();
   initNav();
   initHeaderState();

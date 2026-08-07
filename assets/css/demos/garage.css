@@ -1,3 +1,420 @@
+.garage-demo {
+  margin: 0;
+  font-size: 1.01rem;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body.garage-demo.no-scroll {
+  overflow: hidden;
+}
+
+.garage-demo *,
+.garage-demo *::before,
+.garage-demo *::after {
+  box-sizing: border-box;
+}
+
+.garage-demo img {
+  max-width: 100%;
+  display: block;
+}
+
+.garage-demo a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.garage-demo h1,
+.garage-demo h2,
+.garage-demo h3,
+.garage-demo h4,
+.garage-demo p,
+.garage-demo ul,
+.garage-demo dl,
+.garage-demo dd {
+  margin: 0;
+}
+
+.garage-demo ul {
+  padding: 0;
+  list-style: none;
+}
+
+.garage-demo .container {
+  width: min(var(--container), 92%);
+  margin-inline: auto;
+}
+
+.garage-demo .skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 0;
+  transform: translateY(-130%);
+  z-index: 100;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  padding: 0.6rem 0.95rem;
+  transition: transform 180ms ease;
+}
+
+.garage-demo .skip-link:focus {
+  transform: translateY(0.8rem);
+}
+
+.garage-demo .loader {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 999;
+  transition: opacity 360ms ease, visibility 360ms ease;
+}
+
+.garage-demo .loader.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.garage-demo .loader__spinner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 4px solid rgba(182, 255, 60, 0.16);
+  border-top-color: var(--color-accent);
+  animation: garage-loader-spin 0.9s linear infinite;
+}
+
+.garage-demo .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.garage-demo .nav-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 68px;
+  gap: 1rem;
+}
+
+.garage-demo .logo {
+  font-size: 1.06rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.garage-demo .site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.garage-demo .site-nav a {
+  position: relative;
+  padding: 0.3rem;
+  font-weight: 500;
+}
+
+.garage-demo .site-nav a::after {
+  content: "";
+  position: absolute;
+  left: 0.3rem;
+  right: 0.3rem;
+  bottom: -0.12rem;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
+}
+
+.garage-demo .site-nav a:hover::after,
+.garage-demo .site-nav a:focus-visible::after,
+.garage-demo .site-nav a.is-active::after {
+  transform: scaleX(1);
+}
+
+.garage-demo .theme-toggle {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.32rem 0.66rem;
+  display: inline-flex;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.garage-demo .theme-toggle__sun,
+.garage-demo .theme-toggle__moon {
+  opacity: 0.45;
+}
+
+[data-theme="dark"] .garage-demo .theme-toggle__moon,
+[data-theme="light"] .garage-demo .theme-toggle__sun,
+:root:not([data-theme]) .garage-demo .theme-toggle__sun {
+  opacity: 1;
+}
+
+.garage-demo .nav-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  padding: 0.35rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.garage-demo .nav-toggle span {
+  width: 24px;
+  height: 2px;
+  background: currentColor;
+}
+
+.garage-demo .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.garage-demo .btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.garage-demo .field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.garage-demo .field--full {
+  grid-column: 1 / -1;
+}
+
+.garage-demo label {
+  font-weight: 600;
+}
+
+.garage-demo textarea {
+  resize: vertical;
+}
+
+.garage-demo .consent-field {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: 0.65rem;
+}
+
+.garage-demo .consent-field input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.2rem;
+}
+
+.garage-demo .privacy-note {
+  grid-column: 1 / -1;
+  color: var(--color-text-soft);
+  font-size: 0.9rem;
+}
+
+.garage-demo .form-note {
+  grid-column: 1 / -1;
+  font-size: 0.92rem;
+  min-height: 1.2rem;
+  color: var(--color-text-soft);
+}
+
+.garage-demo .form-note.is-error {
+  color: #ba2f2f;
+}
+
+.garage-demo .form-note.is-success {
+  color: #2b6f46;
+}
+
+.garage-demo .footer-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  padding-bottom: 1.8rem;
+}
+
+.garage-demo .footer-bottom {
+  border-top: 1px solid rgba(238, 241, 240, 0.16);
+  padding: 1rem 0 1.8rem;
+}
+
+.garage-demo .back-to-top {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.62rem 1rem;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, visibility 180ms ease, transform 180ms ease;
+  z-index: 40;
+}
+
+.garage-demo .back-to-top.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.garage-demo .cookie-consent {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 80;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-soft);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.garage-demo .cookie-consent__content {
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.garage-demo .cookie-consent__kicker {
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.garage-demo .cookie-consent__content h2,
+.garage-demo .cookie-modal__panel h2 {
+  font-size: clamp(1.08rem, 2vw, 1.32rem);
+  margin: 0;
+}
+
+.garage-demo .cookie-consent__content p {
+  color: var(--color-text-soft);
+}
+
+.garage-demo .cookie-consent__actions,
+.garage-demo .cookie-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.garage-demo .cookie-consent__actions .btn,
+.garage-demo .cookie-modal__actions .btn {
+  min-height: 44px;
+}
+
+.garage-demo .cookie-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(12, 8, 17, 0.58);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.garage-demo .cookie-modal[hidden] {
+  display: none;
+}
+
+.garage-demo .cookie-modal__panel {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.garage-demo .cookie-modal__group {
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.garage-demo .cookie-modal__group legend {
+  font-weight: 700;
+  padding: 0 0.28rem;
+}
+
+.garage-demo .cookie-modal__group label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.garage-demo .reveal {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 560ms ease, transform 560ms ease;
+}
+
+.garage-demo.motion-ready .reveal {
+  opacity: 0.01;
+  transform: translateY(18px);
+}
+
+.garage-demo .reveal-delay-1 {
+  transition-delay: 90ms;
+}
+
+.garage-demo .reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.garage-demo .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes garage-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* TorquePoint Garage — fully independent design system, scoped under .garage-demo.
    Dark graphite is the flagship look; [data-theme="light"] provides the alternate. */
 
@@ -414,7 +831,9 @@
   grid-auto-flow: column;
   grid-auto-columns: min(320px, 82vw);
   gap: 1.1rem;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
   padding-block: 0.4rem 1rem;
   scrollbar-width: thin;
@@ -1242,7 +1661,9 @@
 
   .garage-demo .torque-process-track {
     grid-template-columns: repeat(5, minmax(160px, 1fr));
+    max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-bottom: 0.6rem;
   }
 
@@ -1273,6 +1694,10 @@
 }
 
 @media (max-width: 640px) {
+  .garage-demo .footer-grid {
+    grid-template-columns: 1fr;
+  }
+
   .garage-demo .torque-hero {
     min-height: 92vh;
     align-items: flex-end;

@@ -9,6 +9,39 @@
     if (yearNode) yearNode.textContent = String(new Date().getFullYear());
   }
 
+  function initTheme() {
+    const docRoot = document.documentElement;
+    try {
+      const saved = localStorage.getItem("site-theme");
+      if (saved === "dark" || saved === "light") {
+        docRoot.setAttribute("data-theme", saved);
+        return;
+      }
+    } catch (_error) {
+      // Keep default behavior when storage is unavailable.
+    }
+
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    docRoot.setAttribute("data-theme", prefersDark ? "dark" : "light");
+  }
+
+  function initThemeToggle() {
+    const docRoot = document.documentElement;
+    const toggle = document.getElementById("themeToggle");
+    if (!toggle) return;
+
+    toggle.addEventListener("click", () => {
+      const current = docRoot.getAttribute("data-theme") || "light";
+      const next = current === "dark" ? "light" : "dark";
+      docRoot.setAttribute("data-theme", next);
+      try {
+        localStorage.setItem("site-theme", next);
+      } catch (_error) {
+        // Ignore storage write errors in private contexts.
+      }
+    });
+  }
+
   function initMobileNav() {
     const toggle = document.getElementById("aurelisNavToggle");
     const links = document.getElementById("aurelisNavLinks");
@@ -218,6 +251,8 @@
     }, { passive: true });
   }
 
+  initTheme();
+  initThemeToggle();
   initYear();
   initMobileNav();
   initReveal();

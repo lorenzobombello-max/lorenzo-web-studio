@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" role="img" aria-label="AI generated recovery concept">
+  <defs>
+    <radialGradient id="r" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#1c2a5d"/>
+      <stop offset="100%" stop-color="#0b122a"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="560" fill="url(#r)"/>
+  <g stroke="#00f2ff" fill="none" opacity="0.75">
+    <ellipse cx="400" cy="280" rx="220" ry="120" stroke-width="4"/>
+    <ellipse cx="400" cy="280" rx="170" ry="90" stroke-width="3"/>
+    <ellipse cx="400" cy="280" rx="120" ry="60" stroke-width="2"/>
+  </g>
+  <path d="M230 360 C320 220 500 220 570 360" fill="none" stroke="#79ff3c" stroke-width="12"/>
+  <text x="94" y="520" fill="#d9e6ff" font-size="34" font-family="Outfit,Segoe UI,sans-serif">AI Executive Reset Visual</text>
+</svg>

@@ -16,6 +16,251 @@
   overflow-x: hidden;
 }
 
+[data-theme="dark"] .mediterranean-brasserie-demo {
+  --mb-bg: #1c140f;
+  --mb-paper: #241a13;
+  --mb-sand: #4a3a2c;
+  --mb-olive: #8aa37c;
+  --mb-terracotta: #d98f6c;
+  --mb-gold: #d4b06f;
+  --mb-text: #f3ece2;
+  --mb-soft: #c9beb0;
+  --mb-border: rgba(243, 236, 226, 0.14);
+  --mb-focus: #e8c987;
+  background: linear-gradient(180deg, #1c140f 0%, #171009 48%, #1c140f 100%);
+}
+
+[data-theme="dark"] .mb-header.is-compact {
+  background: rgba(28, 20, 15, 0.93);
+}
+
+[data-theme="dark"] .mb-header.is-compact .mb-back,
+[data-theme="dark"] .mb-header.is-compact .mb-brand,
+[data-theme="dark"] .mb-header.is-compact .mb-nav a,
+[data-theme="dark"] .mb-header.is-compact .mb-menu-toggle span {
+  color: var(--mb-gold);
+}
+
+[data-theme="dark"] .mb-header.is-compact .theme-toggle {
+  color: var(--mb-gold);
+}
+
+[data-theme="dark"] .mb-header.is-compact .mb-reserve-link {
+  border-color: rgba(243, 236, 226, 0.4);
+  color: var(--mb-text);
+}
+
+[data-theme="dark"] .mb-chef__quote,
+[data-theme="dark"] .mb-chef__signature {
+  color: var(--mb-gold);
+}
+
+[data-theme="dark"] .demo--mediterranean-brasserie .cookie-consent {
+  background: rgba(28, 20, 15, 0.92);
+}
+
+[data-theme="dark"] .mb-intro blockquote,
+[data-theme="dark"] .mb-menu__categories button[aria-selected="true"],
+[data-theme="dark"] .mb-footer a {
+  color: var(--mb-gold);
+}
+
+[data-theme="dark"] .mb-reservation-form .mb-button {
+  color: var(--mb-gold);
+  border-color: var(--mb-gold);
+}
+
+@media (max-width: 900px) {
+  [data-theme="dark"] .mb-nav {
+    background: rgba(28, 20, 15, 0.96);
+  }
+
+  [data-theme="dark"] .mb-nav a {
+    color: var(--mb-text);
+  }
+}
+
+.demo--mediterranean-brasserie {
+  margin: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.demo--mediterranean-brasserie * {
+  box-sizing: border-box;
+}
+
+.demo--mediterranean-brasserie img {
+  max-width: 100%;
+  display: block;
+}
+
+.demo--mediterranean-brasserie a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.demo--mediterranean-brasserie ul {
+  margin: 0;
+  padding: 0;
+}
+
+.demo--mediterranean-brasserie.no-scroll {
+  overflow: hidden;
+}
+
+.demo--mediterranean-brasserie .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  min-height: 44px;
+  padding: 0.78rem 1.32rem;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 220ms ease, box-shadow 220ms ease, background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+
+.demo--mediterranean-brasserie .btn:hover,
+.demo--mediterranean-brasserie .btn:focus-visible {
+  transform: translateY(-1px);
+}
+
+.demo--mediterranean-brasserie .btn--primary {
+  background: var(--mb-terracotta);
+  color: #fff;
+  border-color: transparent;
+}
+
+.demo--mediterranean-brasserie .btn--ghost {
+  background: var(--mb-paper);
+  color: var(--mb-text);
+  border-color: var(--mb-border);
+}
+
+.demo--mediterranean-brasserie .cookie-consent {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 80;
+  border: 1px solid var(--mb-border);
+  border-radius: 1rem;
+  background: rgba(253, 250, 244, 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 14px 30px rgba(21, 15, 28, 0.2);
+}
+
+.demo--mediterranean-brasserie .cookie-consent__content {
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.demo--mediterranean-brasserie .cookie-consent__kicker {
+  margin: 0;
+  color: var(--mb-terracotta);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.demo--mediterranean-brasserie .cookie-consent__content h2 {
+  margin: 0;
+  font-size: clamp(1.08rem, 2vw, 1.32rem);
+}
+
+.demo--mediterranean-brasserie .cookie-consent__content p {
+  margin: 0;
+  color: var(--mb-soft);
+}
+
+.demo--mediterranean-brasserie .cookie-consent__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.demo--mediterranean-brasserie .cookie-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(12, 8, 17, 0.58);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.demo--mediterranean-brasserie .cookie-modal[hidden] {
+  display: none;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__panel {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid var(--mb-border);
+  border-radius: 1rem;
+  background: var(--mb-paper);
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__panel h2 {
+  margin: 0;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__group {
+  border: 1px solid var(--mb-border);
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__group legend {
+  font-weight: 700;
+  padding: 0 0.28rem;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__group label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.demo--mediterranean-brasserie .cookie-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.demo--mediterranean-brasserie .cookie-preferences-link {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.demo--mediterranean-brasserie .cookie-preferences-link:hover,
+.demo--mediterranean-brasserie .cookie-preferences-link:focus-visible {
+  color: var(--mb-terracotta);
+}
+
+.demo--mediterranean-brasserie .cookie-preferences-slot {
+  margin-top: 0.75rem;
+}
+
 .mediterranean-brasserie-demo .skip-link {
   position: absolute;
   left: 1rem;
@@ -56,13 +301,13 @@
   left: 0;
   right: 0;
   z-index: 60;
-  transition: background-color 300ms ease, border-color 300ms ease, padding 300ms ease;
-  background: transparent;
+  transition: background 300ms ease, border-color 300ms ease, padding 300ms ease;
+  background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0));
   border-bottom: 1px solid transparent;
 }
 
 .mb-header.is-compact {
-  background: color-mix(in srgb, var(--mb-paper) 93%, transparent);
+  background: rgba(253, 250, 244, 0.93);
   border-bottom-color: rgba(30, 42, 54, 0.2);
 }
 
@@ -71,12 +316,52 @@
   margin-inline: auto;
   min-height: 74px;
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto auto;
   align-items: center;
   gap: 1.2rem;
 }
 
-.mb-back {
+.demo--mediterranean-brasserie .theme-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 999px;
+  padding: 0.32rem 0.66rem;
+  display: inline-flex;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: transparent;
+  transition: border-color 220ms ease, background-color 220ms ease, color 220ms ease;
+}
+
+.demo--mediterranean-brasserie .theme-toggle:hover,
+.demo--mediterranean-brasserie .theme-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.mb-header.is-compact .theme-toggle {
+  border-color: var(--mb-border);
+  color: var(--mb-navy);
+}
+
+.mb-header.is-compact .theme-toggle:hover,
+.mb-header.is-compact .theme-toggle:focus-visible {
+  background: rgba(30, 42, 54, 0.08);
+}
+
+.demo--mediterranean-brasserie .theme-toggle__sun,
+.demo--mediterranean-brasserie .theme-toggle__moon {
+  opacity: 0.55;
+}
+
+[data-theme="dark"] .demo--mediterranean-brasserie .theme-toggle__moon,
+[data-theme="light"] .demo--mediterranean-brasserie .theme-toggle__sun,
+:root:not([data-theme]) .demo--mediterranean-brasserie .theme-toggle__sun {
+  opacity: 1;
+}
+
+.demo--mediterranean-brasserie .mb-back {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -87,7 +372,7 @@
   color: var(--mb-soft);
 }
 
-.mb-brand {
+.demo--mediterranean-brasserie .mb-brand {
   font-family: "Cormorant Garamond", Georgia, serif;
   color: #fff;
   font-size: 1.55rem;
@@ -134,7 +419,7 @@
   color: var(--mb-navy);
 }
 
-.mb-reserve-link {
+.demo--mediterranean-brasserie .mb-reserve-link {
   border: 1px solid rgba(255, 255, 255, 0.68);
   color: #fff;
   padding: 0.58rem 1rem;
@@ -181,14 +466,15 @@
 
 .mb-hero {
   position: relative;
-  min-height: 96vh;
+  height: clamp(68vh, 70vh, 72vh);
+  overflow: hidden;
 }
 
 .mb-hero__media,
 .mb-hero__media img {
   margin: 0;
   width: 100%;
-  min-height: 96vh;
+  height: clamp(68vh, 70vh, 72vh);
   object-fit: cover;
 }
 
@@ -645,6 +931,7 @@
 
 .mb-wine-season {
   padding: clamp(3.8rem, 7vw, 6.4rem) 0;
+  overflow-x: clip;
 }
 
 .mb-wine-season__head,
@@ -727,8 +1014,8 @@
 
 .mb-field input,
 .mb-field textarea {
-  border: 1px solid rgba(42, 36, 31, 0.22);
-  background: #fff;
+  border: 1px solid var(--mb-border);
+  background: var(--mb-paper);
   font: inherit;
   color: var(--mb-text);
   padding: 0.68rem 0.72rem;
@@ -870,9 +1157,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  .demo--mediterranean-brasserie *,
+  .demo--mediterranean-brasserie *::before,
+  .demo--mediterranean-brasserie *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -882,7 +1169,7 @@
 
 @media (max-width: 1120px) {
   .mb-header__inner {
-    grid-template-columns: auto 1fr auto auto;
+    grid-template-columns: auto 1fr auto auto auto;
   }
 
   .mb-intro__layout,
@@ -908,6 +1195,15 @@
 }
 
 @media (max-width: 900px) {
+  .mb-hero {
+    height: clamp(60vh, 63vh, 65vh);
+  }
+
+  .mb-hero__media,
+  .mb-hero__media img {
+    height: clamp(60vh, 63vh, 65vh);
+  }
+
   .mb-menu-toggle {
     display: flex;
     justify-self: end;
@@ -918,7 +1214,7 @@
     top: 74px;
     left: 0;
     right: 0;
-    background: color-mix(in srgb, var(--mb-paper) 96%, transparent);
+    background: rgba(253, 250, 244, 0.96);
     border-bottom: 1px solid var(--mb-border);
     padding: 0.7rem 1rem;
     display: grid;
@@ -952,7 +1248,7 @@
   }
 
   .mb-header__inner {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
   }
 
   .mb-hero__overlay {
@@ -967,13 +1263,28 @@
 }
 
 @media (max-width: 640px) {
+  .mb-experience-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .demo--mediterranean-brasserie .cookie-consent {
+    left: 0.6rem;
+    right: 0.6rem;
+    bottom: 0.6rem;
+  }
+
+  .demo--mediterranean-brasserie .cookie-consent__actions .btn,
+  .demo--mediterranean-brasserie .cookie-modal__actions .btn {
+    width: 100%;
+  }
+
   .mb-hero {
-    min-height: 88vh;
+    height: clamp(55vh, 58vh, 60vh);
   }
 
   .mb-hero__media,
   .mb-hero__media img {
-    min-height: 88vh;
+    height: clamp(55vh, 58vh, 60vh);
   }
 
   .mb-hero h1 {

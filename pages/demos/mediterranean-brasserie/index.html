@@ -25,15 +25,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../assets/css/style.css" />
   <link rel="stylesheet" href="../../../assets/css/demos/mediterranean-brasserie.css" />
   <script>document.documentElement.classList.remove("no-js");</script>
-  <script defer src="../../../assets/js/cookie-consent.js"></script>
   <script defer src="../../../assets/js/demos/mediterranean-brasserie.js"></script>
 
   <link rel="manifest" href="../../../site.webmanifest" />
 </head>
-<body class="mediterranean-brasserie-demo">
+<body class="demo demo--mediterranean-brasserie mediterranean-brasserie-demo">
   <a class="skip-link" href="#main-content">Ga naar inhoud</a>
 
   <header class="mb-header" id="mbHeader">
@@ -52,6 +50,7 @@
         <a href="#locatie">Locatie</a>
       </nav>
       <a class="mb-reserve-link" href="#reservatie">Reserveer</a>
+      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
     </div>
   </header>
 
@@ -191,10 +190,7 @@
               <li><span>Grenache blend, Priorat - kruidig en rijp</span><span>13</span></li>
               <li><span>Alcoholvrije pairing van botanische infusies</span><span>10</span></li>
             </ul>
-            <figure class="mb-menu-placeholder" role="img" aria-label="Placeholder voor wijnbeeld">
-              <strong>Wijnbeeld ontbreekt</strong>
-              <span>Later voorzien: wine-cellar-pouring-01.jpg (3:2, 1800x1200)</span>
-            </figure>
+            <figure><img src="../../../assets/images/demos/mediterranean-brasserie/wine/wine-cellar-pouring-01.jpg" alt="Wijn geschonken in de wijnkelder van Casa Solea" loading="lazy" decoding="async" /></figure>
           </section>
         </div>
       </div>
@@ -327,10 +323,9 @@
           <figure>
             <img src="../../../assets/images/demos/mediterranean-brasserie/hero/hero-exterior-night-02.jpg" alt="Avondbeeld van de brasserie-exterieur in de stad" loading="lazy" decoding="async" />
           </figure>
-          <div class="mb-map-placeholder" role="img" aria-label="Kaartplaceholder voor toekomstige statische locatiekaart">
-            <strong>Kaartplaceholder</strong>
-            <span>Nog te voorzien: static-map-casa-solea-antwerpen-01.jpg (3:2, 1800x1200)</span>
-          </div>
+          <figure>
+            <img src="../../../assets/images/demos/mediterranean-brasserie/static/static-map-casa-solea-antwerpen-01.jpg" alt="Statische locatiekaart van Casa Solea Antwerpen met adres en omgeving" loading="lazy" decoding="async" />
+          </figure>
         </div>
       </div>
     </section>

@@ -12,11 +12,11 @@
   <meta property="og:title" content="Personal portfolio demo | Lorenzo Web Solutions" />
   <meta property="og:description" content="Personal portfolio demo voor consultants en freelancers met duidelijke case-opbouw, expertiseblokken en contactflow om professionaliteit online te versterken." />
   <meta property="og:url" content="https://lorenzowebsolutions.be/pages/demos/personal-portfolio/" />
-  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/demos/personal/hero/hero-personal-portfolio.jpg" />
+  <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/demos/personal-portfolio/hero/hero-personal-portfolio.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Personal portfolio demo | Lorenzo Web Solutions" />
   <meta name="twitter:description" content="Personal portfolio demo voor consultants en freelancers met duidelijke case-opbouw, expertiseblokken en contactflow om professionaliteit online te versterken." />
-  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/demos/personal/hero/hero-personal-portfolio.jpg" />
+  <meta name="twitter:image" content="https://lorenzowebsolutions.be/assets/images/demos/personal-portfolio/hero/hero-personal-portfolio.jpg" />
   <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
   
   <link rel="icon" href="../../../assets/icons/favicon.ico" sizes="any" />
@@ -26,18 +26,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../../../assets/css/style.css" />
   <link rel="stylesheet" href="../../../assets/css/demos/personal-portfolio.css" />
-  <script defer src="../../../assets/js/cookie-consent.js"></script>
-  <script defer src="../../../assets/js/main.js"></script>
+  <script defer src="../../../assets/js/demos/personal-portfolio.js"></script>
 
   <link rel="manifest" href="../../../site.webmanifest" />
 </head>
-<body class="personal-demo">
+<body class="demo demo--personal-portfolio personal-demo">
   <div class="loader" id="pageLoader" aria-hidden="true"><div class="loader__spinner"></div></div>
   <a class="skip-link" href="#home">Ga naar inhoud</a>
 
   <header class="site-header" id="siteHeader">
+    <div class="container back-to-site">
+      <a class="back-to-site__link" href="../../../index.html">&larr; Terug naar Lorenzo Web Solutions</a>
+    </div>
     <div class="container nav-wrap">
       <a class="logo" href="#home" aria-label="Personal Portfolio Demo home">Personal <span>Portfolio</span></a>
       <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="siteNav"><span></span><span></span><span></span></button>
@@ -70,20 +71,10 @@
             <li>Mobiele contactflow voor snelle aanvragen</li>
           </ul>
         </div>
-        <div class="personal-hero-panel reveal reveal-delay-1" aria-hidden="true">
-          <div class="wireframe-head"></div>
-          <div class="wireframe-line line-medium"></div>
-          <div class="wireframe-line line-short"></div>
-          <div class="wireframe-grid">
-            <div class="wireframe-card">
-              <div class="wireframe-badge"></div>
-              <div class="wireframe-tile"></div>
-            </div>
-            <div class="wireframe-card">
-              <div class="wireframe-badge"></div>
-              <div class="wireframe-tile"></div>
-            </div>
-          </div>
+        <div class="personal-hero-panel personal-hero-panel--photo reveal reveal-delay-1">
+          <figure class="personal-hero-media">
+            <img src="../../../assets/images/demos/personal-portfolio/team/lorenzo-profile-office-01.jpg" alt="Lorenzo aan het werk in zijn kantoor bij Lorenzo Web Solutions" loading="eager" decoding="async" />
+          </figure>
         </div>
       </div>
     </section>
@@ -108,6 +99,7 @@
       </div>
       <div class="container portfolio-grid personal-projects-grid">
         <article class="portfolio-card reveal">
+          <figure class="portfolio-media"><img src="../../../assets/images/demos/personal-portfolio/project/project-consultancy.jpg" alt="Consultancygesprek met klant over projectanalyse en aanpak" loading="lazy" decoding="async" /></figure>
           <div>
             <p class="portfolio-label">Projectformat 01</p>
             <h3>Technische consultancycase</h3>
@@ -115,6 +107,7 @@
           </div>
         </article>
         <article class="portfolio-card reveal reveal-delay-1">
+          <figure class="portfolio-media"><img src="../../../assets/images/demos/personal-portfolio/project/project-maintenance.jpg" alt="Technicus die een onderhoudsrapport en installatieoverzicht opvolgt" loading="lazy" decoding="async" /></figure>
           <div>
             <p class="portfolio-label">Projectformat 02</p>
             <h3>Freelance onderhoudsproject</h3>
@@ -122,6 +115,7 @@
           </div>
         </article>
         <article class="portfolio-card reveal reveal-delay-2">
+          <figure class="portfolio-media"><img src="../../../assets/images/demos/personal-portfolio/service/service-project-cases.jpg" alt="Projectcase van een technische coördinatie-opdracht op laptopscherm" loading="lazy" decoding="async" /></figure>
           <div>
             <p class="portfolio-label">Projectformat 03</p>
             <h3>Engineering en optimalisatie</h3>

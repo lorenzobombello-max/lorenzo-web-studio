@@ -49,24 +49,6 @@
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://lorenzowebsolutions.be/pages/privacy.html</loc>
-    <lastmod>2026-08-05</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://lorenzowebsolutions.be/pages/cookies.html</loc>
-    <lastmod>2026-08-05</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://lorenzowebsolutions.be/pages/algemene-voorwaarden.html</loc>
-    <lastmod>2026-08-05</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
     <loc>https://lorenzowebsolutions.be/pages/project-1.html</loc>
     <lastmod>2026-08-05</lastmod>
     <changefreq>monthly</changefreq>
@@ -141,6 +123,24 @@
   <url>
     <loc>https://lorenzowebsolutions.be/pages/demos/aurelis-architecture/</loc>
     <lastmod>2026-08-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lorenzowebsolutions.be/pages/demos/luna-hair-studio/</loc>
+    <lastmod>2026-08-07</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lorenzowebsolutions.be/pages/demos/nova-estate/</loc>
+    <lastmod>2026-08-07</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lorenzowebsolutions.be/pages/demos/pulse-performance/</loc>
+    <lastmod>2026-08-07</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>

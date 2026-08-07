@@ -24,26 +24,128 @@
     linear-gradient(180deg, #0b1118, #080d14);
 }
 
-* {
+/* ── Light mode ──────────────────────────────────────────────────
+   This demo's dark UI uses many one-off navy/blue-grey hex values
+   instead of the shared tokens above, so light mode is implemented
+   as a parallel set of overrides for the same selectors rather than
+   by redefining the custom properties alone. */
+[data-theme="light"] .industrial-maintenance-demo {
+  --bg: #eef3f8;
+  --bg-elev: #ffffff;
+  --bg-soft: #e4ebf2;
+  --line: #c7d3de;
+  --line-strong: #9fb0c0;
+  --text: #16222e;
+  --text-soft: #55677a;
+  --focus: #b5720a;
+  --shadow: 0 16px 28px rgba(22, 34, 46, 0.12);
+  background:
+    linear-gradient(180deg, rgba(70, 161, 255, 0.05), transparent 30%),
+    linear-gradient(180deg, #f4f8fb, #eef3f8);
+}
+
+[data-theme="light"] .ops-bar,
+[data-theme="light"] .analyzer-options button {
+  background: #eef3f8;
+}
+
+[data-theme="light"] .demo--industrial-electricity textarea,
+[data-theme="light"] .contact-meta p,
+[data-theme="light"] .map-placeholder,
+[data-theme="light"] .service-table-wrap,
+[data-theme="light"] .dashboard-filter button,
+[data-theme="light"] .urgency-options button {
+  background: #e7edf4;
+}
+
+[data-theme="light"] .contact-grid article,
+[data-theme="light"] .ops-imagery figure,
+[data-theme="light"] .analyzer-result,
+[data-theme="light"] .capacity-grid article,
+[data-theme="light"] .safety-grid li,
+[data-theme="light"] .parts-list li {
+  background: #dfe8f0;
+}
+
+[data-theme="light"] .meter {
+  background: #cddae6;
+}
+
+[data-theme="light"] .industrial-footer,
+[data-theme="light"] .site-nav {
+  background: #eef3f8;
+}
+
+[data-theme="light"] .menu-toggle span {
+  background: #16222e;
+}
+
+[data-theme="light"] .demo--industrial-electricity textarea,
+[data-theme="light"] .btn--secondary,
+[data-theme="light"] .hero-status h2,
+[data-theme="light"] .urgency-options button,
+[data-theme="light"] .dashboard-filter button,
+[data-theme="light"] .analyzer-options button,
+[data-theme="light"] .form-grid legend,
+[data-theme="light"] .incident-side ol,
+[data-theme="light"] .maintenance-track p,
+[data-theme="light"] .hero__intro,
+[data-theme="light"] .demo--industrial-electricity td,
+[data-theme="light"] .shutdown-line span,
+[data-theme="light"] .dossier-grid p,
+[data-theme="light"] .dossier-grid h3,
+[data-theme="light"] .maintenance-track h3,
+[data-theme="light"] .form-feedback,
+[data-theme="light"] .industrial-footer nav a,
+[data-theme="light"] .site-nav a,
+[data-theme="light"] .asset-card ul,
+[data-theme="light"] .metric,
+[data-theme="light"] .site-nav a:focus-visible,
+[data-theme="light"] .ops-link {
+  color: #16222e;
+}
+
+[data-theme="light"] .hero-status dt,
+[data-theme="light"] .ops-imagery figcaption,
+[data-theme="light"] .demo--industrial-electricity th,
+[data-theme="light"] .capacity-grid h3,
+[data-theme="light"] .map-placeholder,
+[data-theme="light"] .copy {
+  color: #55677a;
+}
+
+[data-theme="light"] .footer-note,
+[data-theme="light"] .dashboard-filter .is-active,
+[data-theme="light"] .analyzer-options .is-selected {
+  color: #8a5613;
+}
+
+[data-theme="light"] .form-feedback.is-error {
+  color: #b3261e;
+}
+
+[data-theme="light"] .form-feedback.is-success {
+  color: #1e7d5c;
+}
+
+.demo--industrial-electricity * {
   box-sizing: border-box;
 }
 
-html,
-body {
+.demo--industrial-electricity {
   margin: 0;
-  padding: 0;
 }
 
-a {
+.demo--industrial-electricity a {
   color: inherit;
 }
 
-img {
+.demo--industrial-electricity img {
   max-width: 100%;
   display: block;
 }
 
-.skip-link {
+.demo--industrial-electricity .skip-link {
   position: absolute;
   left: 0.8rem;
   top: 0.6rem;
@@ -55,7 +157,7 @@ img {
   z-index: 200;
 }
 
-.skip-link:focus {
+.demo--industrial-electricity .skip-link:focus {
   transform: translateY(0);
 }
 
@@ -183,7 +285,39 @@ img {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 0.6rem;
+}
+
+.theme-toggle {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 0.32rem 0.66rem;
+  display: inline-flex;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  cursor: pointer;
+  background: transparent;
+  transition: border-color 200ms ease, background-color 200ms ease, color 200ms ease;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+  color: var(--text);
+  background: var(--bg-elev);
+}
+
+.theme-toggle__sun,
+.theme-toggle__moon {
+  opacity: 0.55;
+}
+
+[data-theme="dark"] .theme-toggle__moon,
+[data-theme="light"] .theme-toggle__sun,
+:root:not([data-theme]) .theme-toggle__sun {
+  opacity: 1;
 }
 
 .btn {
@@ -219,11 +353,11 @@ img {
 }
 
 .btn:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-a:focus-visible {
+.demo--industrial-electricity button:focus-visible,
+.demo--industrial-electricity input:focus-visible,
+.demo--industrial-electricity select:focus-visible,
+.demo--industrial-electricity textarea:focus-visible,
+.demo--industrial-electricity a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -236,7 +370,7 @@ a:focus-visible {
   align-items: end;
   gap: 1rem;
   padding: clamp(3.8rem, 9vw, 6rem) min(5vw, 4rem) 2rem;
-  background-image: url("../../../assets/images/demos/industrial/hero/hero-production-hall-01.jpg");
+  background-image: url("../../../assets/images/demos/industrieel-elektriciteit/hero/hero-production-hall-01.jpg");
   background-size: cover;
   background-position: center;
   border-bottom: 1px solid var(--line);
@@ -269,13 +403,13 @@ a:focus-visible {
   font-family: "IBM Plex Mono", monospace;
 }
 
-h1,
-h2,
-h3 {
+.demo--industrial-electricity h1,
+.demo--industrial-electricity h2,
+.demo--industrial-electricity h3 {
   margin: 0;
 }
 
-h1 {
+.demo--industrial-electricity h1 {
   font-family: "Barlow Condensed", sans-serif;
   letter-spacing: 0.01em;
   text-transform: uppercase;
@@ -491,9 +625,9 @@ h1 {
   color: #d4e2ef;
 }
 
-input,
-select,
-textarea {
+.demo--industrial-electricity input,
+.demo--industrial-electricity select,
+.demo--industrial-electricity textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
   background: #0c141d;
@@ -504,14 +638,14 @@ textarea {
   font: inherit;
 }
 
-textarea {
+.demo--industrial-electricity textarea {
   min-height: 5.8rem;
   resize: vertical;
 }
 
-input[aria-invalid="true"],
-select[aria-invalid="true"],
-textarea[aria-invalid="true"] {
+.demo--industrial-electricity input[aria-invalid="true"],
+.demo--industrial-electricity select[aria-invalid="true"],
+.demo--industrial-electricity textarea[aria-invalid="true"] {
   border-color: var(--err);
 }
 
@@ -657,33 +791,33 @@ textarea[aria-invalid="true"] {
   letter-spacing: 0.06em;
 }
 
-table {
+.demo--industrial-electricity table {
   width: 100%;
   border-collapse: collapse;
   min-width: 760px;
 }
 
-th,
-td {
+.demo--industrial-electricity th,
+.demo--industrial-electricity td {
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--line);
   padding: 0.6rem;
 }
 
-th {
+.demo--industrial-electricity th {
   color: #9ab0c7;
   font-size: 0.73rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
-td {
+.demo--industrial-electricity td {
   font-size: 0.88rem;
   color: #d5e2ef;
 }
 
-td a {
+.demo--industrial-electricity td a {
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1135,9 +1269,9 @@ td a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  .demo--industrial-electricity *,
+  .demo--industrial-electricity *::before,
+  .demo--industrial-electricity *::after {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;

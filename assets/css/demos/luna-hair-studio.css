@@ -76,6 +76,47 @@
   color: var(--luna-cream-soft);
 }
 
+/* ── Dark mode (site-wide toggle) ────────────────────────────────
+   Light sections adopt the same dark-wood treatment already used by
+   .luna-section--dark; sections that are dark by design (hero, header,
+   footer, services, results) are left untouched. */
+[data-theme="dark"] .luna {
+  background: var(--luna-wood);
+  color: var(--luna-cream-soft);
+}
+
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) {
+  --luna-text: var(--luna-cream-soft);
+  --luna-text-soft: var(--luna-gold-light);
+  --luna-text-muted: rgba(253, 250, 246, 0.6);
+  --luna-border: rgba(197, 164, 106, 0.28);
+  background: var(--luna-wood);
+  color: var(--luna-cream-soft);
+}
+
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-review,
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-input,
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) select.luna-input,
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) textarea.luna-input {
+  background: var(--luna-wood-mid);
+}
+
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-result__divider,
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-nav__toggle span {
+  background: var(--luna-cream-soft);
+}
+
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-btn--primary {
+  background: var(--luna-gold);
+  color: var(--luna-wood);
+  border-color: var(--luna-gold);
+}
+
+[data-theme="dark"] .luna-section:not(.luna-section--dark):not(.luna-booking) .luna-btn--primary:hover {
+  background: var(--luna-gold-light);
+  border-color: var(--luna-gold-light);
+}
+
 .luna-section-head {
   text-align: center;
   margin-bottom: clamp(2.5rem, 5vw, 4rem);
@@ -231,6 +272,37 @@
 }
 .luna-nav__book:hover { background: var(--luna-gold-light) !important; box-shadow: var(--luna-shadow-gold); }
 
+.luna .theme-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 0.32rem 0.66rem;
+  display: inline-flex;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  background: transparent;
+  transition: border-color var(--luna-transition), background-color var(--luna-transition), color var(--luna-transition);
+}
+
+.luna .theme-toggle:hover,
+.luna .theme-toggle:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.luna .theme-toggle__sun,
+.luna .theme-toggle__moon {
+  opacity: 0.55;
+}
+
+[data-theme="dark"] .luna .theme-toggle__moon,
+[data-theme="light"] .luna .theme-toggle__sun,
+:root:not([data-theme]) .luna .theme-toggle__sun {
+  opacity: 1;
+}
+
 .luna-nav__toggle {
   display: none;
   flex-direction: column;
@@ -253,10 +325,11 @@
 /* ── Hero ────────────────────────────────────────────────────── */
 .luna-hero {
   position: relative;
-  min-height: 100svh;
+  min-height: clamp(68vh, 70vh, 72vh);
   display: flex;
   align-items: center;
   overflow: hidden;
+  padding-top: 5.75rem;
 }
 .luna-hero__bg {
   position: absolute;
@@ -1008,6 +1081,7 @@
 }
 
 @media (max-width: 768px) {
+  .luna-hero { min-height: clamp(60vh, 63vh, 65vh); }
   .luna-nav__links { display: none; flex-direction: column; position: fixed; top: 0; right: 0; bottom: 0; width: min(280px, 80vw); background: var(--luna-wood); padding: 5rem 2rem 2rem; gap: 0; box-shadow: -8px 0 32px rgba(0,0,0,0.3); z-index: 999; }
   .luna-nav__links.is-open { display: flex; }
   .luna-nav__links a { padding: 0.9rem 0; border-bottom: 1px solid rgba(197, 164, 106, 0.1); color: rgba(255,255,255,0.8); }
@@ -1025,6 +1099,7 @@
 }
 
 @media (max-width: 480px) {
+  .luna-hero { min-height: clamp(55vh, 58vh, 60vh); }
   .luna-hero__heading-script { font-size: clamp(4rem, 18vw, 6rem); }
   .luna-insta__grid { grid-template-columns: 1fr; }
   .luna-result__pair { height: 240px; }
