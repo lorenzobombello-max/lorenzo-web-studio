@@ -318,6 +318,7 @@
   function setReadOnly(status) {
     readOnly = true;
     dirty = false;
+    setMessage("", null);
     form.querySelectorAll("input, textarea, select, button").forEach((control) => { control.disabled = true; });
     document.getElementById("intakeActions").hidden = true;
     form.classList.add("is-readonly");
