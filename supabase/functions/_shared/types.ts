@@ -1,6 +1,8 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
 export type ReviewAction = QuoteRequestStatus | "retry_confirmation";
 export type EmailJobStatus = "pending" | "processing" | "sent" | "retry_wait" | "failed";
+export type IntakeAction = "create" | "inspect";
+export type IntakeStatus = "invited" | "in_progress" | "submitted" | "reviewed";
 
 export interface SubmitQuotePayload {
   name: string;

@@ -25,10 +25,20 @@ async function hmacSha256(secret: string, value: string): Promise<string> {
   return toHex(signature);
 }
 
+function createRawCapabilityToken(): string {
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)).buffer);
+}
+
 export async function hashApprovalToken(rawToken: string): Promise<string> {
   const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
   if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
   return await hmacSha256(secret, `approval:${rawToken}`);
+}
+
+export async function hashIntakeToken(rawToken: string): Promise<string> {
+  const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
+  return await hmacSha256(secret, `intake:${rawToken}`);
 }
 
 export async function hashClientIp(ip: string): Promise<string> {
@@ -38,10 +48,11 @@ export async function hashClientIp(ip: string): Promise<string> {
 }
 
 export function createRawApprovalToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return createRawCapabilityToken();
+}
+
+export function createRawIntakeToken(): string {
+  return createRawCapabilityToken();
 }
 
 export async function createApprovalTokenForIdempotencyKey(idempotencyKey: string): Promise<string> {

@@ -21,3 +21,6 @@ verify_jwt = false
 
 [functions.review-quote-request]
 verify_jwt = false
+
+[functions.intake-quote-request]
+verify_jwt = false
