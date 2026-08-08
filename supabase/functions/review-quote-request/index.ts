@@ -291,7 +291,12 @@ Deno.serve(async (request) => {
         }
       }
 
-      const confirmationEmail = buildApprovedConfirmationEmail(transition.request_name);
+      const confirmationEmail = buildApprovedConfirmationEmail({
+        clientName: transition.request_name,
+        requestId: existing.id,
+        createdAt: existing.created_at,
+        websiteType: existing.website_type,
+      });
       const delivery = await deliverEmailJob({
         supabase,
         jobId: transition.confirmation_job_id,

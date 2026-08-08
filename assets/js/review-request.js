@@ -15,6 +15,7 @@
 
   let locked = false;
   let currentRequest = null;
+  let approvalModalTimer = null;
   const token = new URLSearchParams(window.location.search).get("token") || "";
   if (token) {
     const sanitizedUrl = new URL(window.location.href);
@@ -51,11 +52,16 @@
   function showApprovalModal() {
     if (!approvalModal || !approvalModalPanel) return;
 
+    if (approvalModalTimer) window.clearTimeout(approvalModalTimer);
     approvalModal.hidden = false;
     document.body.classList.add("modal-open");
     approvalModalPanel.focus();
 
     function closeModal() {
+      if (approvalModalTimer) {
+        window.clearTimeout(approvalModalTimer);
+        approvalModalTimer = null;
+      }
       approvalModal.hidden = true;
       document.body.classList.remove("modal-open");
       approveButton?.focus();
@@ -69,6 +75,7 @@
     document.addEventListener("keydown", handleEscape);
     approvalModalClose?.addEventListener("click", closeModal, { once: true });
     approvalModalOverlay?.addEventListener("click", closeModal, { once: true });
+    approvalModalTimer = window.setTimeout(closeModal, 4000);
   }
 
   function fillDetails(request) {
