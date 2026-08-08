@@ -186,20 +186,57 @@ Deno.serve(async (request) => {
 
     if (data.status === "approved" || data.status === "rejected") {
       let deliveryStatus: string | null = null;
+      let intakeExists = false;
+      let intakeStatus: string | null = null;
+      let intakeInvitationExists = false;
+      let intakeInvitationDeliveryStatus: string | null = null;
       if (data.status === "approved") {
-        const { data: deliveryJob } = await supabase
-          .from("quote_request_email_jobs")
-          .select("status")
-          .eq("quote_request_id", data.id)
-          .eq("kind", "customer_confirmation")
-          .maybeSingle();
+        const [confirmationResult, intakeResult, invitationResult] = await Promise.all([
+          supabase
+            .from("quote_request_email_jobs")
+            .select("status")
+            .eq("quote_request_id", data.id)
+            .eq("kind", "customer_confirmation")
+            .maybeSingle(),
+          supabase
+            .from("quote_request_intakes")
+            .select("status")
+            .eq("quote_request_id", data.id)
+            .maybeSingle(),
+          supabase
+            .from("quote_request_email_jobs")
+            .select("status")
+            .eq("quote_request_id", data.id)
+            .eq("kind", "intake_invitation")
+            .maybeSingle(),
+        ]);
+
+        if (confirmationResult.error || intakeResult.error || invitationResult.error) {
+          return jsonResponse(500, {
+            ok: false,
+            code: "REVIEW_STATE_LOOKUP_FAILED",
+            message: "Review state could not be loaded.",
+          }, origin);
+        }
+
+        const deliveryJob = confirmationResult.data;
+        const intake = intakeResult.data;
+        const invitationJob = invitationResult.data;
         deliveryStatus = deliveryJob?.status ?? null;
+        intakeExists = intake !== null;
+        intakeStatus = intake?.status ?? null;
+        intakeInvitationExists = invitationJob !== null;
+        intakeInvitationDeliveryStatus = invitationJob?.status ?? null;
       }
 
       return jsonResponse(200, {
         ok: true,
         state: data.status as ReviewState,
         delivery_status: deliveryStatus,
+        intake_exists: intakeExists,
+        intake_status: intakeStatus,
+        intake_invitation_exists: intakeInvitationExists,
+        intake_invitation_delivery_status: intakeInvitationDeliveryStatus,
         request: serializeRequest(data),
       }, origin);
     }

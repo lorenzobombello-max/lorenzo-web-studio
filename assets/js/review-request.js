@@ -5,6 +5,8 @@
   const approveButton = document.getElementById("approveButton");
   const rejectButton = document.getElementById("rejectButton");
   const retryConfirmationButton = document.getElementById("retryConfirmationButton");
+  const sendIntakeInvitationButton = document.getElementById("sendIntakeInvitationButton");
+  const intakeInvitationStatus = document.getElementById("intakeInvitationStatus");
   const approvalModal = document.getElementById("reviewApprovalModal");
   const approvalModalPanel = document.getElementById("reviewApprovalModalPanel");
   const approvalModalClose = document.getElementById("reviewApprovalModalClose");
@@ -15,6 +17,11 @@
 
   let locked = false;
   let currentRequest = null;
+  let currentReviewState = null;
+  let confirmationDeliveryStatus = null;
+  let currentIntakeExists = false;
+  let currentInvitationExists = false;
+  let currentInvitationDeliveryStatus = null;
   let approvalModalTimer = null;
   const token = new URLSearchParams(window.location.search).get("token") || "";
   if (token) {
@@ -47,6 +54,53 @@
     retryConfirmationButton.hidden = !visible;
     retryConfirmationButton.style.display = visible ? "" : "none";
     retryConfirmationButton.disabled = !visible || locked;
+  }
+
+  function setIntakeInvitationState(data) {
+    if (!sendIntakeInvitationButton || !intakeInvitationStatus) return;
+
+    if (Object.prototype.hasOwnProperty.call(data || {}, "intake_exists")) {
+      currentIntakeExists = data.intake_exists === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(data || {}, "intake_invitation_exists")) {
+      currentInvitationExists = data.intake_invitation_exists === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(data || {}, "intake_invitation_delivery_status")) {
+      currentInvitationDeliveryStatus = data.intake_invitation_delivery_status || null;
+    }
+
+    const approved = currentReviewState === "approved";
+    const canSend = approved && !currentIntakeExists && !currentInvitationExists;
+
+    sendIntakeInvitationButton.hidden = !canSend;
+    sendIntakeInvitationButton.style.display = canSend ? "" : "none";
+    sendIntakeInvitationButton.disabled = !canSend || locked;
+
+    let status = "";
+    let type = null;
+    if (approved && currentInvitationExists) {
+      if (currentInvitationDeliveryStatus === "sent") {
+        status = "Intake-uitnodiging verzonden.";
+        type = "success";
+      } else if (
+        currentInvitationDeliveryStatus === "pending" ||
+        currentInvitationDeliveryStatus === "processing" ||
+        currentInvitationDeliveryStatus === "retry_wait"
+      ) {
+        status = "Intake-uitnodiging wacht op verzending.";
+      } else {
+        status = "Intake-uitnodiging kon niet worden verzonden.";
+        type = "error";
+      }
+    } else if (approved && currentIntakeExists) {
+      status = "Voor deze aanvraag bestaat al een intake.";
+    }
+
+    intakeInvitationStatus.textContent = status;
+    intakeInvitationStatus.hidden = !status;
+    intakeInvitationStatus.classList.remove("is-error", "is-success");
+    if (type === "error") intakeInvitationStatus.classList.add("is-error");
+    if (type === "success") intakeInvitationStatus.classList.add("is-success");
   }
 
   function showApprovalModal() {
@@ -112,6 +166,9 @@
       setStatus("Ongeldig token");
       setMessage("De beoordelingslink is ongeldig of onvolledig.", "error");
       setButtons(false);
+      setRetryButton(false);
+      currentReviewState = "invalid";
+      setIntakeInvitationState({});
       return;
     }
 
@@ -120,12 +177,18 @@
       setStatus("Configuratie ontbreekt");
       setMessage("De functies-URL is nog niet ingesteld.", "error");
       setButtons(false);
+      setRetryButton(false);
+      currentReviewState = "invalid";
+      setIntakeInvitationState({});
       return;
     }
 
     setStatus("Status wordt gecontroleerd...");
     setMessage("", null);
     setButtons(false);
+    setRetryButton(false);
+    currentReviewState = null;
+    setIntakeInvitationState({});
 
     try {
       const response = await fetch(endpoint, {
@@ -139,13 +202,21 @@
       setStatus("Status onbekend");
       setMessage("De status kon niet worden opgehaald. Probeer later opnieuw.", "error");
       setButtons(false);
+      setRetryButton(false);
+      currentReviewState = "invalid";
+      setIntakeInvitationState({});
     }
   }
 
   function renderState(data) {
     const state = data?.state;
+    currentReviewState = state || null;
+    if (Object.prototype.hasOwnProperty.call(data || {}, "delivery_status")) {
+      confirmationDeliveryStatus = data.delivery_status;
+    }
     if (data?.request) currentRequest = { ...currentRequest, ...data.request };
     fillDetails(currentRequest);
+    setIntakeInvitationState(data);
 
     if (state === "pending") {
       setStatus("Pending - wacht op beoordeling");
@@ -156,7 +227,7 @@
 
     if (state === "approved") {
       setStatus("Goedgekeurd");
-      const deliveryStatus = data?.delivery_status;
+      const deliveryStatus = confirmationDeliveryStatus;
       const confirmationSent = data?.mail_sent === true || deliveryStatus === "sent";
       setMessage(
         confirmationSent
@@ -195,6 +266,7 @@
     if (locked) return;
     locked = true;
     setButtons(false);
+    if (sendIntakeInvitationButton) sendIntakeInvitationButton.disabled = true;
     setMessage("Actie wordt verwerkt...", null);
 
     const endpoint = getReviewEndpoint();
@@ -208,14 +280,27 @@
 
       const data = await response.json();
       locked = false;
-      renderState(data);
+      if (action === "send_intake_invitation" && (data?.invitation_outcome === "invitation_created" || data?.invitation_outcome === "already_invited")) {
+        renderState({
+          ...data,
+          delivery_status: confirmationDeliveryStatus,
+          intake_exists: true,
+          intake_status: "invited",
+          intake_invitation_exists: true,
+          intake_invitation_delivery_status: data.delivery_status || null,
+        });
+      } else {
+        renderState(data);
+      }
       if (action === "approved" && data?.state === "approved" && (data?.mail_sent === true || data?.delivery_status === "sent")) {
         showApprovalModal();
       }
     } catch {
       setMessage("De actie kon niet worden verwerkt. Probeer later opnieuw.", "error");
       locked = false;
-      setButtons(true);
+      setButtons(currentReviewState === "pending");
+      setRetryButton(currentReviewState === "approved" && confirmationDeliveryStatus !== "sent");
+      setIntakeInvitationState({});
     }
   }
 
@@ -229,6 +314,10 @@
 
   if (retryConfirmationButton) {
     retryConfirmationButton.addEventListener("click", () => submitAction("retry_confirmation"));
+  }
+
+  if (sendIntakeInvitationButton) {
+    sendIntakeInvitationButton.addEventListener("click", () => submitAction("send_intake_invitation"));
   }
 
   fetchState();
