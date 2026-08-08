@@ -13,9 +13,7 @@
   }
 
   const metaBase = document.querySelector('meta[name="lws-functions-base-url"]')?.getAttribute("content") || "";
-  const functionsBaseUrl = ["localhost", "127.0.0.1"].includes(window.location.hostname)
-    ? "http://127.0.0.1:54321/functions/v1"
-    : metaBase.replace(/\/$/, "");
+  const functionsBaseUrl = metaBase.replace(/\/$/, "");
   const endpoint = functionsBaseUrl ? `${functionsBaseUrl}/intake-quote-request` : "";
   const loading = document.getElementById("intakeLoading");
   const unavailable = document.getElementById("intakeUnavailable");
