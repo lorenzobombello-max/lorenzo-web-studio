@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="description" content="Beveiligde read-only websitebriefing voor Lorenzo Web Solutions." />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <title>Websitebriefing | Lorenzo Web Solutions</title>
+  <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/admin-intake.css" />
+  <script defer src="../assets/js/admin-intake.js"></script>
+</head>
+<body class="admin-briefing-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+
+  <header class="admin-briefing-header">
+    <div class="container admin-briefing-header__inner">
+      <span class="logo" aria-label="Lorenzo Web Solutions">Lorenzo <span>Web Solutions</span></span>
+      <span class="admin-briefing-secure-label">Beveiligde inzage</span>
+    </div>
+  </header>
+
+  <main id="main-content" class="admin-briefing-main">
+    <div class="container">
+      <section id="adminBriefingLoading" class="admin-briefing-state" role="status" aria-live="polite">
+        <span class="admin-briefing-spinner" aria-hidden="true"></span>
+        <h2>Briefing wordt veilig geladen…</h2>
+        <p>De beveiligde link wordt gecontroleerd.</p>
+      </section>
+
+      <section id="adminBriefingUnavailable" class="admin-briefing-state admin-briefing-state--error" role="status" aria-live="polite" hidden>
+        <p class="eyebrow">Geen toegang</p>
+        <h2>Deze briefing is niet beschikbaar</h2>
+        <p>De beveiligde link is ongeldig of niet meer beschikbaar.</p>
+      </section>
+
+      <section id="adminBriefingTechnicalError" class="admin-briefing-state admin-briefing-state--error" role="status" aria-live="polite" hidden>
+        <p class="eyebrow">Technische fout</p>
+        <h2>De briefing kan niet worden geladen</h2>
+        <p>Probeer het later opnieuw via de beveiligde link.</p>
+      </section>
+
+      <div id="adminBriefingWorkspace" hidden>
+        <header class="admin-briefing-summary">
+          <div class="admin-briefing-summary__title">
+            <p class="eyebrow">Websitebriefing</p>
+            <h1>Websitebriefing</h1>
+            <p id="adminBriefingClient" class="admin-briefing-client"></p>
+          </div>
+          <span class="admin-briefing-badge"><span aria-hidden="true"></span>Definitief ingediend</span>
+          <dl class="admin-briefing-meta" aria-label="Briefingmetadata">
+            <div><dt>Aanvraag</dt><dd id="adminBriefingReference">—</dd></div>
+            <div><dt>Ingediend</dt><dd id="adminBriefingSubmitted">—</dd></div>
+            <div><dt>Type website</dt><dd id="adminBriefingType">—</dd></div>
+          </dl>
+        </header>
+
+        <div id="adminBriefingSections" class="admin-briefing-sections" aria-label="Briefingdetails"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="admin-briefing-footer">
+    <div class="container">
+      <p>Lorenzo Web Solutions · Vertrouwelijke websitebriefing</p>
+    </div>
+  </footer>
+</body>
+</html>
