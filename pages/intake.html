@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Websitebriefing | Lorenzo Web Solutions</title>
+  <meta name="description" content="Beveiligde websitebriefing voor klanten van Lorenzo Web Solutions." />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/intake.css" />
+  <script defer src="../assets/js/main.js"></script>
+  <script defer src="../assets/js/intake.js"></script>
+</head>
+<body class="intake-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a class="logo" href="../index.html">Lorenzo <span>Web Solutions</span></a>
+      <nav class="intake-secure-label" aria-label="Paginastatus">Beveiligde intake</nav>
+      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
+    </div>
+  </header>
+
+  <main id="main-content" class="intake-main">
+    <section class="container intake-intro" aria-labelledby="intakeTitle">
+      <p class="eyebrow">Websitebriefing</p>
+      <h1 id="intakeTitle">Vertel ons wat je website nodig heeft.</h1>
+      <p>Je antwoorden worden veilig bewaard. Sla tussentijds een concept op en ga later verder via je persoonlijke link.</p>
+    </section>
+
+    <section class="container intake-shell" aria-label="Websitebriefing">
+      <div id="intakeLoading" class="intake-state" role="status" aria-live="polite">
+        <span class="intake-spinner" aria-hidden="true"></span>
+        <h2>Je intake wordt geladen</h2>
+        <p>Even geduld terwijl we je beveiligde link controleren.</p>
+      </div>
+
+      <div id="intakeUnavailable" class="intake-state intake-state--error" hidden>
+        <h2>Deze intake is niet beschikbaar</h2>
+        <p id="intakeUnavailableMessage">Deze intake-link is ongeldig of niet meer geldig.</p>
+      </div>
+
+      <div id="intakeSuccess" class="intake-state intake-state--success" hidden tabindex="-1">
+        <p class="eyebrow">Briefing ontvangen</p>
+        <h2>Bedankt. Je websitebriefing is succesvol verzonden.</h2>
+        <p>Lorenzo bekijkt je informatie zorgvuldig en neemt persoonlijk contact met je op.</p>
+      </div>
+
+      <div id="intakeWorkspace" hidden>
+        <aside class="intake-progress" aria-label="Voortgang">
+          <div class="intake-progress__meta"><span id="stepCounter">Stap 1 van 10</span><span id="completionValue">10%</span></div>
+          <div class="intake-progress__track" aria-hidden="true"><span id="progressBar"></span></div>
+          <ol id="stepList">
+            <li><button type="button" data-step-target="0" aria-current="step"><span>1</span>Over jouw bedrijf</button></li>
+            <li><button type="button" data-step-target="1"><span>2</span>Doel van de website</button></li>
+            <li><button type="button" data-step-target="2"><span>3</span>Pagina's en functies</button></li>
+            <li><button type="button" data-step-target="3"><span>4</span>Webshop en reservaties</button></li>
+            <li><button type="button" data-step-target="4"><span>5</span>Stijl en huisstijl</button></li>
+            <li><button type="button" data-step-target="5"><span>6</span>Teksten en beelden</button></li>
+            <li><button type="button" data-step-target="6"><span>7</span>Domein en hosting</button></li>
+            <li><button type="button" data-step-target="7"><span>8</span>SEO en koppelingen</button></li>
+            <li><button type="button" data-step-target="8"><span>9</span>Planning en budget</button></li>
+            <li><button type="button" data-step-target="9"><span>10</span>Prioriteiten en bevestiging</button></li>
+          </ol>
+        </aside>
+
+        <div class="intake-content">
+          <div class="intake-context" id="requestContext" aria-live="polite">
+            <div><span>Project voor</span><strong id="contextName">-</strong></div>
+            <div><span>Type website</span><strong id="contextType">-</strong></div>
+            <div><span>Status</span><strong id="contextStatus">Nog niet gestart</strong></div>
+          </div>
+
+          <form id="intakeForm" class="intake-form" novalidate>
+            <fieldset class="intake-step" data-step="0">
+              <legend>Over jouw bedrijf</legend>
+              <p class="intake-step__intro">Geef ons context over je activiteiten en de mensen die je wilt bereiken.</p>
+              <div class="field field--full"><label for="business_description">Wat doet jouw bedrijf?</label><textarea id="business_description" name="business_description" rows="6" maxlength="3000" required></textarea><p class="field-error" id="business_description-error"></p></div>
+              <div class="field field--full"><label for="target_audience">Wie is je doelgroep?</label><textarea id="target_audience" name="target_audience" rows="4" maxlength="2000" required></textarea><p class="field-error" id="target_audience-error"></p></div>
+              <div class="field field--full"><span class="field-label">Heb je al een website?</span><div class="choice-row"><label><input type="radio" name="has_existing_website" value="true" /> Ja</label><label><input type="radio" name="has_existing_website" value="false" /> Nee</label></div></div>
+              <div id="existingWebsiteFields" class="conditional-panel field--full" hidden>
+                <div class="field"><label for="existing_website_url">Huidige website</label><input id="existing_website_url" name="existing_website_url" type="url" maxlength="2048" placeholder="https://" /></div>
+                <div class="field"><label for="elements_to_keep">Wat wil je behouden?</label><textarea id="elements_to_keep" name="elements_to_keep" rows="3" maxlength="2000"></textarea></div>
+                <div class="field field--full"><label for="improvement_areas">Wat kan beter?</label><textarea id="improvement_areas" name="improvement_areas" rows="3" maxlength="2000"></textarea></div>
+              </div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="1" hidden>
+              <legend>Doel van de website</legend>
+              <p class="intake-step__intro">Welke resultaten moet de website voor je bedrijf opleveren?</p>
+              <div class="field field--full"><span class="field-label">Website-doelen</span><div class="choice-grid" data-group="website_goals">
+                <label><input type="checkbox" name="website_goals" value="professional_presence" /> Professionele uitstraling</label><label><input type="checkbox" name="website_goals" value="generate_leads" /> Leads genereren</label><label><input type="checkbox" name="website_goals" value="quote_requests" /> Offerteaanvragen</label><label><input type="checkbox" name="website_goals" value="contact_requests" /> Contactaanvragen</label><label><input type="checkbox" name="website_goals" value="appointments" /> Afspraken</label><label><input type="checkbox" name="website_goals" value="reservations" /> Reservaties</label><label><input type="checkbox" name="website_goals" value="sell_products" /> Producten verkopen</label><label><input type="checkbox" name="website_goals" value="sell_services" /> Diensten verkopen</label><label><input type="checkbox" name="website_goals" value="portfolio" /> Portfolio tonen</label><label><input type="checkbox" name="website_goals" value="information" /> Informeren</label><label><input type="checkbox" name="website_goals" value="recruitment" /> Werving</label><label><input type="checkbox" name="website_goals" value="other" /> Andere</label>
+              </div><p class="field-error" id="website_goals-error"></p></div>
+              <div class="field field--full"><label for="primary_conversion_goal">Wat is de belangrijkste actie voor een bezoeker?</label><input id="primary_conversion_goal" name="primary_conversion_goal" type="text" maxlength="500" required /></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="2" hidden>
+              <legend>Pagina's en functies</legend>
+              <p class="intake-step__intro">Selecteer wat je website minimaal nodig heeft.</p>
+              <div class="field field--full"><span class="field-label">Gewenste pagina's</span><div class="choice-grid" data-options="home:Home,about:Over ons,services:Diensten,products:Producten,portfolio:Portfolio,team:Team,pricing:Prijzen,faq:FAQ,reviews:Reviews,blog:Blog,contact:Contact,quote_request:Offerteaanvraag,reservations:Reservaties,shop:Webshop,jobs:Vacatures,gallery:Galerij,other:Andere" data-name="requested_pages"></div><p class="field-error" id="requested_pages-error"></p></div>
+              <div class="field field--full"><label for="other_pages">Andere pagina's</label><textarea id="other_pages" name="other_pages" rows="3" maxlength="1000"></textarea></div>
+              <div class="field field--full"><span class="field-label">Gewenste functies</span><div class="choice-grid" data-options="contact_form:Contactformulier,quote_form:Offerteformulier,google_maps:Google Maps,social_links:Social links,reviews:Reviews,gallery:Galerij,newsletter:Nieuwsbrief,whatsapp:WhatsApp,appointments:Afspraken,reservations:Reservaties,shop:Webshop,online_payment:Online betaling,customer_login:Klantlogin,downloads:Downloads,search:Zoeken,multilingual:Meertalig,other:Andere,unsure:Nog niet zeker" data-name="requested_features"></div></div>
+              <div class="field"><label for="languages">Talen, gescheiden door komma's</label><input id="languages" name="languages" type="text" maxlength="160" value="nl" /></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="3" hidden>
+              <legend>Webshop en reservaties</legend>
+              <p class="intake-step__intro">Deze details helpen ons de juiste technische oplossing te kiezen.</p>
+              <div class="field field--full"><span class="field-label">Is een webshop nodig?</span><div class="choice-row"><label><input type="radio" name="shop_required" value="true" /> Ja</label><label><input type="radio" name="shop_required" value="false" checked /> Nee</label></div></div>
+              <div id="shopFields" class="conditional-panel field--full" hidden>
+                <div class="field"><label for="shop_product_count">Aantal producten</label><input id="shop_product_count" type="number" min="1" max="100000" value="1" /></div>
+                <div class="choice-grid compact"><label><input id="shop_categories" type="checkbox" /> Categorieën</label><label><input id="shop_payments" type="checkbox" /> Online betalen</label><label><input id="shop_shipping" type="checkbox" /> Verzending</label><label><input id="shop_pickup" type="checkbox" /> Afhalen</label><label><input id="shop_catalog" type="checkbox" /> Bestaande catalogus</label></div>
+              </div>
+              <div class="field field--full"><span class="field-label">Zijn reservaties of afspraken nodig?</span><div class="choice-row"><label><input type="radio" name="booking_required" value="true" /> Ja</label><label><input type="radio" name="booking_required" value="false" checked /> Nee</label></div></div>
+              <div id="bookingFields" class="conditional-panel field--full" hidden>
+                <div class="field"><label for="booking_type">Type</label><select id="booking_type"><option value="appointments">Afspraken</option><option value="reservations">Reservaties</option><option value="classes">Lessen</option><option value="consultations">Consultaties</option><option value="other">Andere</option></select></div>
+                <div class="field"><label><input id="booking_existing" type="checkbox" /> Er is al een systeem</label></div>
+                <div class="field"><label for="booking_system_name">Naam bestaand systeem</label><input id="booking_system_name" type="text" maxlength="160" /></div>
+                <div class="field"><label><input id="booking_calendar" type="checkbox" /> Kalenderkoppeling nodig</label></div>
+              </div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="4" hidden>
+              <legend>Stijl en huisstijl</legend>
+              <p class="intake-step__intro">Vertel welke uitstraling bij je merk past.</p>
+              <div class="field field--full"><span class="field-label">Gewenste stijlen</span><div class="choice-grid" data-options="modern:Modern,business:Zakelijk,minimal:Minimalistisch,elegant:Elegant,luxury:Luxueus,warm:Warm,playful:Speels,creative:Creatief,technical:Technisch,industrial:Industrieel,calm:Rustig,unsure:Nog niet zeker,other:Andere" data-name="design_styles"></div><p class="field-error" id="design_styles-error"></p></div>
+              <div class="field"><label for="brand_status">Huisstijl</label><select id="brand_status" name="brand_status" required><option value="">Selecteer</option><option value="complete">Volledig</option><option value="partial">Gedeeltelijk</option><option value="none">Nog niet</option><option value="unknown">Onbekend</option></select></div>
+              <div class="field"><label for="logo_status">Logo</label><select id="logo_status" name="logo_status" required><option value="">Selecteer</option><option value="available">Beschikbaar</option><option value="needs_update">Moet bijgewerkt</option><option value="needed">Nog nodig</option><option value="unknown">Onbekend</option></select></div>
+              <div class="field"><label for="brand_colors">Merkkleuren, gescheiden door komma's</label><input id="brand_colors" name="brand_colors" type="text" maxlength="960" /></div>
+              <div class="field"><label for="inspiration_sites">Inspiratiesites, één URL per regel</label><textarea id="inspiration_sites" name="inspiration_sites" rows="4"></textarea></div>
+              <div class="field field--full"><label for="disliked_styles">Wat spreekt je niet aan?</label><textarea id="disliked_styles" name="disliked_styles" rows="3" maxlength="1500"></textarea></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="5" hidden>
+              <legend>Teksten en beelden</legend>
+              <p class="intake-step__intro">Geef aan wat al beschikbaar is en waarbij je ondersteuning wenst.</p>
+              <div class="field"><label for="content_status">Teksten</label><select id="content_status" name="content_status" required><option value="">Selecteer</option><option value="complete">Volledig</option><option value="partial">Gedeeltelijk</option><option value="none">Niet beschikbaar</option><option value="needs_help">Hulp nodig</option></select></div>
+              <div class="field"><label for="image_status">Beelden</label><select id="image_status" name="image_status" required><option value="">Selecteer</option><option value="sufficient">Voldoende</option><option value="partial">Gedeeltelijk</option><option value="none">Niet beschikbaar</option></select></div>
+              <div class="field field--full"><span class="field-label">Beeldondersteuning</span><div class="choice-grid" data-options="optimize_existing:Bestaande beelden optimaliseren,ai_images:AI-beelden,stock_images:Stockbeelden,professional_photography:Professionele fotografie,none:Geen,unsure:Nog niet zeker" data-name="image_support"></div></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="6" hidden>
+              <legend>Domein en hosting</legend>
+              <p class="intake-step__intro">We bekijken wat al geregeld is en waar nog ondersteuning nodig is.</p>
+              <div class="field"><label for="domain_status">Domeinnaam</label><select id="domain_status" name="domain_status" required><option value="">Selecteer</option><option value="has_domain">Ik heb een domein</option><option value="no_domain">Nog geen domein</option><option value="unknown">Onbekend</option></select></div>
+              <div class="field"><label for="domain_name">Domeinnaam</label><input id="domain_name" name="domain_name" type="text" maxlength="253" /></div>
+              <div class="field"><label for="hosting_status">Hosting</label><select id="hosting_status" name="hosting_status" required><option value="">Selecteer</option><option value="has_hosting">Ik heb hosting</option><option value="no_hosting">Nog geen hosting</option><option value="unknown">Onbekend</option></select></div>
+              <div class="field"><label for="hosting_support">Gewenste hulp</label><select id="hosting_support" name="hosting_support"><option value="">Selecteer</option><option value="yes">Ja</option><option value="no">Nee</option><option value="advice">Advies</option></select></div>
+              <div class="field"><label for="maintenance_interest">Onderhoud</label><select id="maintenance_interest" name="maintenance_interest" required><option value="">Selecteer</option><option value="yes">Ja</option><option value="no">Nee</option><option value="maybe">Misschien</option><option value="info_requested">Meer informatie</option></select></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="7" hidden>
+              <legend>SEO en koppelingen</legend>
+              <p class="intake-step__intro">Welke vindbaarheid en externe koppelingen zijn belangrijk?</p>
+              <div class="field"><label for="seo_priority">SEO-prioriteit</label><select id="seo_priority" name="seo_priority" required><option value="">Selecteer</option><option value="high">Hoog</option><option value="basic">Basis</option><option value="low">Laag</option><option value="unsure">Nog niet zeker</option></select></div>
+              <div class="field"><label for="seo_keywords">Zoekwoorden, gescheiden door komma's</label><input id="seo_keywords" name="seo_keywords" type="text" /></div>
+              <div class="field"><label for="social_channels">Sociale kanalen, gescheiden door komma's</label><input id="social_channels" name="social_channels" type="text" /></div>
+              <div class="field"><label for="integrations">Koppelingen, gescheiden door komma's</label><input id="integrations" name="integrations" type="text" /></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="8" hidden>
+              <legend>Planning en budget</legend>
+              <p class="intake-step__intro">Een realistische planning en budgetcontext helpen bij een passend voorstel.</p>
+              <div class="field"><label for="deadline_date">Gewenste deadline</label><input id="deadline_date" name="deadline_date" type="date" min="2000-01-01" max="2100-12-31" /></div>
+              <div class="field"><label for="deadline_reason">Waarom deze deadline?</label><textarea id="deadline_reason" name="deadline_reason" rows="3" maxlength="1000"></textarea></div>
+              <div class="field field--full"><span class="field-label">Is het eerder opgegeven budget nog correct?</span><div class="choice-row"><label><input type="radio" name="budget_confirmed" value="true" /> Ja</label><label><input type="radio" name="budget_confirmed" value="false" /> Nee</label></div></div>
+              <div class="field"><label for="budget_update_category">Bijgewerkt budget</label><select id="budget_update_category" name="budget_update_category"><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+              <div class="field"><label for="budget_notes">Budgettoelichting</label><textarea id="budget_notes" name="budget_notes" rows="3" maxlength="1000"></textarea></div>
+            </fieldset>
+
+            <fieldset class="intake-step" data-step="9" hidden>
+              <legend>Prioriteiten en bevestiging</legend>
+              <p class="intake-step__intro">Kies maximaal drie prioriteiten en controleer je briefing voor verzending.</p>
+              <div class="field field--full"><span class="field-label">Belangrijkste prioriteiten <small id="priorityCount">0 van 3 gekozen</small></span><div class="choice-grid" data-options="professional_appearance:Professionele uitstraling,usability:Gebruiksgemak,more_requests:Meer aanvragen,more_sales:Meer verkoop,mobile_experience:Mobiele ervaring,performance:Snelheid,seo:SEO,easy_management:Eenvoudig beheer,fast_delivery:Snelle oplevering,stay_within_budget:Binnen budget,differentiate:Onderscheiden,other:Andere" data-name="priorities" data-max="3"></div><p class="field-error" id="priorities-error"></p></div>
+              <div class="field field--full"><label for="additional_notes">Aanvullende opmerkingen</label><textarea id="additional_notes" name="additional_notes" rows="5" maxlength="3000"></textarea></div>
+              <div class="field field--full confirmation-field"><label><input id="confirmation" name="confirmation" type="checkbox" required /> Ik bevestig dat deze informatie correct en klaar voor verzending is.</label><p>Na verzending kan je dit formulier niet meer wijzigen.</p><p class="field-error" id="confirmation-error"></p></div>
+            </fieldset>
+
+            <div class="intake-actions" id="intakeActions">
+              <button class="btn btn--ghost" id="previousStep" type="button" hidden>Vorige</button>
+              <button class="btn btn--ghost" id="saveDraft" type="button">Concept opslaan</button>
+              <button class="btn btn--primary" id="nextStep" type="button">Volgende</button>
+              <button class="btn btn--primary" id="submitIntake" type="submit" hidden>Intake verzenden</button>
+            </div>
+            <p class="intake-message" id="intakeMessage" aria-live="polite"></p>
+            <p class="intake-saved" id="lastSaved"></p>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="submitModal" class="intake-modal" role="dialog" aria-modal="true" aria-labelledby="submitModalTitle" aria-describedby="submitModalDescription" hidden>
+    <div class="intake-modal__overlay" data-close-modal></div>
+    <div class="intake-modal__panel" tabindex="-1">
+      <button class="intake-modal__close" type="button" data-close-modal aria-label="Sluit bevestiging">&times;</button>
+      <p class="eyebrow">Definitief verzenden</p>
+      <h2 id="submitModalTitle">Ben je klaar om je intake te verzenden?</h2>
+      <p id="submitModalDescription">Na verzending kan je de informatie niet meer wijzigen.</p>
+      <div class="intake-modal__actions"><button class="btn btn--ghost" type="button" data-close-modal>Terug</button><button class="btn btn--primary" id="confirmSubmit" type="button">Ja, verzenden</button></div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-grid"><div><a class="logo" href="../index.html">Lorenzo <span>Web Solutions</span></a><p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p></div><div><h3>Contact</h3><ul><li><a href="contact.html">Contactpagina</a></li><li><a href="privacy.html">Privacy</a></li></ul></div></div>
+    <div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions.</p></div>
+  </footer>
+</body>
+</html>

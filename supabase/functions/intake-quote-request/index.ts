@@ -201,7 +201,7 @@ Deno.serve(async (request) => {
 
   const intakeTokenHash = await hashIntakeToken(intakeToken);
   if (action === "inspect") {
-    const { data, error } = await supabase.rpc("inspect_quote_request_intake", {
+    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details", {
       p_access_token_hash: intakeTokenHash,
     });
     const result = Array.isArray(data) ? data[0] : null;
@@ -243,6 +243,9 @@ Deno.serve(async (request) => {
         timing: result.timing,
         description: result.description,
       },
+      data: result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
+        ? result.intake_data
+        : {},
     }, origin);
   }
 
