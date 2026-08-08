@@ -60,29 +60,63 @@
   function initDemoPagination() {
     const pages = Array.from(document.querySelectorAll("[data-demo-page]"));
     if (!pages.length) return;
-    const requested = Number(new URLSearchParams(window.location.search).get("page"));
-    const current = requested >= 1 && requested <= pages.length ? requested : 1;
-    pages.forEach((panel) => {
-      const active = Number(panel.dataset.demoPage) === current;
-      panel.classList.toggle("is-active", active);
-      panel.hidden = !active;
-    });
-    document.querySelectorAll("[data-page-link]").forEach((link) => {
-      if (Number(link.dataset.pageLink) === current) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    });
+    const pageLinks = Array.from(document.querySelectorAll("[data-page-link]"));
     const label = document.querySelector("[data-current-page]");
-    if (label) label.textContent = `${String(current).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")}`;
     const previous = document.querySelector("[data-previous-page]");
     const next = document.querySelector("[data-next-page]");
-    if (previous) {
-      previous.href = `?page=${Math.max(1, current - 1)}`;
-      previous.toggleAttribute("aria-disabled", current === 1);
+
+    function getRequestedPage() {
+      const requested = Number(new URLSearchParams(window.location.search).get("page"));
+      return requested >= 1 && requested <= pages.length ? requested : 1;
     }
-    if (next) {
-      next.href = `?page=${Math.min(pages.length, current + 1)}`;
-      next.toggleAttribute("aria-disabled", current === pages.length);
+
+    function renderPage(current) {
+      const activePanel = pages.find((panel) => Number(panel.dataset.demoPage) === current);
+      activePanel.hidden = false;
+      activePanel.classList.add("is-active");
+      pages.forEach((panel) => {
+        if (panel === activePanel) return;
+        panel.classList.remove("is-active");
+        panel.hidden = true;
+      });
+      pageLinks.forEach((link) => {
+        if (Number(link.dataset.pageLink) === current) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      if (label) label.textContent = `${String(current).padStart(2, "0")} / ${String(pages.length).padStart(2, "0")}`;
+      if (previous) {
+        previous.href = `?page=${Math.max(1, current - 1)}`;
+        previous.toggleAttribute("aria-disabled", current === 1);
+      }
+      if (next) {
+        next.href = `?page=${Math.min(pages.length, current + 1)}`;
+        next.toggleAttribute("aria-disabled", current === pages.length);
+      }
     }
+
+    function navigateToPage(target) {
+      if (target < 1 || target > pages.length || target === getRequestedPage()) return;
+      const scrollPosition = window.scrollY;
+      const url = new URL(window.location.href);
+      url.searchParams.set("page", String(target));
+      history.pushState({ demoPage: target }, "", url);
+      renderPage(target);
+      window.scrollTo({ top: scrollPosition, behavior: "instant" });
+    }
+
+    document.querySelector(".demo-pagination")?.addEventListener("click", (event) => {
+      const link = event.target.closest("a");
+      if (!link || link.getAttribute("aria-disabled") === "true") {
+        event.preventDefault();
+        return;
+      }
+      const target = Number(new URL(link.href).searchParams.get("page"));
+      if (!Number.isInteger(target)) return;
+      event.preventDefault();
+      navigateToPage(target);
+    });
+    window.addEventListener("popstate", () => renderPage(getRequestedPage()));
+    renderPage(getRequestedPage());
   }
 
   function createIdempotencyKey() {
