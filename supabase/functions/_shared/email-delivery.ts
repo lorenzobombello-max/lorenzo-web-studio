@@ -25,6 +25,7 @@ export interface EmailDeliveryResult {
 }
 
 const RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429]);
+const RESEND_API_URL = "https://api.resend.com/emails";
 
 function sanitizeHeaderValue(value: string): string {
   return value.replace(/[\r\n]+/g, "").trim();
@@ -32,6 +33,17 @@ function sanitizeHeaderValue(value: string): string {
 
 function isEmailJobStatus(value: unknown): value is EmailJobStatus {
   return value === "pending" || value === "processing" || value === "sent" || value === "retry_wait" || value === "failed";
+}
+
+function deliveryUrl(): string {
+  const configured = Deno.env.get("RESEND_API_URL");
+  if (!configured || configured === RESEND_API_URL) return RESEND_API_URL;
+  const url = new URL(configured);
+  const localAllowed = Deno.env.get("ALLOW_LOCAL_EMAIL_DELIVERY") === "true";
+  if (!localAllowed || !["127.0.0.1", "localhost", "host.docker.internal"].includes(url.hostname)) {
+    throw new Error("Invalid local email delivery URL");
+  }
+  return url.toString();
 }
 
 async function currentJobState(supabase: SupabaseClient, jobId: string): Promise<EmailDeliveryResult> {
@@ -104,7 +116,7 @@ export async function deliverEmailJob(options: DeliverEmailJobOptions): Promise<
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000);
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetch(deliveryUrl(), {
       method: "POST",
       signal: controller.signal,
       headers: {

@@ -1,5 +1,5 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
-export type ReviewAction = QuoteRequestStatus | "retry_confirmation";
+export type ReviewAction = QuoteRequestStatus | "retry_confirmation" | "send_intake_invitation" | "retry_intake_invitation";
 export type EmailJobStatus = "pending" | "processing" | "sent" | "retry_wait" | "failed";
 export type IntakeAction = "create" | "inspect" | "save_draft" | "submit";
 export type IntakeStatus = "invited" | "in_progress" | "submitted" | "reviewed";

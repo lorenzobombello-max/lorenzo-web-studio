@@ -403,7 +403,13 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
 }
 
 export function validateAction(action: unknown): ReviewAction {
-  if (action === "approved" || action === "rejected" || action === "retry_confirmation") return action;
+  if (
+    action === "approved" ||
+    action === "rejected" ||
+    action === "retry_confirmation" ||
+    action === "send_intake_invitation" ||
+    action === "retry_intake_invitation"
+  ) return action;
   throw new InputValidationError("INVALID_REVIEW_ACTION", "action");
 }
 

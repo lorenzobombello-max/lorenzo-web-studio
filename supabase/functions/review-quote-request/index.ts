@@ -1,8 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildApprovedConfirmationEmail } from "../_shared/email-templates.ts";
+import { buildApprovedConfirmationEmail, buildIntakeInvitationEmail } from "../_shared/email-templates.ts";
 import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
-import { hashApprovalToken } from "../_shared/security.ts";
+import {
+  createRawIntakeToken,
+  decryptIntakeInvitationToken,
+  encryptIntakeInvitationToken,
+  hashApprovalToken,
+  hashIntakeToken,
+} from "../_shared/security.ts";
 import { validateAction, validateToken } from "../_shared/validation.ts";
 import type { ReviewAction } from "../_shared/types.ts";
 
@@ -60,6 +66,13 @@ function serializeRequest(data: ReviewRequestDetails, reviewedAt = data.reviewed
     description: data.description,
     reviewed_at: reviewedAt,
   };
+}
+
+function buildIntakeUrl(rawToken: string): string {
+  const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
+  const url = new URL("/pages/intake.html", siteUrl);
+  url.searchParams.set("token", rawToken);
+  return url.toString();
 }
 
 async function parseJsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -233,8 +246,178 @@ Deno.serve(async (request) => {
 
     const expiresAt = existing.approval_token_expires_at ? Date.parse(existing.approval_token_expires_at) : 0;
 
-    if ((existing.status === "pending" || action === "retry_confirmation") && expiresAt > 0 && expiresAt < Date.now()) {
+    if (
+      (existing.status === "pending" ||
+        action === "retry_confirmation" ||
+        action === "send_intake_invitation" ||
+        action === "retry_intake_invitation") &&
+      expiresAt > 0 && expiresAt < Date.now()
+    ) {
       return jsonResponse(200, { ok: true, state: "expired" satisfies ReviewState }, origin);
+    }
+
+    if (action === "send_intake_invitation" || action === "retry_intake_invitation") {
+      if (existing.status !== "approved") {
+        return jsonResponse(409, {
+          ok: false,
+          code: "INTAKE_INVITATION_NOT_ALLOWED",
+          state: existing.status as ReviewState,
+          invitation_outcome: "not_allowed",
+          message: "Intake invitation is not allowed for this request.",
+        }, origin);
+      }
+
+      let invitation: Record<string, unknown> | null = null;
+      let rawIntakeToken: string;
+
+      if (action === "send_intake_invitation") {
+        rawIntakeToken = createRawIntakeToken();
+        const intakeTokenHash = await hashIntakeToken(rawIntakeToken);
+        const encryptedToken = await encryptIntakeInvitationToken(rawIntakeToken, intakeTokenHash);
+        const { data, error } = await supabase.rpc("create_quote_request_intake_invitation", {
+          p_approval_token_hash: tokenHash,
+          p_access_token_hash: intakeTokenHash,
+          p_encrypted_token: encryptedToken,
+        });
+        invitation = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+
+        if (error || !invitation) {
+          return jsonResponse(500, {
+            ok: false,
+            code: "INTAKE_INVITATION_CREATE_FAILED",
+            message: "Intake invitation could not be created.",
+          }, origin);
+        }
+        if (invitation.outcome === "not_allowed") {
+          return jsonResponse(409, {
+            ok: false,
+            code: "INTAKE_INVITATION_NOT_ALLOWED",
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: "not_allowed",
+            message: "Intake invitation is not allowed for this request.",
+          }, origin);
+        }
+        if (invitation.outcome === "already_invited") {
+          return jsonResponse(200, {
+            ok: true,
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: "already_invited",
+            delivery_status: invitation.invitation_job_status ?? null,
+            request: serializeRequest(existing),
+          }, origin);
+        }
+        if (invitation.outcome !== "invitation_created") {
+          return jsonResponse(409, {
+            ok: false,
+            code: "INTAKE_INVITATION_NOT_DELIVERABLE",
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: invitation.outcome,
+            message: "Existing intake cannot be invited again.",
+          }, origin);
+        }
+      } else {
+        const { data, error } = await supabase.rpc("get_quote_request_intake_invitation", {
+          p_approval_token_hash: tokenHash,
+        });
+        invitation = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+        if (error || !invitation || invitation.outcome === "not_allowed") {
+          return jsonResponse(409, {
+            ok: false,
+            code: "INTAKE_INVITATION_NOT_ALLOWED",
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: "not_allowed",
+            message: "Intake invitation retry is not allowed.",
+          }, origin);
+        }
+        if (invitation.outcome === "already_invited") {
+          return jsonResponse(200, {
+            ok: true,
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: "already_invited",
+            delivery_status: invitation.invitation_job_status ?? null,
+            request: serializeRequest(existing),
+          }, origin);
+        }
+        if (
+          invitation.outcome !== "retryable" ||
+          typeof invitation.encrypted_token !== "string" ||
+          typeof invitation.access_token_hash !== "string"
+        ) {
+          return jsonResponse(409, {
+            ok: false,
+            code: "INTAKE_INVITATION_NOT_DELIVERABLE",
+            state: "approved" satisfies ReviewState,
+            invitation_outcome: "not_deliverable",
+            message: "Intake invitation cannot be retried.",
+          }, origin);
+        }
+        try {
+          rawIntakeToken = await decryptIntakeInvitationToken(
+            invitation.encrypted_token,
+            invitation.access_token_hash,
+          );
+        } catch {
+          return jsonResponse(500, {
+            ok: false,
+            code: "INTAKE_INVITATION_DECRYPT_FAILED",
+            message: "Intake invitation could not be prepared.",
+          }, origin);
+        }
+
+        if (invitation.invitation_job_status === "failed" || invitation.invitation_job_status === "retry_wait") {
+          const { data: requeued, error: requeueError } = await supabase.rpc("requeue_quote_request_email_job", {
+            p_job_id: invitation.invitation_job_id,
+            p_expected_kind: "intake_invitation",
+          });
+          if (requeueError || requeued !== true) {
+            return jsonResponse(500, {
+              ok: false,
+              code: "INTAKE_INVITATION_REQUEUE_FAILED",
+              message: "Intake invitation retry could not be scheduled.",
+            }, origin);
+          }
+        }
+      }
+
+      if (
+        typeof invitation.invitation_job_id !== "string" ||
+        typeof invitation.request_name !== "string" ||
+        typeof invitation.request_email !== "string"
+      ) {
+        return jsonResponse(500, {
+          ok: false,
+          code: "INTAKE_INVITATION_INVALID_STATE",
+          message: "Intake invitation could not be prepared.",
+        }, origin);
+      }
+
+      const intakeEmail = buildIntakeInvitationEmail({
+        clientName: invitation.request_name,
+        company: typeof invitation.request_company === "string" ? invitation.request_company : null,
+        requestId: existing.id,
+        intakeUrl: buildIntakeUrl(rawIntakeToken),
+      });
+      const delivery = await deliverEmailJob({
+        supabase,
+        jobId: invitation.invitation_job_id,
+        resendApiKey: resendApiKey || "",
+        email: {
+          from: fromEmail || "",
+          to: invitation.request_email,
+          subject: intakeEmail.subject,
+          html: intakeEmail.html,
+          text: intakeEmail.text,
+        },
+      });
+
+      return jsonResponse(200, {
+        ok: true,
+        state: "approved" satisfies ReviewState,
+        invitation_outcome: action === "send_intake_invitation" ? "invitation_created" : "invitation_retried",
+        mail_sent: delivery.status === "sent",
+        delivery_status: delivery.status,
+        request: serializeRequest(existing),
+      }, origin);
     }
 
     if (action === "retry_confirmation" && existing.status !== "approved") {

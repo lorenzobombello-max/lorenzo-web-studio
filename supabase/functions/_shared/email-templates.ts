@@ -19,6 +19,13 @@ interface ApprovedConfirmationEmailData {
   websiteType: string;
 }
 
+interface IntakeInvitationEmailData {
+  clientName: string;
+  company: string | null;
+  requestId: string;
+  intakeUrl: string;
+}
+
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/hero/lorenzo-web-solution-logo-transparent.png";
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
@@ -161,6 +168,103 @@ export function buildApprovedConfirmationEmail(data: ApprovedConfirmationEmailDa
     "",
     "Je hoeft op dit moment niets te doen.",
     "Ik neem zelf contact met je op.",
+    "",
+    "Met vriendelijke groet,",
+    "Lorenzo Web Solutions",
+    "",
+    "Professionele websites voor zelfstandigen en kleine ondernemingen",
+    "https://lorenzowebsolutions.be",
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
+export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
+  const subject = "Jouw persoonlijke websitebriefing";
+  const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
+  const safeName = escapeHtml(data.clientName);
+  const safeCompany = data.company ? escapeHtml(data.company) : null;
+  const safeReference = escapeHtml(requestReference);
+  const safeIntakeUrl = escapeHtml(data.intakeUrl);
+
+  const html = `<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">De volgende stap voor je website is klaar.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+          <tr>
+            <td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;">
+              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 32px 32px;font-size:16px;line-height:1.65;">
+              <h1 style="margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;">Vertel ons wat je website nodig heeft</h1>
+              <p style="margin:0 0 16px;">Beste ${safeName},</p>
+              <p style="margin:0 0 16px;">Je aanvraag${safeCompany ? ` voor <strong>${safeCompany}</strong>` : ""} werd bekeken en is klaar voor verdere uitwerking.</p>
+              <p style="margin:0 0 24px;">De volgende stap is een korte maar grondige websitebriefing. Daarmee brengen we je doelen, gewenste inhoud, stijl en praktische verwachtingen helder in kaart.</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <strong style="color:#172033;">Aanvraag ${safeReference}</strong><br>
+                    Je persoonlijke link blijft 14 dagen geldig. Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;">
+                <tr>
+                  <td style="border-radius:6px;background-color:#b75d3b;">
+                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-weight:bold;">Mijn websitebriefing invullen</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> stuur deze e-mail of link niet door. Wie de link bezit, kan je briefing openen.</p>
+              <p style="margin:0 0 24px;color:#5a6475;font-size:13px;word-break:break-all;">Werkt de knop niet? Open dan:<br><a href="${safeIntakeUrl}" style="color:#12346b;text-decoration:underline;">${safeIntakeUrl}</a></p>
+              <p style="margin:0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;">
+              <strong style="color:#172033;">Lorenzo Web Solutions</strong><br>
+              Professionele websites voor zelfstandigen en kleine ondernemingen<br>
+              <a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    "Jouw persoonlijke websitebriefing",
+    "",
+    `Beste ${data.clientName},`,
+    "",
+    `Je aanvraag${data.company ? ` voor ${data.company}` : ""} werd bekeken en is klaar voor verdere uitwerking.`,
+    "",
+    "De volgende stap is een korte maar grondige websitebriefing. Daarmee brengen we je doelen, gewenste inhoud, stijl en praktische verwachtingen helder in kaart.",
+    "",
+    `Aanvraag ${requestReference}`,
+    "Je persoonlijke link blijft 14 dagen geldig.",
+    "Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.",
+    "",
+    "Mijn websitebriefing invullen:",
+    data.intakeUrl,
+    "",
+    "Stuur deze persoonlijke link niet door. Wie de link bezit, kan je briefing openen.",
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",
