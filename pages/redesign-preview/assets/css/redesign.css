@@ -120,7 +120,7 @@ address { font-style: normal; }
 .positioning { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--white); }
 .positioning::before { content: "LWS / DIGITAL DIRECTION"; position: absolute; right: 2rem; top: 2rem; color: var(--signal-deep); font: 800 .62rem "Manrope", sans-serif; letter-spacing: .14em; }
 .positioning__inner { min-height: clamp(480px, 68vh, 690px); padding-block: 5rem 3.5rem; display: grid; align-content: center; gap: 3rem; }
-.positioning__statement { position: relative; font-family: "Manrope", sans-serif; font-size: clamp(3.4rem, 7.6vw, 8.2rem); font-weight: 700; letter-spacing: -.065em; line-height: .88; }
+.positioning__statement { position: relative; font-family: "Manrope", sans-serif; font-size: clamp(3.2rem, 5.8vw, 6.2rem); font-weight: 700; letter-spacing: -.055em; line-height: .92; }
 .positioning__statement::after { content: ""; position: absolute; left: 16%; right: 16%; top: 52%; height: 2px; z-index: -1; opacity: .65; background: linear-gradient(90deg,transparent,var(--signal),transparent); transform: scaleX(.2); animation: statement-signal 8s ease-in-out infinite; }
 .positioning__statement span { display: block; width: max-content; max-width: 100%; will-change: transform; }
 .positioning__statement span:nth-child(1) { animation: statement-flow-left 16s cubic-bezier(.45,0,.55,1) infinite; }
@@ -302,9 +302,9 @@ address { font-style: normal; }
 @keyframes frame-side-arrive { from { opacity: 0; transform: translate3d(180px,120px,-120px) rotateY(-18deg) rotate(8deg) scale(.65); } to { opacity: 1; transform: translateZ(80px) rotateY(-5deg) rotate(2deg); } }
 @keyframes frame-float { 0%,100% { translate: 0 0; } 50% { translate: 0 -8px; } }
 @keyframes scroll-pulse { 0%,100% { opacity: .35; transform: scaleY(.65); } 50% { opacity: 1; transform: scaleY(1); } }
-@keyframes statement-flow-left { 0%,100% { transform: translateX(-3vw); } 45%,55% { transform: translateX(2vw); } }
-@keyframes statement-flow-right { 0%,100% { transform: translateX(3vw); } 45%,55% { transform: translateX(-2.5vw); } }
-@keyframes statement-flow-center { 0%,100% { transform: translateX(-1vw) scale(.97); } 50% { transform: translateX(1.5vw) scale(1.025); } }
+@keyframes statement-flow-left { 0%,100% { transform: translateX(-.65vw); } 45%,55% { transform: translateX(.65vw); } }
+@keyframes statement-flow-right { 0%,100% { transform: translateX(.65vw); } 45%,55% { transform: translateX(-.65vw); } }
+@keyframes statement-flow-center { 0%,100% { transform: translateX(-.4vw) scale(.985); } 50% { transform: translateX(.5vw) scale(1.01); } }
 @keyframes statement-signal { 0%,100% { opacity: 0; transform: scaleX(.15); } 35%,65% { opacity: .7; transform: scaleX(1); } }
 @keyframes about-heading-drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 @keyframes about-copy-drift { 0%,100% { transform: translateX(0); } 50% { transform: translateX(8px); } }
@@ -340,6 +340,7 @@ address { font-style: normal; }
   .browser-frame--main { transform: rotate(-1deg); animation: tablet-main-arrive 900ms .6s cubic-bezier(.16,1,.3,1) both, frame-float 8s 1.6s ease-in-out infinite; }
   .browser-frame--side { transform: rotate(1deg); animation: tablet-side-arrive 900ms .78s cubic-bezier(.16,1,.3,1) both, frame-float 7s 1.8s ease-in-out infinite reverse; }
   .positioning__inner { min-height: 520px; padding-block: 5rem 3rem; gap: 2.5rem; }
+  .positioning__statement { font-size: clamp(2.55rem, 6vw, 3.8rem); line-height: .96; }
   .positioning ul { justify-content: flex-start; }
   .section-heading { grid-template-columns: 1fr; }
   .service-grid { grid-template-columns: 1fr; }
