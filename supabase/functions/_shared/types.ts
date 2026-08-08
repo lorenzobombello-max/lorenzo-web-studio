@@ -1,7 +1,8 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
 export type ReviewAction = QuoteRequestStatus | "retry_confirmation" | "send_intake_invitation" | "retry_intake_invitation";
+export type EmailJobKind = "admin_notification" | "customer_confirmation" | "intake_invitation" | "intake_submitted_notification";
 export type EmailJobStatus = "pending" | "processing" | "sent" | "retry_wait" | "failed";
-export type IntakeAction = "create" | "inspect" | "save_draft" | "submit";
+export type IntakeAction = "create" | "inspect" | "save_draft" | "submit" | "inspect_submitted_intake_admin";
 export type IntakeStatus = "invited" | "in_progress" | "submitted" | "reviewed";
 
 export interface SubmitQuotePayload {

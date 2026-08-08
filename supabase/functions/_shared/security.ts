@@ -1,4 +1,6 @@
 const textEncoder = new TextEncoder();
+const ADMIN_INTAKE_RAW_DOMAIN = "admin-intake-raw:v1:";
+const ADMIN_INTAKE_VERIFY_DOMAIN = "admin-intake-verify:v1:";
 
 function toHex(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -32,7 +34,7 @@ function intakeInvitationAdditionalData(accessTokenHash: string): Uint8Array {
   return textEncoder.encode(`intake-invitation:v1:${accessTokenHash}`);
 }
 
-async function hmacSha256(secret: string, value: string): Promise<string> {
+async function hmacSha256Bytes(secret: string, value: string): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey(
     "raw",
     textEncoder.encode(secret),
@@ -41,8 +43,11 @@ async function hmacSha256(secret: string, value: string): Promise<string> {
     ["sign"],
   );
 
-  const signature = await crypto.subtle.sign("HMAC", key, textEncoder.encode(value));
-  return toHex(signature);
+  return await crypto.subtle.sign("HMAC", key, textEncoder.encode(value));
+}
+
+async function hmacSha256(secret: string, value: string): Promise<string> {
+  return toHex(await hmacSha256Bytes(secret, value));
 }
 
 function createRawCapabilityToken(): string {
@@ -59,6 +64,38 @@ export async function hashIntakeToken(rawToken: string): Promise<string> {
   const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
   if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
   return await hmacSha256(secret, `intake:${rawToken}`);
+}
+
+function adminIntakeTokenSecret(): string {
+  const secret = Deno.env.get("ADMIN_INTAKE_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing ADMIN_INTAKE_TOKEN_SECRET");
+  return secret;
+}
+
+export async function deriveAdminIntakeCapability(accessTokenHash: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(accessTokenHash)) throw new Error("Invalid admin intake capability input");
+  return toBase64Url(
+    await hmacSha256Bytes(adminIntakeTokenSecret(), `${ADMIN_INTAKE_RAW_DOMAIN}${accessTokenHash}`),
+  );
+}
+
+export async function hashAdminIntakeToken(rawToken: string): Promise<string> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken)) throw new Error("Invalid admin intake capability");
+  return await hmacSha256(adminIntakeTokenSecret(), `${ADMIN_INTAKE_VERIFY_DOMAIN}${rawToken}`);
+}
+
+export function computeAdminIntakeTokenExpiry(): string {
+  const ttlMinutes = Number(Deno.env.get("ADMIN_INTAKE_TOKEN_TTL_MINUTES") || "43200");
+  if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0) throw new Error("Invalid admin intake token TTL");
+  return new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
+}
+
+export function buildAdminIntakeUrl(rawToken: string): string {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken)) throw new Error("Invalid admin intake capability");
+  const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
+  const url = new URL("/pages/admin-intake.html", siteUrl);
+  url.hash = new URLSearchParams({ token: rawToken }).toString();
+  return url.toString();
 }
 
 export async function encryptIntakeInvitationToken(rawToken: string, accessTokenHash: string): Promise<string> {

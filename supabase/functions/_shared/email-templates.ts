@@ -26,6 +26,14 @@ interface IntakeInvitationEmailData {
   intakeUrl: string;
 }
 
+interface SubmittedIntakeAdminEmailData {
+  clientName: string;
+  company: string | null;
+  requestId: string;
+  submittedAt: string;
+  adminUrl: string;
+}
+
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/hero/lorenzo-web-solution-logo-transparent.png";
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
@@ -271,6 +279,78 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
     "",
     "Professionele websites voor zelfstandigen en kleine ondernemingen",
     "https://lorenzowebsolutions.be",
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
+export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailData) {
+  const subjectLabel = (data.company || data.clientName).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  const subject = `Nieuwe websitebriefing ontvangen — ${subjectLabel}`;
+  const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
+  const submittedAt = new Date(data.submittedAt).toLocaleString("nl-BE", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Europe/Brussels",
+  });
+  const safeName = escapeHtml(data.clientName);
+  const safeCompany = data.company ? escapeHtml(data.company) : null;
+  const safeReference = escapeHtml(requestReference);
+  const safeSubmittedAt = escapeHtml(submittedAt);
+  const safeAdminUrl = escapeHtml(data.adminUrl);
+
+  const html = `<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+          <tr>
+            <td style="padding:28px 32px;border-top:4px solid #12346b;font-size:16px;line-height:1.6;">
+              <h1 style="margin:0 0 18px;color:#12346b;font-size:24px;line-height:1.3;">Nieuwe websitebriefing ontvangen</h1>
+              <p style="margin:0 0 20px;">Een klant heeft de websitebriefing definitief verzonden.</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
+                <tr>
+                  <td style="padding:16px 18px;">
+                    <strong>Klant:</strong> ${safeName}<br>
+                    ${safeCompany ? `<strong>Bedrijf:</strong> ${safeCompany}<br>` : ""}
+                    <strong>Aanvraag:</strong> ${safeReference}<br>
+                    <strong>Verzonden:</strong> ${safeSubmittedAt}
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="border-radius:6px;background-color:#b75d3b;">
+                    <a href="${safeAdminUrl}" style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-weight:bold;">Briefing bekijken</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    "Nieuwe websitebriefing ontvangen",
+    "",
+    "Een klant heeft de websitebriefing definitief verzonden.",
+    `Klant: ${data.clientName}`,
+    ...(data.company ? [`Bedrijf: ${data.company}`] : []),
+    `Aanvraag: ${requestReference}`,
+    `Verzonden: ${submittedAt}`,
+    "",
+    `Briefing bekijken: ${data.adminUrl}`,
   ].join("\n");
 
   return { subject, html, text };

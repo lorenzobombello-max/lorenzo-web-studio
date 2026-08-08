@@ -1,11 +1,17 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
+import { deliverEmailJob } from "../_shared/email-delivery.ts";
+import { buildSubmittedIntakeAdminEmail } from "../_shared/email-templates.ts";
 import {
+  buildAdminIntakeUrl,
+  computeAdminIntakeTokenExpiry,
   createRawIntakeToken,
+  deriveAdminIntakeCapability,
+  hashAdminIntakeToken,
   hashApprovalToken,
   hashIntakeToken,
 } from "../_shared/security.ts";
-import type { IntakeAction, IntakeStatus } from "../_shared/types.ts";
+import type { EmailJobStatus, IntakeAction, IntakeStatus } from "../_shared/types.ts";
 import {
   InputValidationError,
   sanitizeAndValidateIntakeData,
@@ -77,12 +83,26 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
 }
 
 function validateAction(value: unknown): IntakeAction {
-  if (value === "create" || value === "inspect" || value === "save_draft" || value === "submit") return value;
+  if (
+    value === "create" ||
+    value === "inspect" ||
+    value === "save_draft" ||
+    value === "submit" ||
+    value === "inspect_submitted_intake_admin"
+  ) return value;
   throw new IntakeRequestError(400, "INVALID_ACTION");
 }
 
 function isIntakeStatus(value: unknown): value is IntakeStatus {
   return value === "invited" || value === "in_progress" || value === "submitted" || value === "reviewed";
+}
+
+function isEmailJobStatus(value: unknown): value is EmailJobStatus {
+  return value === "pending" || value === "processing" || value === "sent" || value === "retry_wait" || value === "failed";
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function invalidIntakeToken(origin: string | null): Response {
@@ -91,6 +111,96 @@ function invalidIntakeToken(origin: string | null): Response {
     code: "INVALID_INTAKE_TOKEN",
     message: "Intake link is invalid or unavailable.",
   }, origin);
+}
+
+interface SubmittedIntakeNotificationContext {
+  requestId: string;
+  clientName: string;
+  company: string | null;
+  submittedAt: string;
+}
+
+async function loadSubmittedIntakeNotificationContext(
+  supabase: SupabaseClient,
+  intakeTokenHash: string,
+): Promise<SubmittedIntakeNotificationContext | null> {
+  const { data: intake, error: intakeError } = await supabase
+    .from("quote_request_intakes")
+    .select("quote_request_id, status, submitted_at")
+    .eq("access_token_hash", intakeTokenHash)
+    .maybeSingle();
+
+  if (
+    intakeError ||
+    !intake ||
+    intake.status !== "submitted" ||
+    !isUuid(intake.quote_request_id) ||
+    typeof intake.submitted_at !== "string"
+  ) return null;
+
+  const { data: quoteRequest, error: requestError } = await supabase
+    .from("quote_requests")
+    .select("id, name, company")
+    .eq("id", intake.quote_request_id)
+    .maybeSingle();
+
+  if (
+    requestError ||
+    !quoteRequest ||
+    quoteRequest.id !== intake.quote_request_id ||
+    typeof quoteRequest.name !== "string" ||
+    (quoteRequest.company !== null && typeof quoteRequest.company !== "string")
+  ) return null;
+
+  return {
+    requestId: quoteRequest.id,
+    clientName: quoteRequest.name,
+    company: quoteRequest.company,
+    submittedAt: intake.submitted_at,
+  };
+}
+
+async function processSubmittedIntakeNotification(
+  supabase: SupabaseClient,
+  jobId: string,
+  jobStatus: EmailJobStatus,
+  intakeTokenHash: string,
+  rawAdminCapability: string,
+): Promise<EmailJobStatus> {
+  if (jobStatus === "sent" || jobStatus === "failed") return jobStatus;
+
+  const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+  const adminEmail = Deno.env.get("ADMIN_EMAIL") || "";
+  const fromEmail = Deno.env.get("FROM_EMAIL") || "";
+  if (!resendApiKey || !adminEmail || !fromEmail) return jobStatus;
+
+  try {
+    const context = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
+    if (!context) return jobStatus;
+
+    const emailPayload = buildSubmittedIntakeAdminEmail({
+      clientName: context.clientName,
+      company: context.company,
+      requestId: context.requestId,
+      submittedAt: context.submittedAt,
+      adminUrl: buildAdminIntakeUrl(rawAdminCapability),
+    });
+    const delivery = await deliverEmailJob({
+      supabase,
+      jobId,
+      resendApiKey,
+      email: {
+        from: fromEmail,
+        to: adminEmail,
+        subject: emailPayload.subject,
+        html: emailPayload.html,
+        text: emailPayload.text,
+      },
+    });
+    return delivery.status;
+  } catch {
+    return jobStatus;
+  }
 }
 
 Deno.serve(async (request) => {
@@ -129,9 +239,90 @@ Deno.serve(async (request) => {
     return jsonResponse(400, { ok: false, code: "INVALID_REQUEST", message: "Invalid request." }, origin);
   }
 
+  if (
+    (action === "submit" || action === "inspect_submitted_intake_admin") &&
+    !Deno.env.get("ADMIN_INTAKE_TOKEN_SECRET")
+  ) {
+    return jsonResponse(500, {
+      ok: false,
+      code: "SERVER_CONFIGURATION_ERROR",
+      message: "Server configuration is incomplete.",
+    }, origin);
+  }
+
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (action === "inspect_submitted_intake_admin") {
+    let adminToken: string;
+    let adminTokenHash: string;
+    try {
+      adminToken = validateToken(body.token);
+      adminTokenHash = await hashAdminIntakeToken(adminToken);
+    } catch {
+      return jsonResponse(401, {
+        ok: false,
+        code: "INVALID_ADMIN_CAPABILITY",
+        message: "Admin briefing is unavailable.",
+      }, origin);
+    }
+
+    const { data, error } = await supabase.rpc("inspect_submitted_intake_for_admin", {
+      p_admin_access_token_hash: adminTokenHash,
+    });
+    const result = Array.isArray(data) ? data[0] : null;
+
+    if (error) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "ADMIN_INTAKE_INSPECT_FAILED",
+        message: "Admin briefing could not be inspected.",
+      }, origin);
+    }
+
+    if (!result) {
+      return jsonResponse(401, {
+        ok: false,
+        code: "INVALID_ADMIN_CAPABILITY",
+        message: "Admin briefing is unavailable.",
+      }, origin);
+    }
+
+    if (result.intake_status !== "submitted") {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INVALID_ADMIN_INTAKE_STATE",
+        message: "Admin briefing could not be inspected.",
+      }, origin);
+    }
+
+    return jsonResponse(200, {
+      ok: true,
+      intake: {
+        id: result.intake_id,
+        status: result.intake_status,
+        started_at: result.started_at,
+        submitted_at: result.submitted_at,
+        reviewed_at: result.reviewed_at,
+      },
+      request: {
+        id: result.quote_request_id,
+        created_at: result.quote_request_created_at,
+        name: result.name,
+        company: result.company,
+        email: result.email,
+        phone: result.phone,
+        website_type: result.website_type,
+        budget: result.budget,
+        timing: result.timing,
+        description: result.description,
+      },
+      data: result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
+        ? result.intake_data
+        : {},
+    }, origin);
+  }
 
   if (action === "create") {
     let approvalToken: string;
@@ -268,11 +459,28 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
-  const { data, error } = await supabase.rpc("update_quote_request_intake", {
+  const mutationParameters: Record<string, unknown> = {
     p_access_token_hash: intakeTokenHash,
     p_action: action,
     p_data: intakeData,
-  });
+  };
+  let rawAdminCapability: string | null = null;
+
+  if (action === "submit") {
+    try {
+      rawAdminCapability = await deriveAdminIntakeCapability(intakeTokenHash);
+      mutationParameters.p_admin_access_token_hash = await hashAdminIntakeToken(rawAdminCapability);
+      mutationParameters.p_admin_access_token_expires_at = computeAdminIntakeTokenExpiry();
+    } catch {
+      return jsonResponse(500, {
+        ok: false,
+        code: "SERVER_CONFIGURATION_ERROR",
+        message: "Server configuration is incomplete.",
+      }, origin);
+    }
+  }
+
+  const { data, error } = await supabase.rpc("update_quote_request_intake", mutationParameters);
   const result = Array.isArray(data) ? data[0] : null;
 
   if (error || !result) {
@@ -300,9 +508,29 @@ Deno.serve(async (request) => {
   }
 
   if (result.outcome === "already_submitted") {
+    let notificationStatus = isEmailJobStatus(result.notification_job_status)
+      ? result.notification_job_status
+      : null;
+    if (
+      rawAdminCapability &&
+      isUuid(result.notification_job_id) &&
+      notificationStatus &&
+      notificationStatus !== "sent" &&
+      notificationStatus !== "failed"
+    ) {
+      notificationStatus = await processSubmittedIntakeNotification(
+        supabase,
+        result.notification_job_id,
+        notificationStatus,
+        intakeTokenHash,
+        rawAdminCapability,
+      );
+    }
+
     return jsonResponse(200, {
       ok: true,
       state: "already_submitted",
+      notification_status: notificationStatus,
       intake: {
         status: result.intake_status,
         submitted_at: result.submitted_at,
@@ -322,9 +550,34 @@ Deno.serve(async (request) => {
   }
 
   if (action === "submit" && result.outcome === "submitted") {
+    if (!isUuid(result.notification_job_id) || !isEmailJobStatus(result.notification_job_status)) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INTAKE_NOTIFICATION_JOB_UNAVAILABLE",
+        message: "Intake was submitted, but its notification job is unavailable.",
+      }, origin);
+    }
+
+    if (!rawAdminCapability) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "ADMIN_CAPABILITY_UNAVAILABLE",
+        message: "Intake was submitted, but its notification could not be prepared.",
+      }, origin);
+    }
+
+    const notificationStatus = await processSubmittedIntakeNotification(
+      supabase,
+      result.notification_job_id,
+      result.notification_job_status,
+      intakeTokenHash,
+      rawAdminCapability,
+    );
+
     return jsonResponse(200, {
       ok: true,
       state: "submitted",
+      notification_status: notificationStatus,
       intake: {
         status: result.intake_status,
         submitted_at: result.submitted_at,

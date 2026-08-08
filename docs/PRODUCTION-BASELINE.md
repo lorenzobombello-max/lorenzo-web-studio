@@ -4,7 +4,7 @@
 
 - Project: Lorenzo Web Solutions / `lorenzo-web-studio`
 - Auditdatum: 2026-08-08
-- Baselinecommit: `2e8b9d0816cb00d80b14da011149891032bfef8f`
+- Baselinereferentie: de `main`-commit waarin dit document is vastgelegd
 - Branch: `main`
 - Linked Supabase-project: `xcsptvntvrizwhskaphr`
 - Supabase-regio: `eu-west-1`
@@ -28,7 +28,7 @@ Dit document legt de gecontroleerde productiebaseline vast. Code, migrations en 
 - `assets/`: gedeelde en demo-specifieke CSS, JavaScript, iconen en afbeeldingen.
 - `scripts/`: voorbereiding en verificatie van het Pages-artifact.
 - `supabase/functions/`: drie Edge Functions en gedeelde security-, validatie- en e-mailmodules.
-- `supabase/migrations/`: negen chronologische PostgreSQL-migrations.
+- `supabase/migrations/`: tien chronologische PostgreSQL-migrations.
 
 ## Database
 
@@ -45,7 +45,7 @@ Slaat gevalideerde offerteaanvragen en hun reviewstatus op.
 
 ### `quote_request_email_jobs`
 
-Beheert leveringswerk voor `admin_notification`, `customer_confirmation` en `intake_invitation`.
+Beheert leveringswerk voor `admin_notification`, `customer_confirmation`, `intake_invitation` en `intake_submitted_notification`.
 
 - Foreign key naar `quote_requests(id)` met `ON DELETE CASCADE`.
 - `UNIQUE (quote_request_id, kind)` garandeert maximaal een job van elke soort per request.
@@ -62,12 +62,13 @@ Slaat de websitebriefing en lifecyclemetadata op.
 - Foreign key naar `quote_requests(id)` met `ON DELETE CASCADE`.
 - `UNIQUE (quote_request_id)` garandeert een intake per request.
 - De access capability-hash is uniek en niet leeg.
+- Een definitief ingediende intake kan afzonderlijke, verlopende admin-accessmetadata bevatten voor de beveiligde read-only briefingweergave.
 - Constraints bewaken expiratie, status/timestamps, confirmation, conditionele webshop- en bookingdata, URLs en toegestane categoriewaarden.
 - Directe toegang is beperkt tot `service_role`; capability-gebaseerde RPC's vormen de applicatiegrens.
 
 ## Migrations
 
-Alle negen migrations waren op de auditdatum lokaal en remote gelijk.
+Alle tien migrations waren op de auditdatum lokaal en remote gelijk.
 
 1. `20260802130000_create_quote_requests.sql`
    - Maakt requeststatus, `quote_requests`, basisvalidatie, RLS en de pending capability-index.
@@ -87,12 +88,14 @@ Alle negen migrations waren op de auditdatum lokaal en remote gelijk.
    - Breidt beveiligde intake-inspectie uit met briefingdetails voor restore/read-only-weergave.
 9. `20260808190000_create_quote_request_intake_invitations.sql`
    - Voegt invitation-jobtype, encrypted retrymateriaal, clear-on-sent en invitation create/retrieve-RPC's toe.
+10. `20260808200000_create_submitted_intake_admin_flow.sql`
+   - Voegt atomische submitted-notificationjobs, admin-accessmetadata en service-role-only inspectie van definitief ingediende briefings toe.
 
 ## Edge Functions
 
 De runtimebaseline op 2026-08-08:
 
-### `submit-quote-request` v14
+### `submit-quote-request` v15
 
 - Doel: een publieke offerteaanvraag valideren, idempotent opslaan en de adminnotificatie afleveren.
 - Accepteert alleen de bedoelde HTTP-methode, content type, bodygrootte en gevalideerde velden.
@@ -101,7 +104,7 @@ De runtimebaseline op 2026-08-08:
 - Past honeypot- en rate-limitcontroles toe.
 - Transitie: nieuwe request naar `pending`; bij creatie ontstaat maximaal een `admin_notification`-job.
 
-### `review-quote-request` v11
+### `review-quote-request` v12
 
 - Doel: capability-gebaseerde inspectie en review van requests, bevestigingslevering en intake-uitnodigingen.
 - Actions: `approved`, `rejected`, `retry_confirmation`, `send_intake_invitation`, `retry_intake_invitation`.
@@ -110,13 +113,15 @@ De runtimebaseline op 2026-08-08:
 - Een invitation-action maakt een intake en invitation-job of rapporteert de bestaande toestand.
 - Response-serialisatie bevat requestdetails, maar geen capability-hash, raw capability of encrypted payload.
 
-### `intake-quote-request` v1
+### `intake-quote-request` v3
 
 - Doel: capability-gebaseerde intakecreatie, inspectie, draftsave en definitieve submit.
-- Actions: `create`, `inspect`, `save_draft`, `submit`.
+- Actions: `create`, `inspect`, `save_draft`, `submit`, `inspect_submitted_intake_admin`.
 - Valideert methode, content type, bodygrootte, capabilityvorm en briefingdata.
 - `save_draft` brengt `invited` naar `in_progress` en bewaart gedeeltelijke data server-side.
 - `submit` vereist alle verplichte velden en confirmation en brengt een bewerkbare intake naar `submitted`.
+- Definitieve submit maakt atomisch maximaal een `intake_submitted_notification`-job en levert de beveiligde adminlink via de bestaande jobdelivery.
+- `inspect_submitted_intake_admin` valideert een afzonderlijke admincapability en levert uitsluitend de definitief ingediende briefing voor read-only weergave.
 - Een reeds submitted intake levert `already_submitted`; andere niet-bewerkbare statussen worden geweigerd.
 
 ## Emailflow
@@ -124,6 +129,7 @@ De runtimebaseline op 2026-08-08:
 1. `admin_notification` wordt bij een nieuwe quote request aangemaakt en naar de beheerder verzonden.
 2. `customer_confirmation` wordt na approval maximaal eenmaal per request aangemaakt en naar de klant verzonden.
 3. `intake_invitation` wordt voor een approved request maximaal eenmaal aangemaakt en bevat de persoonlijke intake-link.
+4. `intake_submitted_notification` wordt bij definitieve submit maximaal eenmaal aangemaakt en bevat voor de beheerder een beveiligde link naar de volledige read-only briefing.
 
 De deliverymodule claimt jobs atomisch en verwerkt providerresultaten. Retrybare HTTP-statussen zijn `408`, `425`, `429` en `5xx`; netwerkfouten zijn retrybaar. Databasefuncties beheren pogingsteller, `retry_wait`, volgende poging en terminale failure. De exacte productiegedragingen onder providerstoring zijn niet volledig end-to-end gevalideerd.
 
@@ -170,6 +176,21 @@ Na `submitted` of `reviewed`:
 
 ### Bewezen In Productie
 
+**Websitebriefing-flow: PASS — end-to-end productievalidatie 8 augustus 2026.**
+
+Phase6B is de referentie-E2E-test voor de volledige keten:
+
+```text
+aanvraag
+-> goedkeuring
+-> intake-uitnodiging
+-> klantbriefing
+-> definitieve submit
+-> databaseopslag
+-> admin-notificatie
+-> beveiligde adminweergave volledige briefing
+```
+
 De volgende keten is gecontroleerd met een beheerste synthetische request en UUID-gebonden metadata-inspectie:
 
 - quote submit;
@@ -181,9 +202,11 @@ De volgende keten is gecontroleerd met een beheerste synthetische request en UUI
 - draft save;
 - draft restore via de normale maillink;
 - definitieve submit;
+- exact een verzonden `intake_submitted_notification`-job;
+- beveiligde adminmailactie en volledige read-only adminweergave;
 - submitted read-only reopen met zichtbare antwoorden;
 - geen normale save- of tweede submitmogelijkheid na submit;
-- post-submit loading-messagepolish live op baselinecommit `2e8b9d0`.
+- post-submit loading-messagepolish live.
 
 ### Geimplementeerd Maar Niet Volledig Productiegetest
 
