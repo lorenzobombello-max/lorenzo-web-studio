@@ -371,6 +371,17 @@
   const submitButton = document.getElementById("submitButton");
 
   let modalTimer = null;
+  let submissionIdempotencyKey = "";
+
+  function createIdempotencyKey() {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0"));
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+  }
 
   function showSuccessModal() {
     const modal = document.getElementById("successModal");
@@ -614,20 +625,23 @@
 
     try {
       const payload = extractFormPayload(contactForm);
+      if (!submissionIdempotencyKey) submissionIdempotencyKey = createIdempotencyKey();
 
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": submissionIdempotencyKey,
         },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
+      if (response.status !== 200 && response.status !== 202) {
         throw new Error("Request failed");
       }
 
       contactForm.reset();
+      submissionIdempotencyKey = "";
       showSuccessModal();
     } catch {
       setFormMessage(
@@ -674,10 +688,12 @@
     contactForm.addEventListener("submit", handleContactFormSubmit);
 
     contactForm.addEventListener("input", () => {
+      submissionIdempotencyKey = "";
       setFormMessage("", null);
     });
 
     contactForm.addEventListener("change", () => {
+      submissionIdempotencyKey = "";
       setFormMessage("", null);
     });
   }

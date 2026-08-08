@@ -5,6 +5,13 @@ function toHex(buffer: ArrayBuffer): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function toBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 async function hmacSha256(secret: string, value: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -35,6 +42,25 @@ export function createRawApprovalToken(): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+export async function createApprovalTokenForIdempotencyKey(idempotencyKey: string): Promise<string> {
+  const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    textEncoder.encode(`approval-raw:${idempotencyKey}`),
+  );
+  return toBase64Url(signature);
 }
 
 export function computeTokenExpiry(): string {

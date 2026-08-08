@@ -4,13 +4,42 @@ const STRICT_ORIGINS = new Set([
   "https://lorenzobombello-max.github.io",
 ]);
 
-function isLocalOrigin(origin: string): boolean {
-  return origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1");
+const LOCAL_DEVELOPMENT_ORIGINS = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]);
+
+function configuredOrigins(): Set<string> {
+  const origins = new Set(STRICT_ORIGINS);
+  const configured = Deno.env.get("ALLOWED_ORIGINS") || "";
+
+  configured.split(",").forEach((value) => {
+    const candidate = value.trim();
+    if (!candidate) return;
+
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.origin === candidate) origins.add(candidate);
+    } catch {
+      // Invalid configured origins are ignored instead of weakening CORS.
+    }
+  });
+
+  if (Deno.env.get("ALLOW_LOCAL_DEVELOPMENT_ORIGINS") === "true") {
+    LOCAL_DEVELOPMENT_ORIGINS.forEach((origin) => origins.add(origin));
+  }
+  return origins;
 }
 
 export function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return true;
-  return STRICT_ORIGINS.has(origin) || isLocalOrigin(origin);
+
+  try {
+    const parsed = new URL(origin);
+    return parsed.origin === origin && configuredOrigins().has(origin);
+  } catch {
+    return false;
+  }
 }
 
 export function corsHeaders(origin: string | null): HeadersInit {
@@ -20,7 +49,7 @@ export function corsHeaders(origin: string | null): HeadersInit {
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "content-type,x-requested-with",
+    "Access-Control-Allow-Headers": "authorization,content-type,idempotency-key,x-requested-with",
     "Vary": "Origin",
   };
 }

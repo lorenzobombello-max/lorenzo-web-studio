@@ -4,12 +4,18 @@
   const detailsNode = document.getElementById("reviewDetails");
   const approveButton = document.getElementById("approveButton");
   const rejectButton = document.getElementById("rejectButton");
+  const retryConfirmationButton = document.getElementById("retryConfirmationButton");
 
   const metaBase = document.querySelector('meta[name="lws-functions-base-url"]');
   const functionsBaseUrl = (metaBase?.getAttribute("content") || "").replace(/\/$/, "");
 
   let locked = false;
   const token = new URLSearchParams(window.location.search).get("token") || "";
+  if (token) {
+    const sanitizedUrl = new URL(window.location.href);
+    sanitizedUrl.searchParams.delete("token");
+    window.history.replaceState(window.history.state, "", `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`);
+  }
 
   function setMessage(text, type) {
     if (!messageNode) return;
@@ -28,6 +34,13 @@
     const disabled = !enabled || locked;
     if (approveButton) approveButton.disabled = disabled;
     if (rejectButton) rejectButton.disabled = disabled;
+  }
+
+  function setRetryButton(visible) {
+    if (!retryConfirmationButton) return;
+    retryConfirmationButton.hidden = !visible;
+    retryConfirmationButton.style.display = visible ? "" : "none";
+    retryConfirmationButton.disabled = !visible || locked;
   }
 
   function fillDetails(request) {
@@ -80,9 +93,9 @@
     setButtons(false);
 
     try {
-      const response = await fetch(`${endpoint}?token=${encodeURIComponent(token)}`, {
+      const response = await fetch(endpoint, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       const data = await response.json();
@@ -100,13 +113,22 @@
 
     if (state === "pending") {
       setStatus("Pending - wacht op beoordeling");
+      setRetryButton(false);
       setButtons(true);
       return;
     }
 
     if (state === "approved") {
       setStatus("Goedgekeurd");
-      setMessage("Deze aanvraag werd al goedgekeurd.", "success");
+      const deliveryStatus = data?.delivery_status;
+      const confirmationSent = data?.mail_sent === true || deliveryStatus === "sent";
+      setMessage(
+        confirmationSent
+          ? "Deze aanvraag werd goedgekeurd en de bevestigingsmail is verzonden."
+          : "Deze aanvraag werd goedgekeurd. De bevestigingsmail wacht nog op verzending of een nieuwe poging.",
+        confirmationSent ? "success" : "error"
+      );
+      setRetryButton(!confirmationSent);
       setButtons(false);
       return;
     }
@@ -114,6 +136,7 @@
     if (state === "rejected") {
       setStatus("Afgewezen");
       setMessage("Deze aanvraag werd al afgewezen.", "success");
+      setRetryButton(false);
       setButtons(false);
       return;
     }
@@ -121,12 +144,14 @@
     if (state === "expired") {
       setStatus("Token verlopen");
       setMessage("De beoordelingslink is verlopen.", "error");
+      setRetryButton(false);
       setButtons(false);
       return;
     }
 
     setStatus("Ongeldig token");
     setMessage("De beoordelingslink is ongeldig.", "error");
+    setRetryButton(false);
     setButtons(false);
   }
 
@@ -146,13 +171,8 @@
       });
 
       const data = await response.json();
+      locked = false;
       renderState(data);
-
-      if (data?.state === "approved") {
-        setMessage("Aanvraag werd goedgekeurd.", "success");
-      } else if (data?.state === "rejected") {
-        setMessage("Aanvraag werd afgewezen.", "success");
-      }
     } catch {
       setMessage("De actie kon niet worden verwerkt. Probeer later opnieuw.", "error");
       locked = false;
@@ -166,6 +186,10 @@
 
   if (rejectButton) {
     rejectButton.addEventListener("click", () => submitAction("rejected"));
+  }
+
+  if (retryConfirmationButton) {
+    retryConfirmationButton.addEventListener("click", () => submitAction("retry_confirmation"));
   }
 
   fetchState();

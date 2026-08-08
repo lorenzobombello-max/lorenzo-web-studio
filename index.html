@@ -527,14 +527,14 @@
           <p>Start na akkoord</p>
         </aside>
         <form class="contact-form studio-contact__form" id="contactForm" aria-label="Offerte formulier" novalidate>
-          <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" required /></div>
-          <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" /></div>
-          <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required /></div>
-          <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" /></div>
+          <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required /></div>
+          <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" minlength="2" maxlength="140" /></div>
+          <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" minlength="5" maxlength="254" required /></div>
+          <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" minlength="6" maxlength="40" pattern="[+0-9().\s-]+" /></div>
           <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Demo of showcase concept</option><option>Andere</option></select></div>
           <div class="field"><label for="budget">Budgetrichting</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
           <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
-          <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" required></textarea></div>
+          <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" minlength="10" maxlength="3000" required></textarea></div>
           <div class="field field--full consent-field"><input id="privacy" name="privacy" type="checkbox" required /><label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label></div>
           <div class="field field--full sr-only" aria-hidden="true">
             <label for="website">Laat dit veld leeg</label>

@@ -1,17 +1,70 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildAdminNotificationEmail } from "../_shared/email-templates.ts";
+import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
-import { computeTokenExpiry, createRawApprovalToken, extractClientIp, hashApprovalToken, hashClientIp } from "../_shared/security.ts";
+import { computeTokenExpiry, createApprovalTokenForIdempotencyKey, extractClientIp, hashApprovalToken, hashClientIp } from "../_shared/security.ts";
 import { isRateLimited } from "../_shared/rate-limit.ts";
-import { sanitizeAndValidateSubmitPayload } from "../_shared/validation.ts";
-import type { SubmitQuotePayload } from "../_shared/types.ts";
+import { InputValidationError, sanitizeAndValidateSubmitPayload } from "../_shared/validation.ts";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_BODY_BYTES = 16 * 1024;
+const IDEMPOTENCY_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const sanitizeHeaderValue = (value: string) => value.replace(/[\r\n]+/g, "").trim();
+class RequestError extends Error {
+  constructor(public readonly status: number, public readonly code: string) {
+    super(code);
+    this.name = "RequestError";
+  }
+}
 
-function isValidEmail(value: string): boolean {
-  return EMAIL_REGEX.test(value);
+function toHex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function parseJsonBody(request: Request): Promise<unknown> {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+    throw new RequestError(415, "UNSUPPORTED_CONTENT_TYPE");
+  }
+
+  const declaredLength = Number(request.headers.get("content-length") || "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    throw new RequestError(413, "BODY_TOO_LARGE");
+  }
+
+  if (!request.body) throw new RequestError(400, "INVALID_JSON");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new RequestError(413, "BODY_TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes));
+  } catch {
+    throw new RequestError(400, "INVALID_JSON");
+  }
+}
+
+async function fingerprintPayload(payload: Record<string, unknown>): Promise<string> {
+  const canonical = JSON.stringify(payload);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+  return toHex(digest);
 }
 
 function jsonResponse(status: number, body: Record<string, unknown>, origin: string | null): Response {
@@ -43,51 +96,39 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const resendApiKeyRaw = Deno.env.get("RESEND_API_KEY") || "";
-  const adminEmailRaw = Deno.env.get("ADMIN_EMAIL") || "";
-  const fromEmailRaw = Deno.env.get("FROM_EMAIL") || "";
-  const resendApiKey = sanitizeHeaderValue(resendApiKeyRaw);
-  const adminEmail = sanitizeHeaderValue(adminEmailRaw);
-  const fromEmail = sanitizeHeaderValue(fromEmailRaw);
+  const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+  const adminEmail = Deno.env.get("ADMIN_EMAIL") || "";
+  const fromEmail = Deno.env.get("FROM_EMAIL") || "";
   const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
 
-  if (!supabaseUrl || !serviceRoleKey || !resendApiKey || !adminEmail || !fromEmail) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(500, {
       ok: false,
+      code: "SERVER_CONFIGURATION_ERROR",
       message: "Server configuration is incomplete.",
     }, origin);
   }
 
-  if (!isValidEmail(fromEmail) || !isValidEmail(adminEmail)) {
-    console.error("resend_config_invalid", {
-      step: "resend_request",
-      errorType: "ValidationError",
-      errorMessage: "Invalid FROM_EMAIL or ADMIN_EMAIL format",
-    });
-
-    return jsonResponse(500, {
-      ok: false,
-      message: "Server configuration is incomplete.",
-    }, origin);
-  }
-
-  let payload: SubmitQuotePayload;
-
+  let rawPayload: unknown;
   try {
-    payload = await request.json();
-  } catch {
-    return jsonResponse(400, {
-      ok: false,
-      message: "Invalid request payload.",
-    }, origin);
+    rawPayload = await parseJsonBody(request);
+  } catch (error) {
+    if (error instanceof RequestError) {
+      return jsonResponse(error.status, { ok: false, code: error.code, message: "Invalid request." }, origin);
+    }
+    return jsonResponse(400, { ok: false, code: "INVALID_REQUEST", message: "Invalid request." }, origin);
   }
 
   let sanitized;
   try {
-    sanitized = sanitizeAndValidateSubmitPayload(payload);
-  } catch {
+    sanitized = sanitizeAndValidateSubmitPayload(rawPayload);
+  } catch (error) {
+    const code = error instanceof InputValidationError ? error.code : "INVALID_INPUT";
+    const field = error instanceof InputValidationError ? error.field : undefined;
     return jsonResponse(400, {
       ok: false,
+      code,
+      ...(field ? { field } : {}),
       message: "Invalid input.",
     }, origin);
   }
@@ -96,9 +137,32 @@ Deno.serve(async (request) => {
   if (sanitized.honeypotValue) {
     return jsonResponse(200, {
       ok: true,
+      code: "REQUEST_ACCEPTED",
       message: "Request received.",
     }, origin);
   }
+
+  const requestedIdempotencyKey = (request.headers.get("idempotency-key") || "").trim();
+  const idempotencyKey = requestedIdempotencyKey || crypto.randomUUID();
+  if (!IDEMPOTENCY_KEY_REGEX.test(idempotencyKey)) {
+    return jsonResponse(400, {
+      ok: false,
+      code: "INVALID_IDEMPOTENCY_KEY",
+      message: "Invalid request.",
+    }, origin);
+  }
+
+  const requestFingerprint = await fingerprintPayload({
+    name: sanitized.name,
+    company: sanitized.company,
+    email: sanitized.email,
+    phone: sanitized.phone,
+    website_type: sanitized.website_type,
+    budget: sanitized.budget,
+    timing: sanitized.timing,
+    description: sanitized.description,
+    privacy_consent: sanitized.privacy_consent,
+  });
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -114,7 +178,22 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
-  const rateLimitResult = await isRateLimited(supabase, clientIpHash);
+  const { data: existingRequest, error: existingRequestError } = await supabase
+    .from("quote_requests")
+    .select("id, request_fingerprint")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (existingRequestError) {
+    return jsonResponse(500, { ok: false, code: "IDEMPOTENCY_LOOKUP_FAILED", message: "Could not process request." }, origin);
+  }
+  if (existingRequest && existingRequest.request_fingerprint !== requestFingerprint) {
+    return jsonResponse(409, { ok: false, code: "IDEMPOTENCY_CONFLICT", message: "Request key was already used." }, origin);
+  }
+
+  const rateLimitResult = existingRequest
+    ? { limited: false, error: false }
+    : await isRateLimited(supabase, clientIpHash);
 
   if (rateLimitResult.error) {
     console.error("rate_limit_internal_error", {
@@ -126,6 +205,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse(503, {
       ok: false,
+      code: "RATE_LIMIT_UNAVAILABLE",
       message: "Service temporarily unavailable.",
     }, origin);
   }
@@ -133,50 +213,66 @@ Deno.serve(async (request) => {
   if (rateLimitResult.limited) {
     return jsonResponse(429, {
       ok: false,
+      code: "RATE_LIMITED",
       message: "Too many requests.",
     }, origin);
   }
 
-  const approvalToken = createRawApprovalToken();
+  const approvalToken = await createApprovalTokenForIdempotencyKey(idempotencyKey);
   const approvalTokenHash = await hashApprovalToken(approvalToken);
   const approvalTokenExpiresAt = computeTokenExpiry();
 
   const userAgentRaw = request.headers.get("user-agent") || "";
   const userAgent = userAgentRaw.slice(0, 500);
 
-  const { data: inserted, error: insertError } = await supabase
-    .from("quote_requests")
-    .insert({
-      name: sanitized.name,
-      company: sanitized.company,
-      email: sanitized.email,
-      phone: sanitized.phone,
-      website_type: sanitized.website_type,
-      budget: sanitized.budget,
-      timing: sanitized.timing,
-      description: sanitized.description,
-      privacy_consent: sanitized.privacy_consent,
-      status: "pending",
-      approval_token_hash: approvalTokenHash,
-      approval_token_expires_at: approvalTokenExpiresAt,
-      client_ip_hash: clientIpHash,
-      user_agent: userAgent,
-    })
-    .select("id, created_at")
-    .single();
+  const { data: createData, error: createError } = await supabase.rpc("create_quote_request_idempotent", {
+    p_idempotency_key: idempotencyKey,
+    p_request_fingerprint: requestFingerprint,
+    p_name: sanitized.name,
+    p_company: sanitized.company,
+    p_email: sanitized.email,
+    p_phone: sanitized.phone,
+    p_website_type: sanitized.website_type,
+    p_budget: sanitized.budget,
+    p_timing: sanitized.timing,
+    p_description: sanitized.description,
+    p_privacy_consent: sanitized.privacy_consent,
+    p_approval_token_hash: approvalTokenHash,
+    p_approval_token_expires_at: approvalTokenExpiresAt,
+    p_client_ip_hash: clientIpHash,
+    p_user_agent: userAgent,
+  });
+  const created = Array.isArray(createData) ? createData[0] : createData;
 
-  if (insertError || !inserted) {
+  if (createError || !created) {
+    const conflict = createError?.message?.includes("IDEMPOTENCY_CONFLICT");
+    return jsonResponse(conflict ? 409 : 500, {
+      ok: false,
+      code: conflict ? "IDEMPOTENCY_CONFLICT" : "REQUEST_STORAGE_FAILED",
+      message: conflict ? "Request key was already used." : "Could not save request.",
+    }, origin);
+  }
+
+  if (!created.admin_job_id) {
     return jsonResponse(500, {
       ok: false,
-      message: "Could not save request.",
+      code: "EMAIL_JOB_CREATION_FAILED",
+      message: "Could not queue notification.",
     }, origin);
+  }
+
+  if (!created.was_created && created.admin_job_status === "failed") {
+    await supabase.rpc("requeue_quote_request_email_job", {
+      p_job_id: created.admin_job_id,
+      p_expected_kind: "admin_notification",
+    });
   }
 
   const reviewUrl = `${siteUrl}/pages/review-request.html?token=${encodeURIComponent(approvalToken)}`;
 
   const adminEmailPayload = buildAdminNotificationEmail({
-    requestId: inserted.id,
-    createdAt: inserted.created_at,
+    requestId: created.request_id,
+    createdAt: created.request_created_at,
     name: sanitized.name,
     company: sanitized.company,
     email: sanitized.email,
@@ -188,59 +284,24 @@ Deno.serve(async (request) => {
     reviewUrl,
   });
 
-  let resendResponse: Response;
-  try {
-    resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [adminEmail],
-        subject: adminEmailPayload.subject,
-        html: adminEmailPayload.html,
-        text: adminEmailPayload.text,
-      }),
-    });
-  } catch (error) {
-    const err = error as Error;
-    console.error("resend_request_error", {
-      step: "resend_request",
-      errorType: err.name || "Error",
-      errorMessage: err.message || "Resend request failed",
-      httpStatus: null,
-    });
+  const delivery = await deliverEmailJob({
+    supabase,
+    jobId: created.admin_job_id,
+    resendApiKey,
+    email: {
+      from: fromEmail,
+      to: adminEmail,
+      subject: adminEmailPayload.subject,
+      html: adminEmailPayload.html,
+      text: adminEmailPayload.text,
+    },
+  });
 
-    return jsonResponse(500, {
-      ok: false,
-      message: "Could not complete notification step.",
-    }, origin);
-  }
-
-  if (!resendResponse.ok) {
-    console.error("resend_request_error", {
-      step: "resend_request",
-      errorType: "HttpError",
-      errorMessage: "Resend returned non-success status",
-      httpStatus: resendResponse.status,
-    });
-
-    return jsonResponse(500, {
-      ok: false,
-      message: "Could not complete notification step.",
-    }, origin);
-  }
-
-  await supabase
-    .from("quote_requests")
-    .update({ notification_sent_at: new Date().toISOString() })
-    .eq("id", inserted.id)
-    .eq("status", "pending");
-
-  return jsonResponse(200, {
+  const notificationSent = delivery.status === "sent";
+  return jsonResponse(notificationSent ? 200 : 202, {
     ok: true,
+    code: "REQUEST_ACCEPTED",
     message: "Request received.",
+    notification_status: delivery.status,
   }, origin);
 });

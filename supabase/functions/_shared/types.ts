@@ -1,4 +1,6 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
+export type ReviewAction = QuoteRequestStatus | "retry_confirmation";
+export type EmailJobStatus = "pending" | "processing" | "sent" | "retry_wait" | "failed";
 
 export interface SubmitQuotePayload {
   name: string;
@@ -28,5 +30,5 @@ export interface SanitizedQuotePayload {
 
 export interface ReviewActionPayload {
   token: string;
-  action: "approved" | "rejected";
+  action: ReviewAction;
 }
