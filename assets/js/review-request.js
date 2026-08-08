@@ -5,11 +5,16 @@
   const approveButton = document.getElementById("approveButton");
   const rejectButton = document.getElementById("rejectButton");
   const retryConfirmationButton = document.getElementById("retryConfirmationButton");
+  const approvalModal = document.getElementById("reviewApprovalModal");
+  const approvalModalPanel = document.getElementById("reviewApprovalModalPanel");
+  const approvalModalClose = document.getElementById("reviewApprovalModalClose");
+  const approvalModalOverlay = document.getElementById("reviewApprovalModalOverlay");
 
   const metaBase = document.querySelector('meta[name="lws-functions-base-url"]');
   const functionsBaseUrl = (metaBase?.getAttribute("content") || "").replace(/\/$/, "");
 
   let locked = false;
+  let currentRequest = null;
   const token = new URLSearchParams(window.location.search).get("token") || "";
   if (token) {
     const sanitizedUrl = new URL(window.location.href);
@@ -41,6 +46,29 @@
     retryConfirmationButton.hidden = !visible;
     retryConfirmationButton.style.display = visible ? "" : "none";
     retryConfirmationButton.disabled = !visible || locked;
+  }
+
+  function showApprovalModal() {
+    if (!approvalModal || !approvalModalPanel) return;
+
+    approvalModal.hidden = false;
+    document.body.classList.add("modal-open");
+    approvalModalPanel.focus();
+
+    function closeModal() {
+      approvalModal.hidden = true;
+      document.body.classList.remove("modal-open");
+      approveButton?.focus();
+      document.removeEventListener("keydown", handleEscape);
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") closeModal();
+    }
+
+    document.addEventListener("keydown", handleEscape);
+    approvalModalClose?.addEventListener("click", closeModal, { once: true });
+    approvalModalOverlay?.addEventListener("click", closeModal, { once: true });
   }
 
   function fillDetails(request) {
@@ -109,7 +137,8 @@
 
   function renderState(data) {
     const state = data?.state;
-    fillDetails(data?.request || null);
+    if (data?.request) currentRequest = { ...currentRequest, ...data.request };
+    fillDetails(currentRequest);
 
     if (state === "pending") {
       setStatus("Pending - wacht op beoordeling");
@@ -173,6 +202,9 @@
       const data = await response.json();
       locked = false;
       renderState(data);
+      if (action === "approved" && data?.state === "approved" && (data?.mail_sent === true || data?.delivery_status === "sent")) {
+        showApprovalModal();
+      }
     } catch {
       setMessage("De actie kon niet worden verwerkt. Probeer later opnieuw.", "error");
       locked = false;

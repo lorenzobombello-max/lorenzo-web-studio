@@ -7,6 +7,19 @@ import { validateAction, validateToken } from "../_shared/validation.ts";
 import type { ReviewAction } from "../_shared/types.ts";
 
 type ReviewState = "pending" | "approved" | "rejected" | "expired" | "invalid";
+type ReviewRequestDetails = {
+  id: string;
+  created_at: string;
+  name: string;
+  company: string | null;
+  email: string;
+  phone: string | null;
+  website_type: string;
+  budget: string;
+  timing: string;
+  description: string;
+  reviewed_at?: string | null;
+};
 const MAX_REVIEW_BODY_BYTES = 4 * 1024;
 
 class ReviewRequestError extends Error {
@@ -31,6 +44,22 @@ function readReviewToken(request: Request): string {
   const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
   if (bearerMatch) return bearerMatch[1];
   return new URL(request.url).searchParams.get("token") || "";
+}
+
+function serializeRequest(data: ReviewRequestDetails, reviewedAt = data.reviewed_at ?? null) {
+  return {
+    id: data.id,
+    created_at: data.created_at,
+    name: data.name,
+    company: data.company,
+    email: data.email,
+    phone: data.phone,
+    website_type: data.website_type,
+    budget: data.budget,
+    timing: data.timing,
+    description: data.description,
+    reviewed_at: reviewedAt,
+  };
 }
 
 async function parseJsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -158,28 +187,14 @@ Deno.serve(async (request) => {
         ok: true,
         state: data.status as ReviewState,
         delivery_status: deliveryStatus,
-        request: {
-          id: data.id,
-          reviewed_at: data.reviewed_at,
-        },
+        request: serializeRequest(data),
       }, origin);
     }
 
     return jsonResponse(200, {
       ok: true,
       state: "pending" satisfies ReviewState,
-      request: {
-        id: data.id,
-        created_at: data.created_at,
-        name: data.name,
-        company: data.company,
-        email: data.email,
-        phone: data.phone,
-        website_type: data.website_type,
-        budget: data.budget,
-        timing: data.timing,
-        description: data.description,
-      },
+      request: serializeRequest(data),
     }, origin);
   }
 
@@ -208,7 +223,7 @@ Deno.serve(async (request) => {
 
     const { data: existing, error: fetchError } = await supabase
       .from("quote_requests")
-      .select("id, name, email, status, approval_token_expires_at")
+      .select("id, created_at, name, company, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
       .eq("approval_token_hash", tokenHash)
       .maybeSingle();
 
@@ -257,7 +272,7 @@ Deno.serve(async (request) => {
           state: "approved" satisfies ReviewState,
           mail_sent: false,
           delivery_status: "failed",
-          request: { id: transition.request_id, reviewed_at: transition.reviewed_at },
+          request: serializeRequest(existing, transition.reviewed_at),
         }, origin);
       }
 
@@ -295,7 +310,7 @@ Deno.serve(async (request) => {
         state: "approved" satisfies ReviewState,
         mail_sent: delivery.status === "sent",
         delivery_status: delivery.status,
-        request: { id: transition.request_id, reviewed_at: transition.reviewed_at },
+        request: serializeRequest(existing, transition.reviewed_at),
       }, origin);
     }
 
