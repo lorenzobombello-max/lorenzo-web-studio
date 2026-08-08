@@ -6,9 +6,13 @@ import {
   hashIntakeToken,
 } from "../_shared/security.ts";
 import type { IntakeAction, IntakeStatus } from "../_shared/types.ts";
-import { validateToken } from "../_shared/validation.ts";
+import {
+  InputValidationError,
+  sanitizeAndValidateIntakeData,
+  validateToken,
+} from "../_shared/validation.ts";
 
-const MAX_INTAKE_BODY_BYTES = 4 * 1024;
+const MAX_INTAKE_BODY_BYTES = 32 * 1024;
 
 class IntakeRequestError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -73,7 +77,7 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
 }
 
 function validateAction(value: unknown): IntakeAction {
-  if (value === "create" || value === "inspect") return value;
+  if (value === "create" || value === "inspect" || value === "save_draft" || value === "submit") return value;
   throw new IntakeRequestError(400, "INVALID_ACTION");
 }
 
@@ -196,47 +200,138 @@ Deno.serve(async (request) => {
   }
 
   const intakeTokenHash = await hashIntakeToken(intakeToken);
-  const { data, error } = await supabase.rpc("inspect_quote_request_intake", {
-    p_access_token_hash: intakeTokenHash,
-  });
-  const result = Array.isArray(data) ? data[0] : null;
+  if (action === "inspect") {
+    const { data, error } = await supabase.rpc("inspect_quote_request_intake", {
+      p_access_token_hash: intakeTokenHash,
+    });
+    const result = Array.isArray(data) ? data[0] : null;
 
-  if (error) {
-    return jsonResponse(500, {
-      ok: false,
-      code: "INTAKE_INSPECT_FAILED",
-      message: "Intake could not be inspected.",
+    if (error) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INTAKE_INSPECT_FAILED",
+        message: "Intake could not be inspected.",
+      }, origin);
+    }
+
+    if (!result) return invalidIntakeToken(origin);
+    if (!isIntakeStatus(result.intake_status)) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INVALID_INTAKE_STATE",
+        message: "Intake could not be inspected.",
+      }, origin);
+    }
+
+    return jsonResponse(200, {
+      ok: true,
+      intake: {
+        id: result.intake_id,
+        status: result.intake_status,
+        started_at: result.started_at,
+        submitted_at: result.submitted_at,
+        reviewed_at: result.reviewed_at,
+      },
+      request: {
+        created_at: result.quote_request_created_at,
+        name: result.name,
+        company: result.company,
+        email: result.email,
+        phone: result.phone,
+        website_type: result.website_type,
+        budget: result.budget,
+        timing: result.timing,
+        description: result.description,
+      },
     }, origin);
   }
 
-  if (!result) return invalidIntakeToken(origin);
+  let intakeData: Record<string, unknown>;
+  try {
+    intakeData = sanitizeAndValidateIntakeData(body.data, action === "submit" ? "submit" : "draft");
+  } catch (error) {
+    if (error instanceof InputValidationError) {
+      return jsonResponse(400, {
+        ok: false,
+        code: "INVALID_INTAKE_DATA",
+        field: error.field,
+        message: "Intake data is invalid.",
+      }, origin);
+    }
+    return jsonResponse(400, {
+      ok: false,
+      code: "INVALID_INTAKE_DATA",
+      message: "Intake data is invalid.",
+    }, origin);
+  }
+
+  const { data, error } = await supabase.rpc("update_quote_request_intake", {
+    p_access_token_hash: intakeTokenHash,
+    p_action: action,
+    p_data: intakeData,
+  });
+  const result = Array.isArray(data) ? data[0] : null;
+
+  if (error || !result) {
+    return jsonResponse(500, {
+      ok: false,
+      code: "INTAKE_UPDATE_FAILED",
+      message: "Intake could not be updated.",
+    }, origin);
+  }
+
+  if (result.outcome === "invalid_token") return invalidIntakeToken(origin);
+  if (result.outcome === "not_editable") {
+    return jsonResponse(409, {
+      ok: false,
+      code: "INTAKE_NOT_EDITABLE",
+      message: "Intake can no longer be changed.",
+    }, origin);
+  }
   if (!isIntakeStatus(result.intake_status)) {
     return jsonResponse(500, {
       ok: false,
       code: "INVALID_INTAKE_STATE",
-      message: "Intake could not be inspected.",
+      message: "Intake could not be updated.",
     }, origin);
   }
 
-  return jsonResponse(200, {
-    ok: true,
-    intake: {
-      id: result.intake_id,
-      status: result.intake_status,
-      started_at: result.started_at,
-      submitted_at: result.submitted_at,
-      reviewed_at: result.reviewed_at,
-    },
-    request: {
-      created_at: result.quote_request_created_at,
-      name: result.name,
-      company: result.company,
-      email: result.email,
-      phone: result.phone,
-      website_type: result.website_type,
-      budget: result.budget,
-      timing: result.timing,
-      description: result.description,
-    },
+  if (result.outcome === "already_submitted") {
+    return jsonResponse(200, {
+      ok: true,
+      state: "already_submitted",
+      intake: {
+        status: result.intake_status,
+        submitted_at: result.submitted_at,
+      },
+    }, origin);
+  }
+
+  if (action === "save_draft" && result.outcome === "saved") {
+    return jsonResponse(200, {
+      ok: true,
+      state: "saved",
+      intake: {
+        status: result.intake_status,
+        updated_at: result.updated_at,
+      },
+    }, origin);
+  }
+
+  if (action === "submit" && result.outcome === "submitted") {
+    return jsonResponse(200, {
+      ok: true,
+      state: "submitted",
+      intake: {
+        status: result.intake_status,
+        submitted_at: result.submitted_at,
+      },
+    }, origin);
+  }
+
+  return jsonResponse(500, {
+    ok: false,
+    code: "INVALID_INTAKE_STATE",
+    message: "Intake could not be updated.",
   }, origin);
 });
