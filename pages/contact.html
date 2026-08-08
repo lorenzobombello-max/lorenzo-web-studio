@@ -27,33 +27,19 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="../assets/icons/icon-192x192.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../assets/css/style.css" />
-  <script defer src="../assets/js/main.js"></script>
+  <link rel="stylesheet" href="redesign-preview/assets/css/pages.css" />
+  <script defer src="redesign-preview/assets/js/pages.js"></script>
 
   <link rel="manifest" href="../site.webmanifest" />
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
-  <header class="site-header">
-    <div class="container nav-wrap">
-      <a class="logo" href="../index.html">Lorenzo <span>Web Solutions</span></a>
-      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="siteNav"><span></span><span></span><span></span></button>
-      <nav id="siteNav" class="site-nav" aria-label="Hoofdnavigatie"><a href="../index.html#home">Home</a><a href="../index.html#services">Diensten</a><a href="../index.html#process">Werkwijze</a><a href="../index.html#demo-projects">Demo-projecten</a><a href="../index.html#faq">FAQ</a><a href="../index.html#contact">Contact</a></nav>
-      <button class="theme-toggle" id="themeToggle" aria-label="Schakel tussen licht en donker thema"><span class="theme-toggle__sun">Licht</span><span class="theme-toggle__moon">Donker</span></button>
-    </div>
-  </header>
+  <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
+  <header class="preview-header" id="previewHeader"><div class="shell preview-header__inner"><a class="brand" href="../index.html" aria-label="Lorenzo Web Solutions home"><img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></a><button class="menu-toggle" id="menuToggle" type="button" aria-expanded="false" aria-controls="previewNav"><span class="sr-only">Navigatiemenu openen</span><span aria-hidden="true"></span><span aria-hidden="true"></span></button><nav class="preview-nav" id="previewNav" aria-label="Hoofdnavigatie"><a href="redesign-preview/services.html">Diensten</a><a href="redesign-preview/demos.html">Demo's</a><a href="redesign-preview/approach.html">Aanpak</a><a href="redesign-preview/about.html">Over Lorenzo</a><a class="nav-cta" href="contact.html" aria-current="page">Bespreek jouw website</a></nav></div></header>
 
-  <main id="main-content" class="section"><h2 class="sr-only">Sectieoverzicht</h2>
-    <div class="container section-heading">
-      <p class="eyebrow">Contact</p>
-      <h1>Vraag een vrijblijvende offerte aan.</h1>
-      <p>Beschrijf kort je project. Je ontvangt een persoonlijke reactie met een realistische prijsinschatting.</p>
-    </div>
-
-    <div class="container contact-grid">
+  <main id="main-content">
+    <section class="page-hero"><div class="page-hero__ticker" aria-hidden="true"><span>VERTEL • RICHTING • REACTIE • START • VERTEL • RICHTING • REACTIE • START •</span></div><div class="shell page-hero__inner"><p class="kicker">Contact</p><h1>Vertel wat je wilt bouwen.</h1><p class="page-hero__lead">Beschrijf kort jouw project. Je ontvangt een persoonlijke reactie met een realistische volgende stap.</p><span class="page-hero__index">LWS / 05</span></div></section>
+    <section class="page-section"><div class="shell contact-layout">
+      <aside class="contact-intro reveal" data-reveal aria-label="Waarom contact opnemen"><p class="kicker">Projectstart</p><h2>Een helder begin.</h2><p>Vrijblijvend bespreken we doel, context, timing en budgetrichting. Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p><ul><li>Persoonlijk antwoord</li><li>Transparante prijsinschatting</li><li>Geen verplichtingen</li></ul></aside>
       <form class="contact-form" id="contactForm" aria-label="Contact formulier" novalidate>
         <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required /></div>
         <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" minlength="2" maxlength="140" /></div>
@@ -77,42 +63,15 @@
         </div>
 
         <p class="privacy-note field--full">Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p>
-        <button class="btn btn--primary" id="submitButton" type="submit">Verstuur aanvraag</button>
-        <p class="form-note" id="formMessage" aria-live="polite"></p>
+        <button class="button button--dark field--full" id="submitButton" type="submit">Verstuur aanvraag</button>
+        <p class="form-note field--full" id="formMessage" aria-live="polite"></p>
       </form>
-
-      <aside class="contact-side" aria-label="Waarom contact opnemen">
-        <h3>Waarom contact opnemen?</h3>
-        <ul>
-          <li>Vrijblijvende eerste bespreking</li>
-          <li>Persoonlijk antwoord</li>
-          <li>Transparante prijsinschatting</li>
-          <li>Geen verplichtingen</li>
-        </ul>
-        <div class="contact-placeholders">
-          <p><strong>Contact:</strong> Gebruik het beveiligde offerteformulier op deze pagina.</p>
-        </div>
-      </aside>
-    </div>
+    </div></section>
   </main>
 
-  <div id="successModal" class="success-modal" role="dialog" aria-modal="true" aria-labelledby="successModalTitle" aria-describedby="successModalDesc" hidden>
-    <div class="success-modal__overlay" id="successModalOverlay"></div>
-    <div class="success-modal__panel" id="successModalPanel" tabindex="-1">
-      <button class="success-modal__close" id="successModalClose" type="button" aria-label="Sluit dit venster"><span aria-hidden="true">✕</span></button>
-      <div class="success-modal__icon" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
-          <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="2"/>
-          <path d="M14 24.5l7 7 13-14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <h2 id="successModalTitle" class="success-modal__title">Aanvraag succesvol verzonden</h2>
-      <p id="successModalDesc" class="success-modal__message">Bedankt. Je aanvraag is veilig ontvangen en wordt persoonlijk nagekeken. Je krijgt zo snel mogelijk een antwoord.</p>
-      <p class="success-modal__timer" id="successModalTimer" aria-live="polite">Dit venster sluit automatisch binnen 5 seconden.</p>
-    </div>
-  </div>
+  <div class="success-panel" id="successPanel" role="dialog" aria-modal="true" aria-labelledby="successTitle" aria-describedby="successDescription" hidden><div class="success-panel__inner" tabindex="-1"><p class="kicker">Aanvraag ontvangen</p><h2 id="successTitle">Bedankt voor je bericht.</h2><p id="successDescription">Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken.</p><button class="button" id="successClose" type="button">Sluiten</button></div></div>
 
-  <footer class="site-footer"><div class="container footer-grid"><div><a class="logo" href="../index.html#home">Lorenzo <span>Web Solutions</span></a><p>Professionele websites voor zelfstandigen en kleine ondernemingen, met aandacht voor vertrouwen, structuur en contactresultaat.</p><p><strong>Contact:</strong> <a href="../index.html#contact">Via het offerteformulier</a></p></div><div><h3>Navigatie</h3><ul><li><a href="../index.html#home">Home</a></li><li><a href="../index.html#services">Diensten</a></li><li><a href="../index.html#process">Werkwijze</a></li><li><a href="../index.html#demo-projects">Demo-projecten</a></li><li><a href="../index.html#faq">FAQ</a></li><li><a href="../index.html#contact">Contact</a></li></ul></div><div><h3>Diensten</h3><ul><li>Bedrijfswebsite op maat</li><li>Website voor lokale dienstverlening</li><li>Portfolio- en expertwebsite</li><li>Onderhoud en uitbreidingen</li></ul></div><div><h3>Juridisch</h3><ul><li><a href="privacy.html">Privacy</a></li><li><a href="voorwaarden.html">Algemene voorwaarden</a></li><li><a href="contact.html">Contactpagina</a></li></ul></div></div><div class="container footer-bottom"><p>&copy; <span id="year"></span> Lorenzo Web Solutions. Alle rechten voorbehouden.</p></div></footer>
+  <footer class="preview-footer"><div class="shell preview-footer__top"><div class="preview-footer__brand"><p class="brand__name">Lorenzo <strong>Web Solutions</strong></p><p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p></div><div><h2>Navigatie</h2><ul><li><a href="redesign-preview/services.html">Diensten</a></li><li><a href="redesign-preview/demos.html">Demo's</a></li><li><a href="redesign-preview/approach.html">Aanpak</a></li></ul></div><div><h2>Persoonlijk</h2><ul><li><a href="redesign-preview/about.html">Over Lorenzo</a></li><li><a href="contact.html">Contact</a></li><li><a href="redesign-preview/privacy.html">Privacy</a></li></ul></div><div><h2>Bedrijf</h2><address>Lorenzo Web Solutions<br />Grote Baan 164 bus 102<br />9920 Lievegem, België</address><p>BTW BE 0742.361.487</p></div></div><div class="shell preview-footer__bottom"><p>Lorenzo Web Solutions</p><p>© <span data-year>2026</span> Alle rechten voorbehouden.</p></div></footer>
 </body>
 </html>
 

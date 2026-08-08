@@ -129,6 +129,9 @@ address { font-style:normal; }
 .contact-intro { position:sticky; top:120px; }
 .contact-intro h1 { max-width:10ch; margin:.7rem 0 1.2rem; font:700 clamp(2.8rem,6vw,6rem)/.95 "Manrope",sans-serif; letter-spacing:-.06em; }
 .contact-intro > p:not(.kicker) { max-width:40ch; color:var(--muted); }
+.contact-intro ul { display:grid; gap:.65rem; margin-top:1.5rem; }
+.contact-intro li { position:relative; padding-left:1.35rem; color:var(--muted); }
+.contact-intro li::before { content:""; position:absolute; left:0; top:.68em; width:7px; height:7px; background:var(--signal-deep); }
 .contact-form { padding:clamp(1.5rem,4vw,3.5rem); display:grid; grid-template-columns:1fr 1fr; gap:1.3rem; border:1px solid var(--line); border-radius:var(--radius); background:var(--white); }
 .field { display:grid; gap:.45rem; }
 .field--full { grid-column:1/-1; }
