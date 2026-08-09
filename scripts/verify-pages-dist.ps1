@@ -17,11 +17,23 @@ if (-not (Test-Path $distPath -PathType Container)) {
 
 $requiredRootEntries = @(
   "index.html",
+  "404.html",
   "assets",
   "pages",
   "robots.txt",
   "sitemap.xml",
   "site.webmanifest"
+)
+
+$forbiddenPublicPaths = @(
+  "pages/404.html",
+  "pages/project-1.html",
+  "pages/project-2.html",
+  "pages/project-3.html",
+  "pages/project-4.html",
+  "pages/project-5.html",
+  "pages/project-6.html",
+  "pages/redesign-preview"
 )
 
 $denyPathRegexes = @(
@@ -49,6 +61,13 @@ $missingRequired = @()
 foreach ($entry in $requiredRootEntries) {
   if (-not (Test-Path (Join-Path $distPath $entry))) {
     $missingRequired += $entry
+  }
+}
+
+$publishedLegacyPaths = @()
+foreach ($entry in $forbiddenPublicPaths) {
+  if (Test-Path (Join-Path $distPath $entry)) {
+    $publishedLegacyPaths += $entry
   }
 }
 
@@ -157,6 +176,55 @@ foreach ($target in $functionMetaTargets) {
   }
 }
 
+$socialImagePath = "assets/images/branding/social/lws-social-share.jpg"
+$socialImageUrl = "https://lorenzowebsolutions.be/$socialImagePath"
+$primarySocialTargets = @(
+  "index.html",
+  "pages/services.html",
+  "pages/websites-op-maat.html",
+  "pages/seo.html",
+  "pages/about.html",
+  "pages/process.html",
+  "pages/portfolio.html",
+  "pages/pricing.html",
+  "pages/faq.html",
+  "pages/contact.html"
+)
+$socialMetaExpected = [ordered]@{
+  "og:image" = $socialImageUrl
+  "og:image:secure_url" = $socialImageUrl
+  "og:image:type" = "image/jpeg"
+  "og:image:width" = "1200"
+  "og:image:height" = "630"
+  "og:image:alt" = "Lorenzo Web Solutions logo"
+  "twitter:card" = "summary_large_image"
+  "twitter:image" = $socialImageUrl
+  "twitter:image:alt" = "Lorenzo Web Solutions logo"
+}
+$socialMetaMismatches = @()
+
+if (-not (Test-Path (Join-Path $distPath $socialImagePath) -PathType Leaf)) {
+  $socialMetaMismatches += "Missing social image: $socialImagePath"
+}
+
+foreach ($relativeTarget in $primarySocialTargets) {
+  $target = Join-Path $distPath $relativeTarget
+  if (-not (Test-Path $target -PathType Leaf)) {
+    $socialMetaMismatches += "Missing primary page for social metadata check: $relativeTarget"
+    continue
+  }
+
+  $content = Get-Content -Path $target -Raw
+  foreach ($entry in $socialMetaExpected.GetEnumerator()) {
+    $attribute = if ($entry.Key.StartsWith("og:")) { "property" } else { "name" }
+    $pattern = '(?i)<meta\s+' + $attribute + '="' + [regex]::Escape($entry.Key) + '"\s+content="([^"]*)"'
+    $matches = [regex]::Matches($content, $pattern)
+    if ($matches.Count -ne 1 -or $matches[0].Groups[1].Value -ne $entry.Value) {
+      $socialMetaMismatches += "Unexpected $($entry.Key) in $relativeTarget"
+    }
+  }
+}
+
 $allFiles = Get-ChildItem -Path $distPath -File -Recurse
 $topLevelPaths = Get-ChildItem -Path $distPath -Force | ForEach-Object { $_.Name } | Sort-Object
 
@@ -175,7 +243,10 @@ $report = [ordered]@{
   brokenLinks = $brokenLinksUnique
   functionBaseUrlCheckCount = $functionMetaTargets.Count
   functionBaseUrlMismatches = $functionMetaMismatchList
+  socialMetaCheckCount = $primarySocialTargets.Count
+  socialMetaMismatches = @($socialMetaMismatches)
   requiredRootMissing = $missingRequiredList
+  publishedLegacyPaths = $publishedLegacyPaths
 }
 
 $reportPath = Join-Path $repoRoot "dist-verification-report.json"
@@ -187,13 +258,17 @@ Write-Host "DIST_TOP_LEVEL=$($report.allowedTopLevelPaths -join ',')"
 Write-Host "FORBIDDEN_COUNT=$($report.forbiddenCount)"
 Write-Host "BROKEN_LINKS=$($report.brokenLinksCount)"
 Write-Host "FUNCTION_META_MISMATCHES=$($functionMetaMismatchList.Count)"
+Write-Host "SOCIAL_META_MISMATCHES=$($socialMetaMismatches.Count)"
 Write-Host "REQUIRED_MISSING=$($missingRequiredList.Count)"
+Write-Host "PUBLISHED_LEGACY_PATHS=$($publishedLegacyPaths.Count)"
 
 $hasFailures = $false
 if ($report.forbiddenCount -ne 0) { $hasFailures = $true }
 if ($report.brokenLinksCount -ne 0) { $hasFailures = $true }
 if ($functionMetaMismatchList.Count -ne 0) { $hasFailures = $true }
+if ($socialMetaMismatches.Count -ne 0) { $hasFailures = $true }
 if ($missingRequiredList.Count -ne 0) { $hasFailures = $true }
+if ($publishedLegacyPaths.Count -ne 0) { $hasFailures = $true }
 
 if ($hasFailures) {
   throw "Dist verification failed. See $reportPath"

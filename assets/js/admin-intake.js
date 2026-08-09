@@ -15,10 +15,13 @@
   const referenceNode = document.getElementById("adminBriefingReference");
   const submittedNode = document.getElementById("adminBriefingSubmitted");
   const typeNode = document.getElementById("adminBriefingType");
+  const printButton = document.getElementById("adminBriefingPrint");
   const functionsBaseUrl = (
     document.querySelector('meta[name="lws-functions-base-url"]')?.getAttribute("content") || ""
   ).replace(/\/$/, "");
   const endpoint = functionsBaseUrl ? `${functionsBaseUrl}/intake-quote-request` : "";
+
+  printButton?.addEventListener("click", () => window.print());
 
   const valueLabels = {
     professional_presence: "Professionele uitstraling", generate_leads: "Leads genereren",
@@ -183,6 +186,20 @@
     if (section) sectionsNode.appendChild(section);
   }
 
+  function groupReportColumns() {
+    const sections = Array.from(sectionsNode.children);
+    if (sections.length < 2) return;
+    const firstColumn = document.createElement("div");
+    const secondColumn = document.createElement("div");
+    const splitIndex = Math.ceil(sections.length / 2);
+    firstColumn.className = "admin-briefing-column";
+    secondColumn.className = "admin-briefing-column";
+    sections.forEach((section, index) => {
+      (index < splitIndex ? firstColumn : secondColumn).appendChild(section);
+    });
+    sectionsNode.replaceChildren(firstColumn, secondColumn);
+  }
+
   function renderBriefing(payload) {
     if (
       !isRecord(payload) || payload.ok !== true || !isRecord(payload.intake) ||
@@ -290,6 +307,8 @@
       addDetail(list, "Informatie bevestigd", data.confirmation);
       addDetail(list, "Definitief ingediend", formatDateTime(submittedAt));
     });
+
+    groupReportColumns();
 
     hideStates();
     workspace.hidden = false;

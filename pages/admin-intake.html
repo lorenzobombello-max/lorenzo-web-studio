@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/pages.css" />
   <link rel="stylesheet" href="../assets/css/admin-intake.css" />
   <script defer src="../assets/js/admin-intake.js"></script>
 </head>
@@ -22,14 +22,14 @@
   <a class="skip-link" href="#main-content">Ga naar inhoud</a>
 
   <header class="admin-briefing-header">
-    <div class="container admin-briefing-header__inner">
-      <span class="logo" aria-label="Lorenzo Web Solutions">Lorenzo <span>Web Solutions</span></span>
-      <span class="admin-briefing-secure-label">Beveiligde inzage</span>
+    <div class="shell admin-briefing-header__inner">
+      <span class="brand" aria-label="Lorenzo Web Solutions"><img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></span>
+      <span class="admin-briefing-secure-label"><span aria-hidden="true"></span>Beveiligde inzage</span>
     </div>
   </header>
 
   <main id="main-content" class="admin-briefing-main">
-    <div class="container">
+    <div class="shell">
       <section id="adminBriefingLoading" class="admin-briefing-state" role="status" aria-live="polite">
         <span class="admin-briefing-spinner" aria-hidden="true"></span>
         <h2>Briefing wordt veilig geladen…</h2>
@@ -55,7 +55,10 @@
             <h1>Websitebriefing</h1>
             <p id="adminBriefingClient" class="admin-briefing-client"></p>
           </div>
-          <span class="admin-briefing-badge"><span aria-hidden="true"></span>Definitief ingediend</span>
+          <div class="admin-briefing-actions">
+            <span class="admin-briefing-badge"><span aria-hidden="true"></span>Definitief ingediend</span>
+            <button class="button admin-briefing-print" id="adminBriefingPrint" type="button">Afdrukken / Opslaan als PDF</button>
+          </div>
           <dl class="admin-briefing-meta" aria-label="Briefingmetadata">
             <div><dt>Aanvraag</dt><dd id="adminBriefingReference">—</dd></div>
             <div><dt>Ingediend</dt><dd id="adminBriefingSubmitted">—</dd></div>
@@ -69,7 +72,7 @@
   </main>
 
   <footer class="admin-briefing-footer">
-    <div class="container">
+    <div class="shell">
       <p>Lorenzo Web Solutions · Vertrouwelijke websitebriefing</p>
     </div>
   </footer>
