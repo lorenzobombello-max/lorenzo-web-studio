@@ -142,6 +142,7 @@
     const close = document.getElementById("successClose");
     let idempotencyKey = "";
     let isSubmitting = false;
+    let modalTimer = null;
 
     function setMessage(text, type) {
       message.classList.remove("is-error", "is-success");
@@ -183,6 +184,10 @@
     }
 
     function closeModal() {
+      if (modalTimer) {
+        window.clearTimeout(modalTimer);
+        modalTimer = null;
+      }
       modal.hidden = true;
       submit.focus();
     }
@@ -221,6 +226,8 @@
         idempotencyKey = "";
         modal.hidden = false;
         modal.querySelector(".success-panel__inner").focus();
+        if (modalTimer) window.clearTimeout(modalTimer);
+        modalTimer = window.setTimeout(closeModal, 5000);
       } catch (_error) {
         setMessage("De aanvraag kon momenteel niet worden verzonden. Probeer later opnieuw of neem rechtstreeks contact op.", "error");
       } finally {
