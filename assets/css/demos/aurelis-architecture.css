@@ -317,6 +317,7 @@ figure {
   grid-area: copy;
   position: relative;
   z-index: 3;
+  color: #26221c;
   width: min(100%, 43.75rem);
   margin-top: clamp(-5.5rem, -7vw, -3rem);
   margin-left: clamp(1rem, 2.4vw, 2.15rem);
@@ -356,7 +357,7 @@ figure {
 
 .aurelis-hero__lead {
   margin-top: 1rem;
-  color: var(--a-muted);
+  color: #514a40;
   max-width: 50ch;
   line-height: 1.74;
 }
@@ -390,8 +391,9 @@ figure {
 }
 
 .aurelis-btn--ghost {
-  border-color: var(--a-line);
-  background: rgba(255, 255, 255, 0.56);
+  color: #26221c;
+  border-color: #b9aa98;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .aurelis-media {
