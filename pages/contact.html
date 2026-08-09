@@ -36,7 +36,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
     <script defer src="../assets/js/cookie-consent.js"></script>
-<script defer src="../assets/js/pages.js?v=20260809-3"></script>
+<script defer src="../assets/js/pages.js?v=20260809-4"></script>
   <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"ContactPage","@id":"https://lorenzowebsolutions.be/pages/contact.html#webpage","url":"https://lorenzowebsolutions.be/pages/contact.html","name":"Contact en offerte aanvragen | Lorenzo Web Solutions","description":"Vraag vrijblijvend een offerte aan bij Lorenzo Web Solutions en ontvang een persoonlijke prijsinschatting voor je nieuwe website, redesign of uitbreiding.","inLanguage":"nl-BE","isPartOf":{"@id":"https://lorenzowebsolutions.be/#website"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://lorenzowebsolutions.be/"},{"@type":"ListItem","position":2,"name":"Contact","item":"https://lorenzowebsolutions.be/pages/contact.html"}]}]}</script>
 
   <link rel="manifest" href="../site.webmanifest" />
@@ -51,18 +51,19 @@
     <section class="page-section"><div class="shell contact-layout">
       <aside class="contact-intro reveal" data-reveal aria-label="Waarom contact opnemen"><p class="kicker">Projectstart</p><h2>Een helder begin.</h2><p>Vrijblijvend bespreken we doel, context, timing en budgetrichting. Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p><ul><li>Persoonlijk antwoord</li><li>Transparante prijsinschatting</li><li>Geen verplichtingen</li></ul></aside>
       <form class="contact-form" id="contactForm" aria-label="Contact formulier" novalidate>
+        <div class="field field--full"><label for="request-kind">Waarmee kunnen we helpen?</label><select id="request-kind" name="request-kind"><option value="quote">Website / offerte</option><option value="privacy">Privacy / persoonsgegevens</option></select></div>
         <div class="field"><label for="name">Naam</label><input id="name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required /></div>
-        <div class="field"><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" minlength="2" maxlength="140" /></div>
-        <div class="field"><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" minlength="5" maxlength="254" required /></div>
-        <div class="field"><label for="phone">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" minlength="6" maxlength="40" pattern="[+0-9().\s-]+" /></div>
+        <div class="field" data-project-field><label for="company">Bedrijfsnaam (optioneel)</label><input id="company" name="company" type="text" autocomplete="organization" minlength="2" maxlength="140" /></div>
+        <div class="field"><label for="email" id="emailLabel">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" minlength="5" maxlength="254" required /></div>
+        <div class="field"><label for="phone" id="phoneLabel">Telefoonnummer (optioneel)</label><input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" minlength="6" maxlength="40" pattern="[+0-9().\s-]+" /></div>
 
-        <div class="field"><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Andere</option></select></div>
-        <div class="field"><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+        <div class="field" data-project-field><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Andere</option></select></div>
+        <div class="field" data-project-field><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Tot EUR 1.500</option><option>EUR 1.500 - EUR 3.000</option><option>EUR 3.000 - EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
 
-        <div class="field field--full"><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
-        <div class="field field--full"><label for="description">Projectomschrijving</label><textarea id="description" name="description" rows="5" minlength="10" maxlength="3000" required></textarea></div>
+        <div class="field field--full" data-project-field><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
+        <div class="field field--full"><label for="description" id="descriptionLabel">Projectomschrijving</label><textarea id="description" name="description" rows="5" minlength="10" maxlength="3000" required></textarea></div>
 
-        <div class="field field--full consent-field">
+        <div class="field field--full consent-field" data-project-field>
           <input id="privacy" name="privacy" type="checkbox" required />
           <label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label>
         </div>
@@ -72,7 +73,7 @@
           <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
         </div>
 
-        <p class="privacy-note field--full">Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p>
+        <p class="privacy-note field--full" id="privacyNote">Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p>
         <button class="button button--dark field--full" id="submitButton" type="submit">Verstuur aanvraag</button>
         <p class="form-note field--full" id="formMessage" aria-live="polite"></p>
       </form>

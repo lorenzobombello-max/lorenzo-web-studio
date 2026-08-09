@@ -133,6 +133,11 @@
     return baseUrl ? `${baseUrl}/submit-quote-request` : "";
   }
 
+  function getPrivacySubmitEndpoint() {
+    const baseUrl = functionsBaseMeta?.getAttribute("content")?.trim().replace(/\/$/, "") || "";
+    return baseUrl ? `${baseUrl}/submit-privacy-request` : "";
+  }
+
   function initContactForm() {
     const form = document.getElementById("contactForm");
     if (!form) return;
@@ -140,6 +145,16 @@
     const submit = document.getElementById("submitButton");
     const modal = document.getElementById("successPanel");
     const close = document.getElementById("successClose");
+    const requestKind = document.getElementById("request-kind");
+    const email = document.getElementById("email");
+    const phone = document.getElementById("phone");
+    const emailLabel = document.getElementById("emailLabel");
+    const phoneLabel = document.getElementById("phoneLabel");
+    const descriptionLabel = document.getElementById("descriptionLabel");
+    const privacyNote = document.getElementById("privacyNote");
+    const successTitle = document.getElementById("successTitle");
+    const successDescription = document.getElementById("successDescription");
+    const projectFields = [...form.querySelectorAll("[data-project-field]")];
     let idempotencyKey = "";
     let isSubmitting = false;
     let modalTimer = null;
@@ -152,6 +167,13 @@
     }
 
     function validateForm() {
+      const isPrivacyRequest = requestKind?.value === "privacy";
+      if (isPrivacyRequest && !email.value.trim() && !phone.value.trim()) {
+        email.focus();
+        setMessage("Vul minstens een e-mailadres of telefoonnummer in.", "error");
+        return false;
+      }
+
       const requiredFields = form.querySelectorAll("[required]");
       for (const field of requiredFields) {
         if (field instanceof HTMLInputElement && field.type === "checkbox") {
@@ -171,7 +193,7 @@
           }
         }
 
-        if (field instanceof HTMLInputElement && field.type === "email") {
+        if (field instanceof HTMLInputElement && field.type === "email" && field.value.trim()) {
           const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(field.value);
           if (!validEmail) {
             field.focus();
@@ -179,8 +201,45 @@
             return false;
           }
         }
+
+      }
+
+      if (isPrivacyRequest && email.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+        email.focus();
+        setMessage("Gelieve een geldig e-mailadres in te vullen.", "error");
+        return false;
+      }
+
+      if (isPrivacyRequest && phone.value.trim()) {
+        const digitCount = (phone.value.match(/\d/g) || []).length;
+        if (!/^[+0-9().\s-]+$/.test(phone.value) || digitCount < 6 || digitCount > 15) {
+          phone.focus();
+          setMessage("Gelieve een geldig telefoonnummer in te vullen.", "error");
+          return false;
+        }
       }
       return true;
+    }
+
+    function applyRequestMode() {
+      const isPrivacyRequest = requestKind?.value === "privacy";
+      projectFields.forEach((field) => {
+        field.hidden = isPrivacyRequest;
+        field.querySelectorAll("input, select, textarea").forEach((control) => {
+          if (control.id === "company") return;
+          control.required = !isPrivacyRequest;
+        });
+      });
+      email.required = !isPrivacyRequest;
+      emailLabel.textContent = isPrivacyRequest ? "E-mailadres (e-mail of telefoon vereist)" : "E-mailadres";
+      phoneLabel.textContent = isPrivacyRequest ? "Telefoonnummer (e-mail of telefoon vereist)" : "Telefoonnummer (optioneel)";
+      descriptionLabel.textContent = isPrivacyRequest ? "Bericht / privacyverzoek" : "Projectomschrijving";
+      privacyNote.textContent = isPrivacyRequest
+        ? "Je privacyverzoek wordt afzonderlijk en vertrouwelijk verwerkt. Vraag hier geen identiteitsbewijs mee te sturen."
+        : "Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.";
+      submit.textContent = isPrivacyRequest ? "Verstuur privacyverzoek" : "Verstuur aanvraag";
+      setMessage("", null);
+      idempotencyKey = "";
     }
 
     function closeModal() {
@@ -196,7 +255,8 @@
       event.preventDefault();
       if (isSubmitting || !validateForm()) return;
 
-      const endpoint = getSubmitEndpoint();
+      const isPrivacyRequest = requestKind?.value === "privacy";
+      const endpoint = isPrivacyRequest ? getPrivacySubmitEndpoint() : getSubmitEndpoint();
       if (!endpoint) {
         setMessage("De aanvraag kon momenteel niet worden verzonden. Probeer later opnieuw of neem rechtstreeks contact op.", "error");
         return;
@@ -204,11 +264,16 @@
 
       const data = new FormData(form);
       const text = (name) => String(data.get(name) || "").trim();
-      const payload = {
-        name: text("name"), company: text("company"), email: text("email"), phone: text("phone"),
-        website_type: text("website-type"), budget: text("budget"), timing: text("timing"),
-        description: text("description"), privacy_consent: data.get("privacy") === "on", website: text("website")
-      };
+      const payload = isPrivacyRequest
+        ? {
+            name: text("name"), email: text("email"), phone: text("phone"),
+            message: text("description"), website: text("website")
+          }
+        : {
+            name: text("name"), company: text("company"), email: text("email"), phone: text("phone"),
+            website_type: text("website-type"), budget: text("budget"), timing: text("timing"),
+            description: text("description"), privacy_consent: data.get("privacy") === "on", website: text("website")
+          };
       isSubmitting = true;
       submit.disabled = true;
       submit.setAttribute("aria-busy", "true");
@@ -224,6 +289,11 @@
         if (response.status !== 200 && response.status !== 202) throw new Error("Request failed");
         form.reset();
         idempotencyKey = "";
+        applyRequestMode();
+        successTitle.textContent = isPrivacyRequest ? "Je privacyverzoek is ontvangen." : "Bedankt voor je bericht.";
+        successDescription.textContent = isPrivacyRequest
+          ? "Je verzoek is veilig opgeslagen en wordt persoonlijk behandeld."
+          : "Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken.";
         modal.hidden = false;
         modal.querySelector(".success-panel__inner").focus();
         if (modalTimer) window.clearTimeout(modalTimer);
@@ -234,7 +304,7 @@
         isSubmitting = false;
         submit.disabled = false;
         submit.removeAttribute("aria-busy");
-        submit.textContent = "Verstuur aanvraag";
+        submit.textContent = requestKind?.value === "privacy" ? "Verstuur privacyverzoek" : "Verstuur aanvraag";
       }
     });
     form.addEventListener("input", () => {
@@ -245,9 +315,11 @@
       if (!isSubmitting) idempotencyKey = "";
       setMessage("", null);
     });
+    requestKind?.addEventListener("change", applyRequestMode);
     close.addEventListener("click", closeModal);
     modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) closeModal(); });
+    applyRequestMode();
   }
 
   if (menuToggle) menuToggle.addEventListener("click", toggleMenu);

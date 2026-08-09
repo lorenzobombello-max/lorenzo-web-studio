@@ -131,6 +131,7 @@ address { font-style:normal; }
 .contact-intro li { position:relative; padding-left:1.35rem; color:var(--muted); }
 .contact-intro li::before { content:""; position:absolute; left:0; top:.68em; width:7px; height:7px; background:var(--signal-deep); }
 .contact-form { padding:clamp(1.5rem,4vw,3.5rem); display:grid; grid-template-columns:1fr 1fr; gap:1.3rem; border:1px solid var(--line); border-radius:var(--radius); background:var(--white); }
+.contact-form [hidden] { display:none; }
 .field { display:grid; gap:.45rem; }
 .field--full { grid-column:1/-1; }
 .field label { font-size:.82rem; font-weight:700; }
