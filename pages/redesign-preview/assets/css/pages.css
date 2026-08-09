@@ -202,9 +202,10 @@ address { font-style:normal; }
 .value-grid p { color:#aeb9c0; }
 .website-showcase { overflow:hidden; }
 .website-frames { position:relative; min-height:clamp(610px,63vw,820px); perspective:1400px; }
+.website-frames--pair { min-height:clamp(540px,52vw,700px); }
 .website-frame { position:absolute; overflow:hidden; padding-top:28px; border:1px solid #33424d; border-radius:var(--radius); background:#101820; box-shadow:0 35px 90px rgba(8,17,24,.28); }
 .website-frame__bar { position:absolute; inset:0 0 auto; height:28px; padding-left:.75rem; display:flex; align-items:center; color:#53616b; background:#111a22; font-size:.48rem; letter-spacing:.18em; }
-.website-frame img { width:100%; aspect-ratio:16/9; object-fit:cover; transition:transform 500ms cubic-bezier(.16,1,.3,1); }
+.website-frame img { width:100%; height:auto; aspect-ratio:16/9; object-fit:cover; transition:transform 500ms cubic-bezier(.16,1,.3,1); }
 .website-frame:hover img,.website-frame:focus-visible img { transform:scale(1.025); }
 .website-frame__caption { min-height:78px; padding:.9rem 1rem; display:flex; align-items:end; justify-content:space-between; gap:1rem; color:var(--white); }
 .website-frame__caption strong { font:700 clamp(1.1rem,2.2vw,1.8rem) "Manrope",sans-serif; }
@@ -402,6 +403,7 @@ address { font-style:normal; }
   .value-grid article:nth-child(2),.seo-layers li:nth-child(2) { border-right:0; }
   .value-grid article:last-child,.seo-layers li:last-child { border-bottom:0; }
   .website-frames { min-height:600px; }
+  .website-frames--pair { min-height:520px; }
   .website-frame { padding-top:22px; }
   .website-frame__bar { height:22px; }
   .website-frame__caption { min-height:58px; padding:.65rem .75rem; }
