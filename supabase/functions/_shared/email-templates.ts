@@ -2,7 +2,18 @@ interface AdminEmailData {
   requestId: string;
   createdAt: string;
   name: string;
+  customerType: "individual" | "business" | null;
   company: string | null;
+  enterpriseNumber: string | null;
+  enterpriseValidationStatus: "format_valid_not_externally_verified" | "not_checked";
+  vatNumber: string | null;
+  vatValidationStatus: "valid" | "invalid" | "unavailable" | "not_checked";
+  vatValidatedAt: string | null;
+  billingAddress: string | null;
+  billingPostalCode: string | null;
+  billingCity: string | null;
+  billingCountry: string | null;
+  billingEmail: string | null;
   email: string;
   phone: string | null;
   websiteType: string;
@@ -48,7 +59,25 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
   const safeRequestReference = escapeHtml(requestReference);
   const safeReceivedAt = escapeHtml(receivedAt);
   const safeName = escapeHtml(data.name);
+  const safeCustomerType = data.customerType === "business" ? "Onderneming / zelfstandige" : data.customerType === "individual" ? "Particulier" : "Niet opgegeven";
   const safeCompany = escapeHtml(data.company || "Niet ingevuld");
+  const vatStatus = data.vatValidationStatus === "valid"
+    ? `Geverifieerd${data.vatValidatedAt ? ` op ${new Date(data.vatValidatedAt).toLocaleDateString("nl-BE", { timeZone: "Europe/Brussels" })}` : ""}`
+    : data.vatValidationStatus === "invalid"
+    ? "Niet als geldig bevestigd"
+    : data.vatValidationStatus === "unavailable"
+    ? "Controle tijdelijk niet beschikbaar"
+    : "Niet gecontroleerd";
+  const businessLines = data.customerType === "business" ? [
+    `Bedrijfsnaam: ${data.company || "Niet ingevuld"}`,
+    `Ondernemingsnummer: ${data.enterpriseNumber || "Niet ingevuld"}`,
+    ...(data.enterpriseValidationStatus === "format_valid_not_externally_verified" ? ["Ondernemingsnummerstatus: formaat geldig, niet extern geverifieerd"] : []),
+    ...(data.vatNumber ? [`BTW-nummer: ${data.vatNumber}`] : []),
+    ...(data.vatNumber ? [`BTW-validatiestatus: ${vatStatus}`] : []),
+    `Facturatieadres: ${data.billingAddress || "Niet ingevuld"}, ${data.billingPostalCode || ""} ${data.billingCity || ""}, ${data.billingCountry || ""}`,
+    ...(data.billingEmail ? [`Facturatie-e-mail: ${data.billingEmail}`] : []),
+  ] : [];
+  const safeBusinessSummary = businessLines.map((line) => escapeHtml(line)).join("<br>");
   const safeEmail = escapeHtml(data.email);
   const safePhone = escapeHtml(data.phone || "Niet ingevuld");
   const safeWebsiteType = escapeHtml(data.websiteType);
@@ -112,6 +141,16 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
                   <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Bedrijf</p>
                     <p style="margin:0;color:#ffffff;font-size:14px;">${safeCompany}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Klanttype</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeCustomerType}</p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Facturatiegegevens</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeBusinessSummary || "Niet van toepassing"}</p>
                   </td>
                 </tr>
                 <tr>
@@ -186,7 +225,8 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
     `Aanvraagnummer: ${data.requestId}`,
     `Ontvangstdatum: ${new Date(data.createdAt).toLocaleString("nl-BE")}`,
     `Naam: ${data.name}`,
-    `Bedrijfsnaam: ${data.company || "Niet ingevuld"}`,
+    `Klanttype: ${safeCustomerType}`,
+    ...businessLines,
     `E-mailadres: ${data.email}`,
     `Telefoon: ${data.phone || "Niet ingevuld"}`,
     `Type website: ${data.websiteType}`,

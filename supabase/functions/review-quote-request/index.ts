@@ -17,7 +17,18 @@ type ReviewRequestDetails = {
   id: string;
   created_at: string;
   name: string;
+  customer_type: string | null;
   company: string | null;
+  enterprise_number: string | null;
+  enterprise_validation_status: string;
+  vat_number: string | null;
+  vat_validation_status: string;
+  vat_validated_at: string | null;
+  billing_address: string | null;
+  billing_postal_code: string | null;
+  billing_city: string | null;
+  billing_country: string | null;
+  billing_email: string | null;
   email: string;
   phone: string | null;
   website_type: string;
@@ -57,7 +68,18 @@ function serializeRequest(data: ReviewRequestDetails, reviewedAt = data.reviewed
     id: data.id,
     created_at: data.created_at,
     name: data.name,
+    customer_type: data.customer_type,
     company: data.company,
+    enterprise_number: data.enterprise_number,
+    enterprise_validation_status: data.enterprise_validation_status,
+    vat_number: data.vat_number,
+    vat_validation_status: data.vat_validation_status,
+    vat_validated_at: data.vat_validated_at,
+    billing_address: data.billing_address,
+    billing_postal_code: data.billing_postal_code,
+    billing_city: data.billing_city,
+    billing_country: data.billing_country,
+    billing_email: data.billing_email,
     email: data.email,
     phone: data.phone,
     website_type: data.website_type,
@@ -162,7 +184,7 @@ Deno.serve(async (request) => {
 
     const { data, error } = await supabase
       .from("quote_requests")
-      .select("id, created_at, name, company, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
+      .select("id, created_at, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
       .eq("approval_token_hash", tokenHash)
       .maybeSingle();
 
@@ -273,7 +295,7 @@ Deno.serve(async (request) => {
 
     const { data: existing, error: fetchError } = await supabase
       .from("quote_requests")
-      .select("id, created_at, name, company, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
+      .select("id, created_at, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
       .eq("approval_token_hash", tokenHash)
       .maybeSingle();
 

@@ -134,9 +134,20 @@ address { font-style:normal; }
 .contact-form [hidden] { display:none; }
 .field { display:grid; gap:.45rem; }
 .field--full { grid-column:1/-1; }
-.field label { font-size:.82rem; font-weight:700; }
+.field label,.field legend,.business-fields legend { font-size:.82rem; font-weight:700; }
 .field input,.field select,.field textarea { width:100%; min-height:50px; padding:.75rem .85rem; border:1px solid #aebcc4; border-radius:3px; color:var(--text); background:var(--white); }
 .field textarea { min-height:150px; resize:vertical; }
+.customer-type-field,.business-fields { min-width:0; margin:0; padding:0; border:0; }
+.customer-type-field legend,.business-fields legend { margin-bottom:.55rem; }
+.segmented-options { display:grid; grid-template-columns:1fr 1fr; width:100%; border:1px solid #aebcc4; border-radius:3px; overflow:hidden; }
+.segmented-options label { position:relative; min-width:0; cursor:pointer; }
+.segmented-options label + label { border-left:1px solid #aebcc4; }
+.segmented-options input { position:absolute; width:1px; min-height:1px; opacity:0; }
+.segmented-options span { display:grid; min-height:50px; padding:.65rem .85rem; place-items:center; text-align:center; }
+.segmented-options input:checked + span { color:var(--white); background:var(--ink-soft); }
+.segmented-options input:focus-visible + span { outline:3px solid var(--signal-deep); outline-offset:-3px; }
+.business-fields { padding:1.2rem; border:1px solid var(--line); background:var(--paper); }
+.business-fields__grid { display:grid; grid-template-columns:1fr 1fr; gap:1.3rem; }
 .consent-field { grid-template-columns:auto 1fr; align-items:start; }
 .consent-field input { width:20px; min-height:20px; margin-top:.15rem; }
 .form-note { min-height:1.5rem; grid-column:1/-1; font-size:.88rem; }
@@ -414,7 +425,10 @@ address { font-style:normal; }
   .about-editorial .about-editorial__logo { width:min(190px,54vw); justify-self:center; }
   .about-points { grid-column:auto; }
   .about-points { grid-template-columns:1fr; }
-  .contact-form { grid-template-columns:1fr; padding:1.2rem; }
+  .contact-form,.business-fields__grid { grid-template-columns:1fr; }
+  .contact-form { padding:1.2rem; }
+  .segmented-options { grid-template-columns:1fr; }
+  .segmented-options label + label { border-top:1px solid #aebcc4; border-left:0; }
   .field { grid-column:1; }
   .page-cta__inner { display:grid; }
   .page-cta h2 { max-width:100%; font-size:clamp(1.9rem,9vw,3rem); overflow-wrap:anywhere; }

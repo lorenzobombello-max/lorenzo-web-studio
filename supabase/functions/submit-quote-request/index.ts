@@ -5,6 +5,7 @@ import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { computeTokenExpiry, createApprovalTokenForIdempotencyKey, extractClientIp, hashApprovalToken, hashClientIp } from "../_shared/security.ts";
 import { isRateLimited } from "../_shared/rate-limit.ts";
 import { InputValidationError, sanitizeAndValidateSubmitPayload } from "../_shared/validation.ts";
+import { validateVatWithVies, type VatValidationResult } from "../_shared/vat-validation.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const IDEMPOTENCY_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -154,7 +155,15 @@ Deno.serve(async (request) => {
 
   const requestFingerprint = await fingerprintPayload({
     name: sanitized.name,
+    customer_type: sanitized.customer_type,
     company: sanitized.company,
+    enterprise_number: sanitized.enterprise_number,
+    vat_number: sanitized.vat_number,
+    billing_address: sanitized.billing_address,
+    billing_postal_code: sanitized.billing_postal_code,
+    billing_city: sanitized.billing_city,
+    billing_country: sanitized.billing_country,
+    billing_email: sanitized.billing_email,
     email: sanitized.email,
     phone: sanitized.phone,
     website_type: sanitized.website_type,
@@ -180,7 +189,7 @@ Deno.serve(async (request) => {
 
   const { data: existingRequest, error: existingRequestError } = await supabase
     .from("quote_requests")
-    .select("id, request_fingerprint")
+    .select("id, request_fingerprint, vat_validation_status, vat_validated_at")
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
@@ -218,6 +227,15 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
+  const vatValidation: VatValidationResult = existingRequest
+    ? {
+      status: existingRequest.vat_validation_status,
+      validatedAt: existingRequest.vat_validated_at,
+    }
+    : sanitized.vat_number
+    ? await validateVatWithVies(sanitized.vat_number)
+    : { status: "not_checked", validatedAt: null };
+
   const approvalToken = await createApprovalTokenForIdempotencyKey(idempotencyKey);
   const approvalTokenHash = await hashApprovalToken(approvalToken);
   const approvalTokenExpiresAt = computeTokenExpiry();
@@ -229,7 +247,18 @@ Deno.serve(async (request) => {
     p_idempotency_key: idempotencyKey,
     p_request_fingerprint: requestFingerprint,
     p_name: sanitized.name,
+    p_customer_type: sanitized.customer_type,
     p_company: sanitized.company,
+    p_enterprise_number: sanitized.enterprise_number,
+    p_enterprise_validation_status: sanitized.enterprise_validation_status,
+    p_vat_number: sanitized.vat_number,
+    p_vat_validation_status: vatValidation.status,
+    p_vat_validated_at: vatValidation.validatedAt,
+    p_billing_address: sanitized.billing_address,
+    p_billing_postal_code: sanitized.billing_postal_code,
+    p_billing_city: sanitized.billing_city,
+    p_billing_country: sanitized.billing_country,
+    p_billing_email: sanitized.billing_email,
     p_email: sanitized.email,
     p_phone: sanitized.phone,
     p_website_type: sanitized.website_type,
@@ -274,7 +303,18 @@ Deno.serve(async (request) => {
     requestId: created.request_id,
     createdAt: created.request_created_at,
     name: sanitized.name,
+    customerType: sanitized.customer_type,
     company: sanitized.company,
+    enterpriseNumber: sanitized.enterprise_number,
+    enterpriseValidationStatus: sanitized.enterprise_validation_status,
+    vatNumber: sanitized.vat_number,
+    vatValidationStatus: vatValidation.status,
+    vatValidatedAt: vatValidation.validatedAt,
+    billingAddress: sanitized.billing_address,
+    billingPostalCode: sanitized.billing_postal_code,
+    billingCity: sanitized.billing_city,
+    billingCountry: sanitized.billing_country,
+    billingEmail: sanitized.billing_email,
     email: sanitized.email,
     phone: sanitized.phone,
     websiteType: sanitized.website_type,
@@ -303,5 +343,7 @@ Deno.serve(async (request) => {
     code: "REQUEST_ACCEPTED",
     message: "Request received.",
     notification_status: delivery.status,
+    vat_validation_status: vatValidation.status,
+    vat_validated_at: vatValidation.validatedAt,
   }, origin);
 });

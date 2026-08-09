@@ -212,6 +212,17 @@
     const request = payload.request;
     const data = payload.data;
     const submittedAt = payload.intake.submitted_at;
+    const isBusiness = request.customer_type === "business";
+    const billingAddress = isBusiness
+      ? [request.billing_address, [request.billing_postal_code, request.billing_city].filter(Boolean).join(" "), request.billing_country].filter(Boolean).join(", ")
+      : null;
+    const vatValidationStatus = request.vat_validation_status === "valid"
+      ? `Geverifieerd${request.vat_validated_at ? ` op ${new Date(request.vat_validated_at).toLocaleDateString("nl-BE")}` : ""}`
+      : request.vat_validation_status === "invalid"
+      ? "Niet als geldig bevestigd"
+      : request.vat_validation_status === "unavailable"
+      ? "Controle tijdelijk niet beschikbaar; later opnieuw controleren"
+      : "Niet gecontroleerd";
     clientNode.textContent = request.company ? `${request.company} · ${request.name}` : request.name || "Onbekende klant";
     referenceNode.textContent = request.id ? `#${String(request.id).slice(0, 8).toUpperCase()}` : "Niet opgegeven";
     submittedNode.textContent = formatDateTime(submittedAt);
@@ -219,9 +230,17 @@
     sectionsNode.replaceChildren();
 
     appendSection("Klant & aanvraag", (list) => {
-      addDetail(list, "Naam", request.name);
-      addDetail(list, "Bedrijf", request.company);
-      addDetail(list, "E-mail", request.email);
+      addDetail(list, "Naam contactpersoon", request.name);
+      if (isBusiness) {
+        addDetail(list, "Bedrijfsnaam", request.company);
+        addDetail(list, "Ondernemingsnummer", request.enterprise_number);
+        addDetail(list, "Ondernemingsnummerstatus", request.enterprise_validation_status === "format_valid_not_externally_verified" ? "Formaat geldig; niet extern geverifieerd" : "Niet gecontroleerd");
+        addDetail(list, "BTW-nummer", request.vat_number);
+        if (request.vat_number) addDetail(list, "BTW-validatiestatus", vatValidationStatus);
+        addDetail(list, "Facturatieadres", billingAddress);
+        addDetail(list, "Facturatie-e-mail", request.billing_email || request.email);
+      }
+      addDetail(list, "Contact-e-mail", request.email);
       addDetail(list, "Website type", request.website_type);
       addDetail(list, "Oorspronkelijke timing", request.timing);
       addDetail(list, "Oorspronkelijke budgetcategorie", request.budget);

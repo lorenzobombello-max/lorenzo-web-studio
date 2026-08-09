@@ -297,6 +297,19 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
+    const { data: businessDetails, error: businessDetailsError } = await supabase
+      .from("quote_requests")
+      .select("customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email")
+      .eq("id", result.quote_request_id)
+      .maybeSingle();
+    if (businessDetailsError || !businessDetails) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "ADMIN_BUSINESS_DETAILS_LOOKUP_FAILED",
+        message: "Admin briefing could not be inspected.",
+      }, origin);
+    }
+
     return jsonResponse(200, {
       ok: true,
       intake: {
@@ -310,7 +323,18 @@ Deno.serve(async (request) => {
         id: result.quote_request_id,
         created_at: result.quote_request_created_at,
         name: result.name,
-        company: result.company,
+        customer_type: businessDetails.customer_type,
+        company: businessDetails.company,
+        enterprise_number: businessDetails.enterprise_number,
+        enterprise_validation_status: businessDetails.enterprise_validation_status,
+        vat_number: businessDetails.vat_number,
+        vat_validation_status: businessDetails.vat_validation_status,
+        vat_validated_at: businessDetails.vat_validated_at,
+        billing_address: businessDetails.billing_address,
+        billing_postal_code: businessDetails.billing_postal_code,
+        billing_city: businessDetails.billing_city,
+        billing_country: businessDetails.billing_country,
+        billing_email: businessDetails.billing_email,
         email: result.email,
         phone: result.phone,
         website_type: result.website_type,

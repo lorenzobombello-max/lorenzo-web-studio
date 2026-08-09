@@ -1,7 +1,14 @@
-import type { ReviewAction, SanitizedQuotePayload, SubmitQuotePayload } from "./types.ts";
+import type { CustomerType, EnterpriseValidationStatus, ReviewAction, SanitizedQuotePayload, SubmitQuotePayload } from "./types.ts";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_CHARACTERS_REGEX = /^[+0-9().\s-]+$/;
+const BUSINESS_IDENTIFIER_REGEX = /^[\p{L}\p{N} .\-_/]+$/u;
+const SAFE_BUSINESS_TEXT_REGEX = /^[^<>]*$/u;
+const CUSTOMER_TYPES = new Set(["individual", "business"]);
+const VIES_COUNTRY_CODES = new Set([
+  "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT",
+  "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK", "XI",
+]);
 const WEBSITE_TYPES = new Set([
   "Bedrijfswebsite",
   "Portfolio-website",
@@ -350,7 +357,19 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   }
 
   const name = normalizeText(input.name);
+  const customerTypeInput = input.customer_type === undefined
+    ? null
+    : normalizeText(input.customer_type);
+  if (customerTypeInput !== null) assertAllowed("customer_type", customerTypeInput, CUSTOMER_TYPES);
+  const customerType = customerTypeInput as CustomerType | null;
   const company = normalizeText(input.company ?? "");
+  let enterpriseNumber = normalizeNullableText("enterprise_number", input.enterprise_number ?? null, 40) || "";
+  let vatNumber = normalizeNullableText("vat_number", input.vat_number ?? null, 40) || "";
+  const billingAddress = normalizeNullableText("billing_address", input.billing_address ?? null, 200) || "";
+  const billingPostalCode = normalizeNullableText("billing_postal_code", input.billing_postal_code ?? null, 20) || "";
+  const billingCity = normalizeNullableText("billing_city", input.billing_city ?? null, 120) || "";
+  const billingCountry = normalizeNullableText("billing_country", input.billing_country ?? null, 80) || "";
+  const billingEmail = (normalizeNullableText("billing_email", input.billing_email ?? null, 254) || "").toLowerCase();
   const email = normalizeText(input.email).toLowerCase();
   const phone = normalizeText(input.phone ?? "");
   const websiteType = normalizeText(input.website_type);
@@ -364,6 +383,70 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
     throw new InputValidationError("INVALID_FORMAT", "name");
   }
   if (company) assertLength("company", company, 2, 140);
+  if (enterpriseNumber) assertLength("enterprise_number", enterpriseNumber, 2, 40);
+  if (vatNumber) assertLength("vat_number", vatNumber, 2, 40);
+  if (billingAddress) assertLength("billing_address", billingAddress, 2, 200);
+  if (billingPostalCode) assertLength("billing_postal_code", billingPostalCode, 2, 20);
+  if (billingCity) assertLength("billing_city", billingCity, 2, 120);
+  if (billingCountry) assertLength("billing_country", billingCountry, 2, 80);
+  if (billingEmail) assertLength("billing_email", billingEmail, 5, 254);
+  for (const [field, value] of [
+    ["company", company],
+    ["billing_address", billingAddress],
+    ["billing_postal_code", billingPostalCode],
+    ["billing_city", billingCity],
+    ["billing_country", billingCountry],
+  ]) {
+    if (value && !SAFE_BUSINESS_TEXT_REGEX.test(value)) {
+      throw new InputValidationError("INVALID_FORMAT", field);
+    }
+  }
+  for (const [field, value] of [["enterprise_number", enterpriseNumber], ["vat_number", vatNumber]]) {
+    if (value && !BUSINESS_IDENTIFIER_REGEX.test(value)) {
+      throw new InputValidationError("INVALID_FORMAT", field);
+    }
+  }
+  if (billingEmail && (!EMAIL_REGEX.test(billingEmail) || /[\r\n]/.test(String(input.billing_email)))) {
+    throw new InputValidationError("INVALID_FORMAT", "billing_email");
+  }
+  if (vatNumber) {
+    vatNumber = vatNumber.toUpperCase().replace(/[\s.\-_/]/g, "");
+    if (!/^[A-Z]{2}[A-Z0-9]{2,12}$/.test(vatNumber) || !VIES_COUNTRY_CODES.has(vatNumber.slice(0, 2))) {
+      throw new InputValidationError("INVALID_FORMAT", "vat_number");
+    }
+  }
+  const businessValues = [company, enterpriseNumber, vatNumber, billingAddress, billingPostalCode, billingCity, billingCountry, billingEmail];
+  if (customerType === null && businessValues.slice(1).some(Boolean)) {
+    throw new InputValidationError("INVALID_CONDITION", "customer_type");
+  }
+  if (customerType === "individual" && businessValues.some(Boolean)) {
+    throw new InputValidationError("INVALID_CONDITION", "customer_type");
+  }
+  if (customerType === "business") {
+    for (const [field, value] of [
+      ["company", company],
+      ["enterprise_number", enterpriseNumber],
+      ["billing_address", billingAddress],
+      ["billing_postal_code", billingPostalCode],
+      ["billing_city", billingCity],
+      ["billing_country", billingCountry],
+    ]) {
+      if (!value) throw new InputValidationError("REQUIRED_FIELD", field);
+    }
+  }
+  let enterpriseValidationStatus: EnterpriseValidationStatus = "not_checked";
+  if (customerType === "business" && /^(be|belgi[eë]|belgium)$/i.test(billingCountry)) {
+    enterpriseNumber = enterpriseNumber.replace(/[\s.\-_/]/g, "");
+    if (!/^\d{10}$/.test(enterpriseNumber)) {
+      throw new InputValidationError("INVALID_FORMAT", "enterprise_number");
+    }
+    const base = Number(enterpriseNumber.slice(0, 8));
+    const checkDigits = Number(enterpriseNumber.slice(8));
+    if (97 - (base % 97) !== checkDigits) {
+      throw new InputValidationError("INVALID_FORMAT", "enterprise_number");
+    }
+    enterpriseValidationStatus = "format_valid_not_externally_verified";
+  }
   assertLength("email", email, 5, 254);
   if (phone) {
     assertLength("phone", phone, 6, 40);
@@ -390,7 +473,16 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
 
   return {
     name,
+    customer_type: customerType,
     company: company || null,
+    enterprise_number: enterpriseNumber || null,
+    enterprise_validation_status: enterpriseValidationStatus,
+    vat_number: vatNumber || null,
+    billing_address: billingAddress || null,
+    billing_postal_code: billingPostalCode || null,
+    billing_city: billingCity || null,
+    billing_country: billingCountry || null,
+    billing_email: billingEmail || null,
     email,
     phone: phone || null,
     website_type: websiteType,

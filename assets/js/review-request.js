@@ -135,11 +135,30 @@
   function fillDetails(request) {
     if (!detailsNode) return;
 
+    const isBusiness = request?.customer_type === "business";
+    const billingAddress = isBusiness
+      ? [request?.billing_address, [request?.billing_postal_code, request?.billing_city].filter(Boolean).join(" "), request?.billing_country].filter(Boolean).join(", ")
+      : "";
+    const vatValidationStatus = request?.vat_validation_status === "valid"
+      ? `Geverifieerd${request?.vat_validated_at ? ` op ${new Date(request.vat_validated_at).toLocaleDateString("nl-BE")}` : ""}`
+      : request?.vat_validation_status === "invalid"
+      ? "Niet als geldig bevestigd"
+      : request?.vat_validation_status === "unavailable"
+      ? "Controle tijdelijk niet beschikbaar; later opnieuw controleren"
+      : "Niet gecontroleerd";
+
     const map = new Map([
       ["Aanvraagnummer", request?.id || "-"],
       ["Ontvangstdatum", request?.created_at ? new Date(request.created_at).toLocaleString("nl-BE") : "-"],
       ["Naam", request?.name || "-"],
-      ["Bedrijfsnaam", request?.company || "Niet ingevuld"],
+      ["Klanttype", isBusiness ? "Onderneming / zelfstandige" : request?.customer_type === "individual" ? "Particulier" : "Niet opgegeven"],
+      ["Bedrijfsnaam", request?.company || "-"],
+      ["Ondernemingsnummer", request?.enterprise_number || "-"],
+      ["Ondernemingsnummerstatus", request?.enterprise_validation_status === "format_valid_not_externally_verified" ? "Formaat geldig; niet extern geverifieerd" : "Niet gecontroleerd"],
+      ["BTW-nummer", request?.vat_number || "Niet van toepassing"],
+      ["BTW-validatiestatus", request?.vat_number ? vatValidationStatus : "Niet van toepassing"],
+      ["Facturatieadres", billingAddress || "-"],
+      ["Facturatie-e-mail", request?.billing_email || request?.email || "-"],
       ["E-mailadres", request?.email || "-"],
       ["Telefoon", request?.phone || "Niet ingevuld"],
       ["Type website", request?.website_type || "-"],
@@ -149,6 +168,7 @@
     ]);
 
     detailsNode.querySelectorAll("div").forEach((row) => {
+      if (row.hasAttribute("data-business-detail")) row.hidden = !isBusiness;
       const dt = row.querySelector("dt")?.textContent?.trim() || "";
       const dd = row.querySelector("dd");
       if (!dd) return;

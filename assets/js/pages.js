@@ -155,6 +155,9 @@
     const successTitle = document.getElementById("successTitle");
     const successDescription = document.getElementById("successDescription");
     const projectFields = [...form.querySelectorAll("[data-project-field]")];
+    const customerTypeControls = [...form.querySelectorAll('input[name="customer-type"]')];
+    const businessFields = document.getElementById("businessFields");
+    const businessControls = [...businessFields.querySelectorAll("input, select, textarea")];
     let idempotencyKey = "";
     let isSubmitting = false;
     let modalTimer = null;
@@ -218,7 +221,26 @@
           return false;
         }
       }
+      for (const control of form.querySelectorAll("input, select, textarea")) {
+        if (!control.disabled && !control.checkValidity()) {
+          control.focus();
+          setMessage("Controleer het gemarkeerde veld en probeer opnieuw.", "error");
+          return false;
+        }
+      }
       return true;
+    }
+
+    function applyCustomerType() {
+      const isPrivacyRequest = requestKind?.value === "privacy";
+      const customerType = form.querySelector('input[name="customer-type"]:checked')?.value || "individual";
+      const showBusinessFields = !isPrivacyRequest && customerType === "business";
+      businessFields.hidden = !showBusinessFields;
+      businessControls.forEach((control) => {
+        control.disabled = !showBusinessFields;
+        control.required = showBusinessFields && control.hasAttribute("data-business-required");
+        if (!showBusinessFields && customerType === "individual") control.value = "";
+      });
     }
 
     function applyRequestMode() {
@@ -226,10 +248,11 @@
       projectFields.forEach((field) => {
         field.hidden = isPrivacyRequest;
         field.querySelectorAll("input, select, textarea").forEach((control) => {
-          if (control.id === "company") return;
           control.required = !isPrivacyRequest;
         });
       });
+      customerTypeControls.forEach((control) => { control.required = !isPrivacyRequest; });
+      applyCustomerType();
       email.required = !isPrivacyRequest;
       emailLabel.textContent = isPrivacyRequest ? "E-mailadres (e-mail of telefoon vereist)" : "E-mailadres";
       phoneLabel.textContent = isPrivacyRequest ? "Telefoonnummer (e-mail of telefoon vereist)" : "Telefoonnummer (optioneel)";
@@ -264,13 +287,20 @@
 
       const data = new FormData(form);
       const text = (name) => String(data.get(name) || "").trim();
+      const isBusinessCustomer = text("customer-type") === "business";
       const payload = isPrivacyRequest
         ? {
             name: text("name"), email: text("email"), phone: text("phone"),
             message: text("description"), website: text("website")
           }
         : {
-            name: text("name"), company: text("company"), email: text("email"), phone: text("phone"),
+            name: text("name"), customer_type: text("customer-type"),
+            ...(isBusinessCustomer ? {
+              company: text("company"), enterprise_number: text("enterprise-number"), vat_number: text("vat-number"),
+              billing_address: text("billing-address"), billing_postal_code: text("billing-postal-code"),
+              billing_city: text("billing-city"), billing_country: text("billing-country"), billing_email: text("billing-email")
+            } : {}),
+            email: text("email"), phone: text("phone"),
             website_type: text("website-type"), budget: text("budget"), timing: text("timing"),
             description: text("description"), privacy_consent: data.get("privacy") === "on", website: text("website")
           };
@@ -286,6 +316,17 @@
           headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
           body: JSON.stringify(payload)
         });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok && result.field === "vat_number") {
+          document.getElementById("vat-number")?.focus();
+          setMessage("Dit btw-nummer heeft geen geldig EU-formaat. Controleer het nummer.", "error");
+          return;
+        }
+        if (!response.ok && result.field === "enterprise_number") {
+          document.getElementById("enterprise-number")?.focus();
+          setMessage("Controleer het ondernemingsnummer.", "error");
+          return;
+        }
         if (response.status !== 200 && response.status !== 202) throw new Error("Request failed");
         form.reset();
         idempotencyKey = "";
@@ -293,6 +334,12 @@
         successTitle.textContent = isPrivacyRequest ? "Je privacyverzoek is ontvangen." : "Bedankt voor je bericht.";
         successDescription.textContent = isPrivacyRequest
           ? "Je verzoek is veilig opgeslagen en wordt persoonlijk behandeld."
+          : isBusinessCustomer && result.vat_validation_status === "valid"
+          ? "BTW-nummer geverifieerd. Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken."
+          : isBusinessCustomer && result.vat_validation_status === "invalid"
+          ? "Dit btw-nummer kon niet als geldig worden bevestigd. Controleer het nummer. Uw aanvraag is wel verzonden."
+          : isBusinessCustomer && result.vat_validation_status === "unavailable"
+          ? "De officiële btw-controle is tijdelijk niet beschikbaar. Uw aanvraag kan wel worden verzonden; we controleren het nummer later."
           : "Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken.";
         modal.hidden = false;
         modal.querySelector(".success-panel__inner").focus();
@@ -316,6 +363,7 @@
       setMessage("", null);
     });
     requestKind?.addEventListener("change", applyRequestMode);
+    customerTypeControls.forEach((control) => control.addEventListener("change", applyCustomerType));
     close.addEventListener("click", closeModal);
     modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) closeModal(); });
