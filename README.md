@@ -33,7 +33,9 @@ Backend-dependent flows require the configured Supabase project and are not emul
 Pushes to `main` trigger `.github/workflows/deploy-pages.yml`. The workflow creates an allowlisted artifact with `scripts/prepare-pages-dist.ps1`, verifies its contents and local links with `scripts/verify-pages-dist.ps1`, and deploys the result to GitHub Pages.
 
 ## Technical baseline
-The audited production architecture, database constraints, function versions, security model, and validation status are documented in [docs/PRODUCTION-BASELINE.md](docs/PRODUCTION-BASELINE.md).
+The current production architecture, database constraints, function versions, security model, and validation status are documented in [docs/PRODUCTION-BASELINE.md](docs/PRODUCTION-BASELINE.md).
+
+Production status on 2026-08-09: the business-customer flow, local Belgian enterprise-number validation, server-side VIES validation, review/intake propagation, and conditional briefing/PDF output are live at commit `21d65e6dad1d64bdbc9cdd43706585d579a5da14`. The privacy flow and published legal pages remain intact.
 
 ## Security documentation policy
 Never place secrets, raw tokens, private capabilities, service-role credentials, or private environment values in repository documentation. Internal governance and operational secrets remain outside this public repository.

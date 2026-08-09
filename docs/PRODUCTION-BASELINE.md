@@ -3,8 +3,8 @@
 ## Identificatie
 
 - Project: Lorenzo Web Solutions / `lorenzo-web-studio`
-- Auditdatum: 2026-08-08
-- Baselinereferentie: de `main`-commit waarin dit document is vastgelegd
+- Statusdatum: 2026-08-09
+- Laatste geverifieerde productiecommit: `21d65e6dad1d64bdbc9cdd43706585d579a5da14`
 - Branch: `main`
 - Linked Supabase-project: `xcsptvntvrizwhskaphr`
 - Supabase-regio: `eu-west-1`
@@ -19,6 +19,7 @@ Dit document legt de gecontroleerde productiebaseline vast. Code, migrations en 
 - `scripts/verify-pages-dist.ps1` controleert vereiste paden, verboden bestandstypen, lokale links en de verwachte Functions-base-URL in de homepage en contactpagina.
 - Alleen het gegenereerde artifact wordt gepubliceerd; Supabase-bronnen, repositorymetadata, Markdown en lokale configuratie horen niet in het Pages-artifact.
 - Verwachte Git-baseline: branch `main`, HEAD gelijk aan `origin/main`, divergentie `0 0` en geen tracked wijzigingen. Lokale brandinginput en Supabase CLI-metadata kunnen bewust untracked zijn.
+- GitHub Pages deployment van productiecommit `21d65e6dad1d64bdbc9cdd43706585d579a5da14`: succesvol.
 
 ## Projectstructuur
 
@@ -27,8 +28,8 @@ Dit document legt de gecontroleerde productiebaseline vast. Code, migrations en 
 - `pages/demos/`: tien zelfstandige sectordemo's.
 - `assets/`: gedeelde en demo-specifieke CSS, JavaScript, iconen en afbeeldingen.
 - `scripts/`: voorbereiding en verificatie van het Pages-artifact.
-- `supabase/functions/`: drie Edge Functions en gedeelde security-, validatie- en e-mailmodules.
-- `supabase/migrations/`: tien chronologische PostgreSQL-migrations.
+- `supabase/functions/`: drie quote/intake-Edge Functions, de privacyfunctie en gedeelde security-, validatie- en e-mailmodules.
+- `supabase/migrations/`: twaalf chronologische PostgreSQL-migrations.
 
 ## Database
 
@@ -37,6 +38,10 @@ Dit document legt de gecontroleerde productiebaseline vast. Code, migrations en 
 Slaat gevalideerde offerteaanvragen en hun reviewstatus op.
 
 - Statusenum: `pending`, `approved`, `rejected`.
+- Het klanttype onderscheidt `Particulier` en `Onderneming`.
+- Zakelijke aanvragen bevatten conditioneel bedrijfsnaam, ondernemingsnummer, btw-nummer, facturatieadres en facturatie-e-mail.
+- De officiële btw-validatiestatus is `valid`, `invalid`, `unavailable` of `not_checked`.
+- Voor Belgische ondernemingsnummers wordt de lokale status `format_valid_not_externally_verified` vastgelegd na geslaagde formaat- en checkdigitcontrole.
 - De idempotency key is uniek.
 - Approval capability-hashes zijn uniek wanneer aanwezig.
 - Een pending request vereist een capability-hash en expiratie.
@@ -68,7 +73,7 @@ Slaat de websitebriefing en lifecyclemetadata op.
 
 ## Migrations
 
-Alle tien migrations waren op de auditdatum lokaal en remote gelijk.
+Alle twaalf migrations zijn in productie toegepast. De twee meest recente business-validatiemigrations zijn afzonderlijk na deployment geverifieerd.
 
 1. `20260802130000_create_quote_requests.sql`
    - Maakt requeststatus, `quote_requests`, basisvalidatie, RLS en de pending capability-index.
@@ -90,21 +95,27 @@ Alle tien migrations waren op de auditdatum lokaal en remote gelijk.
    - Voegt invitation-jobtype, encrypted retrymateriaal, clear-on-sent en invitation create/retrieve-RPC's toe.
 10. `20260808200000_create_submitted_intake_admin_flow.sql`
    - Voegt atomische submitted-notificationjobs, admin-accessmetadata en service-role-only inspectie van definitief ingediende briefings toe.
+11. `20260809180000_add_quote_request_business_customer_fields.sql`
+   - Voegt klanttype en conditionele bedrijfs-, btw- en facturatievelden toe aan offerteaanvragen en de downstream review-/intakeflow.
+12. `20260809210000_add_official_business_validation_status.sql`
+   - Voegt de lokale ondernemingsnummervalidatiestatus en officiële VIES-validatiestatus toe.
 
 ## Edge Functions
 
-De runtimebaseline op 2026-08-08:
+De quote/intake-runtimebaseline op 2026-08-09 is in productie `ACTIVE`:
 
-### `submit-quote-request` v15
+### `submit-quote-request` v17
 
 - Doel: een publieke offerteaanvraag valideren, idempotent opslaan en de adminnotificatie afleveren.
 - Accepteert alleen de bedoelde HTTP-methode, content type, bodygrootte en gevalideerde velden.
 - Gebruikt een UUID-idempotency key plus payloadfingerprint om herhaalde requests veilig af te handelen.
 - Genereert een korte-lived approval capability; alleen de hash wordt persistent opgeslagen.
 - Past honeypot- en rate-limitcontroles toe.
+- Normaliseert en valideert Belgische ondernemingsnummers lokaal en voert de officiële VIES-controle uitsluitend server-side uit.
+- Een tijdelijk niet-beschikbare VIES-dienst blokkeert een verder geldige aanvraag niet.
 - Transitie: nieuwe request naar `pending`; bij creatie ontstaat maximaal een `admin_notification`-job.
 
-### `review-quote-request` v12
+### `review-quote-request` v14
 
 - Doel: capability-gebaseerde inspectie en review van requests, bevestigingslevering en intake-uitnodigingen.
 - Actions: `approved`, `rejected`, `retry_confirmation`, `send_intake_invitation`, `retry_intake_invitation`.
@@ -112,8 +123,9 @@ De runtimebaseline op 2026-08-08:
 - Approval maakt idempotent de customer-confirmation-job; rejection legt de reviewtransitie vast.
 - Een invitation-action maakt een intake en invitation-job of rapporteert de bestaande toestand.
 - Response-serialisatie bevat requestdetails, maar geen capability-hash, raw capability of encrypted payload.
+- Zakelijke velden en validatiestatussen worden conditioneel aan review en vervolgstappen doorgegeven.
 
-### `intake-quote-request` v3
+### `intake-quote-request` v4
 
 - Doel: capability-gebaseerde intakecreatie, inspectie, draftsave en definitieve submit.
 - Actions: `create`, `inspect`, `save_draft`, `submit`, `inspect_submitted_intake_admin`.
@@ -123,6 +135,49 @@ De runtimebaseline op 2026-08-08:
 - Definitieve submit maakt atomisch maximaal een `intake_submitted_notification`-job en levert de beveiligde adminlink via de bestaande jobdelivery.
 - `inspect_submitted_intake_admin` valideert een afzonderlijke admincapability en levert uitsluitend de definitief ingediende briefing voor read-only weergave.
 - Een reeds submitted intake levert `already_submitted`; andere niet-bewerkbare statussen worden geweigerd.
+- Zakelijke gegevens en validatiestatussen zijn beschikbaar voor admin/intake en de briefingweergave.
+
+De afzonderlijke privacyflow is intact en blijft buiten de business-customerwijzigingen.
+
+## Juridische Pagina's
+
+- Privacy, cookies en algemene voorwaarden staan live.
+- De gepubliceerde juridische pagina's bevatten geen open placeholders.
+
+## Zakelijke Klantflow En Validatie
+
+**Business customer + VIES flow: COMPLETED - PRODUCTION VERIFIED op 9 augustus 2026.**
+
+- De offerteflow ondersteunt `Particulier` en `Onderneming` met conditionele rendering en validatie.
+- Voor een onderneming lopen bedrijfsnaam, ondernemingsnummer, btw-nummer, facturatieadres en facturatie-e-mail mee door de beveiligde backendflow.
+- Een Belgisch ondernemingsnummer wordt genormaliseerd en lokaal gecontroleerd met de Belgische modulo-97/checkdigitregel. Een geslaagde lokale controle krijgt `format_valid_not_externally_verified`.
+- Er vindt geen KBO-scraping plaats. Automatische externe KBO-verificatie is niet geïntegreerd.
+- Btw-nummers worden uitsluitend server-side gecontroleerd via de officiële VIES-dienst van de Europese Commissie.
+- Mogelijke VIES-statussen zijn `valid`, `invalid`, `unavailable` en `not_checked`; `unavailable` blokkeert de aanvraag niet.
+- De ruwe VIES-response wordt niet opgeslagen.
+
+## Briefing, PDF En Offerte
+
+- Zakelijke gegevens en validatiestatussen worden conditioneel opgenomen in review, admin/intake en briefing/PDF.
+- Een particuliere aanvraag krijgt geen lege zakelijke regels in de briefing of PDF.
+- Er bestaat nog geen volledig automatische offertegenerator.
+- De zakelijke gegevens zijn wel beschikbaar voor handmatige verwerking en latere automatische overname.
+
+## Interne Bedrijfsdocumenten
+
+De interne documentenset bevat:
+
+- `Interne Prijsgids 2026`;
+- `Prijsgids 2026 Klantversie`;
+- de centrale `LWS_DOCUMENTEN_INDEX_EN_KLANTWORKFLOW.md` voor documentkeuze en klantworkflow.
+
+De vastgelegde basisprijzen zijn:
+
+- Starter vanaf €1.800;
+- Professional vanaf €3.200;
+- Maatwerk op aanvraag.
+
+Deze bedrijfsdocumenten zijn geen tracked Markdown-bestanden in deze repository; de namen worden hier alleen als actuele interne documentstatus geregistreerd.
 
 ## Emailflow
 
@@ -208,6 +263,17 @@ De volgende keten is gecontroleerd met een beheerste synthetische request en UUI
 - geen normale save- of tweede submitmogelijkheid na submit;
 - post-submit loading-messagepolish live.
 
+**Business customer + VIES flow: PASS - productievalidatie 9 augustus 2026.**
+
+- zakelijke klantvelden live van aanvraag tot review, intake en briefing/PDF;
+- lokale Belgische ondernemingsnummer-checkdigitcontrole actief;
+- officiële VIES-validatie server-side actief;
+- migrations `20260809180000_add_quote_request_business_customer_fields.sql` en `20260809210000_add_official_business_validation_status.sql` production-applied;
+- `submit-quote-request` v17, `review-quote-request` v14 en `intake-quote-request` v4 `ACTIVE`;
+- tijdelijk synthetisch productietestrecord verwijderd via databasebeheerrechten;
+- afsluitende verificatiequery retourneerde nul resterende synthetische records;
+- geen databaseprivileges of policies aangepast en geen repositorybestanden gewijzigd tijdens cleanup.
+
 ### Geimplementeerd Maar Niet Volledig Productiegetest
 
 - reject;
@@ -237,8 +303,11 @@ Deze bestanden waren tijdens de audit untracked en werden niet hernoemd, verplaa
 
 ## Bekende Beperkingen En Open Punten
 
-- De repositorydocumentatie was voor deze baseline beperkt tot een korte README; technische details moesten nog worden vastgelegd.
+- Een volledig automatische offertegenerator bestaat nog niet.
+- Automatische externe KBO-verificatie bestaat nog niet; alleen lokale normalisatie en modulo-97/checkdigitvalidatie zijn actief.
+- Interne bedrijfsdocumenten en klantworkflows kunnen later verder worden uitgebreid.
 - `package.json` bevat geen geautomatiseerde test-, lint- of buildscripts.
 - De Pages-verificatie controleert de Functions-base-URL expliciet in homepage en contactpagina, niet in review- en intakepagina.
 - Reject, retrypaden, providerfailure, rate limiting onder belasting en de `reviewed` lifecycle zijn minder volledig in productie gevalideerd dan de hoofdflow.
 - Runtimefunctieversies zijn deploymentmetadata; controleer ze opnieuw voor een toekomstige recovery of release.
+- De bekende untracked brandingassets, `pages/redesign-preview/` en Supabase CLI-metadata blijven bewust buiten deze documentatietaak.
