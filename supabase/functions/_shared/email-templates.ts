@@ -38,25 +38,148 @@ const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/he
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
   const subject = `Nieuwe offerteaanvraag #${data.requestId.slice(0, 8)}`;
+  const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
+  const receivedAt = new Date(data.createdAt).toLocaleString("nl-BE", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Europe/Brussels",
+  });
+  const safeRequestId = escapeHtml(data.requestId);
+  const safeRequestReference = escapeHtml(requestReference);
+  const safeReceivedAt = escapeHtml(receivedAt);
+  const safeName = escapeHtml(data.name);
+  const safeCompany = escapeHtml(data.company || "Niet ingevuld");
+  const safeEmail = escapeHtml(data.email);
+  const safePhone = escapeHtml(data.phone || "Niet ingevuld");
+  const safeWebsiteType = escapeHtml(data.websiteType);
+  const safeBudget = escapeHtml(data.budget);
+  const safeTiming = escapeHtml(data.timing);
+  const safeDescription = escapeHtml(data.description).replace(/\n/g, "<br>");
+  const safeReviewUrl = escapeHtml(data.reviewUrl);
 
-  const html = `
-    <h2>Nieuwe offerteaanvraag</h2>
-    <p><strong>Aanvraagnummer:</strong> ${data.requestId}</p>
-    <p><strong>Ontvangstdatum:</strong> ${new Date(data.createdAt).toLocaleString("nl-BE")}</p>
-    <p><strong>Naam:</strong> ${escapeHtml(data.name)}</p>
-    <p><strong>Bedrijfsnaam:</strong> ${escapeHtml(data.company || "Niet ingevuld")}</p>
-    <p><strong>E-mailadres:</strong> ${escapeHtml(data.email)}</p>
-    <p><strong>Telefoon:</strong> ${escapeHtml(data.phone || "Niet ingevuld")}</p>
-    <p><strong>Type website:</strong> ${escapeHtml(data.websiteType)}</p>
-    <p><strong>Budget:</strong> ${escapeHtml(data.budget)}</p>
-    <p><strong>Timing:</strong> ${escapeHtml(data.timing)}</p>
-    <p><strong>Projectomschrijving:</strong><br/>${escapeHtml(data.description).replace(/\n/g, "<br/>")}</p>
-    <p style="margin-top:20px;">
-      <a href="${data.reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#b75d3b;color:#ffffff;text-decoration:none;">
-        Aanvraag beoordelen
-      </a>
-    </p>
-  `;
+  const html = `<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0b1118;color:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Nieuwe offerteaanvraag van ${safeName} — ${safeWebsiteType}.</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#0b1118;">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;border:1px solid #34424c;border-radius:8px;background-color:#17212b;">
+          <tr>
+            <td style="padding:22px 28px;border-bottom:1px solid #34424c;border-top:4px solid #0ed8e6;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td valign="middle">
+                    <span style="display:inline-block;padding:8px 12px;border-radius:6px;background-color:#ffffff;">
+                      <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="148" alt="Lorenzo Web Solutions" style="display:block;width:148px;max-width:100%;height:auto;border:0;color:#0b1118;font-size:16px;font-weight:bold;">
+                    </span>
+                  </td>
+                  <td align="right" valign="middle" style="padding-left:16px;color:#0ed8e6;font-size:11px;line-height:1.4;font-weight:bold;letter-spacing:1.2px;text-transform:uppercase;">Nieuwe aanvraag</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:30px 28px 10px;font-size:16px;line-height:1.6;">
+              <p style="margin:0 0 8px;color:#0ed8e6;font-size:11px;font-weight:bold;letter-spacing:1.2px;text-transform:uppercase;">Interne opvolging</p>
+              <h1 style="margin:0 0 12px;color:#ffffff;font-size:30px;line-height:1.18;font-weight:700;">Nieuwe offerteaanvraag</h1>
+              <p style="margin:0;color:#aeb9c0;">Er is een nieuwe aanvraag binnengekomen. Controleer de gegevens en bepaal de volgende stap.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 28px 8px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #34424c;border-radius:6px;background-color:#101820;">
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Aanvraag</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;font-weight:bold;">${safeRequestReference}</p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Ontvangen</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeReceivedAt}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Naam</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeName}</p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Bedrijf</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeCompany}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">E-mailadres</p>
+                    <p style="margin:0;font-size:14px;word-break:break-word;"><a href="mailto:${safeEmail}" style="color:#0ed8e6;text-decoration:underline;">${safeEmail}</a></p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Telefoon</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safePhone}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Type website</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeWebsiteType}</p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Budgetindicatie</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeBudget}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" valign="top" style="padding:14px 16px;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Timing</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeTiming}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:14px 28px 8px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-left:3px solid #0ed8e6;background-color:#101820;">
+                <tr>
+                  <td style="padding:16px 18px;">
+                    <p style="margin:0 0 7px;color:#0ed8e6;font-size:10px;font-weight:bold;letter-spacing:.8px;text-transform:uppercase;">Projectomschrijving</p>
+                    <p style="margin:0;color:#dce4e8;font-size:14px;line-height:1.65;">${safeDescription}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 28px 32px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="border-radius:4px;background-color:#0ed8e6;">
+                    <a href="${safeReviewUrl}" style="display:inline-block;padding:14px 20px;color:#0b1118;text-decoration:none;font-size:15px;font-weight:bold;">Aanvraag beoordelen&nbsp;&nbsp;&rarr;</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:18px 0 0;color:#7e8b94;font-size:11px;line-height:1.5;">Beveiligde beoordelingslink voor intern gebruik. Aanvraag-ID: ${safeRequestId}</p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:18px 28px;color:#7e8b94;border-top:1px solid #34424c;background-color:#101820;font-size:12px;line-height:1.6;">
+              <strong style="color:#ffffff;">Lorenzo Web Solutions</strong><br>
+              Professionele websites voor zelfstandigen en kleine ondernemingen<br>
+              <a href="https://lorenzowebsolutions.be" style="color:#0ed8e6;text-decoration:none;">lorenzowebsolutions.be</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
   const text = [
     "Nieuwe offerteaanvraag",
