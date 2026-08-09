@@ -45,7 +45,7 @@ interface SubmittedIntakeAdminEmailData {
   adminUrl: string;
 }
 
-const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/hero/lorenzo-web-solution-logo-transparent.png";
+const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
   const subject = `Nieuwe offerteaanvraag #${data.requestId.slice(0, 8)}`;
@@ -93,8 +93,8 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#0b1118;color:#ffffff;font-family:Arial,Helvetica,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Nieuwe offerteaanvraag van ${safeName} — ${safeWebsiteType}.</div>
+<body bgcolor="#0b1118" style="margin:0!important;padding:0!important;background-color:#0b1118;color:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#0b1118;">Nieuwe offerteaanvraag van ${safeName} — ${safeWebsiteType}.</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#0b1118;">
     <tr>
       <td align="center" style="padding:28px 12px;">
@@ -140,7 +140,7 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
                   </td>
                   <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Bedrijf</p>
-                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeCompany}</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;word-break:break-word;">${safeCompany}</p>
                   </td>
                 </tr>
                 <tr>
@@ -150,7 +150,7 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
                   </td>
                   <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Facturatiegegevens</p>
-                    <p style="margin:0;color:#ffffff;font-size:14px;">${safeBusinessSummary || "Niet van toepassing"}</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;word-break:break-word;">${safeBusinessSummary || "Niet van toepassing"}</p>
                   </td>
                 </tr>
                 <tr>
@@ -260,8 +260,8 @@ export function buildApprovedConfirmationEmail(data: ApprovedConfirmationEmailDa
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${subject}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Je aanvraag werd goedgekeurd voor verdere bespreking.</div>
+<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">Je aanvraag werd goedgekeurd voor verdere bespreking.</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">
@@ -365,8 +365,8 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${subject}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">De volgende stap voor je website is klaar.</div>
+<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">De volgende stap voor je website is klaar.</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">

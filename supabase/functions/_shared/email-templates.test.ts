@@ -35,6 +35,12 @@ Deno.test("admin email includes and escapes business billing details", () => {
   assertStringIncludes(result.text, "BTW-validatiestatus: Geverifieerd");
   assertStringIncludes(result.text, "Ondernemingsnummerstatus: formaat geldig, niet extern geverifieerd");
   assertStringIncludes(result.text, "Facturatie-e-mail: billing@example.com");
+  assertStringIncludes(result.html, 'bgcolor="#0b1118"');
+  assertStringIncludes(result.html, "display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden");
+  assertStringIncludes(result.html, "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png");
+  assertFalse(result.html.includes("https://lorenzowebsolutions.be/assets/images/hero/lorenzo-web-solution-logo-transparent.png"));
+  assertStringIncludes(result.html, 'font-size:14px;word-break:break-word;">Voorbeeld &amp; Partners');
+  assertStringIncludes(result.html, 'font-size:14px;word-break:break-word;">Bedrijfsnaam: Voorbeeld &amp; Partners');
 });
 
 Deno.test("admin email omits business lines for individual requests", () => {
