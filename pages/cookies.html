@@ -49,7 +49,7 @@
       <header class="section-heading">
         <p class="eyebrow">Cookies</p>
         <h1>Cookiebeleid</h1>
-        <p>Dit is een technische invulversie voor juridische controle. De beschrijving hieronder volgt de huidige implementatie en markeert onzekerheden met placeholders.</p>
+        <p>Hier lees je welke browseropslag deze website gebruikt en hoe je jouw voorkeuren beheert.</p>
       </header>
       </div>
     </section>
@@ -57,13 +57,13 @@
     <div class="shell legal-content">
 
       <section class="legal-block legal-meta" aria-label="Versiegegevens">
-        <p><strong>Versie:</strong> 0.9 (ontwerp voor juridische controle)</p>
-        <p><strong>Laatste update:</strong> 7 augustus 2026</p>
-        <p><strong>Inwerkingtreding:</strong> 7 augustus 2026</p>
+        <p><strong>Versie:</strong> 1.0</p>
+        <p><strong>Laatste update:</strong> 9 augustus 2026</p>
+        <p><strong>Inwerkingtreding:</strong> 9 augustus 2026</p>
       </section>
 
       <section class="legal-block">
-        <h2>Categorieen</h2>
+        <h2>Categorieën</h2>
         <ul>
           <li>Strikt noodzakelijk: vereist voor basiswerking en het onthouden van de toestemmingsstatus.</li>
           <li>Functioneel: voorkeuren, zoals de gekozen thema-instelling, wanneer daarvoor toestemming is gegeven.</li>
@@ -72,93 +72,60 @@
         </ul>
       </section>
 
-      <section class="legal-block legal-placeholder">
-        <h2>Technische inventaris van cookies en opslag</h2>
+      <section class="legal-block">
+        <h2>Cookies en browseropslag</h2>
         <div class="legal-table-wrap">
           <table class="legal-table">
-            <caption>Werkelijk aangetroffen opslagitems in de geanalyseerde frontend</caption>
+            <caption>Opslag die de website kan gebruiken</caption>
             <thead>
               <tr>
                 <th scope="col">Naam</th>
-                <th scope="col">Opslagtype</th>
-                <th scope="col">Domein/plaatser</th>
-                <th scope="col">First party of third party</th>
                 <th scope="col">Doel</th>
                 <th scope="col">Categorie</th>
-                <th scope="col">Triggerconditie</th>
                 <th scope="col">Bewaartermijn</th>
-                <th scope="col">Moment van verwijdering of reset</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <th scope="row">lws_cookie_preferences</th>
-                <td>localStorage</td>
-                <td>lorenzowebsolutions.be</td>
-                <td>First party</td>
-                <td>Bewaren van de gekozen toestemmingscategorieen, consentversie en update-tijdstip.</td>
+                <td>Onthouden van de gekozen toestemmingscategorieën en het tijdstip van de keuze.</td>
                 <td>Strikt noodzakelijk</td>
-                <td>Aangemaakt of overschreven wanneer de bezoeker kiest voor alles accepteren, alles weigeren of voorkeuren opslaan.</td>
-                <td>Tot overschrijving of tot de browseropslag wordt gewist</td>
-                <td>Overschreven bij een nieuwe keuze; verwijderd wanneer browseropslag handmatig wordt gewist.</td>
+                <td>Tot een nieuwe keuze wordt opgeslagen of de browseropslag wordt gewist.</td>
               </tr>
               <tr>
                 <th scope="row">site-theme</th>
-                <td>localStorage</td>
-                <td>lorenzowebsolutions.be</td>
-                <td>First party</td>
                 <td>Bewaren van de gekozen thema-instelling voor de interface.</td>
                 <td>Functioneel</td>
-                <td>Alleen wanneer functionele toestemming actief is en de bezoeker het thema wisselt.</td>
-                <td>Tot overschrijving, intrekking van functionele toestemming of tot de browseropslag wordt gewist</td>
-                <td>Wordt verwijderd zodra functionele toestemming wordt geweigerd of ingetrokken; kan ook verdwijnen bij het wissen van browseropslag.</td>
+                <td>Tot de keuze wordt gewijzigd, functionele toestemming wordt ingetrokken of de browseropslag wordt gewist.</td>
               </tr>
               <tr>
                 <th scope="row">_ga en _ga_*</th>
-                <td>Cookie</td>
-                <td>lorenzowebsolutions.be / Google Analytics</td>
-                <td>First-party cookie geplaatst via Google Analytics</td>
                 <td>Onderscheiden van browsers en meten van websitegebruik nadat analysetoestemming is gegeven.</td>
                 <td>Analyse</td>
-                <td>Google Analytics 4 wordt pas geladen nadat de bezoeker Analyse expliciet toestaat.</td>
-                <td>In de actieve Google Analytics-property worden gebeurtenisgegevens 2 maanden en gebruikersgegevens 14 maanden bewaard. Resetten bij nieuwe gebruikersactiviteit is ingeschakeld.</td>
-                <td>De centrale consentmodule probeert zichtbare <strong>_ga</strong>-cookies client-side te verwijderen zodra analysetoestemming wordt ingetrokken; cookies kunnen ook via de browser worden verwijderd.</td>
+                <td>Volgens de ingestelde Google Analytics-levensduur, doorgaans maximaal 2 jaar, of eerder bij intrekking of verwijdering via de browser.</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p>Niet aangetroffen in de geanalyseerde frontendcode: marketingcookies, pixelintegraties en embed-iframes. Google Analytics gebruikt na analysetoestemming cookies; de centrale module gebruikt <strong>document.cookie</strong> uitsluitend om zichtbare Google Analytics-cookies bij intrekking te verwijderen.</p>
+        <p>De eerste twee items worden in localStorage op het eigen domein bewaard. Google Analytics plaatst na toestemming first-party cookies via Google. De website gebruikt momenteel geen marketingcookies.</p>
       </section>
 
       <section class="legal-block">
-        <h2>Consentmechanisme</h2>
+        <h2>Toestemming en voorkeuren</h2>
         <ul>
-          <li>Strikt noodzakelijke opslag mag zonder afzonderlijke opt-in werken voor het onthouden van de toestemmingsstatus.</li>
-          <li>Functionele opslag is standaard uitgeschakeld tot de bezoeker functionele toestemming geeft.</li>
-          <li>Analyse en marketing staan in de voorkeureninterface standaard uitgeschakeld. Google Analytics 4 wordt alleen dynamisch geladen wanneer Analyse expliciet is toegestaan; marketing blijft niet actief.</li>
-          <li>Toestemming wordt gegeven via de cookiebanner door alles te accepteren of via het voorkeurenvenster categorieen aan te zetten en op te slaan.</li>
-          <li>Toestemming wordt geweigerd via de knop <strong>Alles weigeren</strong> of via het voorkeurenvenster door optionele categorieen uitgeschakeld te laten en de voorkeuren op te slaan.</li>
-          <li>Voorkeuren kunnen later opnieuw worden geopend via de knop <strong>Cookievoorkeuren</strong> op iedere publieke hoofdpagina. Op pagina's zonder standaardfooter wordt die knop technisch toegevoegd in de beschikbare paginacontainer.</li>
-          <li>Intrekken van functionele toestemming verwijdert in de huidige implementatie de sleutel <strong>site-theme</strong> uit localStorage.</li>
-          <li>Intrekken van analysetoestemming stopt nieuwe Google Analytics-metingen, zet analytics-opslag op geweigerd en probeert zichtbare <strong>_ga</strong>-cookies en gelijknamige browseropslag te verwijderen.</li>
-          <li>Opnieuw toestemming vragen gebeurt in de huidige implementatie wanneer <strong>lws_cookie_preferences</strong> ontbreekt, geen geldige JSON bevat, vereiste eigenschappen mist of een andere versiewaarde bevat dan de actuele consentversie.</li>
+          <li>Noodzakelijke opslag is altijd actief om de website en jouw toestemmingskeuze te laten werken.</li>
+          <li>Functionele, analytische en marketingcategorieën staan standaard uit.</li>
+          <li>Google Analytics 4 wordt pas geladen nadat je Analyse expliciet toestaat.</li>
+          <li>Marketingtracking is momenteel niet actief, ook wanneer de categorie in de voorkeureninterface wordt toegestaan.</li>
+          <li>Je kunt alles aanvaarden, alles weigeren of per categorie kiezen.</li>
+          <li>Je keuze kan later worden gewijzigd via de knop <strong>Cookievoorkeuren</strong>. Bij intrekking stopt de betrokken optionele verwerking en wordt bijbehorende bereikbare opslag waar mogelijk verwijderd.</li>
         </ul>
       </section>
 
       <section class="legal-block">
-        <h2>Externe diensten en verzoeken</h2>
-        <ul>
-          <li>Google Fonts: geen runtimeverzoeken naar <strong>fonts.googleapis.com</strong> of <strong>fonts.gstatic.com</strong> technisch aangetroffen in de geanalyseerde frontendcode.</li>
-          <li>Google Analytics 4: de Google-tag voor meet-ID <strong>G-9G6H1PN3DG</strong> wordt uitsluitend na expliciete analysetoestemming geladen vanaf <strong>www.googletagmanager.com</strong>; meetverzoeken kunnen daarna naar Google Analytics-domeinen worden verzonden.</li>
-          <li>Supabase Edge Functions: browserverzoek naar de eigen backendroute voor formulierverzending na expliciete formulierindiening.</li>
-          <li>Resend: server-side e-mailverwerking achter de Supabase Edge Function; geen directe frontendcookie of frontendopslag technisch aangetroffen.</li>
-        </ul>
-      </section>
-
-      <section class="legal-block">
-        <h2>Scripts en resources voor toestemming</h2>
-        <p>De centrale consentmodule beheert de toestemmingscategorieen en functionele voorkeursopslag. Zonder analysetoestemming wordt Google Analytics niet geladen. Na expliciete analysetoestemming laadt de module de Google-tag dynamisch en initialiseert ze meet-ID <strong>G-9G6H1PN3DG</strong>. Er worden geen marketingscripts geladen.</p>
-        <p class="legal-note">Er zijn technisch geen runtimeverzoeken naar Google Fonts aangetroffen in de geanalyseerde frontendcode.</p>
+        <h2>Google Analytics</h2>
+        <p>Na expliciete analysetoestemming gebruikt de website Google Analytics 4 met meet-ID <strong>G-9G6H1PN3DG</strong> om gebruik en prestaties te meten. Zonder die toestemming wordt de Google-tag niet geladen. Google Fonts wordt niet als externe dienst geladen.</p>
+        <p>Meer informatie over de verwerkte gegevens, rechtsgrond, ontvangers en internationale verwerking staat in de <a href="privacy.html">privacyverklaring</a>.</p>
       </section>
 
       <section class="legal-block">
@@ -167,14 +134,14 @@
       </section>
 
       <section class="legal-block">
-        <h2>Updatebeheer</h2>
-        <p>Dit beleid moet worden bijgewerkt wanneer nieuwe cookies of opslagitems worden toegevoegd, leveranciers wijzigen, doeleinden of bewaartermijnen wijzigen, of de gebruikte toestemmingstechniek verandert.</p>
+        <h2>Wijzigingen en contact</h2>
+        <p>Dit beleid wordt aangepast wanneer het gebruik van cookies, browseropslag of externe meetdiensten wijzigt. Vragen kunnen via de <a href="contact.html">contactpagina</a> worden ingediend.</p>
       </section>
 
       <p><a class="btn btn--primary" href="../index.html">Terug naar home</a></p>
     </div>
   </main>
-  <footer class="preview-footer"><div class="shell preview-footer__top"><div class="preview-footer__brand"><p class="brand__name">Lorenzo <strong>Web Solutions</strong></p><p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p></div><div><h2>Diensten</h2><ul><li><a href="services.html">Alle diensten</a></li><li><a href="websites-op-maat.html">Websites op maat</a></li><li><a href="seo.html">SEO & vindbaarheid</a></li></ul></div><div><h2>Ontdek</h2><ul><li><a href="portfolio.html">Portfolio</a></li><li><a href="process.html">Aanpak</a></li><li><a href="pricing.html">Prijzen</a></li><li><a href="faq.html">FAQ</a></li><li><a href="about.html">Over Lorenzo</a></li><li><a href="contact.html">Contact</a></li></ul></div><div><h2>Bedrijf</h2><address>Lorenzo Web Solutions<br />Grote Baan 164 bus 102<br />9920 Lievegem, België</address><p>BTW BE 0742.361.487</p><p><a href="privacy.html">Privacy</a> · <a href="cookies.html">Cookies</a> · <a href="algemene-voorwaarden.html">Voorwaarden</a></p></div></div><div class="shell preview-footer__bottom"><p>Lorenzo Web Solutions</p><p>© <span data-year>2026</span> Alle rechten voorbehouden.</p></div></footer>
+  <footer class="preview-footer"><div class="shell preview-footer__top"><div class="preview-footer__brand"><p class="brand__name">Lorenzo <strong>Web Solutions</strong></p><p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p></div><div><h2>Diensten</h2><ul><li><a href="services.html">Alle diensten</a></li><li><a href="websites-op-maat.html">Websites op maat</a></li><li><a href="seo.html">SEO & vindbaarheid</a></li></ul></div><div><h2>Ontdek</h2><ul><li><a href="portfolio.html">Portfolio</a></li><li><a href="process.html">Aanpak</a></li><li><a href="pricing.html">Prijzen</a></li><li><a href="faq.html">FAQ</a></li><li><a href="about.html">Over Lorenzo</a></li><li><a href="contact.html">Contact</a></li></ul></div><div><h2>Bedrijf</h2><address>Lorenzo Web Solutions<br />Grote Baan 164 bus 1002<br />9920 Lievegem, België</address><p>BTW BE 0742.361.487</p><p><a href="privacy.html">Privacy</a> · <a href="cookies.html">Cookies</a> · <a href="algemene-voorwaarden.html">Voorwaarden</a></p></div></div><div class="shell preview-footer__bottom"><p>Lorenzo Web Solutions</p><p>© <span data-year>2026</span> Alle rechten voorbehouden.</p></div></footer>
 </body>
 </html>
 
