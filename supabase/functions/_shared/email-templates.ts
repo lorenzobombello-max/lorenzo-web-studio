@@ -352,10 +352,10 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
                 </tr>
               </table>
 
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;">
+              <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
                 <tr>
-                  <td style="border-radius:6px;background-color:#b75d3b;">
-                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-weight:bold;">Mijn websitebriefing invullen</a>
+                  <td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;">
+                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">Mijn websitebriefing invullen</a>
                   </td>
                 </tr>
               </table>
