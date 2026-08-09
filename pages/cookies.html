@@ -66,8 +66,8 @@
         <h2>Categorieen</h2>
         <ul>
           <li>Strikt noodzakelijk: vereist voor basiswerking en het onthouden van de toestemmingsstatus.</li>
-          <li>Functioneel: voorkeuren en externe lettertypes wanneer daarvoor toestemming is gegeven.</li>
-          <li>Analyse: momenteel geen analysecookies of analyse-opslag technisch aangetroffen in de geanalyseerde frontendcode.</li>
+          <li>Functioneel: voorkeuren, zoals de gekozen thema-instelling, wanneer daarvoor toestemming is gegeven.</li>
+          <li>Analyse: Google Analytics 4 wordt uitsluitend geactiveerd nadat de bezoeker expliciet toestemming geeft voor de categorie Analyse.</li>
           <li>Marketing: momenteel niet actief.</li>
         </ul>
       </section>
@@ -113,10 +113,21 @@
                 <td>Tot overschrijving, intrekking van functionele toestemming of tot de browseropslag wordt gewist</td>
                 <td>Wordt verwijderd zodra functionele toestemming wordt geweigerd of ingetrokken; kan ook verdwijnen bij het wissen van browseropslag.</td>
               </tr>
+              <tr>
+                <th scope="row">_ga en _ga_*</th>
+                <td>Cookie</td>
+                <td>lorenzowebsolutions.be / Google Analytics</td>
+                <td>First-party cookie geplaatst via Google Analytics</td>
+                <td>Onderscheiden van browsers en meten van websitegebruik nadat analysetoestemming is gegeven.</td>
+                <td>Analyse</td>
+                <td>Google Analytics 4 wordt pas geladen nadat de bezoeker Analyse expliciet toestaat.</td>
+                <td>[BEWAARTERMIJN_GOOGLE_ANALYTICS_TE_BEVESTIGEN]</td>
+                <td>De centrale consentmodule probeert zichtbare <strong>_ga</strong>-cookies client-side te verwijderen zodra analysetoestemming wordt ingetrokken; cookies kunnen ook via de browser worden verwijderd.</td>
+              </tr>
             </tbody>
           </table>
         </div>
-        <p>Niet aangetroffen in de geanalyseerde frontendcode: <strong>document.cookie</strong>, <strong>sessionStorage</strong>, analysecookies, marketingcookies, pixelintegraties en embed-iframes.</p>
+        <p>Niet aangetroffen in de geanalyseerde frontendcode: marketingcookies, pixelintegraties en embed-iframes. Google Analytics gebruikt na analysetoestemming cookies; de centrale module gebruikt <strong>document.cookie</strong> uitsluitend om zichtbare Google Analytics-cookies bij intrekking te verwijderen.</p>
       </section>
 
       <section class="legal-block">
@@ -124,11 +135,12 @@
         <ul>
           <li>Strikt noodzakelijke opslag mag zonder afzonderlijke opt-in werken voor het onthouden van de toestemmingsstatus.</li>
           <li>Functionele opslag is standaard uitgeschakeld tot de bezoeker functionele toestemming geeft.</li>
-          <li>Analyse en marketing staan in de voorkeureninterface standaard uitgeschakeld en er zijn momenteel geen actieve analyse- of marketingscripts aangetroffen in de geanalyseerde frontendcode.</li>
+          <li>Analyse en marketing staan in de voorkeureninterface standaard uitgeschakeld. Google Analytics 4 wordt alleen dynamisch geladen wanneer Analyse expliciet is toegestaan; marketing blijft niet actief.</li>
           <li>Toestemming wordt gegeven via de cookiebanner door alles te accepteren of via het voorkeurenvenster categorieen aan te zetten en op te slaan.</li>
           <li>Toestemming wordt geweigerd via de knop <strong>Alles weigeren</strong> of via het voorkeurenvenster door optionele categorieen uitgeschakeld te laten en de voorkeuren op te slaan.</li>
           <li>Voorkeuren kunnen later opnieuw worden geopend via de knop <strong>Cookievoorkeuren</strong> op iedere publieke hoofdpagina. Op pagina's zonder standaardfooter wordt die knop technisch toegevoegd in de beschikbare paginacontainer.</li>
           <li>Intrekken van functionele toestemming verwijdert in de huidige implementatie de sleutel <strong>site-theme</strong> uit localStorage.</li>
+          <li>Intrekken van analysetoestemming stopt nieuwe Google Analytics-metingen, zet analytics-opslag op geweigerd en probeert zichtbare <strong>_ga</strong>-cookies en gelijknamige browseropslag te verwijderen.</li>
           <li>Opnieuw toestemming vragen gebeurt in de huidige implementatie wanneer <strong>lws_cookie_preferences</strong> ontbreekt, geen geldige JSON bevat, vereiste eigenschappen mist of een andere versiewaarde bevat dan de actuele consentversie.</li>
         </ul>
       </section>
@@ -136,7 +148,8 @@
       <section class="legal-block">
         <h2>Externe diensten en verzoeken</h2>
         <ul>
-          <li>Google Fonts: op de homepage dynamisch geladen via <strong>fonts.googleapis.com</strong> en <strong>fonts.gstatic.com</strong> wanneer functionele toestemming is toegestaan.</li>
+          <li>Google Fonts: geen runtimeverzoeken naar <strong>fonts.googleapis.com</strong> of <strong>fonts.gstatic.com</strong> technisch aangetroffen in de geanalyseerde frontendcode.</li>
+          <li>Google Analytics 4: de Google-tag voor meet-ID <strong>G-9G6H1PN3DG</strong> wordt uitsluitend na expliciete analysetoestemming geladen vanaf <strong>www.googletagmanager.com</strong>; meetverzoeken kunnen daarna naar Google Analytics-domeinen worden verzonden.</li>
           <li>Supabase Edge Functions: browserverzoek naar de eigen backendroute voor formulierverzending na expliciete formulierindiening.</li>
           <li>Resend: server-side e-mailverwerking achter de Supabase Edge Function; geen directe frontendcookie of frontendopslag technisch aangetroffen.</li>
         </ul>
@@ -144,8 +157,8 @@
 
       <section class="legal-block">
         <h2>Scripts en resources voor toestemming</h2>
-        <p>In de huidige homepage-implementatie worden geen analyse- of marketingscripts geladen voor toestemming. Externe lettertypes worden daar pas geladen na functionele toestemming.</p>
-        <p class="legal-note">Bevinding voor opvolging: deze sitebrede situatie moet juridisch en technisch worden afgestemd op alle andere pagina's. Rechtstreekse Google Fonts-links op secundaire pagina's vallen niet onder dezelfde homepage-gating en moeten afzonderlijk worden gecontroleerd.</p>
+        <p>De centrale consentmodule beheert de toestemmingscategorieen en functionele voorkeursopslag. Zonder analysetoestemming wordt Google Analytics niet geladen. Na expliciete analysetoestemming laadt de module de Google-tag dynamisch en initialiseert ze meet-ID <strong>G-9G6H1PN3DG</strong>. Er worden geen marketingscripts geladen.</p>
+        <p class="legal-note">Er zijn technisch geen runtimeverzoeken naar Google Fonts aangetroffen in de geanalyseerde frontendcode.</p>
       </section>
 
       <section class="legal-block">
