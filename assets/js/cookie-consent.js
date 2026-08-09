@@ -1,7 +1,9 @@
 (function () {
+  if (window.__lwsConsentInitialized) return;
+  window.__lwsConsentInitialized = true;
+
   const CONSENT_KEY = "lws_cookie_preferences";
   const CONSENT_VERSION = "2026-08-05";
-  const FONT_FLAG_ATTRIBUTE = "data-lws-fonts-loaded";
   const FUNCTIONAL_STORAGE_KEYS = ["site-theme"];
 
   function nowIso() {
@@ -118,34 +120,6 @@
     });
   }
 
-  function loadGoogleFontsOnce() {
-    if (document.documentElement.getAttribute(FONT_FLAG_ATTRIBUTE) === "1") return;
-
-    const alreadyLoaded = Array.from(document.querySelectorAll("link[href]"))
-      .some((link) => (link.getAttribute("href") || "").includes("fonts.googleapis.com"));
-
-    if (alreadyLoaded) {
-      document.documentElement.setAttribute(FONT_FLAG_ATTRIBUTE, "1");
-      return;
-    }
-
-    const preconnectApi = document.createElement("link");
-    preconnectApi.rel = "preconnect";
-    preconnectApi.href = "https://fonts.googleapis.com";
-
-    const preconnectStatic = document.createElement("link");
-    preconnectStatic.rel = "preconnect";
-    preconnectStatic.href = "https://fonts.gstatic.com";
-    preconnectStatic.crossOrigin = "";
-
-    const stylesheet = document.createElement("link");
-    stylesheet.rel = "stylesheet";
-    stylesheet.href = "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap";
-
-    document.head.append(preconnectApi, preconnectStatic, stylesheet);
-    document.documentElement.setAttribute(FONT_FLAG_ATTRIBUTE, "1");
-  }
-
   function applyConsent(consent) {
     const functionalAllowed = Boolean(consent?.categories?.functional);
     const analyticsAllowed = Boolean(consent?.categories?.analytics);
@@ -155,9 +129,7 @@
     document.documentElement.dataset.cookieAnalytics = analyticsAllowed ? "granted" : "denied";
     document.documentElement.dataset.cookieMarketing = marketingAllowed ? "granted" : "denied";
 
-    if (functionalAllowed) {
-      loadGoogleFontsOnce();
-    } else {
+    if (!functionalAllowed) {
       clearFunctionalStorage();
     }
   }
@@ -205,7 +177,7 @@
       '</fieldset>',
       '<fieldset class="cookie-modal__group">',
       '<legend>Functioneel</legend>',
-      '<label><input type="checkbox" name="functional" /> Voorkeursopslag en externe lettertypes</label>',
+      '<label><input type="checkbox" name="functional" /> Voorkeursopslag, zoals de gekozen weergave</label>',
       '</fieldset>',
       '<fieldset class="cookie-modal__group">',
       '<legend>Analytisch</legend>',
@@ -263,6 +235,23 @@
       if (category === "necessary") return true;
       const categories = state?.categories;
       return Boolean(categories && categories[category]);
+    },
+    getFunctionalStorage(key) {
+      if (!this.isAllowed("functional")) return null;
+      try {
+        return localStorage.getItem(key);
+      } catch (_error) {
+        return null;
+      }
+    },
+    setFunctionalStorage(key, value) {
+      if (!this.isAllowed("functional")) return false;
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (_error) {
+        return false;
+      }
     },
     openPreferences() {
       const modal = document.getElementById("cookieModal");

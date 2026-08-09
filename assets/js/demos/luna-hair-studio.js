@@ -26,7 +26,7 @@
   function initTheme() {
     const docRoot = document.documentElement;
     try {
-      const saved = localStorage.getItem("site-theme");
+      const saved = window.LwsConsent?.getFunctionalStorage("site-theme");
       if (saved === "dark" || saved === "light") {
         docRoot.setAttribute("data-theme", saved);
         return;
@@ -49,7 +49,7 @@
       const next = current === "dark" ? "light" : "dark";
       docRoot.setAttribute("data-theme", next);
       try {
-        localStorage.setItem("site-theme", next);
+        window.LwsConsent?.setFunctionalStorage("site-theme", next);
       } catch (_error) {
         // Ignore storage write errors in private contexts.
       }

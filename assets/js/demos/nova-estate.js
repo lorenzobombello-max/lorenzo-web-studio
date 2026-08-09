@@ -17,7 +17,7 @@
   function initTheme() {
     const root = document.documentElement;
     let saved = null;
-    try { saved = localStorage.getItem("site-theme"); } catch (error) { saved = null; }
+    try { saved = window.LwsConsent?.getFunctionalStorage("site-theme"); } catch (error) { saved = null; }
     if (saved === "light" || saved === "dark") {
       root.setAttribute("data-theme", saved);
       return;
@@ -34,7 +34,7 @@
       const current = root.getAttribute("data-theme") || "light";
       const next = current === "dark" ? "light" : "dark";
       root.setAttribute("data-theme", next);
-      try { localStorage.setItem("site-theme", next); } catch (error) {}
+      try { window.LwsConsent?.setFunctionalStorage("site-theme", next); } catch (error) {}
     });
   }
 
