@@ -36,6 +36,17 @@
   const progressBar = document.getElementById("progressBar");
   const contextStatus = document.getElementById("contextStatus");
   const priorityCount = document.getElementById("priorityCount");
+  const budgetGuardPreview = document.getElementById("budgetGuardPreview");
+  const budgetGuardState = document.getElementById("budgetGuardState");
+  const budgetGuardStatus = document.getElementById("budgetGuardStatus");
+  const budgetGuardBudget = document.getElementById("budgetGuardBudget");
+  const budgetGuardPackageRow = document.getElementById("budgetGuardPackageRow");
+  const budgetGuardPackage = document.getElementById("budgetGuardPackage");
+  const budgetGuardMinimumRow = document.getElementById("budgetGuardMinimumRow");
+  const budgetGuardMinimum = document.getElementById("budgetGuardMinimum");
+  const budgetGuardPackageAdvice = document.getElementById("budgetGuardPackageAdvice");
+  const budgetGuardWarningActions = document.getElementById("budgetGuardWarningActions");
+  const packageSelectionGroup = form.querySelector(".package-grid");
   let currentStep = 0;
   let dirty = false;
   let busy = false;
@@ -44,7 +55,15 @@
   let restoredLegacyBudget = null;
   let restoredBudgetEvidence = null;
   let budgetChoiceChanged = false;
+  let scopeRevision = 0;
+  let pricingEvidenceFingerprint = "";
+  let activeRequestFingerprint = "";
+  let previewTimer = null;
+  let previewAbortController = null;
+  let previewPausedUntil = 0;
+  let previewStopped = false;
 
+  const PREVIEW_DEBOUNCE_MS = 350;
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
@@ -56,6 +75,76 @@
     "EUR 3.200 t/m EUR 6.000": "3200_to_6000_inclusive",
     "Meer dan EUR 6.000": "above_6000",
   };
+  const budgetLabels = {
+    below_1800: "Minder dan € 1.800",
+    "1800_to_below_3200": "€ 1.800 tot minder dan € 3.200",
+    "3200_to_6000_inclusive": "€ 3.200 t/m € 6.000",
+    above_6000: "Meer dan € 6.000",
+  };
+  const packageDefinitionIds = new Set(["starter_v1", "professional_v1"]);
+  const pricingEvidenceFields = [
+    "requested_pages", "requested_features", "website_goals", "shop_required", "shop_details",
+    "booking_required", "booking_details", "page_scope_details", "quote_form_details", "primary_language",
+    "additional_languages", "languages", "multilingual_details", "content_status", "image_status",
+    "image_support", "content_media_details", "download_details", "newsletter_details", "hosting_status",
+    "hosting_support", "maintenance_interest", "hosting_maintenance_details", "seo_priority", "seo_details",
+    "integrations", "deadline_details", "budget_update_category", "budget_update_category_scheme",
+    "budget_update_category_code", "selected_package_definition_id",
+  ];
+  const directPricingNames = new Set([
+    "website_goals", "requested_pages", "requested_features", "shop_required", "booking_required",
+    "primary_language", "content_status", "image_status", "image_support", "hosting_status",
+    "hosting_support", "maintenance_interest", "seo_priority", "integrations", "budget_update_category",
+    "selected_package_definition_id",
+  ]);
+  const conditionalPricingIds = new Set([
+    "shop_product_count", "shop_categories", "shop_payments", "shop_shipping", "shop_pickup", "shop_catalog",
+    "booking_type", "booking_existing", "booking_system_name", "booking_calendar", "page_scope_reviews",
+    "page_scope_blog", "page_scope_jobs", "page_scope_gallery", "quote_form_count", "quote_file_uploads",
+    "quote_database_workflow", "quote_automated_processing", "quote_review_approval", "quote_custom_logic",
+    "translations_supplied", "same_language_structure", "multilingual_extensive_seo", "language_integrations",
+    "multilingual_complex_scope", "download_access", "newsletter_scope", "copywriting_scope",
+    "image_work_scope", "paid_stock_handling", "seo_extensive_services", "deadline_commercially_critical",
+    "deadline_hard", "deadline_date", "deadline_reason",
+  ]);
+  const presentationAnchorSelectors = Object.freeze({
+    EXTRA_STANDARD_PAGE: '[data-name="requested_pages"]',
+    EXTRA_LANGUAGE: "#additionalLanguageChoices",
+    CONTACT_FORM: 'input[name="requested_features"][value="contact_form"]',
+    SIMPLE_QUOTE_FORM: "#quoteFormFields",
+    EXTENDED_QUOTE_FORM: "#quoteFormFields",
+    COMPLEX_FORM: "#quoteFormFields",
+    SHOP: 'input[name="shop_required"][value="true"]',
+    BOOKING: 'input[name="booking_required"][value="true"]',
+    MULTILINGUAL_SCOPE: "#multilingualFields",
+    CONTENT_MEDIA: "#content_status",
+    HOSTING_MAINTENANCE: "#hosting_support",
+    SEO_BASE: "#seo_priority",
+    EXTENSIVE_SEO: "#seo_extensive_services",
+    CUSTOMER_LOGIN: 'input[name="requested_features"][value="customer_login"]',
+    EXTERNAL_INTEGRATION: "#integrations",
+    SECURED_DOWNLOADS: "#downloadFields",
+    PROFESSIONAL_PHOTOGRAPHY: 'input[name="image_support"][value="professional_photography"]',
+    SEARCH: 'input[name="requested_features"][value="search"]',
+    RUSH_SCOPE: "#deadlineFields",
+    COPYWRITING: "#copywriting_scope",
+    IMAGE_WORK: "#image_work_scope",
+    PAID_STOCK: "#paid_stock_handling",
+    GALLERY_SCOPE: "#page_scope_gallery",
+    REVIEWS_SCOPE: "#page_scope_reviews",
+    BLOG_SCOPE: "#page_scope_blog",
+    JOBS_SCOPE: "#page_scope_jobs",
+    OTHER_PAGE_SCOPE: 'input[name="requested_pages"][value="other"]',
+    UNKNOWN_PAGE_SCOPE: '[data-name="requested_pages"]',
+    NEWSLETTER_SCOPE: "#newsletterFields",
+    PACKAGE_SCOPE: null,
+  });
+  const pricingBadges = new Map();
+  const budgetStates = new Set(["WITHIN_KNOWN_BUDGET", "KNOWN_MINIMUM_ABOVE_BUDGET", "INDETERMINATE", "MANUAL_REVIEW"]);
+  const itemStates = new Set(["INCLUDED", "FIXED_EXTRA", "FROM_EXTRA", "MANUAL_REVIEW"]);
+  const packageAdviceStates = new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]);
+  const euroFormatter = new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const euroNumberFormatter = new Intl.NumberFormat("nl-BE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
   document.querySelectorAll("[data-options]").forEach((container) => {
     const name = container.getAttribute("data-name");
@@ -89,6 +178,7 @@
   }
 
   function showUnavailable(text) {
+    stopPricingPreview();
     loading.hidden = true;
     workspace.hidden = true;
     success.hidden = true;
@@ -138,6 +228,8 @@
       const value = selectedBoolean(name);
       if (value !== null) data[name] = value;
     });
+    const selectedPackage = form.querySelector('input[name="selected_package_definition_id"]:checked')?.value;
+    if (packageDefinitionIds.has(selectedPackage)) data.selected_package_definition_id = selectedPackage;
     data.confirmation = document.getElementById("confirmation").checked;
 
     if (data.has_existing_website !== true) {
@@ -233,6 +325,353 @@
     return data;
   }
 
+  function collectPricingEvidence() {
+    const source = collectData();
+    const evidence = {};
+    pricingEvidenceFields.forEach((field) => {
+      const value = source[field];
+      if (value !== null && value !== undefined) evidence[field] = value;
+    });
+    if (
+      evidence.content_status == null && evidence.image_status == null &&
+      (!Array.isArray(evidence.image_support) || evidence.image_support.length === 0) &&
+      evidence.content_media_details?.copywriting_scope === "unknown" &&
+      evidence.content_media_details?.image_work_scope === "unknown" &&
+      evidence.content_media_details?.paid_stock_handling === false
+    ) delete evidence.content_media_details;
+    if (evidence.seo_priority == null && evidence.seo_details?.extensive_services !== true) delete evidence.seo_details;
+    if (
+      evidence.deadline_details?.commercially_critical !== true &&
+      evidence.deadline_details?.hard_deadline !== true
+    ) delete evidence.deadline_details;
+    return evidence;
+  }
+
+  function canonicalValue(value) {
+    if (Array.isArray(value)) return value.map(canonicalValue);
+    if (value && typeof value === "object") {
+      return Object.keys(value).sort().reduce((output, key) => {
+        output[key] = canonicalValue(value[key]);
+        return output;
+      }, {});
+    }
+    return value;
+  }
+
+  function pricingFingerprint(evidence) {
+    return JSON.stringify(canonicalValue(evidence));
+  }
+
+  function hasPricingEvidence(evidence) {
+    return Boolean(
+      evidence.budget_update_category || evidence.selected_package_definition_id ||
+      evidence.shop_required === true || evidence.booking_required === true ||
+      evidence.content_status || evidence.image_status || evidence.hosting_status || evidence.hosting_support ||
+      evidence.maintenance_interest || evidence.seo_priority ||
+      ["website_goals", "requested_pages", "requested_features", "additional_languages", "image_support", "integrations"]
+        .some((field) => Array.isArray(evidence[field]) && evidence[field].length > 0)
+    );
+  }
+
+  function isPricingControl(target) {
+    return target instanceof HTMLElement && (
+      directPricingNames.has(target.getAttribute("name")) || conditionalPricingIds.has(target.id) ||
+      target.matches("[data-additional-language], input[name=\"quote_structure_scope\"]")
+    );
+  }
+
+  function initializePricingAnchors() {
+    Object.entries(presentationAnchorSelectors).forEach(([key, selector]) => {
+      if (!selector) return;
+      const target = document.querySelector(selector);
+      if (!target) return;
+      const anchor = target.closest("label") || target.closest(".field") || target;
+      const badge = document.createElement("span");
+      badge.className = "pricing-status";
+      badge.dataset.presentationKey = key;
+      badge.hidden = true;
+      badge.innerHTML = '<span class="pricing-status__visible" aria-hidden="true"></span><span class="sr-only"></span>';
+      anchor.appendChild(badge);
+      pricingBadges.set(key, badge);
+    });
+  }
+
+  function clearPricingPresentation() {
+    pricingBadges.forEach((badge) => {
+      badge.hidden = true;
+      badge.className = "pricing-status";
+      badge.querySelector(".pricing-status__visible").textContent = "";
+      badge.querySelector(".sr-only").textContent = "";
+    });
+    budgetGuardMinimumRow.hidden = true;
+    budgetGuardMinimum.textContent = "";
+    budgetGuardPackageRow.hidden = true;
+    budgetGuardPackage.textContent = "";
+    budgetGuardPackageAdvice.hidden = true;
+    budgetGuardPackageAdvice.textContent = "";
+    budgetGuardWarningActions.hidden = true;
+    budgetGuardPreview.classList.remove("budget-guard--within", "budget-guard--warning", "budget-guard--manual", "budget-guard--indeterminate", "budget-guard--unavailable");
+  }
+
+  function setPreviewLoading() {
+    clearPricingPresentation();
+    budgetGuardPreview.hidden = false;
+    budgetGuardPreview.setAttribute("aria-busy", "true");
+    budgetGuardState.textContent = "Bijwerken";
+    budgetGuardStatus.textContent = "Prijsinformatie wordt bijgewerkt.";
+  }
+
+  function showPreviewUnavailable(text) {
+    clearPricingPresentation();
+    budgetGuardPreview.hidden = false;
+    budgetGuardPreview.setAttribute("aria-busy", "false");
+    budgetGuardPreview.classList.add("budget-guard--unavailable");
+    budgetGuardState.textContent = "Niet beschikbaar";
+    budgetGuardStatus.textContent = text;
+    budgetGuardBudget.textContent = selectedBudgetLabel(null);
+  }
+
+  function stopPricingPreview() {
+    previewStopped = true;
+    clearTimeout(previewTimer);
+    previewTimer = null;
+    previewAbortController?.abort();
+    previewAbortController = null;
+    activeRequestFingerprint = "";
+    budgetGuardPreview?.setAttribute("aria-busy", "false");
+  }
+
+  function selectedBudgetLabel(categoryCode) {
+    if (categoryCode && budgetLabels[categoryCode]) return budgetLabels[categoryCode];
+    const selectedLabel = document.getElementById("budget_update_category").value;
+    const selectedCode = budgetCodes[selectedLabel];
+    return selectedCode ? budgetLabels[selectedCode] : "Nog niet gekozen";
+  }
+
+  function validPreview(preview, revision) {
+    if (
+      !preview || typeof preview !== "object" || ![1, 2].includes(preview.previewVersion) ||
+      preview.scopeRevision !== revision || preview.currency !== "EUR" || preview.vatBasis !== "exclusive" ||
+      preview.nonBinding !== true || !preview.budget || !budgetStates.has(preview.budget.comparisonStatus) ||
+      !(preview.budget.selectedBudgetCategoryCode === null || preview.budget.selectedBudgetCategoryCode in budgetLabels) ||
+      !preview.summary || typeof preview.summary.containsFromPricing !== "boolean" ||
+      typeof preview.summary.manualReviewRequired !== "boolean" || !Array.isArray(preview.items) ||
+      !preview.packageAdvice || !packageAdviceStates.has(preview.packageAdvice.state)
+    ) return false;
+    const selectedPackageId = form.querySelector('input[name="selected_package_definition_id"]:checked')?.value;
+    if (preview.previewVersion === 1 && selectedPackageId) return false;
+    if (preview.previewVersion === 2) {
+      const selectedPackage = preview.selectedPackage;
+      if (
+        !selectedPackage || typeof selectedPackage !== "object" ||
+        !packageDefinitionIds.has(selectedPackage.selectedPackageDefinitionId) ||
+        selectedPackage.selectedPackageDefinitionId !== selectedPackageId ||
+        !["Starter", "Professional"].includes(selectedPackage.label) ||
+        !Number.isSafeInteger(selectedPackage.floorMinor) || selectedPackage.floorMinor < 1 ||
+        !Number.isSafeInteger(selectedPackage.standardPageLimit) || selectedPackage.standardPageLimit < 1 ||
+        !Number.isSafeInteger(selectedPackage.includedCorrectionRounds) || selectedPackage.includedCorrectionRounds < 1
+      ) return false;
+    } else if ("selectedPackage" in preview) return false;
+    if (
+      preview.summary.manualReviewRequired === true && "knownMinimumMinor" in preview.summary ||
+      "knownMinimumMinor" in preview.summary &&
+        (!Number.isSafeInteger(preview.summary.knownMinimumMinor) || preview.summary.knownMinimumMinor < 0)
+    ) return false;
+    const seenKeys = new Set();
+    return preview.items.every((item) => {
+      if (
+        !item || typeof item !== "object" || !(item.presentationKey in presentationAnchorSelectors) ||
+        seenKeys.has(item.presentationKey) || item.labelKey !== `pricing_preview.${item.presentationKey.toLowerCase()}` ||
+        !itemStates.has(item.state) || ("quantity" in item && (!Number.isSafeInteger(item.quantity) || item.quantity < 2))
+      ) return false;
+      seenKeys.add(item.presentationKey);
+      const hasAmount = "amountMinor" in item;
+      if (preview.summary.manualReviewRequired && hasAmount) return false;
+      if (item.state === "FIXED_EXTRA" || item.state === "FROM_EXTRA") {
+        return preview.summary.manualReviewRequired || hasAmount && Number.isSafeInteger(item.amountMinor) && item.amountMinor > 0;
+      }
+      return !hasAmount;
+    });
+  }
+
+  function setPricingBadge(item, suppressAmounts) {
+    if (item.presentationKey === "PACKAGE_SCOPE") return;
+    const badge = pricingBadges.get(item.presentationKey);
+    if (!badge) throw new TypeError("Missing pricing presentation anchor");
+    let visibleText;
+    let accessibleText;
+    let stateClass;
+    if (item.state === "INCLUDED") {
+      visibleText = "Inbegrepen";
+      accessibleText = "Inbegrepen — geen supplement.";
+      stateClass = "included";
+    } else if (item.state === "MANUAL_REVIEW") {
+      visibleText = "Prijs op maat";
+      accessibleText = "Prijs op maat.";
+      stateClass = "manual";
+    } else if (suppressAmounts) {
+      visibleText = "Prijs na beoordeling";
+      accessibleText = "Prijs na persoonlijke beoordeling.";
+      stateClass = "manual";
+    } else {
+      const amount = item.amountMinor / 100;
+      const formattedAmount = euroFormatter.format(amount);
+      const spokenAmount = euroNumberFormatter.format(amount);
+      const quantityVisible = item.quantity ? ` × ${item.quantity}` : "";
+      const quantitySpoken = item.quantity ? `, aantal ${item.quantity}` : "";
+      if (item.state === "FIXED_EXTRA") {
+        visibleText = `+ ${formattedAmount}${quantityVisible}`;
+        accessibleText = `Plus ${spokenAmount} euro exclusief btw${quantitySpoken}.`;
+        stateClass = "fixed";
+      } else {
+        visibleText = `Vanaf + ${formattedAmount}${quantityVisible}`;
+        accessibleText = `Vanaf plus ${spokenAmount} euro exclusief btw${quantitySpoken}.`;
+        stateClass = "from";
+      }
+    }
+    badge.classList.add(`pricing-status--${stateClass}`);
+    badge.querySelector(".pricing-status__visible").textContent = visibleText;
+    badge.querySelector(".sr-only").textContent = accessibleText;
+    badge.hidden = false;
+  }
+
+  function renderPricingPreview(preview) {
+    clearPricingPresentation();
+    const manual = preview.summary.manualReviewRequired;
+    preview.items.forEach((item) => setPricingBadge(item, manual));
+    budgetGuardPreview.hidden = false;
+    budgetGuardPreview.setAttribute("aria-busy", "false");
+    budgetGuardBudget.textContent = selectedBudgetLabel(preview.budget.selectedBudgetCategoryCode);
+    if (preview.previewVersion === 2) {
+      const selectedPackage = preview.selectedPackage;
+      const rounds = selectedPackage.includedCorrectionRounds === 1 ? "correctieronde" : "correctierondes";
+      budgetGuardPackage.textContent = `${selectedPackage.label} — max. ${selectedPackage.standardPageLimit} standaardpagina's, ${selectedPackage.includedCorrectionRounds} ${rounds}`;
+      budgetGuardPackageRow.hidden = false;
+    }
+    if (!manual && Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
+      budgetGuardMinimum.textContent = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
+      budgetGuardMinimumRow.hidden = false;
+    }
+    const state = preview.budget.comparisonStatus;
+    if (state === "WITHIN_KNOWN_BUDGET") {
+      budgetGuardPreview.classList.add("budget-guard--within");
+      budgetGuardState.textContent = "Huidige vergelijking";
+      budgetGuardStatus.textContent = "Het huidige bekende minimum overschrijdt je gekozen budget niet.";
+    } else if (state === "KNOWN_MINIMUM_ABOVE_BUDGET") {
+      budgetGuardPreview.classList.add("budget-guard--warning");
+      budgetGuardState.textContent = "Aandachtspunt";
+      budgetGuardStatus.textContent = "Het huidige bekende minimum ligt boven je gekozen budget.";
+      budgetGuardWarningActions.hidden = false;
+    } else if (state === "MANUAL_REVIEW") {
+      budgetGuardPreview.classList.add("budget-guard--manual");
+      budgetGuardState.textContent = "Persoonlijke beoordeling";
+      budgetGuardStatus.textContent = "Persoonlijke prijsbeoordeling vereist.";
+    } else {
+      budgetGuardPreview.classList.add("budget-guard--indeterminate");
+      budgetGuardState.textContent = "Nog te bepalen";
+      budgetGuardStatus.textContent = "We kunnen budget en scope nog niet betrouwbaar vergelijken.";
+    }
+    if (preview.packageAdvice.state === "CONSIDER_PROFESSIONAL") {
+      budgetGuardPackageAdvice.textContent = "Op basis van je wensen kan Professional interessanter zijn. Er is geen pakket automatisch geselecteerd.";
+      budgetGuardPackageAdvice.hidden = false;
+    } else if (preview.packageAdvice.state === "PERSONAL_REVIEW_RECOMMENDED") {
+      budgetGuardPackageAdvice.textContent = "Je wensen vragen een persoonlijke beoordeling. Er is geen pakket automatisch geselecteerd.";
+      budgetGuardPackageAdvice.hidden = false;
+    }
+  }
+
+  async function handlePreviewError(response, revision) {
+    if (revision !== scopeRevision) return;
+    if (response.status === 401) {
+      showUnavailable("Deze intake-link is ongeldig of niet meer geldig.");
+      return;
+    }
+    if (response.status === 409) {
+      stopPricingPreview();
+      await inspect();
+      return;
+    }
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      const pauseSeconds = Number.isSafeInteger(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 3600) : 60;
+      previewPausedUntil = Date.now() + pauseSeconds * 1000;
+      showPreviewUnavailable("Prijsinformatie is tijdelijk gepauzeerd. Probeer na een korte wachttijd opnieuw.");
+      return;
+    }
+    if (response.status === 400) {
+      showPreviewUnavailable("Prijsinformatie kan niet worden bijgewerkt. Controleer je keuzes.");
+    } else if (response.status === 413) {
+      showPreviewUnavailable("De prijsinformatie kon niet worden bijgewerkt. Je kunt de intake gewoon verder invullen.");
+    } else {
+      showPreviewUnavailable("Prijsinformatie is tijdelijk niet beschikbaar. Je kunt de intake gewoon verder invullen.");
+    }
+  }
+
+  async function requestBudgetGuardPreview(revision, evidence, fingerprint) {
+    if (previewStopped || revision !== scopeRevision) return;
+    const controller = new AbortController();
+    previewAbortController = controller;
+    activeRequestFingerprint = fingerprint;
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "preview_budget_guard", token, scopeRevision: revision, data: evidence }),
+        signal: controller.signal,
+      });
+      let body = {};
+      try { body = await response.json(); } catch { body = {}; }
+      if (revision !== scopeRevision || controller.signal.aborted) return;
+      if (!response.ok) return await handlePreviewError(response, revision);
+      if (!body.ok || !validPreview(body.preview, revision)) {
+        showPreviewUnavailable("Prijsinformatie is tijdelijk niet beschikbaar. Je kunt de intake gewoon verder invullen.");
+        return;
+      }
+      renderPricingPreview(body.preview);
+    } catch (error) {
+      if (error.name !== "AbortError" && revision === scopeRevision) {
+        showPreviewUnavailable("Prijsinformatie is tijdelijk niet beschikbaar. Je kunt de intake gewoon verder invullen.");
+      }
+    } finally {
+      if (revision === scopeRevision && previewAbortController === controller) {
+        previewAbortController = null;
+        activeRequestFingerprint = "";
+        budgetGuardPreview.setAttribute("aria-busy", "false");
+      }
+    }
+  }
+
+  function schedulePricingPreview({ force = false, immediate = false } = {}) {
+    if (readOnly || previewStopped || !token || !endpoint) return;
+    const evidence = collectPricingEvidence();
+    const fingerprint = pricingFingerprint(evidence);
+    if (!force && fingerprint === pricingEvidenceFingerprint) return;
+    pricingEvidenceFingerprint = fingerprint;
+    scopeRevision += 1;
+    const revision = scopeRevision;
+    clearTimeout(previewTimer);
+    previewTimer = null;
+    previewAbortController?.abort();
+    previewAbortController = null;
+    activeRequestFingerprint = "";
+    if (!hasPricingEvidence(evidence)) {
+      clearPricingPresentation();
+      budgetGuardPreview.hidden = true;
+      budgetGuardPreview.setAttribute("aria-busy", "false");
+      return;
+    }
+    if (Date.now() < previewPausedUntil) {
+      showPreviewUnavailable("Prijsinformatie is tijdelijk gepauzeerd. Probeer na een korte wachttijd opnieuw.");
+      return;
+    }
+    setPreviewLoading();
+    const send = () => {
+      if (activeRequestFingerprint === fingerprint || revision !== scopeRevision) return;
+      requestBudgetGuardPreview(revision, evidence, fingerprint);
+    };
+    previewTimer = window.setTimeout(send, immediate ? 0 : PREVIEW_DEBOUNCE_MS);
+  }
+
   function setChoice(name, value) {
     const input = form.querySelector(`input[name="${name}"][value="${String(value)}"]`);
     if (input) input.checked = true;
@@ -247,6 +686,9 @@
     restoredBudgetEvidence = hasBudgetEvidence ? { label: restoredBudgetLabel, code: restoredBudgetCode } : null;
     restoredLegacyBudget = restoredBudgetLabel && !hasBudgetEvidence ? restoredBudgetLabel : null;
     budgetChoiceChanged = false;
+    if (packageDefinitionIds.has(data.selected_package_definition_id)) {
+      setChoice("selected_package_definition_id", data.selected_package_definition_id);
+    }
     Object.entries(data).forEach(([name, value]) => {
       if (arrayFields.includes(name) && Array.isArray(value)) {
         value.forEach((item) => setChoice(name, item));
@@ -372,7 +814,16 @@
     first?.setAttribute?.("aria-invalid", "true");
     const error = document.getElementById(`${name}-error`);
     if (error) error.textContent = text;
+    if (name === "selected_package_definition_id") packageSelectionGroup?.setAttribute("aria-invalid", "true");
     return first || error;
+  }
+
+  function validatePackageSelection() {
+    if (form.querySelector('input[name="selected_package_definition_id"]:checked')) return true;
+    const firstInvalid = markError("selected_package_definition_id", "Kies Starter of Professional om verder te gaan.");
+    firstInvalid?.focus?.();
+    setMessage("Kies eerst een pakket. Je budgetkeuze blijft onafhankelijk.", "error");
+    return false;
   }
 
   function validateSubmit() {
@@ -385,6 +836,10 @@
     ["website_goals", "requested_pages", "design_styles", "priorities"].forEach((name) => {
       if (!data[name]?.length) firstInvalid ||= markError(name, "Kies minstens één optie.");
     });
+    if (!data.selected_package_definition_id) {
+      const packageInvalid = markError("selected_package_definition_id", "Kies Starter of Professional om je intake te verzenden.");
+      firstInvalid ||= packageInvalid;
+    }
     if (data.has_existing_website === true && !data.existing_website_url) firstInvalid ||= markError("existing_website_url", "Vul je huidige website in.");
     if (data.domain_status === "has_domain" && !data.domain_name) firstInvalid ||= markError("domain_name", "Vul je domeinnaam in.");
     if (!data.confirmation) firstInvalid ||= markError("confirmation", "Bevestig je briefing voor verzending.");
@@ -461,6 +916,7 @@
   }
 
   function setReadOnly(status) {
+    stopPricingPreview();
     readOnly = true;
     dirty = false;
     setMessage("", null);
@@ -475,6 +931,7 @@
   }
 
   async function inspect() {
+    previewStopped = false;
     if (!token || !endpoint) return showUnavailable("Deze intake-link is ongeldig of niet meer geldig.");
     try {
       const { response, body } = await request("inspect");
@@ -489,6 +946,7 @@
       showStep(0);
       if (status === "in_progress") setMessage("Je eerder opgeslagen concept is hersteld.", "success");
       if (status === "submitted" || status === "reviewed") setReadOnly(status);
+      else schedulePricingPreview({ force: true, immediate: true });
     } catch { showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw."); }
   }
 
@@ -496,19 +954,35 @@
     if (readOnly) return;
     dirty = true;
     if (event.target.name === "budget_update_category") budgetChoiceChanged = true;
+    if (event.target.name === "selected_package_definition_id") {
+      packageSelectionGroup?.removeAttribute("aria-invalid");
+      document.getElementById("selected_package_definition_id-error").textContent = "";
+      setMessage("", null);
+    }
     if (event.target.name === "priorities") updatePriorities(event.target);
     if (
       ["has_existing_website", "shop_required", "booking_required", "requested_pages", "requested_features", "primary_language"].includes(event.target.name) ||
       event.target.matches("[data-additional-language], #deadline_date, #deadline_reason")
     ) updateConditionals();
+    if (isPricingControl(event.target)) schedulePricingPreview();
   });
   form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(); });
   saveButton.addEventListener("click", saveDraft);
-  nextButton.addEventListener("click", () => showStep(currentStep + 1, true));
+  nextButton.addEventListener("click", () => {
+    if (currentStep === 1 && !validatePackageSelection()) return;
+    showStep(currentStep + 1, true);
+  });
   previousButton.addEventListener("click", () => showStep(currentStep - 1, true));
-  stepButtons.forEach((button) => button.addEventListener("click", () => showStep(Number(button.dataset.stepTarget), true)));
+  stepButtons.forEach((button) => button.addEventListener("click", () => {
+    const targetStep = Number(button.dataset.stepTarget);
+    if (currentStep === 1 && targetStep > currentStep && !validatePackageSelection()) return;
+    showStep(targetStep, true);
+  }));
   modal?.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModal));
   confirmSubmit?.addEventListener("click", submitFinal);
+  document.getElementById("adjustBudget").addEventListener("click", () => showStep(1, true));
+  document.getElementById("reviewScope").addEventListener("click", () => showStep(2, true));
+  document.getElementById("continuePersonalReview").addEventListener("click", () => { budgetGuardWarningActions.hidden = true; });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !modal.hidden) closeModal();
     if (event.key === "Tab" && !modal.hidden) {
@@ -520,5 +994,6 @@
   });
   window.addEventListener("beforeunload", (event) => { if (dirty && !readOnly) event.preventDefault(); });
 
+  initializePricingAnchors();
   inspect();
 })();

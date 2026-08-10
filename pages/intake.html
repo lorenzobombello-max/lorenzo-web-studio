@@ -58,14 +58,14 @@
           <div class="intake-progress__track" aria-hidden="true"><span id="progressBar"></span></div>
           <ol id="stepList">
             <li><button type="button" data-step-target="0" aria-current="step"><span>1</span>Over jouw bedrijf</button></li>
-            <li><button type="button" data-step-target="1"><span>2</span>Doel van de website</button></li>
+            <li><button type="button" data-step-target="1"><span>2</span>Budget &amp; pakket</button></li>
             <li><button type="button" data-step-target="2"><span>3</span>Pagina's en functies</button></li>
             <li><button type="button" data-step-target="3"><span>4</span>Webshop en reservaties</button></li>
             <li><button type="button" data-step-target="4"><span>5</span>Stijl en huisstijl</button></li>
             <li><button type="button" data-step-target="5"><span>6</span>Teksten en beelden</button></li>
             <li><button type="button" data-step-target="6"><span>7</span>Domein en hosting</button></li>
             <li><button type="button" data-step-target="7"><span>8</span>SEO en koppelingen</button></li>
-            <li><button type="button" data-step-target="8"><span>9</span>Planning en budget</button></li>
+            <li><button type="button" data-step-target="8"><span>9</span>Planning</button></li>
             <li><button type="button" data-step-target="9"><span>10</span>Prioriteiten en bevestiging</button></li>
           </ol>
         </aside>
@@ -76,6 +76,29 @@
             <div><span>Type website</span><strong id="contextType">-</strong></div>
             <div><span>Status</span><strong id="contextStatus">Nog niet gestart</strong></div>
           </div>
+
+          <section id="budgetGuardPreview" class="budget-guard" aria-labelledby="budgetGuardTitle" aria-live="polite" aria-atomic="true" aria-busy="false" hidden>
+            <div class="budget-guard__heading">
+              <div>
+                <p class="eyebrow">Budget Guard</p>
+                <h2 id="budgetGuardTitle">Indicatieve prijsinformatie</h2>
+              </div>
+              <span id="budgetGuardState" class="budget-guard__state"></span>
+            </div>
+            <p id="budgetGuardStatus" class="budget-guard__status"></p>
+            <dl class="budget-guard__summary">
+              <div><dt>Gekozen budget</dt><dd id="budgetGuardBudget">Nog niet gekozen</dd></div>
+              <div id="budgetGuardPackageRow" hidden><dt>Gekozen pakket</dt><dd id="budgetGuardPackage"></dd></div>
+              <div id="budgetGuardMinimumRow" hidden><dt>Bekend minimum</dt><dd id="budgetGuardMinimum"></dd></div>
+            </dl>
+            <p id="budgetGuardPackageAdvice" class="budget-guard__advice" hidden></p>
+            <div id="budgetGuardWarningActions" class="budget-guard__actions" hidden>
+              <button class="btn btn--ghost" id="adjustBudget" type="button">Budget aanpassen</button>
+              <button class="btn btn--ghost" id="reviewScope" type="button">Scope herbekijken</button>
+              <button class="btn btn--ghost" id="continuePersonalReview" type="button">Doorgaan voor persoonlijke beoordeling</button>
+            </div>
+            <p class="budget-guard__disclaimer">Indicatieve prijsinformatie — geen formele offerte.</p>
+          </section>
 
           <form id="intakeForm" class="intake-form" novalidate>
             <fieldset class="intake-step" data-step="0">
@@ -92,12 +115,58 @@
             </fieldset>
 
             <fieldset class="intake-step" data-step="1" hidden>
-              <legend>Doel van de website</legend>
-              <p class="intake-step__intro">Welke resultaten moet de website voor je bedrijf opleveren?</p>
+              <legend>Budget &amp; pakket</legend>
+              <p class="intake-step__intro">Geef eerst je budget als richting mee en kies daarna expliciet het pakket dat bij je website past.</p>
               <div class="field field--full"><span class="field-label">Website-doelen</span><div class="choice-grid" data-group="website_goals">
                 <label><input type="checkbox" name="website_goals" value="professional_presence" /> Professionele uitstraling</label><label><input type="checkbox" name="website_goals" value="generate_leads" /> Leads genereren</label><label><input type="checkbox" name="website_goals" value="quote_requests" /> Offerteaanvragen</label><label><input type="checkbox" name="website_goals" value="contact_requests" /> Contactaanvragen</label><label><input type="checkbox" name="website_goals" value="appointments" /> Afspraken</label><label><input type="checkbox" name="website_goals" value="reservations" /> Reservaties</label><label><input type="checkbox" name="website_goals" value="sell_products" /> Producten verkopen</label><label><input type="checkbox" name="website_goals" value="sell_services" /> Diensten verkopen</label><label><input type="checkbox" name="website_goals" value="portfolio" /> Portfolio tonen</label><label><input type="checkbox" name="website_goals" value="information" /> Informeren</label><label><input type="checkbox" name="website_goals" value="recruitment" /> Werving</label><label><input type="checkbox" name="website_goals" value="other" /> Andere</label>
               </div><p class="field-error" id="website_goals-error"></p></div>
               <div class="field field--full"><label for="primary_conversion_goal">Wat is de belangrijkste actie voor een bezoeker?</label><input id="primary_conversion_goal" name="primary_conversion_goal" type="text" maxlength="500" required /></div>
+              <div class="field field--full"><span class="field-label">Is het eerder opgegeven budget nog correct?</span><div class="choice-row"><label><input type="radio" name="budget_confirmed" value="true" /> Ja</label><label><input type="radio" name="budget_confirmed" value="false" /> Nee</label></div></div>
+              <div class="field"><label for="budget_update_category">Bijgewerkt budget</label><select id="budget_update_category" name="budget_update_category"><option value="" disabled>Selecteer</option><option>Minder dan EUR 1.800</option><option>EUR 1.800 tot minder dan EUR 3.200</option><option>EUR 3.200 t/m EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+              <div class="field"><label for="budget_notes">Budgettoelichting</label><textarea id="budget_notes" name="budget_notes" rows="3" maxlength="1000"></textarea></div>
+              <div class="package-selection field field--full">
+                <div class="package-selection__heading">
+                  <div>
+                    <span class="field-label" id="packageSelectionLabel">Kies je pakket</span>
+                    <p id="packageSelectionHint">Budget en pakket zijn onafhankelijk. Je keuze bepaalt het pakketminimum; aanvullende wensen worden apart beoordeeld.</p>
+                  </div>
+                  <span class="package-selection__required">Verplicht voor verzending</span>
+                </div>
+                <div class="package-grid" role="radiogroup" aria-labelledby="packageSelectionLabel" aria-describedby="packageSelectionHint selected_package_definition_id-error">
+                  <label class="package-card">
+                    <input type="radio" name="selected_package_definition_id" value="starter_v1" />
+                    <span class="package-card__topline"><span class="package-card__name">Starter</span><span class="package-card__selection"><span>Selecteer</span><span>Geselecteerd</span></span></span>
+                    <span class="package-card__price">Vanaf <strong>€ 1.800</strong> excl. btw</span>
+                    <span class="package-card__positioning">Voor een compacte zakelijke website binnen normale scope.</span>
+                    <span class="package-card__included">Inbegrepen</span>
+                    <ul>
+                      <li>Maximaal 5 standaardpagina's</li>
+                      <li>1 correctieronde</li>
+                      <li>Navigatie, responsive layout en technische basis</li>
+                      <li>Standaard contactformulier en social links</li>
+                      <li>Verwerking van aangeleverde content en media</li>
+                      <li>Technische SEO-basis</li>
+                    </ul>
+                  </label>
+                  <label class="package-card">
+                    <input type="radio" name="selected_package_definition_id" value="professional_v1" />
+                    <span class="package-card__topline"><span class="package-card__name">Professional</span><span class="package-card__selection"><span>Selecteer</span><span>Geselecteerd</span></span></span>
+                    <span class="package-card__price">Vanaf <strong>€ 3.200</strong> excl. btw</span>
+                    <span class="package-card__positioning">Voor een uitgebreidere zakelijke website binnen normale scope.</span>
+                    <span class="package-card__included">Inbegrepen</span>
+                    <ul>
+                      <li>Maximaal 12 standaardpagina's</li>
+                      <li>2 correctierondes</li>
+                      <li>Navigatie, responsive layout en technische basis</li>
+                      <li>Standaard contactformulier en social links</li>
+                      <li>Verwerking van aangeleverde content en media</li>
+                      <li>Technische SEO-basis</li>
+                    </ul>
+                  </label>
+                </div>
+                <p class="package-selection__note">Inbegrepen opties worden alleen actief wanneer je ze als wens selecteert. Maatwerk en supplementen worden afzonderlijk getoond.</p>
+                <p class="field-error" id="selected_package_definition_id-error" aria-live="polite"></p>
+              </div>
             </fieldset>
 
             <fieldset class="intake-step" data-step="2" hidden>
@@ -195,14 +264,11 @@
             </fieldset>
 
             <fieldset class="intake-step" data-step="8" hidden>
-              <legend>Planning en budget</legend>
-              <p class="intake-step__intro">Een realistische planning en budgetcontext helpen bij een passend voorstel.</p>
+              <legend>Planning</legend>
+              <p class="intake-step__intro">Een realistische planning helpt bij een passend voorstel.</p>
               <div class="field"><label for="deadline_date">Gewenste deadline</label><input id="deadline_date" name="deadline_date" type="date" min="2000-01-01" max="2100-12-31" /></div>
               <div class="field"><label for="deadline_reason">Waarom deze deadline?</label><textarea id="deadline_reason" name="deadline_reason" rows="3" maxlength="1000"></textarea></div>
               <div id="deadlineFields" class="conditional-panel field--full" hidden><div class="choice-grid compact field--full"><label><input id="deadline_commercially_critical" type="checkbox" /> De datum is commercieel belangrijk</label><label><input id="deadline_hard" type="checkbox" /> De datum is een harde deadline</label></div></div>
-              <div class="field field--full"><span class="field-label">Is het eerder opgegeven budget nog correct?</span><div class="choice-row"><label><input type="radio" name="budget_confirmed" value="true" /> Ja</label><label><input type="radio" name="budget_confirmed" value="false" /> Nee</label></div></div>
-              <div class="field"><label for="budget_update_category">Bijgewerkt budget</label><select id="budget_update_category" name="budget_update_category"><option value="" disabled>Selecteer</option><option>Minder dan EUR 1.800</option><option>EUR 1.800 tot minder dan EUR 3.200</option><option>EUR 3.200 t/m EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
-              <div class="field"><label for="budget_notes">Budgettoelichting</label><textarea id="budget_notes" name="budget_notes" rows="3" maxlength="1000"></textarea></div>
             </fieldset>
 
             <fieldset class="intake-step" data-step="9" hidden>
