@@ -26,7 +26,18 @@ function normalizeText(value: unknown): string {
   return value
     .normalize("NFKC")
     .replace(/\r\n?/g, "\n")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .split("")
+    .filter((character) => {
+      const codeUnit = character.charCodeAt(0);
+      return !(
+        codeUnit <= 0x08 ||
+        codeUnit === 0x0b ||
+        codeUnit === 0x0c ||
+        (codeUnit >= 0x0e && codeUnit <= 0x1f) ||
+        codeUnit === 0x7f
+      );
+    })
+    .join("")
     .trim();
 }
 

@@ -447,8 +447,24 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
   return { subject, html, text };
 }
 
+function replaceAsciiControlRunsWithSpace(value: string): string {
+  let output = "";
+  let replacingControlRun = false;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const isControl = codePoint <= 0x1f || codePoint === 0x7f;
+    if (isControl) {
+      if (!replacingControlRun) output += " ";
+    } else {
+      output += character;
+    }
+    replacingControlRun = isControl;
+  }
+  return output;
+}
+
 export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailData) {
-  const subjectLabel = (data.company || data.clientName).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  const subjectLabel = replaceAsciiControlRunsWithSpace(data.company || data.clientName).trim();
   const subject = `Nieuwe websitebriefing ontvangen — ${subjectLabel}`;
   const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
   const submittedAt = new Date(data.submittedAt).toLocaleString("nl-BE", {
