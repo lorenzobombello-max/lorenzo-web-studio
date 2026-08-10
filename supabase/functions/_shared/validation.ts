@@ -28,6 +28,15 @@ const BUDGETS = new Set([
   "EUR 1.500 - EUR 3.000",
   "EUR 3.000 - EUR 6.000",
   "Meer dan EUR 6.000",
+  "Minder dan EUR 1.800",
+  "EUR 1.800 tot minder dan EUR 3.200",
+  "EUR 3.200 t/m EUR 6.000",
+]);
+const BUDGET_GUARD_CATEGORIES = new Map([
+  ["below_1800", "Minder dan EUR 1.800"],
+  ["1800_to_below_3200", "EUR 1.800 tot minder dan EUR 3.200"],
+  ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
+  ["above_6000", "Meer dan EUR 6.000"],
 ]);
 const TIMINGS = new Set([
   "Binnen 1 maand",
@@ -44,6 +53,21 @@ const INTAKE_FIELDS = new Set([
   "hosting_support", "maintenance_interest", "seo_priority", "seo_keywords", "social_channels",
   "integrations", "deadline_date", "deadline_reason", "budget_confirmed",
   "budget_update_category", "budget_notes", "priorities", "additional_notes", "confirmation",
+  "primary_language", "additional_languages", "page_scope_details", "quote_form_details",
+  "multilingual_details", "download_details", "content_media_details", "newsletter_details",
+  "hosting_maintenance_details", "deadline_details", "seo_details",
+  "budget_update_category_scheme", "budget_update_category_code",
+]);
+export const INTAKE_EVIDENCE_FIELDS = new Set([
+  "primary_language", "additional_languages", "page_scope_details", "quote_form_details",
+  "multilingual_details", "download_details", "content_media_details", "newsletter_details",
+  "hosting_maintenance_details", "deadline_details", "seo_details",
+  "budget_update_category_scheme", "budget_update_category_code",
+]);
+const FORBIDDEN_PRICING_FIELDS = new Set([
+  "knownMinimumMinor", "appliedRules", "manualReviewRequired", "manualReasons",
+  "packageAdvice", "budgetEvaluation", "pricingConfigVersion", "pricingConfigHash",
+  "pricingSnapshot",
 ]);
 const WEBSITE_GOALS = new Set([
   "professional_presence", "generate_leads", "quote_requests", "contact_requests", "appointments",
@@ -97,7 +121,18 @@ function normalizeText(value: unknown): string {
   return value
     .normalize("NFKC")
     .replace(/\r\n?/g, "\n")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .split("")
+    .filter((character) => {
+      const codeUnit = character.charCodeAt(0);
+      return !(
+        codeUnit <= 0x08 ||
+        codeUnit === 0x0b ||
+        codeUnit === 0x0c ||
+        (codeUnit >= 0x0e && codeUnit <= 0x1f) ||
+        codeUnit === 0x7f
+      );
+    })
+    .join("")
     .trim();
 }
 
@@ -128,6 +163,12 @@ function normalizeBoolean(field: string, value: unknown): boolean {
 function normalizeOption(field: string, value: unknown, allowed: Set<string>): string | null {
   const normalized = normalizeNullableText(field, value, 80);
   if (normalized !== null) assertAllowed(field, normalized, allowed);
+  return normalized;
+}
+
+function normalizeRequiredOption(field: string, value: unknown, allowed: Set<string>): string {
+  const normalized = normalizeOption(field, value, allowed);
+  if (normalized === null) throw new InputValidationError("INVALID_OPTION", field);
   return normalized;
 }
 
@@ -233,6 +274,106 @@ function normalizeBookingDetails(value: unknown): Record<string, unknown> | null
   };
 }
 
+function normalizeEvidenceObject(
+  field: string,
+  value: unknown,
+  allowedKeys: readonly string[],
+): Record<string, unknown> | null {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new InputValidationError("INVALID_TYPE", field);
+  }
+  const input = value as Record<string, unknown>;
+  const unknownKey = Object.keys(input).find((key) => !allowedKeys.includes(key));
+  if (unknownKey) throw new InputValidationError("INVALID_SCHEMA", `${field}.${unknownKey}`);
+  return input;
+}
+
+function normalizeEvidenceBooleanObject(field: string, value: unknown, keys: readonly string[]): Record<string, unknown> | null {
+  const input = normalizeEvidenceObject(field, value, keys);
+  if (input === null) return null;
+  return Object.fromEntries(Object.entries(input).map(([key, entry]) => [key, normalizeBoolean(`${field}.${key}`, entry)]));
+}
+
+function normalizePageScopeDetails(value: unknown): Record<string, unknown> | null {
+  const field = "page_scope_details";
+  const input = normalizeEvidenceObject(field, value, ["reviews", "blog", "jobs", "gallery"]);
+  if (input === null) return null;
+  const allowed = new Set(["normal", "complex", "unknown"]);
+  return Object.fromEntries(Object.entries(input).map(([key, entry]) => [key, normalizeRequiredOption(`${field}.${key}`, entry, allowed)]));
+}
+
+function normalizeQuoteFormDetails(value: unknown): Record<string, unknown> | null {
+  const field = "quote_form_details";
+  const booleanKeys = ["file_uploads", "database_workflow", "automated_processing", "review_approval", "custom_logic"];
+  const input = normalizeEvidenceObject(field, value, ["classification", ...booleanKeys, "form_count", "structure_scope"]);
+  if (input === null) return null;
+  const output: Record<string, unknown> = {};
+  if ("classification" in input) {
+    output.classification = normalizeRequiredOption(`${field}.classification`, input.classification, new Set(["simple", "extended", "complex", "unknown"]));
+  }
+  if ("structure_scope" in input) {
+    output.structure_scope = normalizeRequiredOption(`${field}.structure_scope`, input.structure_scope, new Set([
+      "basic_single_section", "extended_standard_structure", "unsure_or_other",
+    ]));
+  }
+  for (const key of booleanKeys) {
+    if (key in input) output[key] = normalizeBoolean(`${field}.${key}`, input[key]);
+  }
+  if ("form_count" in input) {
+    if (!Number.isInteger(input.form_count) || Number(input.form_count) < 1 || Number(input.form_count) > 20) {
+      throw new InputValidationError("INVALID_RANGE", `${field}.form_count`);
+    }
+    output.form_count = input.form_count;
+  }
+  if ("classification" in output) {
+    // Legacy compatibility only; authoritative pricing must derive from raw structure and complexity facts.
+    const hasComplexSignals = booleanKeys.some((key) => output[key] === true) || Number(output.form_count) > 1;
+    if ((hasComplexSignals && output.classification !== "complex") || (!hasComplexSignals && output.classification === "complex")) {
+      throw new InputValidationError("INCOHERENT_QUOTE_FORM_EVIDENCE", `${field}.classification`);
+    }
+  }
+  return output;
+}
+
+function normalizeSingleOptionEvidence(
+  field: string,
+  value: unknown,
+  key: string,
+  allowed: Set<string>,
+): Record<string, unknown> | null {
+  const input = normalizeEvidenceObject(field, value, [key]);
+  if (input === null) return null;
+  return key in input ? { [key]: normalizeRequiredOption(`${field}.${key}`, input[key], allowed) } : {};
+}
+
+function normalizeContentMediaDetails(value: unknown): Record<string, unknown> | null {
+  const field = "content_media_details";
+  const input = normalizeEvidenceObject(field, value, ["copywriting_scope", "image_work_scope", "paid_stock_handling"]);
+  if (input === null) return null;
+  const output: Record<string, unknown> = {};
+  if ("copywriting_scope" in input) {
+    output.copywriting_scope = normalizeRequiredOption(`${field}.copywriting_scope`, input.copywriting_scope, new Set(["none", "light", "substantial", "unknown"]));
+  }
+  if ("image_work_scope" in input) {
+    output.image_work_scope = normalizeRequiredOption(`${field}.image_work_scope`, input.image_work_scope, new Set(["none", "standard", "exceptional", "unknown"]));
+  }
+  if ("paid_stock_handling" in input) {
+    output.paid_stock_handling = normalizeBoolean(`${field}.paid_stock_handling`, input.paid_stock_handling);
+  }
+  return output;
+}
+
+function normalizeHostingMaintenanceDetails(value: unknown): Record<string, unknown> | null {
+  const field = "hosting_maintenance_details";
+  const input = normalizeEvidenceObject(field, value, ["hosting_support", "maintenance_interest"]);
+  if (input === null) return null;
+  const output: Record<string, unknown> = {};
+  if ("hosting_support" in input) output.hosting_support = normalizeRequiredOption(`${field}.hosting_support`, input.hosting_support, HOSTING_SUPPORT);
+  if ("maintenance_interest" in input) output.maintenance_interest = normalizeRequiredOption(`${field}.maintenance_interest`, input.maintenance_interest, MAINTENANCE_INTEREST);
+  return output;
+}
+
 const TEXT_LIMITS: Record<string, number> = {
   business_description: 3000,
   target_audience: 2000,
@@ -277,6 +418,8 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
     throw new InputValidationError("INVALID_PAYLOAD");
   }
   const input = payload as Record<string, unknown>;
+  const forbiddenField = Object.keys(input).find((field) => FORBIDDEN_PRICING_FIELDS.has(field));
+  if (forbiddenField) throw new InputValidationError("PRICING_OUTPUT_NOT_ALLOWED", forbiddenField);
   const unknownField = Object.keys(input).find((field) => !INTAKE_FIELDS.has(field));
   if (unknownField) throw new InputValidationError("UNKNOWN_FIELD", unknownField);
 
@@ -292,7 +435,49 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
     else if (field === "deadline_date") output[field] = normalizeDate(field, value);
     else if (field === "shop_details") output[field] = normalizeShopDetails(value);
     else if (field === "booking_details") output[field] = normalizeBookingDetails(value);
+    else if (field === "primary_language") output[field] = normalizeNullableText(field, value, 35);
+    else if (field === "additional_languages") output[field] = value === null ? null : normalizeArray(field, value, 8, 35);
+    else if (field === "page_scope_details") output[field] = normalizePageScopeDetails(value);
+    else if (field === "quote_form_details") output[field] = normalizeQuoteFormDetails(value);
+    else if (field === "multilingual_details") {
+      output[field] = normalizeEvidenceBooleanObject(field, value, [
+        "final_translations_supplied", "same_structure", "extensive_seo",
+        "language_specific_integrations", "complex_scope",
+      ]);
+    } else if (field === "download_details") {
+      output[field] = normalizeSingleOptionEvidence(field, value, "access", new Set(["public", "secured", "both", "unknown"]));
+    } else if (field === "content_media_details") output[field] = normalizeContentMediaDetails(value);
+    else if (field === "newsletter_details") {
+      output[field] = normalizeSingleOptionEvidence(field, value, "scope", new Set([
+        "simple_existing_service", "new_service_setup", "automation_or_segmentation", "unknown",
+      ]));
+    } else if (field === "hosting_maintenance_details") output[field] = normalizeHostingMaintenanceDetails(value);
+    else if (field === "deadline_details") {
+      output[field] = normalizeEvidenceBooleanObject(field, value, ["commercially_critical", "hard_deadline"]);
+    } else if (field === "seo_details") {
+      output[field] = normalizeEvidenceBooleanObject(field, value, ["extensive_services"]);
+    } else if (field === "budget_update_category_scheme") {
+      output[field] = normalizeOption(field, value, new Set(["budget_guard_v1"]));
+    } else if (field === "budget_update_category_code") {
+      output[field] = normalizeOption(field, value, new Set(BUDGET_GUARD_CATEGORIES.keys()));
+    }
     else output[field] = normalizeBoolean(field, value);
+  }
+
+  const hasBudgetScheme = "budget_update_category_scheme" in output;
+  const hasBudgetCode = "budget_update_category_code" in output;
+  if (hasBudgetScheme || hasBudgetCode) {
+    if (
+      !hasBudgetScheme || !hasBudgetCode ||
+      typeof output.budget_update_category_scheme !== "string" ||
+      typeof output.budget_update_category_code !== "string" ||
+      typeof output.budget_update_category !== "string"
+    ) {
+      throw new InputValidationError("INCOHERENT_BUDGET_EVIDENCE", "budget_update_category");
+    }
+    if (BUDGET_GUARD_CATEGORIES.get(String(output.budget_update_category_code)) !== output.budget_update_category) {
+      throw new InputValidationError("INCOHERENT_BUDGET_EVIDENCE", "budget_update_category");
+    }
   }
 
   if (output.has_existing_website === false) {
@@ -344,6 +529,26 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
   }
 
   return output;
+}
+
+export function partitionIntakeData(input: Record<string, unknown>): {
+  legacyData: Record<string, unknown>;
+  evidenceData: Record<string, unknown>;
+} {
+  const legacyData: Record<string, unknown> = {};
+  const evidenceData: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(input)) {
+    if (INTAKE_EVIDENCE_FIELDS.has(field)) evidenceData[field] = value;
+    else legacyData[field] = value;
+  }
+  if (
+    "budget_update_category_scheme" in evidenceData &&
+    "budget_update_category_code" in evidenceData &&
+    "budget_update_category" in legacyData
+  ) {
+    evidenceData.budget_update_category = legacyData.budget_update_category;
+  }
+  return { legacyData, evidenceData };
 }
 
 export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuotePayload {

@@ -1,7 +1,15 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { buildAuthoritativeSubmitData } from "../_shared/authoritative-intake.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { buildSubmittedIntakeAdminEmail } from "../_shared/email-templates.ts";
+import {
+  resolveBudgetEvidence,
+  selectPricingSnapshotForSubmit,
+  type PricingSnapshotV2,
+} from "../_shared/pricing-engine.ts";
+import { createPricingSnapshotIntegrity } from "../_shared/pricing-snapshot-integrity.ts";
+import { dispatchPricingRead } from "../_shared/pricing-read-dispatch.ts";
 import {
   buildAdminIntakeUrl,
   computeAdminIntakeTokenExpiry,
@@ -14,6 +22,7 @@ import {
 import type { EmailJobStatus, IntakeAction, IntakeStatus } from "../_shared/types.ts";
 import {
   InputValidationError,
+  partitionIntakeData,
   sanitizeAndValidateIntakeData,
   validateToken,
 } from "../_shared/validation.ts";
@@ -88,7 +97,9 @@ function validateAction(value: unknown): IntakeAction {
     value === "inspect" ||
     value === "save_draft" ||
     value === "submit" ||
-    value === "inspect_submitted_intake_admin"
+    value === "inspect_submitted_intake_admin" ||
+    value === "inspect_customer_pricing" ||
+    value === "inspect_admin_pricing"
   ) return value;
   throw new IntakeRequestError(400, "INVALID_ACTION");
 }
@@ -118,6 +129,79 @@ interface SubmittedIntakeNotificationContext {
   clientName: string;
   company: string | null;
   submittedAt: string;
+}
+
+interface AuthoritativePricingContext {
+  intakeId: string;
+  intakeStatus: IntakeStatus;
+  effectiveEvidence: Record<string, unknown>;
+  budgetLabel: unknown;
+  budgetScheme: unknown;
+  budgetCode: unknown;
+  existingSnapshot: Record<string, unknown> | null;
+}
+
+async function loadAuthoritativePricingContext(
+  supabase: SupabaseClient,
+  intakeTokenHash: string,
+  submittedData: Record<string, unknown>,
+): Promise<AuthoritativePricingContext | null> {
+  const { data: inspectionData, error: inspectionError } = await supabase.rpc(
+    "inspect_quote_request_intake_details_v3",
+    { p_access_token_hash: intakeTokenHash },
+  );
+  const inspection = Array.isArray(inspectionData) ? inspectionData[0] : null;
+  if (
+    inspectionError || !inspection || !isIntakeStatus(inspection.intake_status)
+  ) return null;
+
+  const storedEvidence = inspection.intake_data &&
+      typeof inspection.intake_data === "object" &&
+      !Array.isArray(inspection.intake_data)
+    ? inspection.intake_data as Record<string, unknown>
+    : {};
+  const effectiveEvidence = buildAuthoritativeSubmitData(
+    storedEvidence,
+    submittedData,
+  );
+  const existingSnapshot = inspection.pricing_snapshot &&
+      typeof inspection.pricing_snapshot === "object" &&
+      !Array.isArray(inspection.pricing_snapshot)
+    ? inspection.pricing_snapshot as Record<string, unknown>
+    : null;
+
+  const { data: intake, error: intakeError } = await supabase
+    .from("quote_request_intakes")
+    .select("quote_request_id")
+    .eq("id", inspection.intake_id)
+    .eq("access_token_hash", intakeTokenHash)
+    .maybeSingle();
+  if (intakeError || !intake || !isUuid(intake.quote_request_id)) return null;
+
+  const { data: quoteRequest, error: requestError } = await supabase
+    .from("quote_requests")
+    .select("budget, budget_category_scheme, budget_category_code")
+    .eq("id", intake.quote_request_id)
+    .maybeSingle();
+  if (requestError || !quoteRequest) return null;
+
+  const hasBudgetUpdate = typeof effectiveEvidence.budget_update_category ===
+      "string" && effectiveEvidence.budget_update_category.length > 0;
+  return {
+    intakeId: inspection.intake_id,
+    intakeStatus: inspection.intake_status,
+    effectiveEvidence,
+    budgetLabel: hasBudgetUpdate
+      ? effectiveEvidence.budget_update_category
+      : quoteRequest.budget,
+    budgetScheme: hasBudgetUpdate
+      ? effectiveEvidence.budget_update_category_scheme
+      : quoteRequest.budget_category_scheme,
+    budgetCode: hasBudgetUpdate
+      ? effectiveEvidence.budget_update_category_code
+      : quoteRequest.budget_category_code,
+    existingSnapshot,
+  };
 }
 
 async function loadSubmittedIntakeNotificationContext(
@@ -240,7 +324,8 @@ Deno.serve(async (request) => {
   }
 
   if (
-    (action === "submit" || action === "inspect_submitted_intake_admin") &&
+    (action === "submit" || action === "inspect_submitted_intake_admin" ||
+      action === "inspect_admin_pricing") &&
     !Deno.env.get("ADMIN_INTAKE_TOKEN_SECRET")
   ) {
     return jsonResponse(500, {
@@ -253,6 +338,14 @@ Deno.serve(async (request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (action === "inspect_admin_pricing") {
+    return await dispatchPricingRead("admin", body.token, origin, supabase);
+  }
+
+  if (action === "inspect_customer_pricing") {
+    return await dispatchPricingRead("customer", body.token, origin, supabase);
+  }
 
   if (action === "inspect_submitted_intake_admin") {
     let adminToken: string;
@@ -416,7 +509,7 @@ Deno.serve(async (request) => {
 
   const intakeTokenHash = await hashIntakeToken(intakeToken);
   if (action === "inspect") {
-    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details", {
+    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v2", {
       p_access_token_hash: intakeTokenHash,
     });
     const result = Array.isArray(data) ? data[0] : null;
@@ -483,18 +576,61 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
-  const mutationParameters: Record<string, unknown> = {
-    p_access_token_hash: intakeTokenHash,
-    p_action: action,
-    p_data: intakeData,
-  };
+  const { legacyData, evidenceData } = partitionIntakeData(intakeData);
+  const hasEvidence = Object.keys(evidenceData).length > 0;
+  let mutationRpc: string;
+  let mutationParameters: Record<string, unknown>;
   let rawAdminCapability: string | null = null;
 
   if (action === "submit") {
+    const pricingContext = await loadAuthoritativePricingContext(
+      supabase,
+      intakeTokenHash,
+      intakeData,
+    );
+    if (!pricingContext) return invalidIntakeToken(origin);
+
+    let existingSnapshot: Record<string, unknown> | null = null;
+    if (pricingContext.intakeStatus === "submitted") {
+      if (!pricingContext.existingSnapshot) {
+        return jsonResponse(500, {
+          ok: false,
+          code: "AUTHORITATIVE_SNAPSHOT_UNAVAILABLE",
+          message: "Submitted intake pricing is unavailable.",
+        }, origin);
+      }
+      existingSnapshot = pricingContext.existingSnapshot;
+    }
+    const budgetEvidence = resolveBudgetEvidence(
+      pricingContext.budgetLabel,
+      pricingContext.budgetScheme,
+      pricingContext.budgetCode,
+    );
+    const pricingSnapshot: PricingSnapshotV2 | Record<string, unknown> =
+      await selectPricingSnapshotForSubmit(
+        pricingContext.effectiveEvidence,
+        budgetEvidence,
+        existingSnapshot,
+      );
+
     try {
+      const pricingSnapshotIntegrity = await createPricingSnapshotIntegrity(
+        pricingSnapshot,
+        pricingContext.intakeId,
+      );
       rawAdminCapability = await deriveAdminIntakeCapability(intakeTokenHash);
-      mutationParameters.p_admin_access_token_hash = await hashAdminIntakeToken(rawAdminCapability);
-      mutationParameters.p_admin_access_token_expires_at = computeAdminIntakeTokenExpiry();
+      mutationParameters = {
+        p_access_token_hash: intakeTokenHash,
+        p_action: action,
+        p_data: pricingContext.effectiveEvidence,
+        p_admin_access_token_hash: await hashAdminIntakeToken(
+          rawAdminCapability,
+        ),
+        p_admin_access_token_expires_at: computeAdminIntakeTokenExpiry(),
+        p_budget_guard_snapshot: pricingSnapshot,
+        p_pricing_snapshot_integrity: pricingSnapshotIntegrity,
+      };
+      mutationRpc = "update_quote_request_intake_v4";
     } catch {
       return jsonResponse(500, {
         ok: false,
@@ -502,9 +638,23 @@ Deno.serve(async (request) => {
         message: "Server configuration is incomplete.",
       }, origin);
     }
+  } else {
+    mutationParameters = hasEvidence ? {
+      p_access_token_hash: intakeTokenHash,
+      p_action: action,
+      p_legacy_data: legacyData,
+      p_evidence_data: evidenceData,
+    } : {
+      p_access_token_hash: intakeTokenHash,
+      p_action: action,
+      p_data: intakeData,
+    };
+    mutationRpc = hasEvidence
+      ? "update_quote_request_intake_with_evidence"
+      : "update_quote_request_intake";
   }
 
-  const { data, error } = await supabase.rpc("update_quote_request_intake", mutationParameters);
+  const { data, error } = await supabase.rpc(mutationRpc, mutationParameters);
   const result = Array.isArray(data) ? data[0] : null;
 
   if (error || !result) {

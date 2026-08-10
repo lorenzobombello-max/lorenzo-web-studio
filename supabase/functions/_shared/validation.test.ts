@@ -1,5 +1,10 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { InputValidationError, sanitizeAndValidateSubmitPayload } from "./validation.ts";
+import {
+  InputValidationError,
+  partitionIntakeData,
+  sanitizeAndValidateIntakeData,
+  sanitizeAndValidateSubmitPayload,
+} from "./validation.ts";
 
 const basePayload = {
   name: "Lorenzo Bombello",
@@ -141,4 +146,211 @@ Deno.test("rejects a Belgian enterprise number with an invalid check digit", () 
     InputValidationError,
     "INVALID_FORMAT",
   );
+});
+
+Deno.test("intake validator accepts and partitions closed raw evidence", () => {
+  const result = sanitizeAndValidateIntakeData({
+    business_description: "Legacy data",
+    primary_language: "nl",
+    additional_languages: ["fr", "en"],
+    page_scope_details: { blog: "normal", gallery: "complex" },
+    quote_form_details: { classification: "extended", file_uploads: false, form_count: 1 },
+    multilingual_details: {
+      final_translations_supplied: true,
+      same_structure: true,
+      extensive_seo: false,
+      language_specific_integrations: false,
+      complex_scope: false,
+    },
+    download_details: { access: "public" },
+    content_media_details: { copywriting_scope: "light", image_work_scope: "standard", paid_stock_handling: false },
+    newsletter_details: { scope: "simple_existing_service" },
+    hosting_maintenance_details: { hosting_support: "advice", maintenance_interest: "maybe" },
+    deadline_details: { commercially_critical: false, hard_deadline: true },
+    seo_details: { extensive_services: false },
+    budget_update_category: "EUR 3.200 t/m EUR 6.000",
+    budget_update_category_scheme: "budget_guard_v1",
+    budget_update_category_code: "3200_to_6000_inclusive",
+  }, "draft");
+  const partitioned = partitionIntakeData(result);
+  assertEquals(partitioned.legacyData.business_description, "Legacy data");
+  assertEquals(partitioned.legacyData.budget_update_category, "EUR 3.200 t/m EUR 6.000");
+  assertEquals(partitioned.evidenceData.primary_language, "nl");
+  assertEquals(partitioned.evidenceData.budget_update_category, "EUR 3.200 t/m EUR 6.000");
+  assertEquals(partitioned.evidenceData.budget_update_category_code, "3200_to_6000_inclusive");
+});
+
+Deno.test("legacy quote form classification remains coherent with complex signals", () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["simple", { classification: "simple", file_uploads: false, form_count: 1 }],
+    ["file upload", { classification: "complex", file_uploads: true, form_count: 1 }],
+    ["multiple forms", { classification: "complex", file_uploads: false, form_count: 2 }],
+    ["database workflow", { classification: "complex", database_workflow: true, form_count: 1 }],
+    ["automated processing", { classification: "complex", automated_processing: true, form_count: 1 }],
+    ["review approval", { classification: "complex", review_approval: true, form_count: 1 }],
+    ["custom logic", { classification: "complex", custom_logic: true, form_count: 1 }],
+  ];
+  for (const [name, quoteFormDetails] of cases) {
+    const result = sanitizeAndValidateIntakeData({ quote_form_details: quoteFormDetails }, "draft");
+    assertEquals(result.quote_form_details, quoteFormDetails, name);
+  }
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      quote_form_details: { classification: "extended", file_uploads: true, form_count: 1 },
+    }, "draft"),
+    InputValidationError,
+    "INCOHERENT_QUOTE_FORM_EVIDENCE",
+  );
+});
+
+Deno.test("quote form structure scope accepts only closed raw evidence", () => {
+  for (const structureScope of [
+    "basic_single_section",
+    "extended_standard_structure",
+    "unsure_or_other",
+  ]) {
+    const result = sanitizeAndValidateIntakeData({
+      quote_form_details: { structure_scope: structureScope },
+    }, "draft");
+    assertEquals(result.quote_form_details, { structure_scope: structureScope });
+  }
+
+  for (const structureScope of ["unknown", 1, true, [], {}]) {
+    assertThrows(
+      () => sanitizeAndValidateIntakeData({
+        quote_form_details: { structure_scope: structureScope },
+      }, "draft"),
+      InputValidationError,
+    );
+  }
+});
+
+Deno.test("quote form raw structure and complexity facts remain independent", () => {
+  for (const quoteFormDetails of [
+    { structure_scope: "basic_single_section", file_uploads: true, form_count: 1 },
+    { structure_scope: "basic_single_section", file_uploads: false, form_count: 2 },
+    { structure_scope: "extended_standard_structure", custom_logic: true, form_count: 1 },
+  ]) {
+    const result = sanitizeAndValidateIntakeData({ quote_form_details: quoteFormDetails }, "draft");
+    assertEquals(result.quote_form_details, quoteFormDetails);
+  }
+});
+
+Deno.test("legacy quote form evidence does not synthesize structure scope", () => {
+  for (const quoteFormDetails of [{ form_count: 1 }, { classification: "simple", form_count: 1 }]) {
+    const result = sanitizeAndValidateIntakeData({ quote_form_details: quoteFormDetails }, "draft");
+    assertEquals(result.quote_form_details, quoteFormDetails);
+    assertEquals("structure_scope" in (result.quote_form_details as Record<string, unknown>), false);
+  }
+});
+
+Deno.test("intake validator rejects unknown and malformed evidence", () => {
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ unexpected: true }, "draft"),
+    InputValidationError,
+    "UNKNOWN_FIELD",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ page_scope_details: { blog: "normal", internal: true } }, "draft"),
+    InputValidationError,
+    "INVALID_SCHEMA",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ multilingual_details: { same_structure: "yes" } }, "draft"),
+    InputValidationError,
+    "INVALID_TYPE",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ additional_languages: Array(9).fill("nl") }, "draft"),
+    InputValidationError,
+    "TOO_MANY_ITEMS",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ primary_language: "x".repeat(36) }, "draft"),
+    InputValidationError,
+    "INVALID_LENGTH",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({ download_details: { access: null } }, "draft"),
+    InputValidationError,
+    "INVALID_OPTION",
+  );
+});
+
+Deno.test("intake validator rejects every authoritative pricing output field", () => {
+  for (const field of [
+    "knownMinimumMinor", "appliedRules", "manualReviewRequired", "manualReasons",
+    "packageAdvice", "budgetEvaluation", "pricingConfigVersion", "pricingConfigHash", "pricingSnapshot",
+  ]) {
+    assertThrows(
+      () => sanitizeAndValidateIntakeData({ [field]: field === "knownMinimumMinor" ? 1 : {} }, "draft"),
+      InputValidationError,
+      "PRICING_OUTPUT_NOT_ALLOWED",
+    );
+  }
+  for (const field of [
+    "snapshotContractVersion", "snapshot_contract_version",
+    "evidenceProvenance", "outsideBudgetWishes",
+  ]) {
+    assertThrows(
+      () => sanitizeAndValidateIntakeData({ [field]: {} }, "draft"),
+      InputValidationError,
+      "UNKNOWN_FIELD",
+    );
+  }
+});
+
+Deno.test("intake validator enforces all Budget Guard category triples", () => {
+  for (const [code, label] of [
+    ["below_1800", "Minder dan EUR 1.800"],
+    ["1800_to_below_3200", "EUR 1.800 tot minder dan EUR 3.200"],
+    ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
+    ["above_6000", "Meer dan EUR 6.000"],
+  ]) {
+    const result = sanitizeAndValidateIntakeData({
+      budget_update_category: label,
+      budget_update_category_scheme: "budget_guard_v1",
+      budget_update_category_code: code,
+    }, "draft");
+    assertEquals(result.budget_update_category_code, code);
+  }
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      budget_update_category: "Meer dan EUR 6.000",
+      budget_update_category_scheme: "budget_guard_v1",
+      budget_update_category_code: "3200_to_6000_inclusive",
+    }, "draft"),
+    InputValidationError,
+    "INCOHERENT_BUDGET_EVIDENCE",
+  );
+  for (const mode of ["draft", "submit"] as const) {
+    assertThrows(
+      () => sanitizeAndValidateIntakeData({
+        budget_update_category: "Meer dan EUR 6.000",
+        budget_update_category_scheme: null,
+        budget_update_category_code: null,
+      }, mode),
+      InputValidationError,
+      "INCOHERENT_BUDGET_EVIDENCE",
+    );
+  }
+});
+
+Deno.test("legacy intake payload remains valid without evidence conversion", () => {
+  const result = sanitizeAndValidateIntakeData({
+    budget_update_category: "EUR 1.500 - EUR 3.000",
+    languages: ["nl"],
+  }, "draft");
+  assertEquals(result.budget_update_category, "EUR 1.500 - EUR 3.000");
+  assertEquals(partitionIntakeData(result).evidenceData, {});
+});
+
+Deno.test("shared above-6000 label remains legacy without restored scheme and code", () => {
+  const result = sanitizeAndValidateIntakeData({
+    budget_update_category: "Meer dan EUR 6.000",
+    languages: ["nl"],
+  }, "draft");
+  const partitioned = partitionIntakeData(result);
+  assertEquals(partitioned.legacyData.budget_update_category, "Meer dan EUR 6.000");
+  assertEquals(partitioned.evidenceData, {});
 });
