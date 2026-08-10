@@ -6,6 +6,7 @@ import {
 } from "./pricing-config.ts";
 import {
   buildPricingSnapshotV2,
+  buildPricingSnapshotV3,
   calculateBudgetGuard,
   evaluateBudget,
   resolveBudgetEvidence,
@@ -206,6 +207,30 @@ Deno.test("authoritative snapshot has exactly the closed v2 shape", async () => 
   assertEquals(snapshot.budgetEvaluation.outsideBudgetWishes, false);
 });
 
+Deno.test("missing package evidence selects legacy v2 without inventing Starter", async () => {
+  const snapshot = await selectPricingSnapshotForSubmit(
+    { requested_pages: ["home"] },
+    budgetGuardEvidence("1800_to_below_3200"),
+    null,
+  );
+  assertEquals(snapshot.snapshotContractVersion, 2);
+  assertEquals("packageDefinition" in snapshot, false);
+});
+
+Deno.test("v2 builder rejects explicit package evidence", async () => {
+  await assertRejects(
+    () => buildPricingSnapshotV2(
+      {
+        selected_package_definition_id: "starter_v1",
+        requested_pages: ["home"],
+      },
+      budgetGuardEvidence("1800_to_below_3200"),
+    ),
+    TypeError,
+    "PACKAGE_DEFINITION_NOT_ALLOWED_IN_SNAPSHOT_V2",
+  );
+});
+
 Deno.test("idempotent retry returns the historical snapshot without rebuilding", async () => {
   const historicalSnapshot = {
     snapshotContractVersion: 2,
@@ -224,4 +249,30 @@ Deno.test("idempotent retry returns the historical snapshot without rebuilding",
   );
   assertEquals(selected, historicalSnapshot);
   assertEquals(buildCalls, 0);
+});
+
+Deno.test("explicit package evidence creates an immutable closed v3 snapshot", async () => {
+  const snapshot = await buildPricingSnapshotV3(
+    {
+      selected_package_definition_id: "professional_v1",
+      requested_pages: ["home"],
+    },
+    budgetGuardEvidence("3200_to_6000_inclusive"),
+  );
+  assertEquals(Object.keys(snapshot).sort(), [
+    "budgetEvaluation",
+    "calculation",
+    "normalizedScope",
+    "packageAdvice",
+    "packageDefinition",
+    "pricingConfigHash",
+    "pricingConfigVersion",
+    "snapshotContractVersion",
+  ]);
+  assertEquals(snapshot.snapshotContractVersion, 3);
+  assertEquals(snapshot.calculation.basis, "package_floor");
+  assertEquals(snapshot.packageDefinition.id, "professional_v1");
+  assertEquals(snapshot.packageDefinition.floorMinor, 320_000);
+  assertEquals(snapshot.packageDefinition.standardPageLimit, 12);
+  assertEquals(snapshot.packageDefinition.includedCorrectionRounds, 2);
 });

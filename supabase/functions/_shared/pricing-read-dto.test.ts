@@ -112,6 +112,19 @@ function adminRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function professionalPackageDefinition() {
+  return {
+    id: "professional_v1",
+    version: 1,
+    label: "Professional",
+    floorMinor: 320_000,
+    standardPageLimit: 12,
+    includedCorrectionRounds: 2,
+    entitlementSetId: "normal_web_v1",
+    entitlements: ["responsive_design", "standard_contact_form"],
+  };
+}
+
 function allKeys(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap(allKeys);
@@ -241,4 +254,52 @@ Deno.test("admin allowlist excludes secrets and unknown future snapshot fields",
       "snapshotContractVersion",
     ]
   ) assert(!keys.has(forbidden), `admin DTO leaked ${forbidden}`);
+});
+
+Deno.test("customer v3 exposes only safe authoritative package state", () => {
+  const dto = mapCustomerPricingReadRow(customerRow({
+    snapshot_contract_version: 3,
+    calculation_basis: "package_floor",
+    known_minimum_minor: 320_000,
+    package_definition: professionalPackageDefinition(),
+  }));
+  assertEquals(dto.selectedPackage, {
+    selectedPackageDefinitionId: "professional_v1",
+    label: "Professional",
+    floorMinor: 320_000,
+    standardPageLimit: 12,
+    includedCorrectionRounds: 2,
+  });
+  assertEquals("entitlements" in (dto.selectedPackage ?? {}), false);
+});
+
+Deno.test("admin v3 exposes validated operational package metadata", () => {
+  const dto = mapAdminPricingReadRow(adminRow({
+    snapshot_contract_version: 3,
+    calculation: { ...calculation(), basis: "package_floor" },
+    package_definition: professionalPackageDefinition(),
+  }));
+  assertEquals(dto.availability, "available");
+  assertEquals(dto.packageDefinition?.id, "professional_v1");
+  assertEquals(dto.packageDefinition?.entitlements, [
+    "responsive_design",
+    "standard_contact_form",
+  ]);
+});
+
+Deno.test("v3 package mismatch fails closed for customer and admin", () => {
+  const package_definition = {
+    ...professionalPackageDefinition(),
+    floorMinor: 180_000,
+  };
+  assertEquals(mapCustomerPricingReadRow(customerRow({
+    snapshot_contract_version: 3,
+    calculation_basis: "package_floor",
+    package_definition,
+  })).pricingState, "pricing_result_unavailable");
+  assertEquals(mapAdminPricingReadRow(adminRow({
+    snapshot_contract_version: 3,
+    calculation: { ...calculation(), basis: "package_floor" },
+    package_definition,
+  })).availability, "unavailable");
 });

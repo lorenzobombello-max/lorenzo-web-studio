@@ -7,6 +7,7 @@ import {
   resolveBudgetEvidence,
   selectPricingSnapshotForSubmit,
   type PricingSnapshotV2,
+  type PricingSnapshotV3,
 } from "../_shared/pricing-engine.ts";
 import { createPricingSnapshotIntegrity } from "../_shared/pricing-snapshot-integrity.ts";
 import { handlePricingPreview } from "../_shared/pricing-preview-handler.ts";
@@ -149,7 +150,7 @@ async function loadAuthoritativePricingContext(
   submittedData: Record<string, unknown>,
 ): Promise<AuthoritativePricingContext | null> {
   const { data: inspectionData, error: inspectionError } = await supabase.rpc(
-    "inspect_quote_request_intake_details_v3",
+    "inspect_quote_request_intake_details_v4",
     { p_access_token_hash: intakeTokenHash },
   );
   const inspection = Array.isArray(inspectionData) ? inspectionData[0] : null;
@@ -515,7 +516,7 @@ Deno.serve(async (request) => {
 
   const intakeTokenHash = await hashIntakeToken(intakeToken);
   if (action === "inspect") {
-    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v2", {
+    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v4", {
       p_access_token_hash: intakeTokenHash,
     });
     const result = Array.isArray(data) ? data[0] : null;
@@ -612,7 +613,10 @@ Deno.serve(async (request) => {
       pricingContext.budgetScheme,
       pricingContext.budgetCode,
     );
-    const pricingSnapshot: PricingSnapshotV2 | Record<string, unknown> =
+    const pricingSnapshot:
+      | PricingSnapshotV2
+      | PricingSnapshotV3
+      | Record<string, unknown> =
       await selectPricingSnapshotForSubmit(
         pricingContext.effectiveEvidence,
         budgetEvidence,
@@ -636,7 +640,7 @@ Deno.serve(async (request) => {
         p_budget_guard_snapshot: pricingSnapshot,
         p_pricing_snapshot_integrity: pricingSnapshotIntegrity,
       };
-      mutationRpc = "update_quote_request_intake_v4";
+      mutationRpc = "update_quote_request_intake_v5";
     } catch {
       return jsonResponse(500, {
         ok: false,

@@ -1,9 +1,12 @@
 import {
   type BudgetCategoryCode,
   computePricingConfigHash,
+  type PackageDefinitionId,
   type PriceMode,
   PRICING_CONFIG,
   type PricingRuleId,
+  resolvePackageDefinition,
+  type ResolvedPackageDefinition,
 } from "./pricing-config.ts";
 import {
   type NormalizedPricingScope,
@@ -29,7 +32,7 @@ export interface BudgetGuardResult {
   pricingConfigVersion: string;
   normalizedScope: NormalizedPricingScope;
   calculation: {
-    basis: "starter_floor";
+    basis: "starter_floor" | "package_floor";
     currency: "EUR";
     vatBasis: "exclusive";
     knownMinimumMinor: number;
@@ -44,6 +47,7 @@ export interface BudgetGuardResult {
     advisoryOnly: true;
     selectedPackage: null;
   };
+  selectedPackageDefinition: ResolvedPackageDefinition | null;
   nonBinding: true;
 }
 
@@ -97,6 +101,27 @@ export interface PricingSnapshotV2 {
   budgetEvaluation: BudgetEvaluationV2;
 }
 
+export interface PricingSnapshotV3 {
+  snapshotContractVersion: 3;
+  pricingConfigVersion: string;
+  pricingConfigHash: string;
+  normalizedScope: NormalizedPricingScope;
+  calculation: BudgetGuardResult["calculation"];
+  packageAdvice: BudgetGuardResult["packageAdvice"];
+  budgetEvaluation: BudgetEvaluationV2;
+  packageDefinition: ResolvedPackageDefinition;
+}
+
+export function resolveSelectedPackageDefinition(
+  value: unknown,
+): ResolvedPackageDefinition | null {
+  if (value === null || value === undefined) return null;
+  if (value !== "starter_v1" && value !== "professional_v1") {
+    throw new TypeError("INVALID_PACKAGE_DEFINITION_ID");
+  }
+  return resolvePackageDefinition(value as PackageDefinitionId);
+}
+
 function configuredRule(
   ruleId: PricingRuleId,
   quantity = 1,
@@ -117,6 +142,34 @@ function configuredRule(
     quantity,
     knownMinimumContributionMinor: 0,
   };
+}
+
+function percentageRule(
+  ruleId: "rush_review",
+  baseMinor: number,
+): AppliedPricingRule {
+  const rule = PRICING_CONFIG.rules[ruleId];
+  return {
+    ruleId,
+    mode: rule.mode,
+    amountMinor: Math.ceil(baseMinor * rule.minimumPercentage / 100),
+    quantity: 1,
+    knownMinimumContributionMinor: Math.ceil(
+      baseMinor * rule.minimumPercentage / 100,
+    ),
+  };
+}
+
+function entitledRule(
+  packageDefinition: ResolvedPackageDefinition | null,
+  entitlement: "standard_contact_form" | "supplied_content_media_processing" | "technical_seo_base",
+  ruleId: "contact_form" | "content_media_included" | "seo_included",
+): AppliedPricingRule {
+  if (
+    packageDefinition === null ||
+    packageDefinition.entitlements.includes(entitlement)
+  ) return configuredRule(ruleId);
+  return configuredRule("indeterminate_normal_scope");
 }
 
 function packageAdvice(
@@ -154,7 +207,6 @@ const MANUAL_COMPONENT_RULES: Record<string, PricingRuleId> = {
   secured_downloads: "secured_downloads",
   professional_photography: "professional_photography",
   unresolved_search: "unresolved_search",
-  rush_review: "rush_review",
   substantial_copywriting: "substantial_copywriting",
   exceptional_image_work: "exceptional_image_work",
   paid_stock_handling: "paid_stock_handling",
@@ -166,25 +218,33 @@ const MANUAL_COMPONENT_RULES: Record<string, PricingRuleId> = {
   unknown_page_scope: "unknown_page_scope",
   newsletter_manual: "newsletter_manual",
   extensive_seo: "extensive_seo",
+  indeterminate_normal_scope: "indeterminate_normal_scope",
+  unknown_feature_scope: "unknown_feature_scope",
 };
 
 export function calculateBudgetGuard(
   input: RawPricingScope,
 ): BudgetGuardResult {
   const normalizedScope = normalizePricingScope(input);
+  const selectedPackageDefinition = resolveSelectedPackageDefinition(
+    input.selected_package_definition_id,
+  );
+  const effectivePackage = selectedPackageDefinition ??
+    resolvePackageDefinition("starter_v1");
   const appliedRules: AppliedPricingRule[] = [{
-    ruleId: "starter_floor",
-    mode: PRICING_CONFIG.packages.starter.priceMode,
-    amountMinor: PRICING_CONFIG.packages.starter.startingPriceMinor,
+    ruleId: selectedPackageDefinition
+      ? `${selectedPackageDefinition.id}_floor`
+      : "starter_floor",
+    mode: effectivePackage.priceMode,
+    amountMinor: effectivePackage.floorMinor,
     quantity: 1,
-    knownMinimumContributionMinor:
-      PRICING_CONFIG.packages.starter.startingPriceMinor,
+    knownMinimumContributionMinor: effectivePackage.floorMinor,
   }];
 
   const extraPageCount = Math.max(
     0,
     normalizedScope.standardPageCount -
-      PRICING_CONFIG.packages.starter.standardPageLimit,
+      effectivePackage.standardPageLimit,
   );
   if (extraPageCount) {
     appliedRules.push(configuredRule("extra_standard_page", extraPageCount));
@@ -193,10 +253,16 @@ export function calculateBudgetGuard(
   for (const module of normalizedScope.modules) {
     if (module.id === "shop") appliedRules.push(configuredRule("shop_manual"));
     else if (module.id === "booking") {
-      appliedRules.push(configuredRule("booking_manual"));
+      appliedRules.push(configuredRule(
+        module.classification === "simple" ? "simple_booking" : "booking_manual",
+      ));
     } else if (module.id === "forms") {
       if (module.classification === "contact") {
-        appliedRules.push(configuredRule("contact_form"));
+        appliedRules.push(entitledRule(
+          selectedPackageDefinition,
+          "standard_contact_form",
+          "contact_form",
+        ));
       } else if (module.classification === "simple") {
         appliedRules.push(configuredRule("simple_quote_form"));
       } else if (module.classification === "extended") {
@@ -214,21 +280,64 @@ export function calculateBudgetGuard(
     } else if (
       module.id === "content_media" && module.classification === "included"
     ) {
-      appliedRules.push(configuredRule("content_media_included"));
+      appliedRules.push(entitledRule(
+        selectedPackageDefinition,
+        "supplied_content_media_processing",
+        "content_media_included",
+      ));
     } else if (module.id === "hosting_maintenance") {
       appliedRules.push(configuredRule("hosting_maintenance_manual"));
-    } else if (module.id === "seo" && module.classification === "included") {
-      appliedRules.push(configuredRule("seo_included"));
+    } else if (module.id === "seo") {
+      appliedRules.push(
+        module.classification === "included"
+          ? entitledRule(
+            selectedPackageDefinition,
+            "technical_seo_base",
+            "seo_included",
+          )
+          : configuredRule("extensive_seo"),
+      );
     }
+  }
+
+  const customPageCount = normalizedScope.manualComponents.filter((component) =>
+    component === "complex_gallery_scope" ||
+    component === "complex_reviews_scope" ||
+    component === "complex_blog_scope" || component === "complex_jobs_scope"
+  ).length;
+  if (customPageCount) {
+    appliedRules.push(configuredRule("extra_custom_page", customPageCount));
+  }
+  if (input.brand_status === "none") {
+    appliedRules.push(configuredRule("basic_branding"));
+  }
+  if (input.logo_status === "needed") {
+    appliedRules.push(configuredRule("basic_logo"));
+  }
+  if (input.content_status === "none" || input.content_status === "needs_help") {
+    appliedRules.push(configuredRule("content_support"));
   }
 
   const appliedManualComponents = new Set<string>();
   for (const component of normalizedScope.manualComponents) {
+    if (
+      component === "complex_gallery_scope" ||
+      component === "complex_reviews_scope" ||
+      component === "complex_blog_scope" || component === "complex_jobs_scope" ||
+      component === "rush_review"
+    ) continue;
     const ruleId = MANUAL_COMPONENT_RULES[component];
     if (ruleId && !appliedManualComponents.has(ruleId)) {
       appliedRules.push(configuredRule(ruleId));
       appliedManualComponents.add(ruleId);
     }
+  }
+  if (normalizedScope.manualComponents.includes("rush_review")) {
+    const subtotal = appliedRules.reduce(
+      (sum, rule) => sum + rule.knownMinimumContributionMinor,
+      0,
+    );
+    appliedRules.push(percentageRule("rush_review", subtotal));
   }
 
   const manualRules = appliedRules.filter((rule) => rule.mode === "manual");
@@ -238,7 +347,7 @@ export function calculateBudgetGuard(
   );
   const advice = packageAdvice(normalizedScope.standardPageCount);
   const manualReasons = [...new Set(manualRules.map((rule) => rule.ruleId))];
-  if (advice.status === "manual_scope_review") {
+  if (!selectedPackageDefinition && advice.status === "manual_scope_review") {
     manualReasons.push(
       ...advice.reasons.filter((reason) => !manualReasons.includes(reason)),
     );
@@ -248,7 +357,7 @@ export function calculateBudgetGuard(
     pricingConfigVersion: PRICING_CONFIG.version,
     normalizedScope,
     calculation: {
-      basis: "starter_floor",
+      basis: selectedPackageDefinition ? "package_floor" : "starter_floor",
       currency: PRICING_CONFIG.currency,
       vatBasis: PRICING_CONFIG.vatBasis,
       knownMinimumMinor,
@@ -258,6 +367,7 @@ export function calculateBudgetGuard(
       appliedRules,
     },
     packageAdvice: advice,
+    selectedPackageDefinition,
     nonBinding: true,
   };
 }
@@ -357,6 +467,9 @@ export async function buildPricingSnapshotV2(
   input: RawPricingScope,
   budgetEvidence: BudgetEvidence,
 ): Promise<PricingSnapshotV2> {
+  if (input.selected_package_definition_id != null) {
+    throw new TypeError("PACKAGE_DEFINITION_NOT_ALLOWED_IN_SNAPSHOT_V2");
+  }
   const pricing = calculateBudgetGuard(input);
   return {
     snapshotContractVersion: 2,
@@ -369,6 +482,26 @@ export async function buildPricingSnapshotV2(
   };
 }
 
+export async function buildPricingSnapshotV3(
+  input: RawPricingScope,
+  budgetEvidence: BudgetEvidence,
+): Promise<PricingSnapshotV3> {
+  const pricing = calculateBudgetGuard(input);
+  if (!pricing.selectedPackageDefinition) {
+    throw new TypeError("PACKAGE_DEFINITION_REQUIRED_FOR_SNAPSHOT_V3");
+  }
+  return {
+    snapshotContractVersion: 3,
+    pricingConfigVersion: pricing.pricingConfigVersion,
+    pricingConfigHash: await computePricingConfigHash(),
+    normalizedScope: pricing.normalizedScope,
+    calculation: pricing.calculation,
+    packageAdvice: pricing.packageAdvice,
+    budgetEvaluation: evaluateBudget(pricing.calculation, budgetEvidence),
+    packageDefinition: pricing.selectedPackageDefinition,
+  };
+}
+
 export async function selectPricingSnapshotForSubmit(
   input: RawPricingScope,
   budgetEvidence: BudgetEvidence,
@@ -376,8 +509,11 @@ export async function selectPricingSnapshotForSubmit(
   buildSnapshot: (
     input: RawPricingScope,
     budgetEvidence: BudgetEvidence,
-  ) => Promise<PricingSnapshotV2> = buildPricingSnapshotV2,
-): Promise<PricingSnapshotV2 | Record<string, unknown>> {
+  ) => Promise<PricingSnapshotV2 | PricingSnapshotV3> = (scope, evidence) =>
+    scope.selected_package_definition_id == null
+      ? buildPricingSnapshotV2(scope, evidence)
+      : buildPricingSnapshotV3(scope, evidence),
+): Promise<PricingSnapshotV2 | PricingSnapshotV3 | Record<string, unknown>> {
   if (existingSnapshot) return existingSnapshot;
   return await buildSnapshot(input, budgetEvidence);
 }

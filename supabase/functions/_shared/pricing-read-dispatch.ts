@@ -111,8 +111,8 @@ export async function dispatchPricingRead(
 
   try {
     const functionName = actor === "customer"
-      ? "inspect_customer_pricing_read_v2"
-      : "inspect_admin_pricing_read_v2";
+      ? "inspect_customer_pricing_read_v3"
+      : "inspect_admin_pricing_read_v3";
     const parameterName = actor === "customer"
       ? "p_access_token_hash"
       : "p_admin_access_token_hash";

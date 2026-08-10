@@ -82,20 +82,40 @@ export interface CustomerPricingPreviewDTOv1 {
   };
 }
 
+export interface CustomerPricingPreviewDTOv2
+  extends Omit<CustomerPricingPreviewDTOv1, "previewVersion"> {
+  previewVersion: 2;
+  selectedPackage: {
+    selectedPackageDefinitionId: "starter_v1" | "professional_v1";
+    label: "Starter" | "Professional";
+    floorMinor: number;
+    standardPageLimit: number;
+    includedCorrectionRounds: number;
+  };
+}
+
 const PRESENTATION_KEYS = {
   extra_standard_page: "EXTRA_STANDARD_PAGE",
+  extra_custom_page: "EXTRA_STANDARD_PAGE",
+  extra_correction_round: "PACKAGE_SCOPE",
   extra_language: "EXTRA_LANGUAGE",
   contact_form: "CONTACT_FORM",
   simple_quote_form: "SIMPLE_QUOTE_FORM",
   extended_quote_form: "EXTENDED_QUOTE_FORM",
+  other_extended_form: "EXTENDED_QUOTE_FORM",
   complex_form_manual: "COMPLEX_FORM",
   shop_manual: "SHOP",
   booking_manual: "BOOKING",
+  simple_booking: "BOOKING",
   multilingual_manual: "MULTILINGUAL_SCOPE",
   content_media_included: "CONTENT_MEDIA",
   hosting_maintenance_manual: "HOSTING_MAINTENANCE",
   seo_included: "SEO_BASE",
   extensive_seo: "EXTENSIVE_SEO",
+  basic_branding: "CONTENT_MEDIA",
+  basic_logo: "CONTENT_MEDIA",
+  content_support: "COPYWRITING",
+  extended_ai_imagery: "IMAGE_WORK",
   customer_login: "CUSTOMER_LOGIN",
   external_integration: "EXTERNAL_INTEGRATION",
   secured_downloads: "SECURED_DOWNLOADS",
@@ -149,7 +169,7 @@ export function buildCustomerPricingPreview(
   scopeRevision: number,
   pricing: BudgetGuardResult,
   budgetEvaluation: BudgetEvaluationV2,
-): CustomerPricingPreviewDTOv1 {
+): CustomerPricingPreviewDTOv1 | CustomerPricingPreviewDTOv2 {
   if (!Number.isSafeInteger(scopeRevision) || scopeRevision < 0) {
     throw new TypeError("INVALID_SCOPE_REVISION");
   }
@@ -161,7 +181,7 @@ export function buildCustomerPricingPreview(
 
   const suppressAmounts = pricing.calculation.manualReviewRequired;
   const items = pricing.calculation.appliedRules
-    .filter((rule) => rule.ruleId !== "starter_floor")
+    .filter((rule) => !rule.ruleId.endsWith("_floor"))
     .map((rule) => {
       const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
       if (!presentationKey) throw new TypeError("UNKNOWN_PRICING_RULE");
@@ -184,8 +204,7 @@ export function buildCustomerPricingPreview(
     });
 
   const comparisonStatus = budgetState(pricing, budgetEvaluation);
-  return {
-    previewVersion: 1,
+  const base: Omit<CustomerPricingPreviewDTOv1, "previewVersion"> = {
     scopeRevision,
     pricingConfigVersion: pricing.pricingConfigVersion,
     currency: "EUR",
@@ -209,5 +228,18 @@ export function buildCustomerPricingPreview(
     },
     items,
     packageAdvice: { state: packageAdviceState(pricing.packageAdvice.status) },
+  };
+  const selectedPackage = pricing.selectedPackageDefinition;
+  if (!selectedPackage) return { previewVersion: 1, ...base };
+  return {
+    previewVersion: 2,
+    ...base,
+    selectedPackage: {
+      selectedPackageDefinitionId: selectedPackage.id,
+      label: selectedPackage.label,
+      floorMinor: selectedPackage.floorMinor,
+      standardPageLimit: selectedPackage.standardPageLimit,
+      includedCorrectionRounds: selectedPackage.includedCorrectionRounds,
+    },
   };
 }

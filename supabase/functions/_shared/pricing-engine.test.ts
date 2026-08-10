@@ -15,7 +15,7 @@ function rule(result: ReturnType<typeof calculateBudgetGuard>, id: string) {
 }
 
 Deno.test("pricing config contains only approved amounts and amount-safe modes", () => {
-  assertEquals(PRICING_CONFIG.version, "1.0.0");
+  assertEquals(PRICING_CONFIG.version, "2.0.0");
   assertEquals(PRICING_CONFIG.currency, "EUR");
   assertEquals(PRICING_CONFIG.vatBasis, "exclusive");
   assertEquals(PRICING_CONFIG.packages.starter.startingPriceMinor, 180_000);
@@ -28,7 +28,21 @@ Deno.test("pricing config contains only approved amounts and amount-safe modes",
     .filter((entry) => "amountMinor" in entry)
     .map((entry) => entry.amountMinor)
     .sort((left, right) => left - right);
-  assertEquals(pricedRules, [20_000, 20_000, 30_000, 40_000]);
+  assertEquals(pricedRules, [
+    15_000,
+    20_000,
+    20_000,
+    20_000,
+    25_000,
+    25_000,
+    30_000,
+    30_000,
+    30_000,
+    35_000,
+    40_000,
+    50_000,
+    50_000,
+  ]);
 
   Object.values(PRICING_CONFIG.rules).forEach((entry) => {
     if (entry.mode === "manual" || entry.mode === "included") {
@@ -73,7 +87,7 @@ Deno.test("package-included functionality is not charged again beside one paid q
   assertEquals(result.calculation.knownMinimumMinor, 200_000);
 });
 
-Deno.test("extra standard pages are unique and add fixed EUR 200 each above five", () => {
+Deno.test("extra standard pages are unique and add from EUR 200 each above five", () => {
   const input = {
     requested_pages: [
       "home",
@@ -116,9 +130,9 @@ Deno.test("normal extra languages are deduplicated and add a from lower bound", 
   assertEquals(rule(result, "extra_language")?.quantity, 2);
   assertEquals(
     rule(result, "extra_language")?.knownMinimumContributionMinor,
-    60_000,
+    100_000,
   );
-  assertEquals(result.calculation.knownMinimumMinor, 240_000);
+  assertEquals(result.calculation.knownMinimumMinor, 280_000);
 });
 
 Deno.test("language aliases, casing and locales normalize to commercial base languages", () => {
@@ -169,7 +183,7 @@ Deno.test("language aliases, casing and locales normalize to commercial base lan
   ]);
   assertEquals(result.normalizedScope.unknownLanguages, []);
   assertEquals(rule(result, "extra_language")?.quantity, 5);
-  assertEquals(result.calculation.knownMinimumMinor, 330_000);
+  assertEquals(result.calculation.knownMinimumMinor, 430_000);
   assertEquals(result.calculation.manualReviewRequired, false);
 });
 
@@ -388,7 +402,7 @@ Deno.test("known manual components normalize once and never add money", () => {
     "secured_downloads",
     "unresolved_search",
   ]);
-  assertEquals(result.calculation.knownMinimumMinor, 180_000);
+  assertEquals(result.calculation.knownMinimumMinor, 216_000);
   assertEquals(result.calculation.manualReviewRequired, true);
   assert(
     result.calculation.appliedRules
@@ -537,4 +551,79 @@ Deno.test("13+ pages and another manual component remain deduplicated and amount
     rule(result, "customer_login")?.knownMinimumContributionMinor,
     0,
   );
+});
+
+Deno.test("authoritative evidence activates reconciled from supplements", () => {
+  const customPage = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home", "gallery"],
+    page_scope_details: { gallery: "complex" },
+  });
+  assertEquals(rule(customPage, "extra_custom_page")?.amountMinor, 30_000);
+  assertEquals(customPage.calculation.manualReviewRequired, false);
+
+  const booking = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home", "reservations"],
+    booking_required: true,
+    booking_details: { existing_system: false, calendar_integration: false },
+  });
+  assertEquals(rule(booking, "simple_booking")?.amountMinor, 50_000);
+
+  const seo = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+    seo_details: { extensive_services: true },
+  });
+  assertEquals(rule(seo, "extensive_seo")?.amountMinor, 35_000);
+
+  const support = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+    brand_status: "none",
+    logo_status: "needed",
+    content_status: "needs_help",
+  });
+  assertEquals(rule(support, "basic_branding")?.amountMinor, 30_000);
+  assertEquals(rule(support, "basic_logo")?.amountMinor, 25_000);
+  assertEquals(rule(support, "content_support")?.amountMinor, 30_000);
+});
+
+Deno.test("rush uses the authoritative 20 to 30 percent from contract", () => {
+  assertEquals(PRICING_CONFIG.rules.rush_review.minimumPercentage, 20);
+  assertEquals(PRICING_CONFIG.rules.rush_review.maximumPercentage, 30);
+  const result = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+    deadline_details: { hard_deadline: true },
+  });
+  assertEquals(rule(result, "rush_review")?.mode, "from");
+  assertEquals(rule(result, "rush_review")?.amountMinor, 36_000);
+  assertEquals(result.calculation.knownMinimumMinor, 216_000);
+});
+
+Deno.test("rules without authoritative request evidence remain registered but unapplied", () => {
+  assertEquals(PRICING_CONFIG.rules.extra_correction_round.amountMinor, 15_000);
+  assertEquals(PRICING_CONFIG.rules.other_extended_form.amountMinor, 25_000);
+  assertEquals(PRICING_CONFIG.rules.extended_ai_imagery.amountMinor, 20_000);
+  const result = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+  });
+  for (const id of [
+    "extra_correction_round",
+    "other_extended_form",
+    "extended_ai_imagery",
+  ]) assertEquals(rule(result, id), undefined);
+});
+
+Deno.test("unknown feature scope fails closed without a silent free fallback", () => {
+  const result = calculateBudgetGuard({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+    requested_features: ["unsure"],
+  });
+  assertEquals(rule(result, "unknown_feature_scope")?.mode, "manual");
+  assertEquals(result.calculation.manualReviewRequired, true);
+  assertEquals(result.calculation.knownMinimumMinor, 320_000);
 });

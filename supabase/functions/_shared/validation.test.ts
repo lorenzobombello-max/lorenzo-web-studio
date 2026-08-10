@@ -196,9 +196,46 @@ Deno.test("pricing preview validator accepts only closed pricing scope", () => {
   assertEquals(result.quote_form_details, { structure_scope: "basic_single_section" });
 });
 
+Deno.test("package evidence accepts only immutable IDs and partitions as evidence", () => {
+  for (const selected_package_definition_id of [
+    "starter_v1",
+    "professional_v1",
+    null,
+  ]) {
+    const result = sanitizeAndValidatePricingPreviewInput({
+      selected_package_definition_id,
+    });
+    assertEquals(
+      result.selected_package_definition_id,
+      selected_package_definition_id,
+    );
+    assertEquals(
+      partitionIntakeData(result).evidenceData.selected_package_definition_id,
+      selected_package_definition_id,
+    );
+  }
+  for (const selected_package_definition_id of [
+    "starter",
+    "professional",
+    "custom",
+    "auto",
+    "suggested",
+    "professional_v2",
+    3200,
+    {},
+  ]) {
+    assertThrows(
+      () => sanitizeAndValidatePricingPreviewInput({ selected_package_definition_id }),
+      InputValidationError,
+    );
+  }
+});
+
 Deno.test("pricing preview validator rejects pricing output, PII and unknown nested fields", () => {
   for (const field of [
     "calculatedPrice", "knownMinimum", "knownMinimumMinor", "selectedPackage",
+    "selectedPackageDefinitionId", "packagePrice", "packageFloor", "packageLimits",
+    "includedEntitlements", "packageDiscount",
     "pricingMode", "appliedRuleAmount", "isIncluded", "budgetStatus", "appliedRules",
     "manualReasons", "snapshot", "proof", "integrityMac", "configHash",
   ]) {

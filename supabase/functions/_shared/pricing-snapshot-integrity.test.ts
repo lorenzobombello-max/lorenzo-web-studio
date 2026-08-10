@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   buildPricingSnapshotV2,
+  buildPricingSnapshotV3,
   resolveBudgetEvidence,
 } from "./pricing-engine.ts";
 import {
@@ -53,6 +54,33 @@ Deno.test("authoritative snapshot integrity verifies and is deterministic", asyn
   assertEquals(
     await createPricingSnapshotIntegrity(snapshot, context, "v1", secret),
     integrity,
+  );
+});
+
+Deno.test("snapshot v3 package definition is integrity protected", async () => {
+  const snapshot = await buildPricingSnapshotV3(
+    {
+      selected_package_definition_id: "professional_v1",
+      requested_pages: ["home"],
+    },
+    resolveBudgetEvidence(
+      "EUR 3.200 t/m EUR 6.000",
+      "budget_guard_v1",
+      "3200_to_6000_inclusive",
+    ),
+  );
+  const integrity = await createPricingSnapshotIntegrity(
+    snapshot,
+    context,
+    "v1",
+    secret,
+  );
+  assert(await verifyPricingSnapshotIntegrity(snapshot, context, integrity, () => secret));
+  const changed = clone(snapshot) as unknown as Record<string, unknown>;
+  (changed.packageDefinition as Record<string, unknown>).floorMinor = 180_000;
+  assertEquals(
+    await verifyPricingSnapshotIntegrity(changed, context, integrity, () => secret),
+    false,
   );
 });
 

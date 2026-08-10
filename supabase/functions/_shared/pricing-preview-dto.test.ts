@@ -40,7 +40,7 @@ Deno.test("preview maps included, fixed and from items without starter as an ext
 
   assertEquals(result.scopeRevision, 7);
   assertEquals(result.nonBinding, true);
-  assertEquals(result.pricingConfigVersion, "1.0.0");
+  assertEquals(result.pricingConfigVersion, "2.0.0");
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_STANDARD_PAGE"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "SIMPLE_QUOTE_FORM"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_LANGUAGE"), true);
@@ -72,7 +72,7 @@ Deno.test("manual preview suppresses every monetary amount while retaining prese
   assertEquals(result.summary.manualReviewRequired, true);
   assertEquals("knownMinimumMinor" in result.summary, false);
   assertEquals(result.items.some((item) => item.state === "MANUAL_REVIEW"), true);
-  assertEquals(result.items.some((item) => item.state === "FIXED_EXTRA"), true);
+  assertEquals(result.items.some((item) => item.state === "FROM_EXTRA"), true);
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
 });
@@ -113,6 +113,24 @@ Deno.test("preview package advice remains advisory and has no selected package o
   for (const forbidden of ["selectedPackage", "normalizedScope", "appliedRules", "pricingConfigHash", "proof", "integrity"]) {
     assertEquals(serialized.includes(forbidden), false);
   }
+});
+
+Deno.test("package preview v2 exposes only server-derived customer-safe package state", () => {
+  const result = preview({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+  }, 7);
+  assertEquals(result.previewVersion, 2);
+  if (result.previewVersion !== 2) throw new Error("expected preview v2");
+  assertEquals(result.selectedPackage, {
+    selectedPackageDefinitionId: "professional_v1",
+    label: "Professional",
+    floorMinor: 320_000,
+    standardPageLimit: 12,
+    includedCorrectionRounds: 2,
+  });
+  assertEquals(result.items.some((item) => item.labelKey.includes("floor")), false);
+  assertEquals("entitlements" in result.selectedPackage, false);
 });
 
 Deno.test("preview fails closed for invalid revision and unknown rule", () => {

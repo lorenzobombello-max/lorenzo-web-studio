@@ -70,7 +70,7 @@ Deno.test("customer dispatch uses intake hash domain, customer RPC, mapper, and 
   const body = await response.json();
 
   assertEquals(call, {
-    functionName: "inspect_customer_pricing_read_v2",
+    functionName: "inspect_customer_pricing_read_v3",
     parameters: { p_access_token_hash: "c".repeat(64) },
   });
   assertEquals(response.status, 200);
@@ -111,7 +111,7 @@ Deno.test("admin dispatch uses separate admin hash domain and admin RPC", async 
   const body = await response.json();
 
   assertEquals(call, {
-    functionName: "inspect_admin_pricing_read_v2",
+    functionName: "inspect_admin_pricing_read_v3",
     parameters: { p_admin_access_token_hash: "a".repeat(64) },
   });
   assertEquals(response.status, 200);

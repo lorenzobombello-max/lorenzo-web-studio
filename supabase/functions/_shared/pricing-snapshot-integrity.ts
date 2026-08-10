@@ -17,6 +17,7 @@ export interface PricingSnapshotIntegrityRoot {
   calculation: unknown;
   packageAdvice: unknown;
   budgetEvaluation: unknown;
+  packageDefinition?: unknown;
 }
 
 function toHex(buffer: ArrayBuffer): string {
@@ -25,12 +26,12 @@ function toHex(buffer: ArrayBuffer): string {
     .join("");
 }
 
-function fromHex(value: string): Uint8Array | null {
+function fromHex(value: string): ArrayBuffer | null {
   if (!/^[0-9a-f]{64}$/.test(value)) return null;
   return Uint8Array.from(
     value.match(/.{2}/g) ?? [],
     (byte) => parseInt(byte, 16),
-  );
+  ).buffer as ArrayBuffer;
 }
 
 function integritySecret(keyId: string): string {
@@ -60,7 +61,7 @@ export function pricingSnapshotIntegrityRoot(
   snapshot: object,
 ): PricingSnapshotIntegrityRoot {
   const value = snapshot as Record<string, unknown>;
-  return {
+  const root: PricingSnapshotIntegrityRoot = {
     snapshotContractVersion: value.snapshotContractVersion,
     pricingConfigVersion: value.pricingConfigVersion,
     pricingConfigHash: value.pricingConfigHash,
@@ -69,6 +70,10 @@ export function pricingSnapshotIntegrityRoot(
     packageAdvice: value.packageAdvice,
     budgetEvaluation: value.budgetEvaluation,
   };
+  if (value.snapshotContractVersion === 3) {
+    root.packageDefinition = value.packageDefinition;
+  }
+  return root;
 }
 
 export function canonicalizePricingSnapshot(

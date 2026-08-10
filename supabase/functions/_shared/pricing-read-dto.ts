@@ -10,6 +10,14 @@ export type CustomerPricingState =
   | "personal_review_required"
   | "pricing_result_unavailable";
 
+interface CustomerPackageDefinition {
+  selectedPackageDefinitionId: "starter_v1" | "professional_v1";
+  label: "Starter" | "Professional";
+  floorMinor: number;
+  standardPageLimit: number;
+  includedCorrectionRounds: number;
+}
+
 export interface CustomerPricingDTOv1 {
   presentationContractVersion: 1;
   requestStatus: IntakeReadStatus;
@@ -25,6 +33,7 @@ export interface CustomerPricingDTOv1 {
     qualifier: "indicative_starting_price";
     disclaimerCode: "formal_quotation_determines_final_scope_and_price";
   };
+  selectedPackage?: CustomerPackageDefinition;
 }
 
 type PriceMode = "included" | "fixed" | "from" | "manual";
@@ -56,7 +65,7 @@ interface AdminReason {
 }
 
 interface AdminCalculation {
-  basis: "starter_floor";
+  basis: "starter_floor" | "package_floor";
   knownMinimumMinor: number;
   currency: "EUR";
   vatBasis: "exclusive";
@@ -70,6 +79,17 @@ interface AdminCalculation {
     amountMinor?: number;
     knownMinimumContributionMinor: number;
   }>;
+}
+
+interface AdminPackageDefinition {
+  id: "starter_v1" | "professional_v1";
+  version: 1;
+  label: "Starter" | "Professional";
+  floorMinor: number;
+  standardPageLimit: number;
+  includedCorrectionRounds: number;
+  entitlementSetId: "normal_web_v1";
+  entitlements: string[];
 }
 
 interface AdminPackageAdvice {
@@ -113,6 +133,7 @@ export interface AdminPricingDTOv1 {
   packageAdvice?: AdminPackageAdvice;
   budget?: AdminBudgetEvaluation;
   normalizedScope?: AdminNormalizedScope;
+  packageDefinition?: AdminPackageDefinition;
   audit?: {
     pricingConfigVersion: string;
     pricingConfigHash: string;
@@ -175,6 +196,34 @@ function stringArray(value: unknown): string[] | null {
     return null;
   }
   return [...value];
+}
+
+function parsePackageDefinition(value: unknown): AdminPackageDefinition | null {
+  if (!isRecord(value)) return null;
+  const expected = value.id === "starter_v1"
+    ? { label: "Starter", floorMinor: 180_000, standardPageLimit: 5, includedCorrectionRounds: 1 }
+    : value.id === "professional_v1"
+    ? { label: "Professional", floorMinor: 320_000, standardPageLimit: 12, includedCorrectionRounds: 2 }
+    : null;
+  const entitlements = stringArray(value.entitlements);
+  if (
+    !expected || value.version !== 1 || value.label !== expected.label ||
+    value.floorMinor !== expected.floorMinor ||
+    value.standardPageLimit !== expected.standardPageLimit ||
+    value.includedCorrectionRounds !== expected.includedCorrectionRounds ||
+    value.entitlementSetId !== "normal_web_v1" || entitlements === null ||
+    entitlements.length === 0 || new Set(entitlements).size !== entitlements.length
+  ) return null;
+  return {
+    id: value.id as AdminPackageDefinition["id"],
+    version: 1,
+    label: expected.label as AdminPackageDefinition["label"],
+    floorMinor: expected.floorMinor,
+    standardPageLimit: expected.standardPageLimit,
+    includedCorrectionRounds: expected.includedCorrectionRounds,
+    entitlementSetId: "normal_web_v1",
+    entitlements,
+  };
 }
 
 function unavailableCustomer(
@@ -241,14 +290,25 @@ function customerBudgetIndicator(
 export function mapCustomerPricingReadRow(rowValue: unknown): CustomerPricingDTOv1 {
   if (!isRecord(rowValue)) throw new TypeError("Invalid customer pricing read source");
   const requestStatus = readStatus(rowValue.intake_status);
-  if (rowValue.snapshot_present !== true || rowValue.snapshot_contract_version !== 2) {
+  if (
+    rowValue.snapshot_present !== true ||
+    (rowValue.snapshot_contract_version !== 2 && rowValue.snapshot_contract_version !== 3)
+  ) {
     return unavailableCustomer(requestStatus);
   }
 
   const amountMinor = safeInteger(rowValue.known_minimum_minor, true);
   const manualReviewRequired = rowValue.manual_review_required;
   const manualReasonCount = safeInteger(rowValue.manual_reason_count);
-  const calculationValid = rowValue.calculation_basis === "starter_floor" &&
+  const packageDefinition = rowValue.snapshot_contract_version === 3
+    ? parsePackageDefinition(rowValue.package_definition)
+    : null;
+  const calculationValid = (
+    (rowValue.snapshot_contract_version === 2 &&
+      rowValue.calculation_basis === "starter_floor") ||
+    (rowValue.snapshot_contract_version === 3 &&
+      rowValue.calculation_basis === "package_floor" && packageDefinition !== null)
+  ) &&
     rowValue.currency === "EUR" && rowValue.vat_basis === "exclusive" &&
     amountMinor !== null && typeof rowValue.contains_from_pricing === "boolean" &&
     typeof manualReviewRequired === "boolean" && manualReasonCount !== null &&
@@ -285,6 +345,17 @@ export function mapCustomerPricingReadRow(rowValue: unknown): CustomerPricingDTO
       qualifier: "indicative_starting_price",
       disclaimerCode: "formal_quotation_determines_final_scope_and_price",
     },
+    ...(packageDefinition
+      ? {
+        selectedPackage: {
+          selectedPackageDefinitionId: packageDefinition.id,
+          label: packageDefinition.label,
+          floorMinor: packageDefinition.floorMinor,
+          standardPageLimit: packageDefinition.standardPageLimit,
+          includedCorrectionRounds: packageDefinition.includedCorrectionRounds,
+        },
+      }
+      : {}),
   };
 }
 
@@ -297,7 +368,8 @@ function parseCalculation(value: unknown): AdminCalculation | null {
   const knownMinimumMinor = safeInteger(value.knownMinimumMinor);
   const manualReasons = stringArray(value.manualReasons);
   if (
-    value.basis !== "starter_floor" || value.currency !== "EUR" ||
+    (value.basis !== "starter_floor" && value.basis !== "package_floor") ||
+    value.currency !== "EUR" ||
     value.vatBasis !== "exclusive" || knownMinimumMinor === null ||
     typeof value.containsFromPricing !== "boolean" ||
     typeof value.manualReviewRequired !== "boolean" || manualReasons === null ||
@@ -328,7 +400,7 @@ function parseCalculation(value: unknown): AdminCalculation | null {
   }
 
   return {
-    basis: "starter_floor",
+    basis: value.basis,
     knownMinimumMinor,
     currency: "EUR",
     vatBasis: "exclusive",
@@ -534,9 +606,20 @@ export function mapAdminPricingReadRow(rowValue: unknown): AdminPricingDTOv1 {
       audit,
     };
   }
-  if (rowValue.snapshot_contract_version !== 2) {
+  if (
+    rowValue.snapshot_contract_version !== 2 &&
+    rowValue.snapshot_contract_version !== 3
+  ) {
     return unavailableAdmin(requestStatus);
   }
+  const packageDefinition = rowValue.snapshot_contract_version === 3
+    ? parsePackageDefinition(rowValue.package_definition)
+    : null;
+  if (
+    (rowValue.snapshot_contract_version === 2 && calculation.basis !== "starter_floor") ||
+    (rowValue.snapshot_contract_version === 3 &&
+      (calculation.basis !== "package_floor" || packageDefinition === null))
+  ) return unavailableAdmin(requestStatus);
   const budget = parseBudgetEvaluation(rowValue.budget_evaluation);
   if (!budget) return unavailableAdmin(requestStatus);
   return {
@@ -549,6 +632,7 @@ export function mapAdminPricingReadRow(rowValue: unknown): AdminPricingDTOv1 {
     packageAdvice,
     budget,
     normalizedScope,
+    ...(packageDefinition ? { packageDefinition } : {}),
     audit,
   };
 }

@@ -8,6 +8,7 @@ export type CanonicalModuleId =
   | "seo";
 
 export interface RawPricingScope {
+  selected_package_definition_id?: unknown;
   requested_pages?: unknown;
   requested_features?: unknown;
   website_goals?: unknown;
@@ -34,6 +35,8 @@ export interface RawPricingScope {
   hosting_maintenance_details?: unknown;
   seo_priority?: unknown;
   seo_details?: unknown;
+  brand_status?: unknown;
+  logo_status?: unknown;
   integrations?: unknown;
   deadline_details?: unknown;
 }
@@ -215,9 +218,12 @@ export function normalizePricingScope(
     "booking_details",
   );
   if (bookingEvidence.size) {
+    const bookingDetails = objectValue(input.booking_details);
+    const simple = bookingDetails.existing_system === false &&
+      bookingDetails.calendar_integration === false;
     modules.push({
       id: "booking",
-      classification: "manual",
+      classification: simple ? "simple" : "manual",
       evidence: [...bookingEvidence],
     });
   }
@@ -382,6 +388,13 @@ export function normalizePricingScope(
       evidence: ["content_media"],
     });
   }
+  if (features.has("other") || features.has("unsure")) {
+    manualComponents.add("unknown_feature_scope");
+  }
+  if (
+    input.content_status === "unknown" || input.image_status === "unknown" ||
+    imageSupport.has("unsure")
+  ) manualComponents.add("indeterminate_normal_scope");
 
   const hostingDetails = objectValue(input.hosting_maintenance_details);
   const hostingEvidence = input.hosting_support === "yes" ||
@@ -402,10 +415,9 @@ export function normalizePricingScope(
   const seoDetails = objectValue(input.seo_details);
   if (input.seo_priority != null || hasObjectData(seoDetails)) {
     const extensive = seoDetails.extensive_services === true;
-    if (extensive) manualComponents.add("extensive_seo");
     modules.push({
       id: "seo",
-      classification: extensive ? "manual" : "included",
+      classification: extensive ? "additional" : "included",
       evidence: ["seo"],
     });
   }

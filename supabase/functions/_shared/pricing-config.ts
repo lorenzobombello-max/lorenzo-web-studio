@@ -7,20 +7,143 @@ interface RuleBase {
 
 export type PricingRule =
   | (RuleBase & { mode: "included" | "manual" })
-  | (RuleBase & { mode: "fixed" | "from"; amountMinor: number });
+  | (RuleBase & { mode: "fixed" | "from"; amountMinor: number })
+  | (RuleBase & {
+    mode: "from";
+    minimumPercentage: number;
+    maximumPercentage: number;
+  });
+
+export type PackageDefinitionId = "starter_v1" | "professional_v1";
+
+export type PackageEntitlementId =
+  | "responsive_design"
+  | "technical_foundation"
+  | "navigation"
+  | "browser_compatibility"
+  | "technical_seo_base"
+  | "testing_and_delivery"
+  | "standard_contact_form"
+  | "social_links"
+  | "google_maps"
+  | "whatsapp"
+  | "normal_gallery_reviews"
+  | "public_downloads"
+  | "supplied_content_media_processing"
+  | "normal_ai_image_support"
+  | "primary_language";
+
+interface PackageDefinitionSource {
+  id: PackageDefinitionId;
+  version: 1;
+  label: "Starter" | "Professional";
+  priceMode: "from";
+  floorMinor: number;
+  standardPageLimit: number;
+  includedCorrectionRounds: number;
+  inheritsFrom: PackageDefinitionId | null;
+  entitlements: readonly PackageEntitlementId[];
+}
+
+const STARTER_ENTITLEMENTS = [
+  "responsive_design",
+  "technical_foundation",
+  "navigation",
+  "browser_compatibility",
+  "technical_seo_base",
+  "testing_and_delivery",
+  "standard_contact_form",
+  "social_links",
+  "google_maps",
+  "whatsapp",
+  "normal_gallery_reviews",
+  "public_downloads",
+  "supplied_content_media_processing",
+  "normal_ai_image_support",
+  "primary_language",
+] as const satisfies readonly PackageEntitlementId[];
+
+export const PACKAGE_DEFINITION_REGISTRY = {
+  starter_v1: {
+    id: "starter_v1",
+    version: 1,
+    label: "Starter",
+    priceMode: "from",
+    floorMinor: 180_000,
+    standardPageLimit: 5,
+    includedCorrectionRounds: 1,
+    inheritsFrom: null,
+    entitlements: STARTER_ENTITLEMENTS,
+  },
+  professional_v1: {
+    id: "professional_v1",
+    version: 1,
+    label: "Professional",
+    priceMode: "from",
+    floorMinor: 320_000,
+    standardPageLimit: 12,
+    includedCorrectionRounds: 2,
+    inheritsFrom: "starter_v1",
+    entitlements: [],
+  },
+} as const satisfies Record<PackageDefinitionId, PackageDefinitionSource>;
+
+export interface ResolvedPackageDefinition {
+  id: PackageDefinitionId;
+  version: 1;
+  label: "Starter" | "Professional";
+  priceMode: "from";
+  floorMinor: number;
+  standardPageLimit: number;
+  includedCorrectionRounds: number;
+  entitlementSetId: "normal_web_v1";
+  entitlements: readonly PackageEntitlementId[];
+}
+
+export function resolvePackageDefinition(
+  id: PackageDefinitionId,
+): ResolvedPackageDefinition {
+  const source = PACKAGE_DEFINITION_REGISTRY[id];
+  const inherited = source.inheritsFrom === null
+    ? []
+    : resolvePackageDefinition(source.inheritsFrom).entitlements;
+  return {
+    id: source.id,
+    version: source.version,
+    label: source.label,
+    priceMode: source.priceMode,
+    floorMinor: source.floorMinor,
+    standardPageLimit: source.standardPageLimit,
+    includedCorrectionRounds: source.includedCorrectionRounds,
+    entitlementSetId: "normal_web_v1",
+    entitlements: [...new Set([...inherited, ...source.entitlements])],
+  };
+}
 
 const rules = {
   extra_standard_page: {
     id: "extra_standard_page",
-    label: "Extra standaardpagina boven Starter-scope",
-    mode: "fixed",
+    label: "Extra standaardpagina boven geselecteerde package-scope",
+    mode: "from",
     amountMinor: 20_000,
+  },
+  extra_custom_page: {
+    id: "extra_custom_page",
+    label: "Extra maatwerkpagina",
+    mode: "from",
+    amountMinor: 30_000,
+  },
+  extra_correction_round: {
+    id: "extra_correction_round",
+    label: "Extra correctieronde",
+    mode: "from",
+    amountMinor: 15_000,
   },
   extra_language: {
     id: "extra_language",
     label: "Extra taal binnen normale scope",
     mode: "from",
-    amountMinor: 30_000,
+    amountMinor: 50_000,
   },
   contact_form: {
     id: "contact_form",
@@ -39,6 +162,12 @@ const rules = {
     mode: "from",
     amountMinor: 40_000,
   },
+  other_extended_form: {
+    id: "other_extended_form",
+    label: "Overig uitgebreid formulier",
+    mode: "from",
+    amountMinor: 25_000,
+  },
   complex_form_manual: {
     id: "complex_form_manual",
     label: "Complex formulier of workflow",
@@ -53,6 +182,12 @@ const rules = {
     id: "booking_manual",
     label: "Booking of reservatie-integratie",
     mode: "manual",
+  },
+  simple_booking: {
+    id: "simple_booking",
+    label: "Eenvoudige reservatie- of afspraakflow",
+    mode: "from",
+    amountMinor: 50_000,
   },
   multilingual_manual: {
     id: "multilingual_manual",
@@ -76,8 +211,33 @@ const rules = {
   },
   extensive_seo: {
     id: "extensive_seo",
-    label: "Uitgebreide SEO",
-    mode: "manual",
+    label: "Aanvullende SEO",
+    mode: "from",
+    amountMinor: 35_000,
+  },
+  basic_branding: {
+    id: "basic_branding",
+    label: "Basis branding en visuele richting",
+    mode: "from",
+    amountMinor: 30_000,
+  },
+  basic_logo: {
+    id: "basic_logo",
+    label: "Basis logo-ontwikkeling",
+    mode: "from",
+    amountMinor: 25_000,
+  },
+  content_support: {
+    id: "content_support",
+    label: "Contentondersteuning buiten normale scope",
+    mode: "from",
+    amountMinor: 30_000,
+  },
+  extended_ai_imagery: {
+    id: "extended_ai_imagery",
+    label: "Uitgebreide AI-beeldondersteuning",
+    mode: "from",
+    amountMinor: 20_000,
   },
   customer_login: { id: "customer_login", label: "Klantlogin", mode: "manual" },
   external_integration: {
@@ -103,7 +263,9 @@ const rules = {
   rush_review: {
     id: "rush_review",
     label: "Harde of commercieel kritieke deadline",
-    mode: "manual",
+    mode: "from",
+    minimumPercentage: 20,
+    maximumPercentage: 30,
   },
   substantial_copywriting: {
     id: "substantial_copywriting",
@@ -155,27 +317,34 @@ const rules = {
     label: "Nieuwsbrief buiten eenvoudige standaardscope",
     mode: "manual",
   },
+  indeterminate_normal_scope: {
+    id: "indeterminate_normal_scope",
+    label: "Niet objectief afgebakende normale scope",
+    mode: "manual",
+  },
+  unknown_feature_scope: {
+    id: "unknown_feature_scope",
+    label: "Onbekende of onzekere functionaliteit",
+    mode: "manual",
+  },
 } as const satisfies Record<string, PricingRule>;
 
 export const PRICING_CONFIG = {
-  version: "1.0.0",
+  version: "2.0.0",
   currency: "EUR",
   vatBasis: "exclusive",
   packages: {
     starter: {
-      id: "starter",
-      priceMode: "from",
-      startingPriceMinor: 180_000,
-      standardPageLimit: 5,
+      ...PACKAGE_DEFINITION_REGISTRY.starter_v1,
+      startingPriceMinor: PACKAGE_DEFINITION_REGISTRY.starter_v1.floorMinor,
     },
     professional: {
-      id: "professional",
-      priceMode: "from",
-      startingPriceMinor: 320_000,
-      standardPageLimit: 12,
+      ...PACKAGE_DEFINITION_REGISTRY.professional_v1,
+      startingPriceMinor: PACKAGE_DEFINITION_REGISTRY.professional_v1.floorMinor,
     },
     custom: { id: "custom", priceMode: "manual" },
   },
+  packageDefinitions: PACKAGE_DEFINITION_REGISTRY,
   rules,
   budgetEvaluation: {
     contractVersion: 2,

@@ -38,6 +38,7 @@ const BUDGET_GUARD_CATEGORIES = new Map([
   ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
   ["above_6000", "Meer dan EUR 6.000"],
 ]);
+const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v1"]);
 const TIMINGS = new Set([
   "Binnen 1 maand",
   "Binnen 2 tot 3 maanden",
@@ -57,15 +58,19 @@ const INTAKE_FIELDS = new Set([
   "multilingual_details", "download_details", "content_media_details", "newsletter_details",
   "hosting_maintenance_details", "deadline_details", "seo_details",
   "budget_update_category_scheme", "budget_update_category_code",
+  "selected_package_definition_id",
 ]);
 export const INTAKE_EVIDENCE_FIELDS = new Set([
   "primary_language", "additional_languages", "page_scope_details", "quote_form_details",
   "multilingual_details", "download_details", "content_media_details", "newsletter_details",
   "hosting_maintenance_details", "deadline_details", "seo_details",
   "budget_update_category_scheme", "budget_update_category_code",
+  "selected_package_definition_id",
 ]);
 const FORBIDDEN_PRICING_FIELDS = new Set([
   "calculatedPrice", "knownMinimum", "knownMinimumMinor", "selectedPackage",
+  "selectedPackageDefinitionId", "packagePrice", "packageFloor", "packageLimits",
+  "includedEntitlements", "packageDiscount",
   "pricingMode", "appliedRuleAmount", "isIncluded", "budgetStatus", "appliedRules",
   "manualReviewRequired", "manualReasons", "packageAdvice", "budgetEvaluation",
   "pricingConfigVersion", "pricingConfigHash", "configHash", "pricingSnapshot",
@@ -81,6 +86,7 @@ const PRICING_PREVIEW_FIELDS = new Set([
   "maintenance_interest", "hosting_maintenance_details", "seo_priority",
   "seo_details", "integrations", "deadline_details", "budget_update_category",
   "budget_update_category_scheme", "budget_update_category_code",
+  "selected_package_definition_id",
 ]);
 const WEBSITE_GOALS = new Set([
   "professional_presence", "generate_leads", "quote_requests", "contact_requests", "appointments",
@@ -473,6 +479,8 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
       output[field] = normalizeOption(field, value, new Set(["budget_guard_v1"]));
     } else if (field === "budget_update_category_code") {
       output[field] = normalizeOption(field, value, new Set(BUDGET_GUARD_CATEGORIES.keys()));
+    } else if (field === "selected_package_definition_id") {
+      output[field] = normalizeOption(field, value, PACKAGE_DEFINITION_IDS);
     }
     else output[field] = normalizeBoolean(field, value);
   }
