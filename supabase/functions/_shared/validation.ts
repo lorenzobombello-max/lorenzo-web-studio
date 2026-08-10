@@ -65,9 +65,22 @@ export const INTAKE_EVIDENCE_FIELDS = new Set([
   "budget_update_category_scheme", "budget_update_category_code",
 ]);
 const FORBIDDEN_PRICING_FIELDS = new Set([
-  "knownMinimumMinor", "appliedRules", "manualReviewRequired", "manualReasons",
-  "packageAdvice", "budgetEvaluation", "pricingConfigVersion", "pricingConfigHash",
-  "pricingSnapshot",
+  "calculatedPrice", "knownMinimum", "knownMinimumMinor", "selectedPackage",
+  "pricingMode", "appliedRuleAmount", "isIncluded", "budgetStatus", "appliedRules",
+  "manualReviewRequired", "manualReasons", "packageAdvice", "budgetEvaluation",
+  "pricingConfigVersion", "pricingConfigHash", "configHash", "pricingSnapshot",
+  "snapshot", "proof",
+]);
+const PRICING_PREVIEW_FIELDS = new Set([
+  "requested_pages", "requested_features", "website_goals",
+  "shop_required", "shop_details", "booking_required", "booking_details",
+  "page_scope_details", "quote_form_details", "primary_language",
+  "additional_languages", "languages", "multilingual_details",
+  "content_status", "image_status", "image_support", "content_media_details",
+  "download_details", "newsletter_details", "hosting_status", "hosting_support",
+  "maintenance_interest", "hosting_maintenance_details", "seo_priority",
+  "seo_details", "integrations", "deadline_details", "budget_update_category",
+  "budget_update_category_scheme", "budget_update_category_code",
 ]);
 const WEBSITE_GOALS = new Set([
   "professional_presence", "generate_leads", "quote_requests", "contact_requests", "appointments",
@@ -529,6 +542,25 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
   }
 
   return output;
+}
+
+export function sanitizeAndValidatePricingPreviewInput(
+  payload: unknown,
+): Record<string, unknown> {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new InputValidationError("INVALID_PAYLOAD");
+  }
+  const input = payload as Record<string, unknown>;
+  const forbiddenField = Object.keys(input).find((field) =>
+    FORBIDDEN_PRICING_FIELDS.has(field) || field.toLowerCase().startsWith("integrity")
+  );
+  if (forbiddenField) {
+    throw new InputValidationError("PRICING_OUTPUT_NOT_ALLOWED", forbiddenField);
+  }
+  const unknownField = Object.keys(input).find((field) => !PRICING_PREVIEW_FIELDS.has(field));
+  if (unknownField) throw new InputValidationError("UNKNOWN_FIELD", unknownField);
+
+  return sanitizeAndValidateIntakeData(input, "draft");
 }
 
 export function partitionIntakeData(input: Record<string, unknown>): {

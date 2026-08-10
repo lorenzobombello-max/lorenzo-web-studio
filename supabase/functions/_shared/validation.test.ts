@@ -3,6 +3,7 @@ import {
   InputValidationError,
   partitionIntakeData,
   sanitizeAndValidateIntakeData,
+  sanitizeAndValidatePricingPreviewInput,
   sanitizeAndValidateSubmitPayload,
 } from "./validation.ts";
 
@@ -178,6 +179,62 @@ Deno.test("intake validator accepts and partitions closed raw evidence", () => {
   assertEquals(partitioned.evidenceData.primary_language, "nl");
   assertEquals(partitioned.evidenceData.budget_update_category, "EUR 3.200 t/m EUR 6.000");
   assertEquals(partitioned.evidenceData.budget_update_category_code, "3200_to_6000_inclusive");
+});
+
+Deno.test("pricing preview validator accepts only closed pricing scope", () => {
+  const result = sanitizeAndValidatePricingPreviewInput({
+    requested_pages: ["home", "quote_request"],
+    requested_features: ["quote_form"],
+    quote_form_details: { structure_scope: "basic_single_section" },
+    primary_language: "nl",
+    additional_languages: ["fr"],
+    budget_update_category: "EUR 3.200 t/m EUR 6.000",
+    budget_update_category_scheme: "budget_guard_v1",
+    budget_update_category_code: "3200_to_6000_inclusive",
+  });
+  assertEquals(result.requested_pages, ["home", "quote_request"]);
+  assertEquals(result.quote_form_details, { structure_scope: "basic_single_section" });
+});
+
+Deno.test("pricing preview validator rejects pricing output, PII and unknown nested fields", () => {
+  for (const field of [
+    "calculatedPrice", "knownMinimum", "knownMinimumMinor", "selectedPackage",
+    "pricingMode", "appliedRuleAmount", "isIncluded", "budgetStatus", "appliedRules",
+    "manualReasons", "snapshot", "proof", "integrityMac", "configHash",
+  ]) {
+    assertThrows(
+      () => sanitizeAndValidatePricingPreviewInput({ [field]: "injected" }),
+      InputValidationError,
+      "PRICING_OUTPUT_NOT_ALLOWED",
+    );
+  }
+  assertThrows(
+    () => sanitizeAndValidatePricingPreviewInput({ email: "person@example.test" }),
+    InputValidationError,
+    "UNKNOWN_FIELD",
+  );
+  assertThrows(
+    () => sanitizeAndValidatePricingPreviewInput({ page_scope_details: { internal: "normal" } }),
+    InputValidationError,
+    "INVALID_SCHEMA",
+  );
+});
+
+Deno.test("pricing preview validator rejects partial or incoherent budget evidence", () => {
+  assertThrows(
+    () => sanitizeAndValidatePricingPreviewInput({ budget_update_category_scheme: "budget_guard_v1" }),
+    InputValidationError,
+    "INCOHERENT_BUDGET_EVIDENCE",
+  );
+  assertThrows(
+    () => sanitizeAndValidatePricingPreviewInput({
+      budget_update_category: "EUR 3.200 t/m EUR 6.000",
+      budget_update_category_scheme: "budget_guard_v1",
+      budget_update_category_code: "below_1800",
+    }),
+    InputValidationError,
+    "INCOHERENT_BUDGET_EVIDENCE",
+  );
 });
 
 Deno.test("legacy quote form classification remains coherent with complex signals", () => {

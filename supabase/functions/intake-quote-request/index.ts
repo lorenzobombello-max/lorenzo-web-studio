@@ -9,6 +9,7 @@ import {
   type PricingSnapshotV2,
 } from "../_shared/pricing-engine.ts";
 import { createPricingSnapshotIntegrity } from "../_shared/pricing-snapshot-integrity.ts";
+import { handlePricingPreview } from "../_shared/pricing-preview-handler.ts";
 import { dispatchPricingRead } from "../_shared/pricing-read-dispatch.ts";
 import {
   buildAdminIntakeUrl,
@@ -97,6 +98,7 @@ function validateAction(value: unknown): IntakeAction {
     value === "inspect" ||
     value === "save_draft" ||
     value === "submit" ||
+    value === "preview_budget_guard" ||
     value === "inspect_submitted_intake_admin" ||
     value === "inspect_customer_pricing" ||
     value === "inspect_admin_pricing"
@@ -338,6 +340,10 @@ Deno.serve(async (request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (action === "preview_budget_guard") {
+    return await handlePricingPreview(body, origin, supabase);
+  }
 
   if (action === "inspect_admin_pricing") {
     return await dispatchPricingRead("admin", body.token, origin, supabase);

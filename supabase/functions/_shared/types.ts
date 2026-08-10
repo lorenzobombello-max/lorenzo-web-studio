@@ -9,6 +9,7 @@ export type IntakeAction =
   | "inspect"
   | "save_draft"
   | "submit"
+  | "preview_budget_guard"
   | "inspect_submitted_intake_admin"
   | "inspect_customer_pricing"
   | "inspect_admin_pricing";
