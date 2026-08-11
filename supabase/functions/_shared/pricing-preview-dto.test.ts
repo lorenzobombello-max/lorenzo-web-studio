@@ -107,6 +107,30 @@ Deno.test("manual preview keeps review and compatible budget dimensions independ
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
 });
 
+Deno.test("substantial copywriting supersedes generic content support in customer presentation", () => {
+  const pricing = calculateBudgetGuard({
+    content_status: "needs_help",
+    content_media_details: {
+      copywriting_scope: "substantial",
+      image_work_scope: "unknown",
+      paid_stock_handling: false,
+    },
+  });
+  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "content_support"), true);
+  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "substantial_copywriting"), true);
+
+  const result = buildCustomerPricingPreview(
+    1,
+    pricing,
+    evaluateBudget(pricing.calculation, boundedBudget()),
+  );
+  const copywritingItems = result.items.filter((item) => item.presentationKey === "COPYWRITING");
+  assertEquals(copywritingItems.length, 1);
+  assertEquals(copywritingItems[0].state, "MANUAL_REVIEW");
+  assertEquals("amountMinor" in copywritingItems[0], false);
+  assertEquals(result.summary.manualReviewRequired, true);
+});
+
 Deno.test("manual preview retains a proven package-floor budget mismatch", () => {
   const result = preview({
     selected_package_definition_id: "starter_v1",

@@ -237,8 +237,14 @@ export function buildCustomerPricingPreview(
 
   const comparisonStatus = budgetState(pricing, budgetEvaluation);
   const suppressItemAmounts = pricing.calculation.manualReviewRequired;
+  const hasSubstantialCopywriting = pricing.calculation.appliedRules.some((rule) =>
+    rule.ruleId === "substantial_copywriting"
+  );
   const items = pricing.calculation.appliedRules
-    .filter((rule) => !rule.ruleId.endsWith("_floor"))
+    .filter((rule) =>
+      !rule.ruleId.endsWith("_floor") &&
+      !(hasSubstantialCopywriting && rule.ruleId === "content_support")
+    )
     .map((rule) => {
       const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
       if (!presentationKey) throw new TypeError("UNKNOWN_PRICING_RULE");
