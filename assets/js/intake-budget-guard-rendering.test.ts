@@ -421,5 +421,5 @@ Deno.test("unavailable rendering remains distinct from mismatch", () => {
 });
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-5');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-6');
 });
