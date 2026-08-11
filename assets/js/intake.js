@@ -70,6 +70,7 @@
   let validationMessageActive = false;
 
   const PREVIEW_DEBOUNCE_MS = 350;
+  const PREVIEW_CONTRACT_VERSION = 2;
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
@@ -522,7 +523,8 @@
 
   function validPreview(preview, revision) {
     if (
-      !preview || typeof preview !== "object" || ![1, 2].includes(preview.previewVersion) ||
+      !preview || typeof preview !== "object" || preview.previewContractVersion !== PREVIEW_CONTRACT_VERSION ||
+      ![1, 2].includes(preview.previewVersion) ||
       preview.scopeRevision !== revision || preview.currency !== "EUR" || preview.vatBasis !== "exclusive" ||
       preview.nonBinding !== true || !preview.budget || !budgetStates.has(preview.budget.comparisonStatus) ||
       !(preview.budget.selectedBudgetCategoryCode === null || preview.budget.selectedBudgetCategoryCode in budgetLabels) ||
@@ -565,6 +567,12 @@
       }
       return !hasAmount;
     });
+  }
+
+  function previewValidationRejectCode(preview, revision) {
+    if (!preview || typeof preview !== "object") return "INVALID_PREVIEW_DTO";
+    if (preview.previewContractVersion !== PREVIEW_CONTRACT_VERSION) return "PREVIEW_CONTRACT_MISMATCH";
+    return validPreview(preview, revision) ? "" : "INVALID_PREVIEW_DTO";
   }
 
   function setPricingBadge(item, suppressAmounts) {
@@ -719,7 +727,13 @@
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "preview_budget_guard", token, scopeRevision: revision, data: evidence }),
+        body: JSON.stringify({
+          action: "preview_budget_guard",
+          token,
+          scopeRevision: revision,
+          clientPreviewVersion: PREVIEW_CONTRACT_VERSION,
+          data: evidence,
+        }),
         signal: controller.signal,
       });
       let body = {};
@@ -732,8 +746,18 @@
         controller.signal.aborted,
       )) return;
       if (!response.ok) return await handlePreviewError(response, revision);
-      if (!body.ok || !validPreview(body.preview, revision)) {
-        showPreviewUnavailable("Prijsinformatie is tijdelijk niet beschikbaar. Je kunt de intake gewoon verder invullen.");
+      const rejectCode = body.ok
+        ? previewValidationRejectCode(body.preview, revision)
+        : "INVALID_SUCCESS_ENVELOPE";
+      if (rejectCode) {
+        console.warn("pricing_preview_contract_rejected", {
+          expectedPreviewContractVersion: PREVIEW_CONTRACT_VERSION,
+          receivedPreviewContractVersion: Number.isSafeInteger(body.preview?.previewContractVersion)
+            ? body.preview.previewContractVersion
+            : null,
+          rejectCode,
+        });
+        showPreviewUnavailable("Deze intakepagina gebruikt een oudere versie. Open de intake opnieuw via je e-maillink om verder te gaan.");
         return;
       }
       renderPricingPreview(body.preview, fingerprint);

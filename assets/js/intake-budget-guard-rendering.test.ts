@@ -10,6 +10,7 @@ function sourceFunction(name: string) {
 }
 
 const preview = {
+  previewContractVersion: 2,
   previewVersion: 2,
   scopeRevision: 5,
   pricingConfigVersion: "production",
@@ -39,6 +40,7 @@ const preview = {
 
 const validPreview = Function(
   "form",
+  "PREVIEW_CONTRACT_VERSION",
   "budgetStates",
   "budgetLabels",
   "packageAdviceStates",
@@ -48,6 +50,7 @@ const validPreview = Function(
   `"use strict"; return (${sourceFunction("validPreview")});`,
 )(
   { querySelector: () => ({ value: "professional_v1" }) },
+  2,
   new Set(["WITHIN_KNOWN_BUDGET", "KNOWN_MINIMUM_ABOVE_BUDGET", "INDETERMINATE", "MANUAL_REVIEW"]),
   { below_1800: "Minder dan € 1.800" },
   new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]),
@@ -418,6 +421,27 @@ Deno.test("unknown and manual-only rendering do not invent a budget warning", ()
 Deno.test("unavailable rendering remains distinct from mismatch", () => {
   assertStringIncludes(sourceFunction("showPreviewUnavailable"), 'budgetGuardState.textContent = "Niet beschikbaar"');
   assertStringIncludes(sourceFunction("showPreviewUnavailable"), "budget-guard--unavailable");
+});
+
+Deno.test("preview request explicitly negotiates the current contract", () => {
+  assertStringIncludes(sourceFunction("requestBudgetGuardPreview"), "clientPreviewVersion: PREVIEW_CONTRACT_VERSION");
+});
+
+Deno.test("invalid HTTP 200 preview uses stale-version guidance and safe diagnostics", () => {
+  const requestSource = sourceFunction("requestBudgetGuardPreview");
+  assertStringIncludes(requestSource, "previewValidationRejectCode");
+  assertStringIncludes(requestSource, "Deze intakepagina gebruikt een oudere versie");
+  assertStringIncludes(requestSource, "expectedPreviewContractVersion");
+  assertStringIncludes(requestSource, "receivedPreviewContractVersion");
+  assertFalse(requestSource.includes("console.log(body)"));
+});
+
+Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
+  const errorSource = sourceFunction("handlePreviewError");
+  assertStringIncludes(errorSource, "response.status === 401");
+  assertStringIncludes(errorSource, "response.status === 429");
+  assertStringIncludes(errorSource, "Prijsinformatie is tijdelijk gepauzeerd");
+  assertStringIncludes(errorSource, "Prijsinformatie is tijdelijk niet beschikbaar");
 });
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {

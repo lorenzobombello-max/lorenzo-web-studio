@@ -5,6 +5,7 @@ import {
   resolveBudgetEvidence,
 } from "./pricing-engine.ts";
 import { buildCustomerPricingPreview } from "./pricing-preview-dto.ts";
+import type { PricingPreviewContractVersion } from "./pricing-preview-dto.ts";
 import {
   capabilityPreviewRateLimitKey,
   consumePreviewRateLimit,
@@ -83,10 +84,11 @@ async function applyLimit(
 
 function validTopLevelRequest(body: Record<string, unknown>): boolean {
   const keys = Object.keys(body);
-  return keys.length === 4 &&
-    keys.every((key) => ["action", "token", "scopeRevision", "data"].includes(key)) &&
+  return (keys.length === 4 || keys.length === 5) &&
+    keys.every((key) => ["action", "token", "scopeRevision", "clientPreviewVersion", "data"].includes(key)) &&
     body.action === "preview_budget_guard" &&
-    Number.isSafeInteger(body.scopeRevision) && Number(body.scopeRevision) >= 0;
+    Number.isSafeInteger(body.scopeRevision) && Number(body.scopeRevision) >= 0 &&
+    (body.clientPreviewVersion === undefined || Number.isSafeInteger(body.clientPreviewVersion));
 }
 
 export async function handlePricingPreview(
@@ -109,6 +111,14 @@ export async function handlePricingPreview(
       ok: false,
       code: "INVALID_PREVIEW_REQUEST",
       message: "Pricing preview request is invalid.",
+    }, origin);
+  }
+  const previewContractVersion = (body.clientPreviewVersion ?? 1) as number;
+  if (previewContractVersion !== 1 && previewContractVersion !== 2) {
+    return response(400, {
+      ok: false,
+      code: "UNSUPPORTED_PREVIEW_CLIENT_VERSION",
+      message: "Pricing preview client version is not supported.",
     }, origin);
   }
 
@@ -198,6 +208,7 @@ export async function handlePricingPreview(
       Number(body.scopeRevision),
       pricing,
       evaluateBudget(pricing.calculation, budgetEvidence),
+      previewContractVersion as PricingPreviewContractVersion,
     );
     return response(200, { ok: true, preview }, origin);
   } catch {

@@ -53,6 +53,7 @@ export type PricingPreviewPresentationKey =
   | "PACKAGE_SCOPE";
 
 export type PricingPreviewLabelKey = `pricing_preview.${Lowercase<PricingPreviewPresentationKey>}`;
+export type PricingPreviewContractVersion = 1 | 2;
 
 export type PackageInclusionPresentation = {
   entitlement: PackageEntitlementId;
@@ -62,6 +63,7 @@ export type PackageInclusionPresentation = {
 };
 
 export interface CustomerPricingPreviewDTOv1 {
+  previewContractVersion: PricingPreviewContractVersion;
   previewVersion: 1;
   scopeRevision: number;
   pricingConfigVersion: string;
@@ -219,9 +221,13 @@ export function buildCustomerPricingPreview(
   scopeRevision: number,
   pricing: BudgetGuardResult,
   budgetEvaluation: BudgetEvaluationV2,
+  previewContractVersion: PricingPreviewContractVersion = 2,
 ): CustomerPricingPreviewDTOv1 | CustomerPricingPreviewDTOv2 {
   if (!Number.isSafeInteger(scopeRevision) || scopeRevision < 0) {
     throw new TypeError("INVALID_SCOPE_REVISION");
+  }
+  if (previewContractVersion !== 1 && previewContractVersion !== 2) {
+    throw new TypeError("INVALID_PREVIEW_CONTRACT_VERSION");
   }
   if (
     pricing.nonBinding !== true || pricing.calculation.currency !== "EUR" ||
@@ -255,6 +261,7 @@ export function buildCustomerPricingPreview(
     });
 
   const base: Omit<CustomerPricingPreviewDTOv1, "previewVersion"> = {
+    previewContractVersion,
     scopeRevision,
     pricingConfigVersion: pricing.pricingConfigVersion,
     currency: "EUR",
@@ -280,11 +287,25 @@ export function buildCustomerPricingPreview(
     items,
     packageAdvice: { state: packageAdviceState(pricing.packageAdvice.status) },
   };
+  const negotiatedBase: Omit<CustomerPricingPreviewDTOv1, "previewVersion"> =
+    previewContractVersion === 1 && pricing.calculation.manualReviewRequired
+      ? {
+        ...base,
+        budget: {
+          selectedBudgetCategoryCode: budgetEvaluation.categoryCode,
+          comparisonStatus: "MANUAL_REVIEW",
+        },
+        summary: {
+          containsFromPricing: pricing.calculation.containsFromPricing,
+          manualReviewRequired: true,
+        },
+      }
+      : base;
   const selectedPackage = pricing.selectedPackageDefinition;
-  if (!selectedPackage) return { previewVersion: 1, ...base };
+  if (!selectedPackage) return { previewVersion: 1, ...negotiatedBase };
   return {
     previewVersion: 2,
-    ...base,
+    ...negotiatedBase,
     selectedPackage: {
       selectedPackageDefinitionId: selectedPackage.id,
       label: selectedPackage.label,

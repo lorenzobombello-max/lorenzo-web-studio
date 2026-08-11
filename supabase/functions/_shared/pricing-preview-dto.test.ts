@@ -126,6 +126,48 @@ Deno.test("manual preview retains a proven package-floor budget mismatch", () =>
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
 });
 
+Deno.test("legacy preview contract keeps manual mismatch usable without combined fields", () => {
+  const pricing = calculateBudgetGuard({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+    requested_features: ["customer_login"],
+  });
+  const result = buildCustomerPricingPreview(
+    9,
+    pricing,
+    evaluateBudget(pricing.calculation, budgetEvidence("below_1800")),
+    1,
+  );
+
+  assertEquals(result.previewContractVersion, 1);
+  assertEquals(result.budget.comparisonStatus, "MANUAL_REVIEW");
+  assertEquals("knownMinimumExceedsBudget" in result.budget, false);
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals("knownMinimumMinor" in result.summary, false);
+  assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
+});
+
+Deno.test("current preview contract preserves combined manual mismatch semantics", () => {
+  const pricing = calculateBudgetGuard({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+    requested_features: ["customer_login"],
+  });
+  const result = buildCustomerPricingPreview(
+    9,
+    pricing,
+    evaluateBudget(pricing.calculation, budgetEvidence("below_1800")),
+    2,
+  );
+
+  assertEquals(result.previewContractVersion, 2);
+  assertEquals(result.budget.comparisonStatus, "KNOWN_MINIMUM_ABOVE_BUDGET");
+  assertEquals(result.budget.knownMinimumExceedsBudget, true);
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals(result.summary.knownMinimumMinor, 320_000);
+  assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
+});
+
 Deno.test("manual preview keeps unreliable budget evidence indeterminate", () => {
   const pricing = calculateBudgetGuard({
     selected_package_definition_id: "starter_v1",

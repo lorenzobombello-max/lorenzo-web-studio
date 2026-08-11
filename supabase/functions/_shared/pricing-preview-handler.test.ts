@@ -10,6 +10,7 @@ const body = {
   action: "preview_budget_guard",
   token,
   scopeRevision: 12,
+  clientPreviewVersion: 2,
   data: {
     requested_pages: ["home", "contact"],
     requested_features: ["contact_form"],
@@ -56,6 +57,23 @@ function dependencies(onCalculate: () => void = () => {}) {
   };
 }
 
+function staleV5Accepts(preview: Record<string, unknown>): boolean {
+  const summary = preview.summary as Record<string, unknown>;
+  const budget = preview.budget as Record<string, unknown>;
+  const selectedPackage = preview.selectedPackage as Record<string, unknown>;
+  const items = preview.items as Array<Record<string, unknown>>;
+  return preview.previewVersion === 2 && preview.scopeRevision === 12 &&
+    preview.currency === "EUR" && preview.vatBasis === "exclusive" && preview.nonBinding === true &&
+    budget.selectedBudgetCategoryCode === "below_1800" && budget.comparisonStatus === "MANUAL_REVIEW" &&
+    summary.containsFromPricing === true && summary.manualReviewRequired === true &&
+    !("knownMinimumMinor" in summary) && selectedPackage.selectedPackageDefinitionId === "professional_v1" &&
+    selectedPackage.label === "Professional" && Number.isSafeInteger(selectedPackage.floorMinor) &&
+    Array.isArray(items) && items.every((item) =>
+      typeof item.presentationKey === "string" && typeof item.labelKey === "string" &&
+      typeof item.state === "string" && !("amountMinor" in item)
+    );
+}
+
 Deno.test("preview success uses global, context and capability RPCs without mutation RPCs", async () => {
   const calls: Array<{ name: string; parameters: Record<string, unknown> }> = [];
   const client: PreviewRateLimitRpcClient = {
@@ -71,6 +89,7 @@ Deno.test("preview success uses global, context and capability RPCs without muta
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("cache-control"), "no-store");
   assertEquals(payload.preview.scopeRevision, 12);
+  assertEquals(payload.preview.previewContractVersion, 2);
   assertEquals(payload.preview.nonBinding, true);
   assertEquals(calls.map((call) => call.name), [
     "consume_preview_rate_limit_v1",
@@ -80,6 +99,69 @@ Deno.test("preview success uses global, context and capability RPCs without muta
   assertEquals(JSON.stringify(calls).includes("update_quote_request_intake"), false);
   assertEquals(JSON.stringify(payload).includes("pricingSnapshot"), false);
   assertEquals(JSON.stringify(payload).includes("proof"), false);
+});
+
+Deno.test("stale and current clients remain usable across a backend rollout", async () => {
+  const client: PreviewRateLimitRpcClient = {
+    rpc(name) {
+      if (name === "inspect_preview_budget_guard_context_v1") {
+        return Promise.resolve({
+          ...context(),
+          data: [{
+            ...context().data[0],
+            budget_label: "Minder dan EUR 1.800",
+            budget_category_code: "below_1800",
+          }],
+        });
+      }
+      return Promise.resolve(allowedDecision());
+    },
+  };
+  const { clientPreviewVersion: _version, ...legacyBody } = body;
+  const manualMismatchData = {
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+    requested_features: ["customer_login"],
+  };
+  const response = await handlePricingPreview({
+    ...legacyBody,
+    data: manualMismatchData,
+  }, origin, client, dependencies());
+  const payload = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(payload.preview.previewContractVersion, 1);
+  assertEquals(payload.preview.budget.comparisonStatus, "MANUAL_REVIEW");
+  assertEquals("knownMinimumMinor" in payload.preview.summary, false);
+  assertEquals(JSON.stringify(payload.preview).includes("amountMinor"), false);
+  assertEquals(staleV5Accepts(payload.preview), true);
+
+  const currentResponse = await handlePricingPreview({
+    ...body,
+    data: manualMismatchData,
+  }, origin, client, dependencies());
+  const currentPayload = await currentResponse.json();
+  assertEquals(currentResponse.status, 200);
+  assertEquals(currentPayload.preview.previewContractVersion, 2);
+  assertEquals(currentPayload.preview.budget.comparisonStatus, "KNOWN_MINIMUM_ABOVE_BUDGET");
+  assertEquals(currentPayload.preview.summary.manualReviewRequired, true);
+  assertEquals(currentPayload.preview.summary.knownMinimumMinor, 320_000);
+  assertEquals(JSON.stringify(currentPayload.preview).includes("amountMinor"), false);
+});
+
+Deno.test("unknown client preview version fails closed before token or pricing", async () => {
+  let calculated = false;
+  const client: PreviewRateLimitRpcClient = { rpc: () => Promise.resolve(allowedDecision()) };
+  const response = await handlePricingPreview(
+    { ...body, clientPreviewVersion: 99 },
+    origin,
+    client,
+    dependencies(() => calculated = true),
+  );
+
+  assertEquals(response.status, 400);
+  assertEquals((await response.json()).code, "UNSUPPORTED_PREVIEW_CLIENT_VERSION");
+  assertEquals(calculated, false);
 });
 
 Deno.test("global denial returns authoritative 429 before token validation or pricing", async () => {
