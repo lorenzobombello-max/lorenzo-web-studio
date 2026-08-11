@@ -144,6 +144,8 @@
     OTHER_PAGE_SCOPE: 'input[name="requested_pages"][value="other"]',
     UNKNOWN_PAGE_SCOPE: '[data-name="requested_pages"]',
     NEWSLETTER_SCOPE: "#newsletterFields",
+    INDETERMINATE_SCOPE: 'input[name="image_support"][value="unsure"]',
+    UNKNOWN_FEATURE_SCOPE: 'input[name="requested_features"][value="unsure"]',
     PACKAGE_SCOPE: null,
   });
   const pricingBadges = new Map();

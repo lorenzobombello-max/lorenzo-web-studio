@@ -131,6 +131,22 @@ Deno.test("substantial copywriting supersedes generic content support in custome
   assertEquals(result.summary.manualReviewRequired, true);
 });
 
+Deno.test("uncertain normal and feature scopes have explicit customer presentation keys", () => {
+  const result = preview({
+    requested_features: ["unsure"],
+    image_support: ["unsure"],
+  });
+
+  assertEquals(
+    result.items.find((item) => item.presentationKey === "INDETERMINATE_SCOPE")?.state,
+    "MANUAL_REVIEW",
+  );
+  assertEquals(
+    result.items.find((item) => item.presentationKey === "UNKNOWN_FEATURE_SCOPE")?.state,
+    "MANUAL_REVIEW",
+  );
+});
+
 Deno.test("manual preview retains a proven package-floor budget mismatch", () => {
   const result = preview({
     selected_package_definition_id: "starter_v1",

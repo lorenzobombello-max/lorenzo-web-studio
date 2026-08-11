@@ -50,6 +50,8 @@ export type PricingPreviewPresentationKey =
   | "OTHER_PAGE_SCOPE"
   | "UNKNOWN_PAGE_SCOPE"
   | "NEWSLETTER_SCOPE"
+  | "INDETERMINATE_SCOPE"
+  | "UNKNOWN_FEATURE_SCOPE"
   | "PACKAGE_SCOPE";
 
 export type PricingPreviewLabelKey = `pricing_preview.${Lowercase<PricingPreviewPresentationKey>}`;
@@ -179,6 +181,8 @@ const PRESENTATION_KEYS = {
   other_page_scope: "OTHER_PAGE_SCOPE",
   unknown_page_scope: "UNKNOWN_PAGE_SCOPE",
   newsletter_manual: "NEWSLETTER_SCOPE",
+  indeterminate_normal_scope: "INDETERMINATE_SCOPE",
+  unknown_feature_scope: "UNKNOWN_FEATURE_SCOPE",
   standard_page_count_above_professional_scope: "PACKAGE_SCOPE",
 } as const satisfies Record<string, PricingPreviewPresentationKey>;
 

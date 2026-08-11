@@ -401,6 +401,7 @@ Deno.test("every individual late-step pricing choice remains accepted", async ()
     ["content help", (f) => f.value("content_status", "needs_help")],
     ["substantial copywriting", (f) => f.value("copywriting_scope", "substantial")],
     ["professional photography", (f) => f.choose("image_support", "professional_photography")],
+    ["uncertain image support", (f) => f.choose("image_support", "unsure")],
     ["exceptional image work", (f) => f.value("image_work_scope", "exceptional")],
     ["paid stock handling", (f) => f.check("#paid_stock_handling")],
     ["search", (f) => f.choose("requested_features", "search")],
@@ -409,6 +410,7 @@ Deno.test("every individual late-step pricing choice remains accepted", async ()
     ["maintenance", (f) => f.value("maintenance_interest", "info_requested")],
     ["rush deadline", (f) => { f.value("deadline_date", "2026-12-01"); f.check("#deadline_hard"); }],
     ["other custom page", (f) => f.choose("requested_pages", "other")],
+    ["uncertain feature scope", (f) => f.choose("requested_features", "unsure")],
     ["included analytics-adjacent controls", (f) => {
       f.choose("requested_features", "google_maps");
       f.choose("requested_features", "social_links");
