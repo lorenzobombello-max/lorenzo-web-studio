@@ -317,11 +317,11 @@ Deno.test("normal submit executes the pending-preview gate", () => {
   let gateCalls = 0;
   let gateResult = false;
   const validateSubmit = Function(
-    "clearErrors", "collectData", "requiredSubmitFields", "markError", "showStep", "steps", "setMessage",
-    "validateBudgetGuardAcknowledgement",
+    "collectData", "collectValidationIssues", "orderValidationIssues", "renderValidationIssues", "form",
+    "validationControl", "showStep", "steps", "validateBudgetGuardAcknowledgement",
     `"use strict"; return (${sourceFunction("validateSubmit")});`,
   )(
-    () => {}, () => data, Object.keys(data).slice(0, 11), () => null, () => {}, [], () => {},
+    () => data, () => [], (issues: unknown[]) => issues, () => {}, { elements: [] }, () => null, () => {}, [],
     () => { gateCalls += 1; return gateResult; },
   ) as () => boolean;
   assertEquals(validateSubmit(), false);
@@ -373,5 +373,5 @@ Deno.test("unavailable rendering remains distinct from mismatch", () => {
 });
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-4');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-5');
 });

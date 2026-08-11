@@ -66,6 +66,8 @@
   let currentBudgetGuardKey = "";
   let currentBudgetGuardEvidenceFingerprint = "";
   let acknowledgedBudgetGuardKey = "";
+  const validationErrors = new Map();
+  let validationMessageActive = false;
 
   const PREVIEW_DEBOUNCE_MS = 350;
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
@@ -899,48 +901,134 @@
   function clearErrors() {
     form.querySelectorAll("[aria-invalid=true]").forEach((field) => field.removeAttribute("aria-invalid"));
     form.querySelectorAll(".field-error").forEach((node) => { node.textContent = ""; });
+    validationErrors.clear();
+    updateStepErrorIndicators();
+  }
+
+  function validationControl(name) {
+    const field = form.elements.namedItem(name);
+    return field instanceof RadioNodeList ? field[0] : field;
+  }
+
+  function validationTarget(name) {
+    return form.querySelector(`[data-validation-group="${name}"]`) || validationControl(name);
   }
 
   function markError(name, text) {
-    const field = form.elements.namedItem(name);
-    const first = field instanceof RadioNodeList ? field[0] : field;
-    first?.setAttribute?.("aria-invalid", "true");
+    const control = validationControl(name);
+    validationTarget(name)?.setAttribute?.("aria-invalid", "true");
     const error = document.getElementById(`${name}-error`);
     if (error) error.textContent = text;
-    if (name === "selected_package_definition_id") packageSelectionGroup?.setAttribute("aria-invalid", "true");
-    return first || error;
+    validationErrors.set(name, { name, message: text });
+    return control || error;
+  }
+
+  function clearFieldError(name) {
+    validationTarget(name)?.removeAttribute?.("aria-invalid");
+    const error = document.getElementById(`${name}-error`);
+    if (error) error.textContent = "";
+    validationErrors.delete(name);
+  }
+
+  function collectValidationIssues(data) {
+    const issues = [];
+    requiredSubmitFields.forEach((name) => {
+      if (!data[name]) issues.push({ name, message: "Dit veld is verplicht." });
+    });
+    ["website_goals", "requested_pages", "design_styles", "priorities"].forEach((name) => {
+      if (!data[name]?.length) issues.push({ name, message: "Kies minstens één optie." });
+    });
+    if (!data.selected_package_definition_id) {
+      issues.push({ name: "selected_package_definition_id", message: "Kies Starter of Professional om je intake te verzenden." });
+    }
+    if (data.has_existing_website === true && !data.existing_website_url) {
+      issues.push({ name: "existing_website_url", message: "Vul je huidige website in." });
+    }
+    if (data.domain_status === "has_domain" && !data.domain_name) {
+      issues.push({ name: "domain_name", message: "Vul je domeinnaam in." });
+    }
+    if (!data.confirmation) issues.push({ name: "confirmation", message: "Bevestig je briefing voor verzending." });
+    return issues;
+  }
+
+  function orderValidationIssues(issues, orderedNames) {
+    const order = new Map(orderedNames.map((name, index) => [name, index]));
+    return [...issues].sort((left, right) =>
+      (order.get(left.name) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.name) ?? Number.MAX_SAFE_INTEGER));
+  }
+
+  function validationSummary(count) {
+    if (!count) return "";
+    return count === 1 ? "Controleer 1 gemarkeerd veld." : `Controleer ${count} gemarkeerde velden.`;
+  }
+
+  function updateStepErrorIndicators() {
+    steps.forEach((step, index) => {
+      const hasError = Boolean(step.querySelector('[aria-invalid="true"]'));
+      const button = stepButtons[index];
+      button?.classList.toggle("has-error", hasError);
+      const stepLabel = button?.textContent.trim().replace(/^(\d+)\s*/, "$1 ");
+      if (hasError) button?.setAttribute("aria-label", `${stepLabel}, bevat fouten`);
+      else button?.removeAttribute("aria-label");
+    });
+  }
+
+  function renderValidationIssues(issues) {
+    clearErrors();
+    issues.forEach(({ name, message: text }) => markError(name, text));
+    updateStepErrorIndicators();
+    validationMessageActive = issues.length > 0;
+    setMessage(validationSummary(issues.length), issues.length ? "error" : null);
+  }
+
+  function revalidateFields(names) {
+    if (!validationMessageActive && !names.some((name) => validationErrors.has(name))) return;
+    const currentIssues = new Map(collectValidationIssues(collectData()).map((issue) => [issue.name, issue]));
+    names.forEach((name) => {
+      clearFieldError(name);
+      const issue = currentIssues.get(name);
+      if (issue) markError(issue.name, issue.message);
+    });
+    updateStepErrorIndicators();
+    if (validationErrors.size) setMessage(validationSummary(validationErrors.size), "error");
+    else {
+      validationMessageActive = false;
+      setMessage("", null);
+    }
+  }
+
+  function handleValidationInput(event) {
+    const validationNames = [event.target.name].filter(Boolean);
+    if (event.target.name === "has_existing_website") validationNames.push("existing_website_url");
+    if (event.target.name === "domain_status") validationNames.push("domain_name");
+    revalidateFields(validationNames);
   }
 
   function validatePackageSelection() {
-    if (form.querySelector('input[name="selected_package_definition_id"]:checked')) return true;
+    if (form.querySelector('input[name="selected_package_definition_id"]:checked')) {
+      clearFieldError("selected_package_definition_id");
+      updateStepErrorIndicators();
+      return true;
+    }
     const firstInvalid = markError("selected_package_definition_id", "Kies Starter of Professional om verder te gaan.");
+    validationMessageActive = true;
+    updateStepErrorIndicators();
     firstInvalid?.focus?.();
     setMessage("Kies eerst een pakket. Je budgetkeuze blijft onafhankelijk.", "error");
     return false;
   }
 
   function validateSubmit() {
-    clearErrors();
     const data = collectData();
-    let firstInvalid = null;
-    requiredSubmitFields.forEach((name) => {
-      if (!data[name]) firstInvalid ||= markError(name, "Dit veld is verplicht.");
-    });
-    ["website_goals", "requested_pages", "design_styles", "priorities"].forEach((name) => {
-      if (!data[name]?.length) firstInvalid ||= markError(name, "Kies minstens één optie.");
-    });
-    if (!data.selected_package_definition_id) {
-      const packageInvalid = markError("selected_package_definition_id", "Kies Starter of Professional om je intake te verzenden.");
-      firstInvalid ||= packageInvalid;
-    }
-    if (data.has_existing_website === true && !data.existing_website_url) firstInvalid ||= markError("existing_website_url", "Vul je huidige website in.");
-    if (data.domain_status === "has_domain" && !data.domain_name) firstInvalid ||= markError("domain_name", "Vul je domeinnaam in.");
-    if (!data.confirmation) firstInvalid ||= markError("confirmation", "Bevestig je briefing voor verzending.");
-    if (firstInvalid) {
+    const orderedNames = Array.from(form.elements).map((field) => field.name).filter(Boolean);
+    const issues = orderValidationIssues(collectValidationIssues(data), orderedNames);
+    renderValidationIssues(issues);
+    if (issues.length) {
+      const firstInvalid = validationControl(issues[0].name);
       const step = firstInvalid.closest?.(".intake-step");
       if (step) showStep(steps.indexOf(step));
+      firstInvalid.scrollIntoView?.({ behavior: "smooth", block: "center" });
       firstInvalid.focus?.();
-      setMessage("Controleer de gemarkeerde velden.", "error");
       return false;
     }
     return validateBudgetGuardAcknowledgement();
@@ -1082,6 +1170,7 @@
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();
   });
+  form.addEventListener("input", handleValidationInput);
   form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(); });
   saveButton.addEventListener("click", saveDraft);
   nextButton.addEventListener("click", () => {

@@ -40,6 +40,8 @@
 .intake-progress button:hover, .intake-progress button:focus-visible, .intake-progress button[aria-current="step"] { color: var(--color-text); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .intake-progress button span { display: grid; width: 1.8rem; height: 1.8rem; place-items: center; border: 1px solid var(--color-border); border-radius: 50%; font-size: 0.72rem; font-weight: 800; }
 .intake-progress button[aria-current="step"] span { color: #fff; border-color: var(--color-accent); background: var(--color-accent); }
+.intake-progress button.has-error span { color: #9e2d2d; border-color: #9e2d2d; box-shadow: inset 0 0 0 2px var(--color-surface); }
+.intake-progress button.has-error[aria-current="step"] span { color: #fff; border-color: #9e2d2d; background: #9e2d2d; }
 .intake-content { min-width: 0; }
 .intake-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-border); }
 .intake-context div { display: grid; gap: 0.2rem; padding: 0.85rem 1rem; background: var(--color-surface); }
@@ -91,6 +93,7 @@ label > .pricing-status { margin: 0 0 0 auto; }
 .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice-row label, .choice-grid label { display: flex; align-items: center; gap: 0.65rem; min-height: 2.9rem; padding: 0.65rem 0.8rem; border: 1px solid var(--color-border); border-radius: 0.55rem; background: var(--color-bg); cursor: pointer; }
 .choice-row label:has(input:checked), .choice-grid label:has(input:checked) { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 9%, var(--color-bg)); }
+[data-validation-group][aria-invalid="true"] > label { border-color: #9e2d2d; }
 .choice-row input, .choice-grid input, .confirmation-field input { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; accent-color: var(--color-accent); }
 .choice-grid.compact { align-content: start; }
 .package-selection { display: grid; gap: 0.9rem; margin-top: 0.4rem; padding-top: 1.4rem; border-top: 1px solid var(--color-border); }
@@ -122,6 +125,7 @@ label > .pricing-status { margin: 0 0 0 auto; }
 .conditional-panel > .choice-grid { grid-column: 1 / -1; }
 .field-error { min-height: 1rem; margin: 0; color: #9e2d2d; font-size: 0.78rem; }
 .confirmation-field { padding: 1rem; border: 1px solid var(--color-border); border-radius: 0.65rem; background: var(--color-bg); }
+.confirmation-field[aria-invalid="true"] { border-color: #9e2d2d; }
 .confirmation-field label { display: flex; gap: 0.7rem; align-items: flex-start; font-weight: 700; }
 .confirmation-field > p:not(.field-error) { margin: 0.45rem 0 0 1.85rem; color: var(--color-text-soft); font-size: 0.85rem; }
 .intake-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 2rem; padding-top: 1.3rem; border-top: 1px solid var(--color-border); }
