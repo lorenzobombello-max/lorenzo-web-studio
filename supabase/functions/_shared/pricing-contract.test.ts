@@ -136,14 +136,33 @@ Deno.test("config hash is lowercase SHA-256 and covers all authoritative policy"
   assertNotEquals(await computePricingConfigHash(versionChanged), baseline);
 });
 
-Deno.test("budget evaluator applies manual, missing, ambiguous and legacy precedence", () => {
+Deno.test("budget evaluator preserves manual status while comparing reliable budget bounds", () => {
   const below = budgetGuardEvidence("below_1800");
   assertEquals(evaluateBudget(calculation(180_000, true), below), {
     contractVersion: 2,
     ...below,
     status: "manual_review_required",
+    outsideBudgetWishes: true,
+  });
+
+  const sufficient = budgetGuardEvidence("3200_to_6000_inclusive");
+  assertEquals(evaluateBudget(calculation(180_000, true), sufficient), {
+    contractVersion: 2,
+    ...sufficient,
+    status: "manual_review_required",
+    outsideBudgetWishes: false,
+  });
+
+  const open = budgetGuardEvidence("above_6000");
+  assertEquals(evaluateBudget(calculation(180_000, true), open), {
+    contractVersion: 2,
+    ...open,
+    status: "manual_review_required",
     outsideBudgetWishes: null,
   });
+});
+
+Deno.test("budget evaluator applies missing, ambiguous and legacy precedence", () => {
 
   const legacy = resolveBudgetEvidence("EUR 3.000 - EUR 6.000", null, null);
   assertEquals(evaluateBudget(calculation(180_000), legacy).status, "legacy_category_not_safely_comparable");

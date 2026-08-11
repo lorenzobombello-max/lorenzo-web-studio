@@ -192,7 +192,6 @@ function budgetState(
   pricing: BudgetGuardResult,
   budget: BudgetEvaluationV2,
 ): PricingPreviewBudgetState {
-  if (pricing.calculation.manualReviewRequired) return "MANUAL_REVIEW";
   if (budget.evidenceProvenance !== "budget_guard_v1") return "INDETERMINATE";
   if (budget.outsideBudgetWishes === true) return "KNOWN_MINIMUM_ABOVE_BUDGET";
   const lowerInclusiveMinor = PRICING_CONFIG.budgetEvaluation.categories[budget.categoryCode]
@@ -230,7 +229,8 @@ export function buildCustomerPricingPreview(
     pricing.calculation.manualReviewRequired !== (pricing.calculation.manualReasons.length > 0)
   ) throw new TypeError("INCOHERENT_PRICING_PREVIEW");
 
-  const suppressAmounts = pricing.calculation.manualReviewRequired;
+  const comparisonStatus = budgetState(pricing, budgetEvaluation);
+  const suppressItemAmounts = pricing.calculation.manualReviewRequired;
   const items = pricing.calculation.appliedRules
     .filter((rule) => !rule.ruleId.endsWith("_floor"))
     .map((rule) => {
@@ -248,13 +248,12 @@ export function buildCustomerPricingPreview(
         labelKey: `pricing_preview.${presentationKey.toLowerCase()}` as PricingPreviewLabelKey,
         state,
         ...(rule.quantity === 1 ? {} : { quantity: rule.quantity }),
-        ...(!suppressAmounts && (state === "FIXED_EXTRA" || state === "FROM_EXTRA")
+        ...(!suppressItemAmounts && (state === "FIXED_EXTRA" || state === "FROM_EXTRA")
           ? { amountMinor: rule.amountMinor }
           : {}),
       };
     });
 
-  const comparisonStatus = budgetState(pricing, budgetEvaluation);
   const base: Omit<CustomerPricingPreviewDTOv1, "previewVersion"> = {
     scopeRevision,
     pricingConfigVersion: pricing.pricingConfigVersion,
@@ -271,7 +270,8 @@ export function buildCustomerPricingPreview(
         : {}),
     },
     summary: {
-      ...(!suppressAmounts
+      ...(!pricing.calculation.manualReviewRequired ||
+          comparisonStatus === "KNOWN_MINIMUM_ABOVE_BUDGET"
         ? { knownMinimumMinor: pricing.calculation.knownMinimumMinor }
         : {}),
       containsFromPricing: pricing.calculation.containsFromPricing,

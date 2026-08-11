@@ -423,9 +423,7 @@
     return preview.previewVersion === 2 &&
       preview.budget.comparisonStatus === "KNOWN_MINIMUM_ABOVE_BUDGET" &&
       Number.isSafeInteger(preview.summary.knownMinimumMinor) &&
-      preview.summary.knownMinimumMinor === preview.selectedPackage.floorMinor &&
-      preview.summary.containsFromPricing === false &&
-      preview.items.every((item) => item.state === "INCLUDED");
+      preview.summary.knownMinimumMinor === preview.selectedPackage.floorMinor;
   }
 
   function budgetGuardMismatchMessage(preview) {
@@ -547,9 +545,10 @@
       ) return false;
     } else if ("selectedPackage" in preview) return false;
     if (
-      preview.summary.manualReviewRequired === true && "knownMinimumMinor" in preview.summary ||
       "knownMinimumMinor" in preview.summary &&
-        (!Number.isSafeInteger(preview.summary.knownMinimumMinor) || preview.summary.knownMinimumMinor < 0)
+        (!Number.isSafeInteger(preview.summary.knownMinimumMinor) || preview.summary.knownMinimumMinor < 0) ||
+      preview.summary.manualReviewRequired === true && "knownMinimumMinor" in preview.summary &&
+        preview.budget.comparisonStatus !== "KNOWN_MINIMUM_ABOVE_BUDGET"
     ) return false;
     const seenKeys = new Set();
     return preview.items.every((item) => {
@@ -626,12 +625,33 @@
       budgetGuardPackage.textContent = `${selectedPackage.label} — max. ${selectedPackage.standardPageLimit} standaardpagina's, ${selectedPackage.includedCorrectionRounds} ${rounds}`;
       budgetGuardPackageRow.hidden = false;
     }
-    if (!manual && Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
+    if (Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
       budgetGuardMinimum.textContent = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
       budgetGuardMinimumRow.hidden = false;
     }
     const state = preview.budget.comparisonStatus;
-    if (state === "WITHIN_KNOWN_BUDGET") {
+    if (manual) {
+      budgetGuardPreview.classList.add("budget-guard--manual");
+      budgetGuardState.textContent = "Persoonlijke beoordeling vereist";
+      if (state === "KNOWN_MINIMUM_ABOVE_BUDGET") {
+        budgetGuardPreview.classList.add("budget-guard--warning");
+        if (isPackageFloorMismatch(preview)) {
+          const floor = euroFormatter.format(preview.selectedPackage.floorMinor / 100);
+          budgetGuardStatus.textContent = `Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden. Daarnaast start het gekozen ${preview.selectedPackage.label}-pakket vanaf ${floor} excl. btw, terwijl je opgegeven budget daaronder ligt.`;
+        } else {
+          budgetGuardStatus.textContent = "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden. Daarnaast ligt het huidige bekende minimum boven je opgegeven budget.";
+        }
+        budgetGuardWarningActions.hidden = budgetGuardAllowsSubmit(
+          state,
+          currentBudgetGuardKey,
+          acknowledgedBudgetGuardKey,
+          currentBudgetGuardEvidenceFingerprint,
+          pricingEvidenceFingerprint,
+        );
+      } else {
+        budgetGuardStatus.textContent = "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden.";
+      }
+    } else if (state === "WITHIN_KNOWN_BUDGET") {
       budgetGuardPreview.classList.add("budget-guard--within");
       budgetGuardState.textContent = "Huidige vergelijking";
       budgetGuardStatus.textContent = "Het huidige bekende minimum overschrijdt je gekozen budget niet.";
@@ -646,10 +666,6 @@
         currentBudgetGuardEvidenceFingerprint,
         pricingEvidenceFingerprint,
       );
-    } else if (state === "MANUAL_REVIEW") {
-      budgetGuardPreview.classList.add("budget-guard--manual");
-      budgetGuardState.textContent = "Persoonlijke beoordeling";
-      budgetGuardStatus.textContent = "Persoonlijke prijsbeoordeling vereist.";
     } else {
       budgetGuardPreview.classList.add("budget-guard--indeterminate");
       budgetGuardState.textContent = "Nog te bepalen";

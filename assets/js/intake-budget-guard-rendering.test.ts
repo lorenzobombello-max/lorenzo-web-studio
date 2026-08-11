@@ -52,7 +52,7 @@ const validPreview = Function(
   { below_1800: "Minder dan € 1.800" },
   new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]),
   new Set(["starter_v1", "professional_v1"]),
-  { PACKAGE_SCOPE: null },
+  { PACKAGE_SCOPE: null, CUSTOMER_LOGIN: "#customer_login" },
   new Set(["INCLUDED", "FIXED_EXTRA", "FROM_EXTRA", "MANUAL_REVIEW"]),
 ) as (preview: unknown, revision: number) => boolean;
 
@@ -132,6 +132,7 @@ function render(renderedPreview: typeof preview) {
     "budgetGuardPackageAdvice",
     "budgetGuardAcknowledgementKey",
     "budgetGuardAllowsSubmit",
+    "isPackageFloorMismatch",
     "budgetGuardMismatchMessage",
     "currentBudgetGuardStatus",
     "currentBudgetGuardKey",
@@ -161,6 +162,7 @@ function render(renderedPreview: typeof preview) {
     ui.advice,
     budgetGuardAcknowledgementKey,
     budgetGuardAllowsSubmit,
+    isPackageFloorMismatch,
     budgetGuardMismatchMessage,
     "",
     "",
@@ -190,6 +192,27 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
   assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
 });
 
+Deno.test("combined manual review and package-floor mismatch renders both warnings", () => {
+  const combinedPreview = structuredClone(preview);
+  combinedPreview.summary.manualReviewRequired = true;
+  combinedPreview.summary.containsFromPricing = true;
+  combinedPreview.items = [{
+    presentationKey: "CUSTOMER_LOGIN",
+    labelKey: "pricing_preview.customer_login",
+    state: "MANUAL_REVIEW",
+  }];
+
+  assertEquals(validPreview(combinedPreview, 5), true);
+  const ui = render(combinedPreview);
+  assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
+  assertStringIncludes(ui.status.textContent, "onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden");
+  assertStringIncludes(ui.status.textContent.replaceAll(/\s/g, " "), "start het gekozen Professional-pakket vanaf € 3.200 excl. btw");
+  assertStringIncludes(ui.status.textContent, "budget daaronder ligt");
+  assertEquals(ui.warning.hidden, false);
+  assertEquals(ui.preview.classList.contains("budget-guard--manual"), true);
+  assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
+});
+
 Deno.test("supplement mismatch keeps generic copy", () => {
   const supplementPreview = structuredClone(preview);
   supplementPreview.summary.knownMinimumMinor = 350_000;
@@ -215,6 +238,29 @@ Deno.test("mismatch requires acknowledgement for the current key", () => {
   const key = budgetGuardAcknowledgementKey(preview, evidence);
   assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", key, "", evidence, evidence), false);
   assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", key, key, evidence, evidence), true);
+});
+
+Deno.test("combined state requires a current Model B acknowledgement", () => {
+  const combinedPreview = structuredClone(preview);
+  combinedPreview.summary.manualReviewRequired = true;
+  const evidence = pricingFingerprint({ budget: "below_1800", manual: true });
+  const key = budgetGuardAcknowledgementKey(combinedPreview, evidence);
+  assertEquals(budgetGuardAllowsSubmit(combinedPreview.budget.comparisonStatus, key, "", evidence, evidence), false);
+  assertEquals(budgetGuardAllowsSubmit(combinedPreview.budget.comparisonStatus, key, key, evidence, evidence), true);
+});
+
+Deno.test("review or budget status changes invalidate acknowledgement", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800" });
+  const before = budgetGuardAcknowledgementKey(preview, evidence);
+
+  const reviewChanged = structuredClone(preview);
+  reviewChanged.summary.manualReviewRequired = true;
+  assertNotEquals(budgetGuardAcknowledgementKey(reviewChanged, evidence), before);
+
+  const budgetChanged = structuredClone(preview);
+  budgetChanged.budget.comparisonStatus = "WITHIN_KNOWN_BUDGET";
+  budgetChanged.budget.knownMinimumExceedsBudget = false;
+  assertNotEquals(budgetGuardAcknowledgementKey(budgetChanged, evidence), before);
 });
 
 Deno.test("budget change invalidates acknowledgement", () => {
@@ -348,7 +394,7 @@ Deno.test("final modal submit cannot bypass the pending-preview gate", async () 
   assertEquals(requestCalls, 0);
 });
 
-Deno.test("unknown and manual review rendering remain unchanged", () => {
+Deno.test("unknown and manual-only rendering do not invent a budget warning", () => {
   const unknownPreview = structuredClone(preview);
   unknownPreview.budget.comparisonStatus = "INDETERMINATE";
   unknownPreview.budget.knownMinimumExceedsBudget = false;
@@ -358,13 +404,15 @@ Deno.test("unknown and manual review rendering remain unchanged", () => {
   assertStringIncludes(unknownUi.status.textContent, "nog niet betrouwbaar vergelijken");
 
   const manualPreview = structuredClone(preview);
-  manualPreview.budget.comparisonStatus = "MANUAL_REVIEW";
+  manualPreview.budget.comparisonStatus = "WITHIN_KNOWN_BUDGET";
   manualPreview.budget.knownMinimumExceedsBudget = false;
-  manualPreview.summary.knownMinimumMinor = undefined as unknown as number;
+  delete (manualPreview.summary as Partial<typeof manualPreview.summary>).knownMinimumMinor;
   manualPreview.summary.manualReviewRequired = true;
   const manualUi = render(manualPreview);
-  assertEquals(manualUi.state.textContent, "Persoonlijke beoordeling");
-  assertEquals(manualUi.status.textContent, "Persoonlijke prijsbeoordeling vereist.");
+  assertEquals(manualUi.state.textContent, "Persoonlijke beoordeling vereist");
+  assertEquals(manualUi.status.textContent, "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden.");
+  assertEquals(manualUi.warning.hidden, true);
+  assertEquals(manualUi.preview.classList.contains("budget-guard--warning"), false);
 });
 
 Deno.test("unavailable rendering remains distinct from mismatch", () => {

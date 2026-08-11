@@ -87,14 +87,15 @@ Deno.test("included scope has no supplement and duplicate evidence is charged on
   assertEquals(result.items.filter((item) => item.state === "INCLUDED").every((item) => !("amountMinor" in item)), true);
 });
 
-Deno.test("manual preview suppresses every monetary amount while retaining presentation states", () => {
+Deno.test("manual preview keeps review and compatible budget dimensions independent", () => {
   const result = preview({
     requested_pages: ["home", "about", "services", "portfolio", "team", "pricing"],
     requested_features: ["customer_login"],
   });
   assertBudgetResult(result, {
     categoryCode: "3200_to_6000_inclusive",
-    comparisonStatus: "MANUAL_REVIEW",
+    comparisonStatus: "WITHIN_KNOWN_BUDGET",
+    knownMinimumExceedsBudget: false,
     knownMinimumMinor: undefined,
     containsFromPricing: true,
   });
@@ -104,6 +105,44 @@ Deno.test("manual preview suppresses every monetary amount while retaining prese
   assertEquals(result.items.some((item) => item.state === "FROM_EXTRA"), true);
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
+});
+
+Deno.test("manual preview retains a proven package-floor budget mismatch", () => {
+  const result = preview({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+    requested_features: ["customer_login"],
+  }, 1, "below_1800");
+
+  assertBudgetResult(result, {
+    categoryCode: "below_1800",
+    comparisonStatus: "KNOWN_MINIMUM_ABOVE_BUDGET",
+    knownMinimumExceedsBudget: true,
+    knownMinimumMinor: 180_000,
+    containsFromPricing: true,
+  });
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals(result.items.some((item) => item.state === "MANUAL_REVIEW"), true);
+  assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
+});
+
+Deno.test("manual preview keeps unreliable budget evidence indeterminate", () => {
+  const pricing = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["home"],
+    requested_features: ["customer_login"],
+  });
+  const evidence = resolveBudgetEvidence(null, null, null);
+  const result = buildCustomerPricingPreview(
+    1,
+    pricing,
+    evaluateBudget(pricing.calculation, evidence),
+  );
+
+  assertEquals(result.budget.comparisonStatus, "INDETERMINATE");
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals("knownMinimumMinor" in result.summary, false);
+  assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
 });
 
 Deno.test("preview compares package known minimum safely for approved budget matrix A-E", () => {

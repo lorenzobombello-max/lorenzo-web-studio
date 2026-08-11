@@ -441,7 +441,6 @@ export function evaluateBudget(
   });
 
   if (
-    calculation.manualReviewRequired ||
     evidence.evidenceProvenance === "missing" ||
     evidence.evidenceProvenance === "ambiguous"
   ) {
@@ -450,17 +449,22 @@ export function evaluateBudget(
   if (evidence.evidenceProvenance === "legacy_label") {
     return result(policy.statusMapping.legacy, null);
   }
+  const status = calculation.manualReviewRequired
+    ? policy.statusMapping.manual
+    : null;
   if (evidence.categoryCode === "below_1800") {
-    return result(policy.statusMapping.belowStarter, true);
+    return result(status ?? policy.statusMapping.belowStarter, true);
   }
 
   const upperBound = policy.categories[evidence.categoryCode]
     .upperInclusiveMinor;
-  if (upperBound === null) return result(policy.statusMapping.openUpper, null);
-  if (calculation.knownMinimumMinor > upperBound) {
-    return result(policy.statusMapping.exceedsBoundedUpper, true);
+  if (upperBound === null) {
+    return result(status ?? policy.statusMapping.openUpper, null);
   }
-  return result(policy.statusMapping.withinBoundedUpper, false);
+  if (calculation.knownMinimumMinor > upperBound) {
+    return result(status ?? policy.statusMapping.exceedsBoundedUpper, true);
+  }
+  return result(status ?? policy.statusMapping.withinBoundedUpper, false);
 }
 
 export async function buildPricingSnapshotV2(
