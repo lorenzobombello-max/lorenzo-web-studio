@@ -314,7 +314,7 @@
 
     if (!budgetChoiceChanged && restoredLegacyBudget) data.budget_update_category = restoredLegacyBudget;
     const budgetCode = budgetCodes[data.budget_update_category];
-    if (budgetCode && (budgetChoiceChanged || restoredBudgetEvidence)) {
+    if (budgetCode) {
       data.budget_update_category_scheme = "budget_guard_v1";
       data.budget_update_category_code = budgetCode;
     } else if (!budgetCode && restoredBudgetEvidence) {
