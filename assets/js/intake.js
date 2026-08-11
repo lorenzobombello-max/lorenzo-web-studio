@@ -779,6 +779,18 @@
   function schedulePricingPreview({ force = false, immediate = false } = {}) {
     if (readOnly || previewStopped || !token || !endpoint) return;
     const evidence = collectPricingEvidence();
+    if (
+      evidence.booking_required === true &&
+      evidence.booking_details?.existing_system === true &&
+      !evidence.booking_details.existing_system_name
+    ) {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+      previewAbortController?.abort();
+      previewAbortController = null;
+      activeRequestFingerprint = "";
+      return;
+    }
     const fingerprint = pricingFingerprint(evidence);
     if (!force && fingerprint === pricingEvidenceFingerprint) return;
     if (fingerprint !== pricingEvidenceFingerprint) acknowledgedBudgetGuardKey = "";

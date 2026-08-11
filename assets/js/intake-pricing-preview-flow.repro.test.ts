@@ -385,6 +385,118 @@ Deno.test("frontend and backend pricing preview schemas remain machine-readable 
   assertEquals(valueMismatch, []);
 });
 
+Deno.test("incomplete existing booking system pauses preview until the name is valid", () => {
+  const frontend = buildFrontendHarness();
+  frontend.choose("booking_required", "true");
+  frontend.value("booking_type", "reservations");
+
+  const scheduler = Function(
+    "collectPricingEvidence",
+    "pricingFingerprint",
+    "hasPricingEvidence",
+    `"use strict";
+      let readOnly = false;
+      let previewStopped = false;
+      const token = "${token}";
+      const endpoint = "${origin}/functions/v1/intake-quote-request";
+      let pricingEvidenceFingerprint = "";
+      let acknowledgedBudgetGuardKey = "";
+      let scopeRevision = 0;
+      let previewTimer = null;
+      let previewAbortController = null;
+      let activeRequestFingerprint = "";
+      let previewPausedUntil = 0;
+      const PREVIEW_DEBOUNCE_MS = 350;
+      const queued = new Map();
+      let nextTimer = 0;
+      const requests = [];
+      let invalidations = 0;
+      let loadingStates = 0;
+      let unavailableStates = 0;
+      const window = {
+        setTimeout(callback) {
+          nextTimer += 1;
+          queued.set(nextTimer, callback);
+          return nextTimer;
+        },
+      };
+      function clearTimeout(id) { queued.delete(id); }
+      const budgetGuardPreview = { hidden: false, setAttribute() {} };
+      function invalidateCurrentBudgetGuardPreview() { invalidations += 1; }
+      function clearPricingPresentation() {}
+      function showPreviewUnavailable() { unavailableStates += 1; }
+      function setPreviewLoading() { loadingStates += 1; }
+      function requestBudgetGuardPreview(revision, evidence, fingerprint) {
+        requests.push({ revision, evidence, fingerprint });
+      }
+      ${sourceFunction("schedulePricingPreview")}
+      return {
+        schedulePricingPreview,
+        flush() {
+          const callbacks = [...queued.values()];
+          queued.clear();
+          callbacks.forEach((callback) => callback());
+        },
+        requests,
+        counts() { return { invalidations, loadingStates, unavailableStates }; },
+      };`,
+  )(
+    frontend.collectPricingEvidence,
+    frontend.pricingFingerprint,
+    (evidence: Record<string, unknown>) => Object.keys(evidence).length > 0,
+  ) as {
+    schedulePricingPreview: (options?: { force?: boolean; immediate?: boolean }) => void;
+    flush: () => void;
+    requests: Array<{ evidence: Record<string, unknown> }>;
+    counts: () => { invalidations: number; loadingStates: number; unavailableStates: number };
+  };
+
+  scheduler.schedulePricingPreview({ immediate: true });
+  scheduler.flush();
+  assertEquals(scheduler.requests.length, 1);
+  assertEquals((scheduler.requests[0].evidence.booking_details as Record<string, unknown>).existing_system, false);
+
+  frontend.check("#booking_calendar");
+  scheduler.schedulePricingPreview();
+  frontend.check("#booking_existing");
+  const incompleteEvidence = frontend.collectPricingEvidence();
+  let validatorError: InputValidationError | null = null;
+  try {
+    sanitizeAndValidatePricingPreviewInput(incompleteEvidence);
+  } catch (error) {
+    if (!(error instanceof InputValidationError)) throw error;
+    validatorError = error;
+  }
+  assertExists(validatorError);
+  assertEquals(validatorError.code, "REQUIRED_FIELD");
+  assertEquals(validatorError.field, "booking_details.existing_system_name");
+
+  const validCounts = scheduler.counts();
+  scheduler.schedulePricingPreview({ immediate: true });
+  scheduler.flush();
+  assertEquals(scheduler.requests.length, 1);
+  assertEquals(scheduler.counts(), validCounts);
+
+  frontend.value("booking_system_name", "Calendly");
+  scheduler.schedulePricingPreview({ immediate: true });
+  scheduler.flush();
+  assertEquals(scheduler.requests.length, 2);
+  assertEquals(
+    (scheduler.requests[1].evidence.booking_details as Record<string, unknown>).existing_system_name,
+    "Calendly",
+  );
+
+  frontend.check("#booking_existing", false);
+  scheduler.schedulePricingPreview({ immediate: true });
+  scheduler.flush();
+  assertEquals(scheduler.requests.length, 3);
+  assertEquals(
+    (scheduler.requests[2].evidence.booking_details as Record<string, unknown>).existing_system_name,
+    null,
+  );
+  assertEquals(scheduler.counts().unavailableStates, 0);
+});
+
 Deno.test("every individual late-step pricing choice remains accepted", async () => {
   const scenarios: Array<[string, Mutation]> = [
     ["six standard pages", (f) => selectPages(f, ["home", "about", "services", "portfolio", "faq", "contact"])],
