@@ -1,10 +1,10 @@
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert@1";
+import { assertEquals, assertExists, assertFalse, assertNotEquals, assertStringIncludes } from "jsr:@std/assert@1";
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
 const html = await Deno.readTextFile(new URL("../../pages/intake.html", import.meta.url));
 
 function sourceFunction(name: string) {
-  const match = source.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}`));
+  const match = source.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}`));
   assertExists(match);
   return match[0];
 }
@@ -26,7 +26,7 @@ const preview = {
     containsFromPricing: false,
     manualReviewRequired: false,
   },
-  items: [],
+  items: [] as Array<Record<string, unknown>>,
   packageAdvice: { state: "NO_PACKAGE_ADVICE" },
   selectedPackage: {
     selectedPackageDefinitionId: "professional_v1",
@@ -56,6 +56,47 @@ const validPreview = Function(
   new Set(["INCLUDED", "FIXED_EXTRA", "FROM_EXTRA", "MANUAL_REVIEW"]),
 ) as (preview: unknown, revision: number) => boolean;
 
+const canonicalValue = Function(`"use strict"; return (${sourceFunction("canonicalValue")});`)() as (value: unknown) => unknown;
+const pricingFingerprint = Function(
+  "canonicalValue",
+  `"use strict"; return (${sourceFunction("pricingFingerprint")});`,
+)(canonicalValue) as (value: unknown) => string;
+const budgetGuardAcknowledgementKey = Function(
+  "pricingFingerprint",
+  `"use strict"; return (${sourceFunction("budgetGuardAcknowledgementKey")});`,
+)(pricingFingerprint) as (renderedPreview: typeof preview, evidenceFingerprint: string) => string;
+const budgetGuardAllowsSubmit = Function(
+  `"use strict"; return (${sourceFunction("budgetGuardAllowsSubmit")});`,
+)() as (
+  status: string,
+  currentKey: string,
+  acknowledgementKey: string,
+  previewEvidenceFingerprint: string,
+  currentEvidenceFingerprint: string,
+) => boolean;
+const pricingPreviewMatchesCurrentEvidence = Function(
+  `"use strict"; return (${sourceFunction("pricingPreviewMatchesCurrentEvidence")});`,
+)() as (
+  requestRevision: number,
+  currentRevision: number,
+  requestFingerprint: string,
+  currentEvidenceFingerprint: string,
+  aborted: boolean,
+) => boolean;
+const isPackageFloorMismatch = Function(
+  `"use strict"; return (${sourceFunction("isPackageFloorMismatch")});`,
+)() as (renderedPreview: typeof preview) => boolean;
+const budgetGuardMismatchMessage = Function(
+  "isPackageFloorMismatch",
+  "euroFormatter",
+  `"use strict"; return (${sourceFunction("budgetGuardMismatchMessage")});`,
+)(isPackageFloorMismatch, new Intl.NumberFormat("nl-BE", {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})) as (renderedPreview: typeof preview) => string;
+
 function element() {
   const classes = new Set<string>();
   return {
@@ -69,7 +110,7 @@ function element() {
   };
 }
 
-Deno.test("exact Professional above-budget response renders instead of unavailable", () => {
+function render(renderedPreview: typeof preview) {
   const ui = {
     preview: element(), budget: element(), package: element(), packageRow: element(), minimum: element(),
     minimumRow: element(), state: element(), status: element(), warning: element(), advice: element(),
@@ -89,6 +130,14 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
     "budgetGuardStatus",
     "budgetGuardWarningActions",
     "budgetGuardPackageAdvice",
+    "budgetGuardAcknowledgementKey",
+    "budgetGuardAllowsSubmit",
+    "budgetGuardMismatchMessage",
+    "currentBudgetGuardStatus",
+    "currentBudgetGuardKey",
+    "currentBudgetGuardEvidenceFingerprint",
+    "acknowledgedBudgetGuardKey",
+    "pricingEvidenceFingerprint",
     `"use strict"; return (${sourceFunction("renderPricingPreview")});`,
   )(
     () => {},
@@ -110,15 +159,29 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
     ui.status,
     ui.warning,
     ui.advice,
-  ) as (renderedPreview: typeof preview) => void;
+    budgetGuardAcknowledgementKey,
+    budgetGuardAllowsSubmit,
+    budgetGuardMismatchMessage,
+    "",
+    "",
+    pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
+    "",
+    pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
+  ) as (renderedPreview: typeof preview, evidenceFingerprint: string) => void;
+
+  renderPricingPreview(renderedPreview, pricingFingerprint({ budget: "below_1800", package: "professional_v1" }));
+  return ui;
+}
+
+Deno.test("exact Professional above-budget response renders instead of unavailable", () => {
+  const ui = render(preview);
 
   let unavailable = false;
   if (!validPreview(preview, 5)) unavailable = true;
-  else renderPricingPreview(preview);
 
   assertEquals(unavailable, false);
-  assertEquals(ui.state.textContent, "Aandachtspunt");
-  assertStringIncludes(ui.status.textContent, "boven je gekozen budget");
+  assertEquals(ui.state.textContent, "Budget en pakket niet compatibel");
+  assertEquals(ui.status.textContent.replaceAll(/\s/g, " "), "Het Professional-pakket start vanaf € 3.200 excl. btw. Je opgegeven budget ligt onder dit minimum.");
   assertStringIncludes(ui.package.textContent, "Professional");
   assertStringIncludes(ui.package.textContent, "12 standaardpagina's");
   assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.200excl.btw");
@@ -127,6 +190,188 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
   assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
 });
 
+Deno.test("supplement mismatch keeps generic copy", () => {
+  const supplementPreview = structuredClone(preview);
+  supplementPreview.summary.knownMinimumMinor = 350_000;
+  supplementPreview.items = [{
+    presentationKey: "PACKAGE_SCOPE",
+    labelKey: "pricing_preview.package_scope",
+    state: "FIXED_EXTRA",
+    amountMinor: 30_000,
+  }];
+  const ui = render(supplementPreview);
+  assertEquals(ui.status.textContent, "Het huidige bekende minimum ligt boven je gekozen budget.");
+  assertFalse(ui.status.textContent.includes("Professional-pakket start vanaf"));
+});
+
+Deno.test("package action replaces scope review action", () => {
+  assertStringIncludes(html, 'id="changePackage" type="button">Pakket wijzigen</button>');
+  assertFalse(html.includes('id="reviewScope"'));
+  assertStringIncludes(source, 'document.getElementById("changePackage").addEventListener');
+});
+
+Deno.test("mismatch requires acknowledgement for the current key", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800" });
+  const key = budgetGuardAcknowledgementKey(preview, evidence);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", key, "", evidence, evidence), false);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", key, key, evidence, evidence), true);
+});
+
+Deno.test("budget change invalidates acknowledgement", () => {
+  const before = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ budget: "below_1800" }));
+  const after = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ budget: "1800_to_below_3200" }));
+  assertNotEquals(after, before);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", after, before, "budget-after", "budget-after"), false);
+});
+
+Deno.test("package change invalidates acknowledgement", () => {
+  const before = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ package: "professional_v1" }));
+  const changedPreview = structuredClone(preview);
+  changedPreview.selectedPackage.selectedPackageDefinitionId = "starter_v1";
+  changedPreview.selectedPackage.label = "Starter";
+  changedPreview.selectedPackage.floorMinor = 180_000;
+  changedPreview.summary.knownMinimumMinor = 180_000;
+  const after = budgetGuardAcknowledgementKey(changedPreview, pricingFingerprint({ package: "starter_v1" }));
+  assertNotEquals(after, before);
+});
+
+Deno.test("pricing-relevant scope change invalidates acknowledgement", () => {
+  const before = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ requested_pages: ["home"] }));
+  const after = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ requested_pages: ["home", "blog"] }));
+  assertNotEquals(after, before);
+});
+
+Deno.test("changed server preview invalidates old acknowledgement", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800", package: "professional_v1" });
+  const before = budgetGuardAcknowledgementKey(preview, evidence);
+  const changedPreview = structuredClone(preview);
+  changedPreview.pricingConfigVersion = "production-next";
+  changedPreview.summary.knownMinimumMinor = 330_000;
+  const after = budgetGuardAcknowledgementKey(changedPreview, evidence);
+  assertNotEquals(after, before);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", after, before, evidence, evidence), false);
+});
+
+Deno.test("compatible preview needs no acknowledgement", () => {
+  assertEquals(budgetGuardAllowsSubmit("WITHIN_KNOWN_BUDGET", "compatible-key", "", "evidence", "evidence"), true);
+});
+
+Deno.test("pending or stale preview fails closed until current compatible response arrives", () => {
+  assertEquals(budgetGuardAllowsSubmit("", "", "", "", "changed-evidence"), false);
+  assertEquals(budgetGuardAllowsSubmit("WITHIN_KNOWN_BUDGET", "old-key", "", "old-evidence", "changed-evidence"), false);
+  assertEquals(budgetGuardAllowsSubmit("WITHIN_KNOWN_BUDGET", "new-key", "", "changed-evidence", "changed-evidence"), true);
+});
+
+Deno.test("stale or aborted response cannot validate current evidence", () => {
+  assertEquals(pricingPreviewMatchesCurrentEvidence(4, 5, "old", "current", false), false);
+  assertEquals(pricingPreviewMatchesCurrentEvidence(5, 5, "old", "current", false), false);
+  assertEquals(pricingPreviewMatchesCurrentEvidence(5, 5, "current", "current", true), false);
+  assertEquals(pricingPreviewMatchesCurrentEvidence(5, 5, "current", "current", false), true);
+});
+
+Deno.test("contains-from pricing change invalidates acknowledgement", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800", package: "professional_v1" });
+  const before = budgetGuardAcknowledgementKey(preview, evidence);
+  const changedPreview = structuredClone(preview);
+  changedPreview.summary.containsFromPricing = true;
+  const after = budgetGuardAcknowledgementKey(changedPreview, evidence);
+  assertNotEquals(after, before);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", after, before, evidence, evidence), false);
+});
+
+Deno.test("item semantics invalidate acknowledgement but item order does not", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800", package: "professional_v1" });
+  const withItems = structuredClone(preview);
+  withItems.items = [
+    { presentationKey: "SEO_BASE", state: "INCLUDED" },
+    { presentationKey: "CONTACT_FORM", state: "INCLUDED" },
+  ];
+  const before = budgetGuardAcknowledgementKey(withItems, evidence);
+  const reordered = structuredClone(withItems);
+  reordered.items.reverse();
+  assertEquals(budgetGuardAcknowledgementKey(reordered, evidence), before);
+  const changed = structuredClone(withItems);
+  changed.items[0] = { presentationKey: "SEO_BASE", state: "FIXED_EXTRA", amountMinor: 10_000 };
+  const after = budgetGuardAcknowledgementKey(changed, evidence);
+  assertNotEquals(after, before);
+  assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", after, before, evidence, evidence), false);
+});
+
+Deno.test("irrelevant response revision does not invalidate acknowledgement", () => {
+  const evidence = pricingFingerprint({ budget: "below_1800", package: "professional_v1" });
+  const before = budgetGuardAcknowledgementKey(preview, evidence);
+  const refreshed = structuredClone(preview);
+  refreshed.scopeRevision += 1;
+  assertEquals(budgetGuardAcknowledgementKey(refreshed, evidence), before);
+});
+
+Deno.test("normal submit executes the pending-preview gate", () => {
+  const data = Object.fromEntries([
+    "business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status",
+    "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority",
+  ].map((name) => [name, "valid"]));
+  Object.assign(data, {
+    website_goals: ["professional_presence"], requested_pages: ["home"], design_styles: ["modern"],
+    priorities: ["usability"], selected_package_definition_id: "professional_v1", confirmation: true,
+  });
+  let gateCalls = 0;
+  let gateResult = false;
+  const validateSubmit = Function(
+    "clearErrors", "collectData", "requiredSubmitFields", "markError", "showStep", "steps", "setMessage",
+    "validateBudgetGuardAcknowledgement",
+    `"use strict"; return (${sourceFunction("validateSubmit")});`,
+  )(
+    () => {}, () => data, Object.keys(data).slice(0, 11), () => null, () => {}, [], () => {},
+    () => { gateCalls += 1; return gateResult; },
+  ) as () => boolean;
+  assertEquals(validateSubmit(), false);
+  assertEquals(gateCalls, 1);
+  gateResult = true;
+  assertEquals(validateSubmit(), true);
+  assertEquals(gateCalls, 2);
+});
+
+Deno.test("final modal submit cannot bypass the pending-preview gate", async () => {
+  let requestCalls = 0;
+  let closeCalls = 0;
+  const submitFinal = Function(
+    "busy", "readOnly", "closeModal", "validateBudgetGuardAcknowledgement", "setBusy", "request", "collectData",
+    "handleApiError", "setReadOnly", "setMessage", "dirty",
+    `"use strict"; return (${sourceFunction("submitFinal")});`,
+  )(
+    false, false, () => { closeCalls += 1; }, () => false, () => {},
+    async () => { requestCalls += 1; return { response: { ok: true }, body: { state: "submitted" } }; },
+    () => ({}), () => {}, () => {}, () => {}, false,
+  ) as () => Promise<void>;
+  await submitFinal();
+  assertEquals(closeCalls, 1);
+  assertEquals(requestCalls, 0);
+});
+
+Deno.test("unknown and manual review rendering remain unchanged", () => {
+  const unknownPreview = structuredClone(preview);
+  unknownPreview.budget.comparisonStatus = "INDETERMINATE";
+  unknownPreview.budget.knownMinimumExceedsBudget = false;
+  unknownPreview.summary.knownMinimumMinor = undefined as unknown as number;
+  const unknownUi = render(unknownPreview);
+  assertEquals(unknownUi.state.textContent, "Nog te bepalen");
+  assertStringIncludes(unknownUi.status.textContent, "nog niet betrouwbaar vergelijken");
+
+  const manualPreview = structuredClone(preview);
+  manualPreview.budget.comparisonStatus = "MANUAL_REVIEW";
+  manualPreview.budget.knownMinimumExceedsBudget = false;
+  manualPreview.summary.knownMinimumMinor = undefined as unknown as number;
+  manualPreview.summary.manualReviewRequired = true;
+  const manualUi = render(manualPreview);
+  assertEquals(manualUi.state.textContent, "Persoonlijke beoordeling");
+  assertEquals(manualUi.status.textContent, "Persoonlijke prijsbeoordeling vereist.");
+});
+
+Deno.test("unavailable rendering remains distinct from mismatch", () => {
+  assertStringIncludes(sourceFunction("showPreviewUnavailable"), 'budgetGuardState.textContent = "Niet beschikbaar"');
+  assertStringIncludes(sourceFunction("showPreviewUnavailable"), "budget-guard--unavailable");
+});
+
 Deno.test("intake uses a fresh stable frontend cache key", () => {
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-3');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-4');
 });
