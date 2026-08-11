@@ -116,21 +116,51 @@ Deno.test("preview package advice remains advisory and has no selected package o
 });
 
 Deno.test("package preview v2 exposes only server-derived customer-safe package state", () => {
-  const result = preview({
-    selected_package_definition_id: "professional_v1",
-    requested_pages: ["home"],
-  }, 7);
-  assertEquals(result.previewVersion, 2);
-  if (result.previewVersion !== 2) throw new Error("expected preview v2");
-  assertEquals(result.selectedPackage, {
-    selectedPackageDefinitionId: "professional_v1",
-    label: "Professional",
-    floorMinor: 320_000,
-    standardPageLimit: 12,
-    includedCorrectionRounds: 2,
+  const starter = preview({ selected_package_definition_id: "starter_v1", requested_pages: ["home"] }, 7);
+  const professional = preview({ selected_package_definition_id: "professional_v1", requested_pages: ["home"] }, 7);
+  if (starter.previewVersion !== 2 || professional.previewVersion !== 2) throw new Error("expected preview v2");
+
+  assertEquals(starter.selectedPackage.selectedPackageDefinitionId, "starter_v1");
+  assertEquals(starter.selectedPackage.label, "Starter");
+  assertEquals(starter.selectedPackage.floorMinor, 180_000);
+  assertEquals(starter.selectedPackage.standardPageCount, 1);
+  assertEquals(starter.selectedPackage.standardPageLimit, 5);
+  assertEquals(starter.selectedPackage.includedCorrectionRounds, 1);
+  assertEquals(professional.selectedPackage.selectedPackageDefinitionId, "professional_v1");
+  assertEquals(professional.selectedPackage.label, "Professional");
+  assertEquals(professional.selectedPackage.floorMinor, 320_000);
+  assertEquals(professional.selectedPackage.standardPageCount, 1);
+  assertEquals(professional.selectedPackage.standardPageLimit, 12);
+  assertEquals(professional.selectedPackage.includedCorrectionRounds, 2);
+  assertEquals(professional.selectedPackage.includedPresentation, starter.selectedPackage.includedPresentation);
+  assertEquals(starter.selectedPackage.includedPresentation.length, 15);
+  assertEquals(starter.selectedPackage.includedPresentation.find((item) =>
+    item.entitlement === "technical_seo_base"
+  ), {
+    entitlement: "technical_seo_base",
+    label: "Technische SEO-basis",
+    group: "PACKAGE_QUALITY",
+    scope: "BASE",
   });
-  assertEquals(result.items.some((item) => item.labelKey.includes("floor")), false);
-  assertEquals("entitlements" in result.selectedPackage, false);
+  assertEquals(starter.items.some((item) => item.labelKey.includes("floor")), false);
+  assertEquals("entitlements" in starter.selectedPackage, false);
+});
+
+Deno.test("package preview rejects entitlements outside the closed presentation contract", () => {
+  const pricing = calculateBudgetGuard({ selected_package_definition_id: "starter_v1", requested_pages: ["home"] });
+  if (!pricing.selectedPackageDefinition) throw new Error("expected selected package");
+  const injected = {
+    ...pricing,
+    selectedPackageDefinition: {
+      ...pricing.selectedPackageDefinition,
+      entitlements: [...pricing.selectedPackageDefinition.entitlements, "unexpected_entitlement"],
+    },
+  } as BudgetGuardResult;
+  assertThrows(
+    () => buildCustomerPricingPreview(1, injected, evaluateBudget(injected.calculation, boundedBudget())),
+    TypeError,
+    "UNKNOWN_PACKAGE_ENTITLEMENT",
+  );
 });
 
 Deno.test("preview fails closed for invalid revision and unknown rule", () => {

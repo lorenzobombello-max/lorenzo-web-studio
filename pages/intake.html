@@ -88,9 +88,14 @@
             <p id="budgetGuardStatus" class="budget-guard__status"></p>
             <dl class="budget-guard__summary">
               <div><dt>Gekozen budget</dt><dd id="budgetGuardBudget">Nog niet gekozen</dd></div>
-              <div id="budgetGuardPackageRow" hidden><dt>Gekozen pakket</dt><dd id="budgetGuardPackage"></dd></div>
+              <div id="budgetGuardPackageRow" hidden><dt>Gekozen pakket</dt><dd id="budgetGuardPackage" class="budget-guard__package"><strong id="budgetGuardPackageName"></strong><span id="budgetGuardPackagePages"></span><span id="budgetGuardPackageRounds"></span></dd></div>
               <div id="budgetGuardMinimumRow" hidden><dt>Bekend minimum</dt><dd id="budgetGuardMinimum"></dd></div>
             </dl>
+            <section id="packageIncluded" class="package-included" aria-labelledby="packageIncludedTitle" hidden>
+              <h3 id="packageIncludedTitle">Standaard inbegrepen in je pakket</h3>
+              <div id="packageIncludedGroups" class="package-included__groups"></div>
+              <p>Inbegrepen opties worden alleen uitgevoerd wanneer je ze zelf als wens selecteert.</p>
+            </section>
             <p id="budgetGuardPackageAdvice" class="budget-guard__advice" hidden></p>
             <div id="budgetGuardWarningActions" class="budget-guard__actions" hidden>
               <button class="btn btn--ghost" id="adjustBudget" type="button">Budget aanpassen</button>
@@ -172,7 +177,7 @@
             <fieldset class="intake-step" data-step="2" hidden>
               <legend>Pagina's en functies</legend>
               <p class="intake-step__intro">Selecteer wat je website minimaal nodig heeft.</p>
-              <div class="field field--full"><span class="field-label">Gewenste pagina's</span><div class="choice-grid" data-options="home:Home,about:Over ons,services:Diensten,products:Producten,portfolio:Portfolio,team:Team,pricing:Prijzen,faq:FAQ,reviews:Reviews,blog:Blog,contact:Contact,quote_request:Offerteaanvraag,reservations:Reservaties,shop:Webshop,jobs:Vacatures,gallery:Galerij,other:Andere" data-name="requested_pages"></div><p class="field-error" id="requested_pages-error"></p></div>
+              <div class="field field--full"><span class="field-label">Gewenste pagina's</span><div class="choice-grid" data-options="home:Home,about:Over ons,services:Diensten,products:Producten,portfolio:Portfolio,team:Team,pricing:Prijzen,faq:FAQ,reviews:Reviews,blog:Blog,contact:Contact,quote_request:Offerteaanvraag,reservations:Reservaties,shop:Webshop,jobs:Vacatures,gallery:Galerij,other:Andere" data-name="requested_pages"></div><p id="packagePageCounter" class="package-page-counter" hidden></p><p class="field-error" id="requested_pages-error"></p></div>
               <div class="field field--full"><label for="other_pages">Andere pagina's</label><textarea id="other_pages" name="other_pages" rows="3" maxlength="1000"></textarea></div>
               <div id="pageScopeFields" class="conditional-panel field--full" hidden>
                 <div class="field" data-page-scope="reviews"><label for="page_scope_reviews">Reviews-pagina</label><select id="page_scope_reviews"><option value="unknown">Nog te bepalen</option><option value="normal">Standaard</option><option value="complex">Uitgebreid</option></select></div>
@@ -256,7 +261,7 @@
             <fieldset class="intake-step" data-step="7" hidden>
               <legend>SEO en koppelingen</legend>
               <p class="intake-step__intro">Welke vindbaarheid en externe koppelingen zijn belangrijk?</p>
-              <div class="field"><label for="seo_priority">SEO-prioriteit</label><select id="seo_priority" name="seo_priority" required><option value="">Selecteer</option><option value="high">Hoog</option><option value="basic">Basis</option><option value="low">Laag</option><option value="unsure">Nog niet zeker</option></select></div>
+              <div class="field"><label for="seo_priority">SEO-prioriteit</label><select id="seo_priority" name="seo_priority" required><option value="">Selecteer</option><option value="high">Hoog</option><option value="basic">Basis</option><option value="low">Laag</option><option value="unsure">Nog niet zeker</option></select><p class="field-hint">De technische SEO-basis is pakketkwaliteit. Uitgebreid SEO-werk blijft een afzonderlijke wens.</p></div>
               <div class="field"><label for="seo_keywords">Zoekwoorden, gescheiden door komma's</label><input id="seo_keywords" name="seo_keywords" type="text" /></div>
               <div class="field"><label for="social_channels">Sociale kanalen, gescheiden door komma's</label><input id="social_channels" name="social_channels" type="text" /></div>
               <div class="field"><label for="integrations">Koppelingen, gescheiden door komma's</label><input id="integrations" name="integrations" type="text" /></div>

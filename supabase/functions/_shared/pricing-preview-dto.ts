@@ -3,6 +3,7 @@ import type {
   BudgetEvaluationV2,
   BudgetGuardResult,
 } from "./pricing-engine.ts";
+import type { PackageEntitlementId } from "./pricing-config.ts";
 
 export type PricingPreviewBudgetState =
   | "WITHIN_KNOWN_BUDGET"
@@ -50,6 +51,13 @@ export type PricingPreviewPresentationKey =
 
 export type PricingPreviewLabelKey = `pricing_preview.${Lowercase<PricingPreviewPresentationKey>}`;
 
+export type PackageInclusionPresentation = {
+  entitlement: PackageEntitlementId;
+  label: string;
+  group: "PACKAGE_QUALITY" | "WHEN_REQUESTED";
+  scope: "FULL" | "BASE";
+};
+
 export interface CustomerPricingPreviewDTOv1 {
   previewVersion: 1;
   scopeRevision: number;
@@ -89,9 +97,43 @@ export interface CustomerPricingPreviewDTOv2
     selectedPackageDefinitionId: "starter_v1" | "professional_v1";
     label: "Starter" | "Professional";
     floorMinor: number;
+    standardPageCount: number;
     standardPageLimit: number;
     includedCorrectionRounds: number;
+    includedPresentation: PackageInclusionPresentation[];
   };
+}
+
+const PACKAGE_INCLUSION_PRESENTATION = {
+  responsive_design: { label: "Responsive ontwerp", group: "PACKAGE_QUALITY", scope: "FULL" },
+  technical_foundation: { label: "Technische basis", group: "PACKAGE_QUALITY", scope: "FULL" },
+  navigation: { label: "Navigatie", group: "PACKAGE_QUALITY", scope: "FULL" },
+  browser_compatibility: { label: "Browsercompatibiliteit", group: "PACKAGE_QUALITY", scope: "FULL" },
+  technical_seo_base: { label: "Technische SEO-basis", group: "PACKAGE_QUALITY", scope: "BASE" },
+  testing_and_delivery: { label: "Testing en oplevering", group: "PACKAGE_QUALITY", scope: "FULL" },
+  standard_contact_form: { label: "Standaard contactformulier", group: "WHEN_REQUESTED", scope: "FULL" },
+  social_links: { label: "Social links", group: "WHEN_REQUESTED", scope: "FULL" },
+  google_maps: { label: "Google Maps", group: "WHEN_REQUESTED", scope: "FULL" },
+  whatsapp: { label: "WhatsApp", group: "WHEN_REQUESTED", scope: "FULL" },
+  normal_gallery_reviews: { label: "Galerijen en reviews binnen normale scope", group: "WHEN_REQUESTED", scope: "BASE" },
+  public_downloads: { label: "Publieke downloads", group: "WHEN_REQUESTED", scope: "BASE" },
+  supplied_content_media_processing: {
+    label: "Verwerking van aangeleverde content en media",
+    group: "WHEN_REQUESTED",
+    scope: "BASE",
+  },
+  normal_ai_image_support: { label: "AI-beeldondersteuning binnen normale scope", group: "WHEN_REQUESTED", scope: "BASE" },
+  primary_language: { label: "Eén hoofdtaal", group: "WHEN_REQUESTED", scope: "FULL" },
+} as const satisfies Record<PackageEntitlementId, Omit<PackageInclusionPresentation, "entitlement">>;
+
+function packageInclusionPresentation(
+  entitlements: readonly PackageEntitlementId[],
+): PackageInclusionPresentation[] {
+  return entitlements.map((entitlement) => {
+    const presentation = PACKAGE_INCLUSION_PRESENTATION[entitlement];
+    if (!presentation) throw new TypeError("UNKNOWN_PACKAGE_ENTITLEMENT");
+    return { entitlement, ...presentation };
+  });
 }
 
 const PRESENTATION_KEYS = {
@@ -238,8 +280,10 @@ export function buildCustomerPricingPreview(
       selectedPackageDefinitionId: selectedPackage.id,
       label: selectedPackage.label,
       floorMinor: selectedPackage.floorMinor,
+      standardPageCount: pricing.normalizedScope.standardPageCount,
       standardPageLimit: selectedPackage.standardPageLimit,
       includedCorrectionRounds: selectedPackage.includedCorrectionRounds,
+      includedPresentation: packageInclusionPresentation(selectedPackage.entitlements),
     },
   };
 }

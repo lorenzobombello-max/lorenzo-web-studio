@@ -41,9 +41,14 @@
   const budgetGuardStatus = document.getElementById("budgetGuardStatus");
   const budgetGuardBudget = document.getElementById("budgetGuardBudget");
   const budgetGuardPackageRow = document.getElementById("budgetGuardPackageRow");
-  const budgetGuardPackage = document.getElementById("budgetGuardPackage");
+  const budgetGuardPackageName = document.getElementById("budgetGuardPackageName");
+  const budgetGuardPackagePages = document.getElementById("budgetGuardPackagePages");
+  const budgetGuardPackageRounds = document.getElementById("budgetGuardPackageRounds");
   const budgetGuardMinimumRow = document.getElementById("budgetGuardMinimumRow");
   const budgetGuardMinimum = document.getElementById("budgetGuardMinimum");
+  const packageIncluded = document.getElementById("packageIncluded");
+  const packageIncludedGroups = document.getElementById("packageIncludedGroups");
+  const packagePageCounter = document.getElementById("packagePageCounter");
   const budgetGuardPackageAdvice = document.getElementById("budgetGuardPackageAdvice");
   const budgetGuardWarningActions = document.getElementById("budgetGuardWarningActions");
   const packageSelectionGroup = form.querySelector(".package-grid");
@@ -82,6 +87,27 @@
     above_6000: "Meer dan € 6.000",
   };
   const packageDefinitionIds = new Set(["starter_v1", "professional_v1"]);
+  const packageEntitlementIds = new Set([
+    "responsive_design", "technical_foundation", "navigation", "browser_compatibility", "technical_seo_base",
+    "testing_and_delivery", "standard_contact_form", "social_links", "google_maps", "whatsapp",
+    "normal_gallery_reviews", "public_downloads", "supplied_content_media_processing", "normal_ai_image_support",
+    "primary_language",
+  ]);
+  const packageInclusionAnchorSelectors = Object.freeze({
+    technical_seo_base: ["#seo_priority"],
+    standard_contact_form: ['input[name="requested_features"][value="contact_form"]'],
+    social_links: ['input[name="requested_features"][value="social_links"]'],
+    google_maps: ['input[name="requested_features"][value="google_maps"]'],
+    whatsapp: ['input[name="requested_features"][value="whatsapp"]'],
+    normal_gallery_reviews: [
+      'input[name="requested_features"][value="gallery"]',
+      'input[name="requested_features"][value="reviews"]',
+    ],
+    public_downloads: ['input[name="requested_features"][value="downloads"]'],
+    supplied_content_media_processing: ["#content_status"],
+    normal_ai_image_support: ['input[name="image_support"][value="ai_images"]'],
+    primary_language: ["#primary_language"],
+  });
   const pricingEvidenceFields = [
     "requested_pages", "requested_features", "website_goals", "shop_required", "shop_details",
     "booking_required", "booking_details", "page_scope_details", "quote_form_details", "primary_language",
@@ -140,6 +166,7 @@
     PACKAGE_SCOPE: null,
   });
   const pricingBadges = new Map();
+  const packageInclusionBadges = new Map();
   const budgetStates = new Set(["WITHIN_KNOWN_BUDGET", "KNOWN_MINIMUM_ABOVE_BUDGET", "INDETERMINATE", "MANUAL_REVIEW"]);
   const itemStates = new Set(["INCLUDED", "FIXED_EXTRA", "FROM_EXTRA", "MANUAL_REVIEW"]);
   const packageAdviceStates = new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]);
@@ -394,6 +421,20 @@
       anchor.appendChild(badge);
       pricingBadges.set(key, badge);
     });
+    Object.entries(packageInclusionAnchorSelectors).forEach(([entitlement, selectors]) => {
+      const badges = [];
+      selectors.forEach((selector) => {
+        const target = document.querySelector(selector);
+        if (!target) return;
+        const anchor = target.closest("label") || target.closest(".field") || target;
+        const badge = document.createElement("span");
+        badge.className = "package-inclusion-status";
+        badge.hidden = true;
+        anchor.appendChild(badge);
+        badges.push(badge);
+      });
+      packageInclusionBadges.set(entitlement, badges);
+    });
   }
 
   function clearPricingPresentation() {
@@ -406,7 +447,18 @@
     budgetGuardMinimumRow.hidden = true;
     budgetGuardMinimum.textContent = "";
     budgetGuardPackageRow.hidden = true;
-    budgetGuardPackage.textContent = "";
+    budgetGuardPackageName.textContent = "";
+    budgetGuardPackagePages.textContent = "";
+    budgetGuardPackageRounds.textContent = "";
+    packageIncluded.hidden = true;
+    packageIncludedGroups.replaceChildren();
+    packagePageCounter.hidden = true;
+    packagePageCounter.textContent = "";
+    packageInclusionBadges.forEach((badges) => badges.forEach((badge) => {
+      badge.hidden = true;
+      badge.textContent = "";
+      badge.className = "package-inclusion-status";
+    }));
     budgetGuardPackageAdvice.hidden = true;
     budgetGuardPackageAdvice.textContent = "";
     budgetGuardWarningActions.hidden = true;
@@ -468,9 +520,23 @@
         selectedPackage.selectedPackageDefinitionId !== selectedPackageId ||
         !["Starter", "Professional"].includes(selectedPackage.label) ||
         !Number.isSafeInteger(selectedPackage.floorMinor) || selectedPackage.floorMinor < 1 ||
+        !Number.isSafeInteger(selectedPackage.standardPageCount) || selectedPackage.standardPageCount < 0 ||
         !Number.isSafeInteger(selectedPackage.standardPageLimit) || selectedPackage.standardPageLimit < 1 ||
-        !Number.isSafeInteger(selectedPackage.includedCorrectionRounds) || selectedPackage.includedCorrectionRounds < 1
+        !Number.isSafeInteger(selectedPackage.includedCorrectionRounds) || selectedPackage.includedCorrectionRounds < 1 ||
+        !Array.isArray(selectedPackage.includedPresentation) ||
+        selectedPackage.includedPresentation.length !== packageEntitlementIds.size
       ) return false;
+      const seenEntitlements = new Set();
+      if (!selectedPackage.includedPresentation.every((item) => {
+        if (
+          !item || typeof item !== "object" || !packageEntitlementIds.has(item.entitlement) ||
+          seenEntitlements.has(item.entitlement) || typeof item.label !== "string" ||
+          item.label.trim() !== item.label || item.label.length < 1 || item.label.length > 120 ||
+          !["PACKAGE_QUALITY", "WHEN_REQUESTED"].includes(item.group) || !["FULL", "BASE"].includes(item.scope)
+        ) return false;
+        seenEntitlements.add(item.entitlement);
+        return true;
+      })) return false;
     } else if ("selectedPackage" in preview) return false;
     if (
       preview.summary.manualReviewRequired === true && "knownMinimumMinor" in preview.summary ||
@@ -535,6 +601,49 @@
     badge.hidden = false;
   }
 
+  function packageLimitPresentation(selectedPackage) {
+    const rounds = selectedPackage.includedCorrectionRounds === 1 ? "correctieronde" : "correctierondes";
+    return {
+      packageName: selectedPackage.label,
+      pageLimit: `Maximaal ${selectedPackage.standardPageLimit} standaardpagina's`,
+      corrections: `${selectedPackage.includedCorrectionRounds} ${rounds}`,
+      pageCounter: `${selectedPackage.standardPageCount} van maximaal ${selectedPackage.standardPageLimit} standaardpagina's`,
+      overLimit: selectedPackage.standardPageCount > selectedPackage.standardPageLimit,
+    };
+  }
+
+  function renderPackagePresentation(selectedPackage) {
+    const grouped = new Map([["PACKAGE_QUALITY", []], ["WHEN_REQUESTED", []]]);
+    selectedPackage.includedPresentation.forEach((item) => {
+      grouped.get(item.group).push(item);
+      const badges = packageInclusionBadges.get(item.entitlement) || [];
+      badges.forEach((badge) => {
+        badge.textContent = item.scope === "BASE" ? "Basis inbegrepen" : "Inbegrepen";
+        badge.classList.add(item.scope === "BASE" ? "package-inclusion-status--base" : "package-inclusion-status--full");
+        badge.hidden = false;
+      });
+    });
+    const groupLabels = { PACKAGE_QUALITY: "Pakketkwaliteit", WHEN_REQUESTED: "Wanneer je dit zelf selecteert" };
+    grouped.forEach((items, group) => {
+      const section = document.createElement("section");
+      const heading = document.createElement("h4");
+      const list = document.createElement("ul");
+      heading.textContent = groupLabels[group];
+      items.forEach((item) => {
+        const listItem = document.createElement("li");
+        listItem.textContent = item.scope === "BASE" ? `${item.label} (basis)` : item.label;
+        list.appendChild(listItem);
+      });
+      section.append(heading, list);
+      packageIncludedGroups.appendChild(section);
+    });
+    packageIncluded.hidden = false;
+    const limits = packageLimitPresentation(selectedPackage);
+    packagePageCounter.textContent = limits.pageCounter;
+    packagePageCounter.classList.toggle("package-page-counter--over", limits.overLimit);
+    packagePageCounter.hidden = false;
+  }
+
   function renderPricingPreview(preview) {
     clearPricingPresentation();
     const manual = preview.summary.manualReviewRequired;
@@ -544,9 +653,12 @@
     budgetGuardBudget.textContent = selectedBudgetLabel(preview.budget.selectedBudgetCategoryCode);
     if (preview.previewVersion === 2) {
       const selectedPackage = preview.selectedPackage;
-      const rounds = selectedPackage.includedCorrectionRounds === 1 ? "correctieronde" : "correctierondes";
-      budgetGuardPackage.textContent = `${selectedPackage.label} — max. ${selectedPackage.standardPageLimit} standaardpagina's, ${selectedPackage.includedCorrectionRounds} ${rounds}`;
+      const limits = packageLimitPresentation(selectedPackage);
+      budgetGuardPackageName.textContent = limits.packageName;
+      budgetGuardPackagePages.textContent = limits.pageLimit;
+      budgetGuardPackageRounds.textContent = limits.corrections;
       budgetGuardPackageRow.hidden = false;
+      renderPackagePresentation(selectedPackage);
     }
     if (!manual && Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
       budgetGuardMinimum.textContent = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
