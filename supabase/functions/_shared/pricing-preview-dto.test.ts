@@ -5,21 +5,45 @@ import {
   resolveBudgetEvidence,
   type BudgetGuardResult,
 } from "./pricing-engine.ts";
+import { PRICING_CONFIG, type BudgetCategoryCode } from "./pricing-config.ts";
 import { buildCustomerPricingPreview } from "./pricing-preview-dto.ts";
 
-const boundedBudget = () => resolveBudgetEvidence(
-  "EUR 3.200 t/m EUR 6.000",
-  "budget_guard_v1",
-  "3200_to_6000_inclusive",
+const budgetEvidence = (categoryCode: BudgetCategoryCode) => resolveBudgetEvidence(
+  PRICING_CONFIG.budgetEvaluation.categories[categoryCode].originalLabel,
+  PRICING_CONFIG.budgetEvaluation.schemeId,
+  categoryCode,
 );
 
-function preview(input: Record<string, unknown>, revision = 1) {
+const boundedBudget = () => budgetEvidence("3200_to_6000_inclusive");
+
+function preview(
+  input: Record<string, unknown>,
+  revision = 1,
+  categoryCode: BudgetCategoryCode = "3200_to_6000_inclusive",
+) {
   const pricing = calculateBudgetGuard(input);
   return buildCustomerPricingPreview(
     revision,
     pricing,
-    evaluateBudget(pricing.calculation, boundedBudget()),
+    evaluateBudget(pricing.calculation, budgetEvidence(categoryCode)),
   );
+}
+
+function assertBudgetResult(
+  result: ReturnType<typeof preview>,
+  expected: {
+    categoryCode: BudgetCategoryCode | null;
+    comparisonStatus: string;
+    knownMinimumExceedsBudget?: boolean;
+    knownMinimumMinor?: number;
+    containsFromPricing: boolean;
+  },
+) {
+  assertEquals(result.budget.selectedBudgetCategoryCode, expected.categoryCode);
+  assertEquals(result.budget.comparisonStatus, expected.comparisonStatus);
+  assertEquals(result.budget.knownMinimumExceedsBudget, expected.knownMinimumExceedsBudget);
+  assertEquals(result.summary.knownMinimumMinor, expected.knownMinimumMinor);
+  assertEquals(result.summary.containsFromPricing, expected.containsFromPricing);
 }
 
 Deno.test("preview maps included, fixed and from items without starter as an extra", () => {
@@ -68,7 +92,12 @@ Deno.test("manual preview suppresses every monetary amount while retaining prese
     requested_pages: ["home", "about", "services", "portfolio", "team", "pricing"],
     requested_features: ["customer_login"],
   });
-  assertEquals(result.budget.comparisonStatus, "MANUAL_REVIEW");
+  assertBudgetResult(result, {
+    categoryCode: "3200_to_6000_inclusive",
+    comparisonStatus: "MANUAL_REVIEW",
+    knownMinimumMinor: undefined,
+    containsFromPricing: true,
+  });
   assertEquals(result.summary.manualReviewRequired, true);
   assertEquals("knownMinimumMinor" in result.summary, false);
   assertEquals(result.items.some((item) => item.state === "MANUAL_REVIEW"), true);
@@ -77,18 +106,91 @@ Deno.test("manual preview suppresses every monetary amount while retaining prese
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
 });
 
-Deno.test("preview budget precedence handles legacy, missing, above, open and from states", () => {
-  const pricing = calculateBudgetGuard({ requested_pages: ["home"] });
+Deno.test("preview compares package known minimum safely for approved budget matrix A-E", () => {
   const cases = [
-    [resolveBudgetEvidence("EUR 3.000 - EUR 6.000", null, null), "INDETERMINATE"],
-    [resolveBudgetEvidence(null, null, null), "INDETERMINATE"],
-    [resolveBudgetEvidence("Minder dan EUR 1.800", "budget_guard_v1", "below_1800"), "KNOWN_MINIMUM_ABOVE_BUDGET"],
-    [resolveBudgetEvidence("Meer dan EUR 6.000", "budget_guard_v1", "above_6000"), "INDETERMINATE"],
-    [boundedBudget(), "INDETERMINATE"],
+    ["starter_v1", "below_1800", 180_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v1", "below_1800", 320_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v1", "1800_to_below_3200", 320_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v1", "3200_to_6000_inclusive", 320_000, "WITHIN_KNOWN_BUDGET", false],
+    ["professional_v1", "above_6000", 320_000, "WITHIN_KNOWN_BUDGET", false],
   ] as const;
-  for (const [evidence, expected] of cases) {
-    const result = buildCustomerPricingPreview(1, pricing, evaluateBudget(pricing.calculation, evidence));
-    assertEquals(result.budget.comparisonStatus, expected);
+  for (const [packageId, categoryCode, knownMinimumMinor, comparisonStatus, exceeds] of cases) {
+    const result = preview({
+      selected_package_definition_id: packageId,
+      requested_pages: ["home"],
+    }, 1, categoryCode);
+    assertBudgetResult(result, {
+      categoryCode,
+      comparisonStatus,
+      knownMinimumExceedsBudget: exceeds,
+      knownMinimumMinor,
+      containsFromPricing: true,
+    });
+  }
+});
+
+Deno.test("from pricing remains indeterminate above a bounded category lower bound", () => {
+  const base = calculateBudgetGuard({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+  });
+  const pricing: BudgetGuardResult = {
+    ...base,
+    calculation: { ...base.calculation, knownMinimumMinor: 400_000 },
+  };
+  const result = buildCustomerPricingPreview(
+    1,
+    pricing,
+    evaluateBudget(pricing.calculation, boundedBudget()),
+  );
+  assertBudgetResult(result, {
+    categoryCode: "3200_to_6000_inclusive",
+    comparisonStatus: "INDETERMINATE",
+    knownMinimumMinor: 400_000,
+    containsFromPricing: true,
+  });
+});
+
+Deno.test("open category remains indeterminate above its lower bound", () => {
+  const base = calculateBudgetGuard({
+    selected_package_definition_id: "professional_v1",
+    requested_pages: ["home"],
+  });
+  const pricing: BudgetGuardResult = {
+    ...base,
+    calculation: { ...base.calculation, knownMinimumMinor: 700_000 },
+  };
+  const evidence = budgetEvidence("above_6000");
+  const result = buildCustomerPricingPreview(
+    1,
+    pricing,
+    evaluateBudget(pricing.calculation, evidence),
+  );
+  assertBudgetResult(result, {
+    categoryCode: "above_6000",
+    comparisonStatus: "INDETERMINATE",
+    knownMinimumMinor: 700_000,
+    containsFromPricing: true,
+  });
+});
+
+Deno.test("legacy and missing budget evidence remain indeterminate", () => {
+  const pricing = calculateBudgetGuard({ requested_pages: ["home"] });
+  for (const evidence of [
+    resolveBudgetEvidence("EUR 3.000 - EUR 6.000", null, null),
+    resolveBudgetEvidence(null, null, null),
+  ]) {
+    const result = buildCustomerPricingPreview(
+      1,
+      pricing,
+      evaluateBudget(pricing.calculation, evidence),
+    );
+    assertBudgetResult(result, {
+      categoryCode: null,
+      comparisonStatus: "INDETERMINATE",
+      knownMinimumMinor: 180_000,
+      containsFromPricing: true,
+    });
   }
 });
 
@@ -96,13 +198,19 @@ Deno.test("preview supports within-known-budget when a coherent calculation has 
   const base = calculateBudgetGuard({ requested_pages: ["home"] });
   const pricing: BudgetGuardResult = {
     ...base,
-    calculation: { ...base.calculation, containsFromPricing: false },
+    calculation: {
+      ...base.calculation,
+      knownMinimumMinor: 400_000,
+      containsFromPricing: false,
+    },
   };
   const evaluation = evaluateBudget(pricing.calculation, boundedBudget());
-  assertEquals(buildCustomerPricingPreview(1, pricing, evaluation).budget, {
-    selectedBudgetCategoryCode: "3200_to_6000_inclusive",
+  assertBudgetResult(buildCustomerPricingPreview(1, pricing, evaluation), {
+    categoryCode: "3200_to_6000_inclusive",
     comparisonStatus: "WITHIN_KNOWN_BUDGET",
     knownMinimumExceedsBudget: false,
+    knownMinimumMinor: 400_000,
+    containsFromPricing: false,
   });
 });
 

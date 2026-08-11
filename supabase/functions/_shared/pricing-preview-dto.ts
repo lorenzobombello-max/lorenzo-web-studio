@@ -3,6 +3,7 @@ import type {
   BudgetEvaluationV2,
   BudgetGuardResult,
 } from "./pricing-engine.ts";
+import { PRICING_CONFIG } from "./pricing-config.ts";
 
 export type PricingPreviewBudgetState =
   | "WITHIN_KNOWN_BUDGET"
@@ -150,6 +151,12 @@ function budgetState(
   if (pricing.calculation.manualReviewRequired) return "MANUAL_REVIEW";
   if (budget.evidenceProvenance !== "budget_guard_v1") return "INDETERMINATE";
   if (budget.outsideBudgetWishes === true) return "KNOWN_MINIMUM_ABOVE_BUDGET";
+  const lowerInclusiveMinor = PRICING_CONFIG.budgetEvaluation.categories[budget.categoryCode]
+    .lowerInclusiveMinor;
+  if (
+    lowerInclusiveMinor !== null &&
+    pricing.calculation.knownMinimumMinor <= lowerInclusiveMinor
+  ) return "WITHIN_KNOWN_BUDGET";
   if (budget.categoryCode === "above_6000") return "INDETERMINATE";
   if (pricing.calculation.containsFromPricing) return "INDETERMINATE";
   if (budget.outsideBudgetWishes === false) return "WITHIN_KNOWN_BUDGET";
