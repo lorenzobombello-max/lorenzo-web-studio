@@ -41,7 +41,9 @@
   const budgetGuardStatus = document.getElementById("budgetGuardStatus");
   const budgetGuardBudget = document.getElementById("budgetGuardBudget");
   const budgetGuardPackageRow = document.getElementById("budgetGuardPackageRow");
-  const budgetGuardPackage = document.getElementById("budgetGuardPackage");
+  const budgetGuardPackageName = document.getElementById("budgetGuardPackageName");
+  const budgetGuardPackagePages = document.getElementById("budgetGuardPackagePages");
+  const budgetGuardPackageRounds = document.getElementById("budgetGuardPackageRounds");
   const budgetGuardMinimumRow = document.getElementById("budgetGuardMinimumRow");
   const budgetGuardMinimum = document.getElementById("budgetGuardMinimum");
   const budgetGuardPackageAdvice = document.getElementById("budgetGuardPackageAdvice");
@@ -479,7 +481,9 @@
     budgetGuardMinimumRow.hidden = true;
     budgetGuardMinimum.textContent = "";
     budgetGuardPackageRow.hidden = true;
-    budgetGuardPackage.textContent = "";
+    budgetGuardPackageName.textContent = "";
+    budgetGuardPackagePages.textContent = "";
+    budgetGuardPackageRounds.textContent = "";
     budgetGuardPackageAdvice.hidden = true;
     budgetGuardPackageAdvice.textContent = "";
     budgetGuardWarningActions.hidden = true;
@@ -632,7 +636,9 @@
     if (preview.previewVersion === 2) {
       const selectedPackage = preview.selectedPackage;
       const rounds = selectedPackage.includedCorrectionRounds === 1 ? "correctieronde" : "correctierondes";
-      budgetGuardPackage.textContent = `${selectedPackage.label} — max. ${selectedPackage.standardPageLimit} standaardpagina's, ${selectedPackage.includedCorrectionRounds} ${rounds}`;
+      budgetGuardPackageName.textContent = selectedPackage.label;
+      budgetGuardPackagePages.textContent = `Max. ${selectedPackage.standardPageLimit} standaardpagina's`;
+      budgetGuardPackageRounds.textContent = `${selectedPackage.includedCorrectionRounds} ${rounds}`;
       budgetGuardPackageRow.hidden = false;
     }
     if (Number.isSafeInteger(preview.summary.knownMinimumMinor)) {

@@ -59,6 +59,9 @@
 .budget-guard__summary div:only-child, .budget-guard__summary div:first-child:nth-last-child(2):has(+ [hidden]) { grid-column: 1 / -1; }
 .budget-guard__summary dt { color: var(--color-text-soft); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
 .budget-guard__summary dd { margin: 0.15rem 0 0; overflow-wrap: anywhere; font-weight: 800; }
+.budget-guard__package { display: grid; gap: 0.12rem; }
+.budget-guard__package strong { font: 800 0.95rem/1.35 "Manrope", sans-serif; }
+.budget-guard__package span { color: var(--color-text-soft); font-size: 0.78rem; font-weight: 700; }
 .budget-guard__advice { margin: 0.85rem 0 0; padding-left: 0.8rem; border-left: 2px solid var(--color-accent); }
 .budget-guard__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.9rem; }
 .budget-guard__actions[hidden] { display: none; }

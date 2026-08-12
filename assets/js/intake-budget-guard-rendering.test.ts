@@ -2,6 +2,7 @@ import { assertEquals, assertExists, assertFalse, assertNotEquals, assertStringI
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
 const html = await Deno.readTextFile(new URL("../../pages/intake.html", import.meta.url));
+const css = await Deno.readTextFile(new URL("../css/intake.css", import.meta.url));
 
 function sourceFunction(name: string) {
   const match = source.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}`));
@@ -115,7 +116,8 @@ function element() {
 
 function render(renderedPreview: typeof preview) {
   const ui = {
-    preview: element(), budget: element(), package: element(), packageRow: element(), minimum: element(),
+    preview: element(), budget: element(), packageRow: element(), minimum: element(),
+    packageName: element(), packagePages: element(), packageRounds: element(),
     minimumRow: element(), state: element(), status: element(), warning: element(), advice: element(),
   };
   const renderPricingPreview = Function(
@@ -124,7 +126,9 @@ function render(renderedPreview: typeof preview) {
     "budgetGuardPreview",
     "budgetGuardBudget",
     "selectedBudgetLabel",
-    "budgetGuardPackage",
+    "budgetGuardPackageName",
+    "budgetGuardPackagePages",
+    "budgetGuardPackageRounds",
     "budgetGuardPackageRow",
     "euroFormatter",
     "budgetGuardMinimum",
@@ -149,7 +153,9 @@ function render(renderedPreview: typeof preview) {
     ui.preview,
     ui.budget,
     () => "Minder dan € 1.800",
-    ui.package,
+    ui.packageName,
+    ui.packagePages,
+    ui.packageRounds,
     ui.packageRow,
     new Intl.NumberFormat("nl-BE", {
       style: "currency",
@@ -178,6 +184,28 @@ function render(renderedPreview: typeof preview) {
   return ui;
 }
 
+Deno.test("package summary renders structured lines for Starter and Professional", () => {
+  assertStringIncludes(html, 'class="budget-guard__package"><strong id="budgetGuardPackageName"></strong><span id="budgetGuardPackagePages"></span><span id="budgetGuardPackageRounds"></span>');
+  assertStringIncludes(css, ".budget-guard__package { display: grid;");
+  assertStringIncludes(css, ".budget-guard__package span { color: var(--color-text-soft);");
+
+  const professionalUi = render(preview);
+  assertEquals(professionalUi.packageName.textContent, "Professional");
+  assertEquals(professionalUi.packagePages.textContent, "Max. 12 standaardpagina's");
+  assertEquals(professionalUi.packageRounds.textContent, "2 correctierondes");
+
+  const starterPreview = structuredClone(preview);
+  starterPreview.selectedPackage.selectedPackageDefinitionId = "starter_v1";
+  starterPreview.selectedPackage.label = "Starter";
+  starterPreview.selectedPackage.floorMinor = 180_000;
+  starterPreview.selectedPackage.standardPageLimit = 5;
+  starterPreview.selectedPackage.includedCorrectionRounds = 1;
+  const starterUi = render(starterPreview);
+  assertEquals(starterUi.packageName.textContent, "Starter");
+  assertEquals(starterUi.packagePages.textContent, "Max. 5 standaardpagina's");
+  assertEquals(starterUi.packageRounds.textContent, "1 correctieronde");
+});
+
 Deno.test("exact Professional above-budget response renders instead of unavailable", () => {
   const ui = render(preview);
 
@@ -187,8 +215,9 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
   assertEquals(unavailable, false);
   assertEquals(ui.state.textContent, "Budget en pakket niet compatibel");
   assertEquals(ui.status.textContent.replaceAll(/\s/g, " "), "Het Professional-pakket start vanaf € 3.200 excl. btw. Je opgegeven budget ligt onder dit minimum.");
-  assertStringIncludes(ui.package.textContent, "Professional");
-  assertStringIncludes(ui.package.textContent, "12 standaardpagina's");
+  assertEquals(ui.packageName.textContent, "Professional");
+  assertEquals(ui.packagePages.textContent, "Max. 12 standaardpagina's");
+  assertEquals(ui.packageRounds.textContent, "2 correctierondes");
   assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.200excl.btw");
   assertEquals(ui.minimumRow.hidden, false);
   assertEquals(ui.warning.hidden, false);
@@ -445,5 +474,6 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 });
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-6');
+  assertStringIncludes(html, '../assets/css/intake.css?v=20260811-1');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-7');
 });
