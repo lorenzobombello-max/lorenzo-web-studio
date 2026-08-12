@@ -1,3 +1,9 @@
+import {
+  catalogAmountMinor,
+  CATALOG_VERSION,
+  MASTER_PRICING_CATALOG,
+} from "./pricing-catalog.ts";
+
 export type PriceMode = "included" | "fixed" | "from" | "manual";
 
 interface RuleBase {
@@ -14,7 +20,16 @@ export type PricingRule =
     maximumPercentage: number;
   });
 
-export type PackageDefinitionId = "starter_v1" | "professional_v1";
+export type PackageDefinitionId = "starter_v1" | "professional_v2";
+export type HistoricalPackageDefinitionId = "professional_v1";
+type ReadablePackageDefinitionId =
+  | PackageDefinitionId
+  | HistoricalPackageDefinitionId;
+
+export const ACTIVE_PACKAGE_DEFINITION_IDS = [
+  "starter_v1",
+  "professional_v2",
+] as const satisfies readonly PackageDefinitionId[];
 
 export type PackageEntitlementId =
   | "responsive_design"
@@ -31,11 +46,12 @@ export type PackageEntitlementId =
   | "public_downloads"
   | "supplied_content_media_processing"
   | "normal_ai_image_support"
-  | "primary_language";
+  | "primary_language"
+  | "blog_news";
 
 interface PackageDefinitionSource {
-  id: PackageDefinitionId;
-  version: 1;
+  id: ReadablePackageDefinitionId;
+  version: 1 | 2;
   label: "Starter" | "Professional";
   priceMode: "from";
   floorMinor: number;
@@ -69,12 +85,31 @@ export const PACKAGE_DEFINITION_REGISTRY = {
     version: 1,
     label: "Starter",
     priceMode: "from",
-    floorMinor: 180_000,
-    standardPageLimit: 5,
-    includedCorrectionRounds: 1,
+    floorMinor: catalogAmountMinor("starter"),
+    standardPageLimit:
+      MASTER_PRICING_CATALOG.packages.starter_v1.standardPageLimit,
+    includedCorrectionRounds:
+      MASTER_PRICING_CATALOG.packages.starter_v1.includedCorrectionRounds,
     inheritsFrom: null,
     entitlements: STARTER_ENTITLEMENTS,
   },
+  professional_v2: {
+    id: "professional_v2",
+    version: 2,
+    label: "Professional",
+    priceMode: "from",
+    floorMinor: catalogAmountMinor("professional"),
+    standardPageLimit:
+      MASTER_PRICING_CATALOG.packages.professional_v2.standardPageLimit,
+    includedCorrectionRounds:
+      MASTER_PRICING_CATALOG.packages.professional_v2
+        .includedCorrectionRounds,
+    inheritsFrom: "starter_v1",
+    entitlements: ["blog_news"],
+  },
+} as const satisfies Record<PackageDefinitionId, PackageDefinitionSource>;
+
+export const HISTORICAL_PACKAGE_DEFINITION_REGISTRY = {
   professional_v1: {
     id: "professional_v1",
     version: 1,
@@ -86,11 +121,14 @@ export const PACKAGE_DEFINITION_REGISTRY = {
     inheritsFrom: "starter_v1",
     entitlements: [],
   },
-} as const satisfies Record<PackageDefinitionId, PackageDefinitionSource>;
+} as const satisfies Record<
+  HistoricalPackageDefinitionId,
+  PackageDefinitionSource
+>;
 
 export interface ResolvedPackageDefinition {
-  id: PackageDefinitionId;
-  version: 1;
+  id: ReadablePackageDefinitionId;
+  version: 1 | 2;
   label: "Starter" | "Professional";
   priceMode: "from";
   floorMinor: number;
@@ -101,9 +139,11 @@ export interface ResolvedPackageDefinition {
 }
 
 export function resolvePackageDefinition(
-  id: PackageDefinitionId,
+  id: ReadablePackageDefinitionId,
 ): ResolvedPackageDefinition {
-  const source = PACKAGE_DEFINITION_REGISTRY[id];
+  const source: PackageDefinitionSource = id === "professional_v1"
+    ? HISTORICAL_PACKAGE_DEFINITION_REGISTRY.professional_v1
+    : PACKAGE_DEFINITION_REGISTRY[id];
   const inherited = source.inheritsFrom === null
     ? []
     : resolvePackageDefinition(source.inheritsFrom).entitlements;
@@ -124,26 +164,38 @@ const rules = {
   extra_standard_page: {
     id: "extra_standard_page",
     label: "Extra standaardpagina boven geselecteerde package-scope",
-    mode: "from",
-    amountMinor: 20_000,
+    mode: "fixed",
+    amountMinor: catalogAmountMinor("extra_standard_page"),
   },
   extra_custom_page: {
     id: "extra_custom_page",
     label: "Extra maatwerkpagina",
     mode: "from",
-    amountMinor: 30_000,
+    amountMinor: catalogAmountMinor("complex_page"),
   },
   extra_correction_round: {
     id: "extra_correction_round",
     label: "Extra correctieronde",
     mode: "from",
-    amountMinor: 15_000,
+    amountMinor: catalogAmountMinor("extra_revision"),
   },
-  extra_language: {
-    id: "extra_language",
-    label: "Extra taal binnen normale scope",
-    mode: "from",
-    amountMinor: 50_000,
+  first_extra_language: {
+    id: "first_extra_language",
+    label: "Eerste extra taal binnen normale scope",
+    mode: "fixed",
+    amountMinor: catalogAmountMinor("first_extra_language"),
+  },
+  subsequent_extra_language: {
+    id: "subsequent_extra_language",
+    label: "Tweede en volgende extra taal binnen normale scope",
+    mode: "fixed",
+    amountMinor: catalogAmountMinor("subsequent_extra_language"),
+  },
+  blog_news: {
+    id: "blog_news",
+    label: "Blog/Nieuwsmodule",
+    mode: "fixed",
+    amountMinor: catalogAmountMinor("blog_news"),
   },
   contact_form: {
     id: "contact_form",
@@ -154,19 +206,25 @@ const rules = {
     id: "simple_quote_form",
     label: "Eenvoudig offerteformulier",
     mode: "fixed",
-    amountMinor: 20_000,
+    amountMinor: catalogAmountMinor("basic_quote_form"),
   },
   extended_quote_form: {
     id: "extended_quote_form",
     label: "Uitgebreid offerteformulier",
     mode: "from",
-    amountMinor: 40_000,
+    amountMinor: catalogAmountMinor("extended_quote_form"),
   },
   other_extended_form: {
     id: "other_extended_form",
     label: "Overig uitgebreid formulier",
     mode: "from",
-    amountMinor: 25_000,
+    amountMinor: catalogAmountMinor("upload_form"),
+  },
+  complex_form_workflow: {
+    id: "complex_form_workflow",
+    label: "Complex formulier of workflow",
+    mode: "from",
+    amountMinor: catalogAmountMinor("complex_form_workflow"),
   },
   complex_form_manual: {
     id: "complex_form_manual",
@@ -178,6 +236,12 @@ const rules = {
     label: "Webshop of e-commerce",
     mode: "manual",
   },
+  webshop_base: {
+    id: "webshop_base",
+    label: "Webshop Basis",
+    mode: "from",
+    amountMinor: catalogAmountMinor("webshop_base"),
+  },
   booking_manual: {
     id: "booking_manual",
     label: "Booking of reservatie-integratie",
@@ -186,8 +250,7 @@ const rules = {
   simple_booking: {
     id: "simple_booking",
     label: "Eenvoudige reservatie- of afspraakflow",
-    mode: "from",
-    amountMinor: 50_000,
+    mode: "manual",
   },
   multilingual_manual: {
     id: "multilingual_manual",
@@ -213,19 +276,25 @@ const rules = {
     id: "extensive_seo",
     label: "Aanvullende SEO",
     mode: "from",
-    amountMinor: 35_000,
+    amountMinor: catalogAmountMinor("seo_launch"),
   },
   basic_branding: {
     id: "basic_branding",
     label: "Basis branding en visuele richting",
     mode: "from",
-    amountMinor: 30_000,
+    amountMinor: catalogAmountMinor("visual_identity"),
   },
   basic_logo: {
     id: "basic_logo",
     label: "Basis logo-ontwikkeling",
     mode: "from",
-    amountMinor: 25_000,
+    amountMinor: catalogAmountMinor("professional_logo"),
+  },
+  logo_identity_combo: {
+    id: "logo_identity_combo",
+    label: "Logo en visuele identiteit",
+    mode: "from",
+    amountMinor: catalogAmountMinor("logo_identity_combo"),
   },
   content_support: {
     id: "content_support",
@@ -237,7 +306,7 @@ const rules = {
     id: "extended_ai_imagery",
     label: "Uitgebreide AI-beeldondersteuning",
     mode: "from",
-    amountMinor: 20_000,
+    amountMinor: catalogAmountMinor("ai_image_set"),
   },
   customer_login: { id: "customer_login", label: "Klantlogin", mode: "manual" },
   external_integration: {
@@ -248,7 +317,8 @@ const rules = {
   secured_downloads: {
     id: "secured_downloads",
     label: "Beveiligde downloads",
-    mode: "manual",
+    mode: "fixed",
+    amountMinor: catalogAmountMinor("secure_download"),
   },
   professional_photography: {
     id: "professional_photography",
@@ -285,12 +355,14 @@ const rules = {
   complex_gallery_scope: {
     id: "complex_gallery_scope",
     label: "Complexe galerijscope",
-    mode: "manual",
+    mode: "from",
+    amountMinor: catalogAmountMinor("advanced_gallery"),
   },
   complex_reviews_scope: {
     id: "complex_reviews_scope",
     label: "Complexe reviewsscope",
-    mode: "manual",
+    mode: "from",
+    amountMinor: catalogAmountMinor("live_reviews"),
   },
   complex_blog_scope: {
     id: "complex_blog_scope",
@@ -317,6 +389,12 @@ const rules = {
     label: "Nieuwsbrief buiten eenvoudige standaardscope",
     mode: "manual",
   },
+  advanced_newsletter: {
+    id: "advanced_newsletter",
+    label: "Geavanceerde nieuwsbriefintegratie",
+    mode: "from",
+    amountMinor: catalogAmountMinor("advanced_newsletter"),
+  },
   indeterminate_normal_scope: {
     id: "indeterminate_normal_scope",
     label: "Niet objectief afgebakende normale scope",
@@ -330,7 +408,7 @@ const rules = {
 } as const satisfies Record<string, PricingRule>;
 
 export const PRICING_CONFIG = {
-  version: "2.0.0",
+  version: CATALOG_VERSION,
   currency: "EUR",
   vatBasis: "exclusive",
   packages: {
@@ -339,8 +417,8 @@ export const PRICING_CONFIG = {
       startingPriceMinor: PACKAGE_DEFINITION_REGISTRY.starter_v1.floorMinor,
     },
     professional: {
-      ...PACKAGE_DEFINITION_REGISTRY.professional_v1,
-      startingPriceMinor: PACKAGE_DEFINITION_REGISTRY.professional_v1.floorMinor,
+      ...PACKAGE_DEFINITION_REGISTRY.professional_v2,
+      startingPriceMinor: PACKAGE_DEFINITION_REGISTRY.professional_v2.floorMinor,
     },
     custom: { id: "custom", priceMode: "manual" },
   },

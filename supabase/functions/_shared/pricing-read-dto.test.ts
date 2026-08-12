@@ -125,6 +125,19 @@ function professionalPackageDefinition() {
   };
 }
 
+function professionalV2PackageDefinition() {
+  return {
+    id: "professional_v2",
+    version: 2,
+    label: "Professional",
+    floorMinor: 350_000,
+    standardPageLimit: 10,
+    includedCorrectionRounds: 2,
+    entitlementSetId: "normal_web_v1",
+    entitlements: ["responsive_design", "standard_contact_form", "blog_news"],
+  };
+}
+
 function allKeys(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap(allKeys);
@@ -139,7 +152,7 @@ Deno.test("customer automatic v2 exposes only historical indicative starting pri
   assertEquals(dto.budgetIndicator, "no_known_minimum_conflict_detected");
 });
 
-Deno.test("customer manual review omits amount property entirely", () => {
+Deno.test("customer manual review preserves the known minimum", () => {
   const dto = mapCustomerPricingReadRow(customerRow({
     manual_review_required: true,
     manual_reason_count: 1,
@@ -147,7 +160,8 @@ Deno.test("customer manual review omits amount property entirely", () => {
     outside_budget_wishes: null,
   }));
   assertEquals(dto.pricingState, "personal_review_required");
-  assertEquals("indicativeStartingPrice" in dto, false);
+  assertEquals(dto.requiresPersonalReview, true);
+  assertEquals(dto.indicativeStartingPrice?.amountMinor, 220_000);
 });
 
 Deno.test("customer v1 and missing snapshots never expose an amount", () => {
@@ -302,4 +316,20 @@ Deno.test("v3 package mismatch fails closed for customer and admin", () => {
     calculation: { ...calculation(), basis: "package_floor" },
     package_definition,
   })).availability, "unavailable");
+});
+
+Deno.test("customer v3 accepts active Professional v2 package state", () => {
+  const dto = mapCustomerPricingReadRow(customerRow({
+    snapshot_contract_version: 3,
+    calculation_basis: "package_floor",
+    known_minimum_minor: 350_000,
+    package_definition: professionalV2PackageDefinition(),
+  }));
+  assertEquals(dto.selectedPackage, {
+    selectedPackageDefinitionId: "professional_v2",
+    label: "Professional",
+    floorMinor: 350_000,
+    standardPageLimit: 10,
+    includedCorrectionRounds: 2,
+  });
 });

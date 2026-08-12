@@ -38,7 +38,7 @@ const BUDGET_GUARD_CATEGORIES = new Map([
   ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
   ["above_6000", "Meer dan EUR 6.000"],
 ]);
-const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v1"]);
+const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v2"]);
 const TIMINGS = new Set([
   "Binnen 1 maand",
   "Binnen 2 tot 3 maanden",
@@ -254,15 +254,43 @@ function normalizeShopDetails(value: unknown): Record<string, unknown> | null {
     throw new InputValidationError("INVALID_TYPE", "shop_details");
   }
   const input = value as Record<string, unknown>;
-  const keys = ["approx_product_count", "categories", "online_payments", "shipping", "pickup", "existing_catalog"];
-  if (Object.keys(input).some((key) => !keys.includes(key)) || keys.some((key) => !(key in input))) {
+  const legacyKeys = ["approx_product_count", "categories", "online_payments", "shipping", "pickup", "existing_catalog"];
+  const phaseDKeys = [
+    "complex_product_count", "payment_provider_count", "shipping_scope",
+    "customer_accounts", "catalog_import", "erp_api",
+  ];
+  if (
+    Object.keys(input).some((key) => ![...legacyKeys, ...phaseDKeys].includes(key)) ||
+    legacyKeys.some((key) => !(key in input))
+  ) {
     throw new InputValidationError("INVALID_SCHEMA", "shop_details");
   }
   if (!Number.isInteger(input.approx_product_count) || Number(input.approx_product_count) < 1 || Number(input.approx_product_count) > 100000) {
     throw new InputValidationError("INVALID_RANGE", "shop_details.approx_product_count");
   }
-  for (const key of keys.slice(1)) normalizeBoolean(`shop_details.${key}`, input[key]);
-  return Object.fromEntries(keys.map((key) => [key, input[key]]));
+  for (const key of legacyKeys.slice(1)) normalizeBoolean(`shop_details.${key}`, input[key]);
+  const output = Object.fromEntries(legacyKeys.map((key) => [key, input[key]]));
+  for (const key of ["complex_product_count", "payment_provider_count"]) {
+    if (key in input) {
+      const minimum = key === "payment_provider_count" ? 1 : 0;
+      const maximum = key === "payment_provider_count" ? 20 : 10000;
+      if (!Number.isInteger(input[key]) || Number(input[key]) < minimum || Number(input[key]) > maximum) {
+        throw new InputValidationError("INVALID_RANGE", `shop_details.${key}`);
+      }
+      output[key] = input[key];
+    }
+  }
+  if ("shipping_scope" in input) {
+    output.shipping_scope = normalizeRequiredOption(
+      "shop_details.shipping_scope",
+      input.shipping_scope,
+      new Set(["standard", "complex"]),
+    );
+  }
+  for (const key of ["customer_accounts", "catalog_import", "erp_api"]) {
+    if (key in input) output[key] = normalizeBoolean(`shop_details.${key}`, input[key]);
+  }
+  return output;
 }
 
 function normalizeBookingDetails(value: unknown): Record<string, unknown> | null {
@@ -272,7 +300,7 @@ function normalizeBookingDetails(value: unknown): Record<string, unknown> | null
   }
   const input = value as Record<string, unknown>;
   const keys = ["type", "existing_system", "existing_system_name", "calendar_integration"];
-  if (Object.keys(input).some((key) => !keys.includes(key)) || keys.some((key) => !(key in input))) {
+  if (Object.keys(input).some((key) => ![...keys, "tier"].includes(key)) || keys.some((key) => !(key in input))) {
     throw new InputValidationError("INVALID_SCHEMA", "booking_details");
   }
   const type = normalizeOption("booking_details.type", input.type, BOOKING_TYPES);
@@ -290,6 +318,9 @@ function normalizeBookingDetails(value: unknown): Record<string, unknown> | null
     existing_system: existingSystem,
     existing_system_name: existingSystemName,
     calendar_integration: normalizeBoolean("booking_details.calendar_integration", input.calendar_integration),
+    ...("tier" in input
+      ? { tier: normalizeRequiredOption("booking_details.tier", input.tier, new Set(["widget", "advanced", "custom"])) }
+      : {}),
   };
 }
 
@@ -316,10 +347,19 @@ function normalizeEvidenceBooleanObject(field: string, value: unknown, keys: rea
 
 function normalizePageScopeDetails(value: unknown): Record<string, unknown> | null {
   const field = "page_scope_details";
-  const input = normalizeEvidenceObject(field, value, ["reviews", "blog", "jobs", "gallery"]);
+  const input = normalizeEvidenceObject(field, value, ["reviews", "blog", "jobs", "gallery", "portfolio", "search"]);
   if (input === null) return null;
-  const allowed = new Set(["normal", "complex", "unknown"]);
-  return Object.fromEntries(Object.entries(input).map(([key, entry]) => [key, normalizeRequiredOption(`${field}.${key}`, entry, allowed)]));
+  const allowedByKey: Record<string, Set<string>> = {
+    reviews: new Set(["normal", "complex", "unknown", "live"]),
+    gallery: new Set(["normal", "complex", "unknown", "advanced"]),
+    portfolio: new Set(["normal", "dynamic"]),
+    search: new Set(["none", "basic", "advanced"]),
+  };
+  const defaultAllowed = new Set(["normal", "complex", "unknown"]);
+  return Object.fromEntries(Object.entries(input).map(([key, entry]) => [
+    key,
+    normalizeRequiredOption(`${field}.${key}`, entry, allowedByKey[key] ?? defaultAllowed),
+  ]));
 }
 
 function normalizeQuoteFormDetails(value: unknown): Record<string, unknown> | null {
@@ -368,28 +408,58 @@ function normalizeSingleOptionEvidence(
 
 function normalizeContentMediaDetails(value: unknown): Record<string, unknown> | null {
   const field = "content_media_details";
-  const input = normalizeEvidenceObject(field, value, ["copywriting_scope", "image_work_scope", "paid_stock_handling"]);
+  const input = normalizeEvidenceObject(field, value, [
+    "copywriting_scope", "copy_page_count", "image_work_scope",
+    "paid_stock_handling", "branding_tier",
+  ]);
   if (input === null) return null;
   const output: Record<string, unknown> = {};
   if ("copywriting_scope" in input) {
-    output.copywriting_scope = normalizeRequiredOption(`${field}.copywriting_scope`, input.copywriting_scope, new Set(["none", "light", "substantial", "unknown"]));
+    output.copywriting_scope = normalizeRequiredOption(`${field}.copywriting_scope`, input.copywriting_scope, new Set([
+      "none", "supplied", "light", "substantial", "new", "specialist", "unknown",
+    ]));
+  }
+  if ("copy_page_count" in input) {
+    if (!Number.isInteger(input.copy_page_count) || Number(input.copy_page_count) < 1 || Number(input.copy_page_count) > 100) {
+      throw new InputValidationError("INVALID_RANGE", `${field}.copy_page_count`);
+    }
+    output.copy_page_count = input.copy_page_count;
   }
   if ("image_work_scope" in input) {
-    output.image_work_scope = normalizeRequiredOption(`${field}.image_work_scope`, input.image_work_scope, new Set(["none", "standard", "exceptional", "unknown"]));
+    output.image_work_scope = normalizeRequiredOption(`${field}.image_work_scope`, input.image_work_scope, new Set([
+      "none", "standard", "advanced", "ai_set", "stock", "photography", "exceptional", "unknown",
+    ]));
   }
   if ("paid_stock_handling" in input) {
     output.paid_stock_handling = normalizeBoolean(`${field}.paid_stock_handling`, input.paid_stock_handling);
+  }
+  if ("branding_tier" in input) {
+    output.branding_tier = normalizeRequiredOption(`${field}.branding_tier`, input.branding_tier, new Set([
+      "existing", "logo", "identity", "logo_identity", "extended",
+    ]));
   }
   return output;
 }
 
 function normalizeHostingMaintenanceDetails(value: unknown): Record<string, unknown> | null {
   const field = "hosting_maintenance_details";
-  const input = normalizeEvidenceObject(field, value, ["hosting_support", "maintenance_interest"]);
+  const input = normalizeEvidenceObject(field, value, [
+    "hosting_support", "maintenance_interest", "domain_service", "maintenance_plan",
+  ]);
   if (input === null) return null;
   const output: Record<string, unknown> = {};
   if ("hosting_support" in input) output.hosting_support = normalizeRequiredOption(`${field}.hosting_support`, input.hosting_support, HOSTING_SUPPORT);
   if ("maintenance_interest" in input) output.maintenance_interest = normalizeRequiredOption(`${field}.maintenance_interest`, input.maintenance_interest, MAINTENANCE_INTEREST);
+  if ("domain_service" in input) {
+    output.domain_service = normalizeRequiredOption(`${field}.domain_service`, input.domain_service, new Set([
+      "existing", "new", "dns", "transfer", "migration", "complex_dns_mail", "complex_migration",
+    ]));
+  }
+  if ("maintenance_plan" in input) {
+    output.maintenance_plan = normalizeRequiredOption(`${field}.maintenance_plan`, input.maintenance_plan, new Set([
+      "none", "care", "care_plus",
+    ]));
+  }
   return output;
 }
 
@@ -461,20 +531,43 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
     else if (field === "multilingual_details") {
       output[field] = normalizeEvidenceBooleanObject(field, value, [
         "final_translations_supplied", "same_structure", "extensive_seo",
+        "translation_required", "seo_per_language", "advanced_seo_research",
         "language_specific_integrations", "complex_scope",
       ]);
     } else if (field === "download_details") {
-      output[field] = normalizeSingleOptionEvidence(field, value, "access", new Set(["public", "secured", "both", "unknown"]));
+      output[field] = normalizeSingleOptionEvidence(field, value, "access", new Set([
+        "none", "public", "secured", "both", "download", "document_flow", "portal", "unknown",
+      ]));
     } else if (field === "content_media_details") output[field] = normalizeContentMediaDetails(value);
     else if (field === "newsletter_details") {
-      output[field] = normalizeSingleOptionEvidence(field, value, "scope", new Set([
-        "simple_existing_service", "new_service_setup", "automation_or_segmentation", "unknown",
-      ]));
+      const input = normalizeEvidenceObject(field, value, ["scope", "analytics", "custom_integration"]);
+      if (input === null) output[field] = null;
+      else {
+        const details: Record<string, unknown> = {};
+        if ("scope" in input) details.scope = normalizeRequiredOption(`${field}.scope`, input.scope, new Set([
+          "simple_existing_service", "new_service_setup", "automation_or_segmentation", "unknown",
+        ]));
+        if ("analytics" in input) details.analytics = normalizeRequiredOption(`${field}.analytics`, input.analytics, new Set(["standard", "advanced"]));
+        if ("custom_integration" in input) details.custom_integration = normalizeBoolean(`${field}.custom_integration`, input.custom_integration);
+        output[field] = details;
+      }
     } else if (field === "hosting_maintenance_details") output[field] = normalizeHostingMaintenanceDetails(value);
     else if (field === "deadline_details") {
       output[field] = normalizeEvidenceBooleanObject(field, value, ["commercially_critical", "hard_deadline"]);
     } else if (field === "seo_details") {
-      output[field] = normalizeEvidenceBooleanObject(field, value, ["extensive_services"]);
+      const input = normalizeEvidenceObject(field, value, [
+        "extensive_services", "scope", "extra_language_seo", "advanced_language_seo",
+      ]);
+      if (input === null) output[field] = null;
+      else {
+        const details: Record<string, unknown> = {};
+        if ("extensive_services" in input) details.extensive_services = normalizeBoolean(`${field}.extensive_services`, input.extensive_services);
+        if ("scope" in input) details.scope = normalizeRequiredOption(`${field}.scope`, input.scope, new Set(["included", "launch", "complex"]));
+        for (const key of ["extra_language_seo", "advanced_language_seo"]) {
+          if (key in input) details[key] = normalizeBoolean(`${field}.${key}`, input[key]);
+        }
+        output[field] = details;
+      }
     } else if (field === "budget_update_category_scheme") {
       output[field] = normalizeOption(field, value, new Set(["budget_guard_v1"]));
     } else if (field === "budget_update_category_code") {
@@ -524,6 +617,24 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
   }
   if (output.booking_details && output.booking_required !== true) {
     throw new InputValidationError("INVALID_CONDITION", "booking_required");
+  }
+  const multilingualDetails = output.multilingual_details as Record<string, unknown> | null | undefined;
+  if (
+    multilingualDetails &&
+    (multilingualDetails.seo_per_language === true || multilingualDetails.advanced_seo_research === true) &&
+    (!Array.isArray(output.additional_languages) || output.additional_languages.length === 0)
+  ) {
+    throw new InputValidationError("INVALID_CONDITION", "additional_languages");
+  }
+  if (
+    multilingualDetails?.advanced_seo_research === true &&
+    multilingualDetails.seo_per_language !== true
+  ) {
+    throw new InputValidationError("INVALID_CONDITION", "multilingual_details.advanced_seo_research");
+  }
+  const seoDetails = output.seo_details as Record<string, unknown> | null | undefined;
+  if (seoDetails?.advanced_language_seo === true && seoDetails.extra_language_seo !== true) {
+    throw new InputValidationError("INVALID_CONDITION", "seo_details.advanced_language_seo");
   }
 
   if (mode === "submit") {

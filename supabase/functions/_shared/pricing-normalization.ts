@@ -41,6 +41,15 @@ export interface RawPricingScope {
   deadline_details?: unknown;
 }
 
+export interface NormalizedCatalogSelection {
+  productId: string;
+  quantity: number;
+}
+
+export interface NormalizedRecurringService {
+  productId: "care" | "care_plus";
+}
+
 export interface NormalizedModule {
   id: CanonicalModuleId;
   classification: string;
@@ -55,6 +64,8 @@ export interface NormalizedPricingScope {
   unknownLanguages: string[];
   modules: NormalizedModule[];
   manualComponents: string[];
+  catalogSelections?: NormalizedCatalogSelection[];
+  recurringServices?: NormalizedRecurringService[];
 }
 
 const UNCONDITIONAL_STANDARD_PAGES = new Set([
@@ -169,6 +180,11 @@ export function normalizePricingScope(
   const goals = new Set(stringArray(input.website_goals));
   const manualComponents = new Set<string>();
   const modules: NormalizedModule[] = [];
+  const catalogSelections = new Map<string, number>();
+  const recurringServices: NormalizedRecurringService[] = [];
+  const selectCatalogProduct = (productId: string, quantity = 1) => {
+    if (quantity > 0) catalogSelections.set(productId, quantity);
+  };
 
   const shopEvidence = new Set<string>();
   addEvidence(shopEvidence, pages.includes("shop"), "requested_pages.shop");
@@ -186,9 +202,39 @@ export function normalizePricingScope(
   addEvidence(shopEvidence, input.shop_required === true, "shop_required");
   addEvidence(shopEvidence, hasObjectData(input.shop_details), "shop_details");
   if (shopEvidence.size) {
+    const shopDetails = objectValue(input.shop_details);
+    const simpleProductCount = typeof shopDetails.approx_product_count === "number"
+      ? shopDetails.approx_product_count
+      : 0;
+    const extraSimpleProducts = Math.max(0, simpleProductCount - 15);
+    if (extraSimpleProducts) {
+      selectCatalogProduct("extra_simple_products", extraSimpleProducts);
+    }
+    if (typeof shopDetails.complex_product_count === "number") {
+      selectCatalogProduct("complex_product", shopDetails.complex_product_count);
+    }
+    if (typeof shopDetails.payment_provider_count === "number") {
+      selectCatalogProduct(
+        "extra_payment_provider",
+        Math.max(0, shopDetails.payment_provider_count - 1),
+      );
+    }
+    if (shopDetails.shipping_scope === "complex") {
+      selectCatalogProduct("complex_shipping");
+    }
+    if (shopDetails.customer_accounts === true) {
+      selectCatalogProduct("webshop_accounts");
+    }
+    if (shopDetails.catalog_import === true) selectCatalogProduct("catalog_import");
+    if (shopDetails.erp_api === true) selectCatalogProduct("erp_inventory_api");
     modules.push({
       id: "shop",
-      classification: "manual",
+      classification: [
+          "complex_product_count", "payment_provider_count", "shipping_scope",
+          "customer_accounts", "catalog_import", "erp_api",
+        ].some((key) => key in shopDetails)
+        ? "catalog"
+        : "manual",
       evidence: [...shopEvidence],
     });
   }
@@ -219,17 +265,31 @@ export function normalizePricingScope(
   );
   if (bookingEvidence.size) {
     const bookingDetails = objectValue(input.booking_details);
+    const bookingTier = bookingDetails.tier;
+    if (bookingTier === "widget") selectCatalogProduct("booking_widget");
+    else if (bookingTier === "advanced") selectCatalogProduct("advanced_booking");
+    else if (bookingTier === "custom") selectCatalogProduct("custom_booking");
     const simple = bookingDetails.existing_system === false &&
       bookingDetails.calendar_integration === false;
     modules.push({
       id: "booking",
-      classification: simple ? "simple" : "manual",
+      classification: typeof bookingTier === "string"
+        ? `catalog:${bookingTier}`
+        : simple
+        ? "simple"
+        : "manual",
       evidence: [...bookingEvidence],
     });
   }
 
   const standardPages: string[] = [];
   const pageScopes = objectValue(input.page_scope_details);
+  if (pageScopes.portfolio === "dynamic") {
+    selectCatalogProduct("dynamic_portfolio");
+  }
+  const searchTier = pageScopes.search;
+  if (searchTier === "basic") selectCatalogProduct("site_search");
+  else if (searchTier === "advanced") selectCatalogProduct("advanced_search");
   for (const page of pages) {
     if (UNCONDITIONAL_STANDARD_PAGES.has(page)) {
       standardPages.push(page);
@@ -237,6 +297,13 @@ export function normalizePricingScope(
       if (!shopEvidence.size) standardPages.push(page);
     } else if (CONDITIONAL_STANDARD_PAGES.has(page)) {
       if (pageScopes[page] === "normal") standardPages.push(page);
+      else if (page === "gallery" && pageScopes[page] === "advanced") {
+        standardPages.push(page);
+        selectCatalogProduct("advanced_gallery");
+      } else if (page === "reviews" && pageScopes[page] === "live") {
+        standardPages.push(page);
+        selectCatalogProduct("live_reviews");
+      }
       else manualComponents.add(`complex_${page}_scope`);
     } else if (page === "other") {
       manualComponents.add("other_page_scope");
@@ -246,8 +313,7 @@ export function normalizePricingScope(
   }
 
   const formDetails = objectValue(input.quote_form_details);
-  const hasComplexFormSignals = formDetails.file_uploads === true ||
-    formDetails.database_workflow === true ||
+  const hasComplexFormSignals = formDetails.database_workflow === true ||
     formDetails.automated_processing === true ||
     formDetails.review_approval === true ||
     formDetails.custom_logic === true ||
@@ -276,7 +342,9 @@ export function normalizePricingScope(
     addEvidence(evidence, contactEvidence, "contact_form_intent");
     const classification = quoteEvidence
       ? hasComplexFormSignals
-        ? "manual"
+      ? "complex"
+      : formDetails.file_uploads === true
+      ? "upload"
         : formDetails.structure_scope === "basic_single_section"
         ? "simple"
         : formDetails.structure_scope === "extended_standard_structure"
@@ -318,15 +386,39 @@ export function normalizePricingScope(
   ];
   if (additionalLanguages.length || unknownLanguages.length) {
     const details = objectValue(input.multilingual_details);
+    const hasPhaseDLanguageEvidence =
+      typeof details.translation_required === "boolean" ||
+      typeof details.seo_per_language === "boolean" ||
+      typeof details.advanced_seo_research === "boolean";
     const normal = primaryLanguage !== null && unknownLanguages.length === 0 &&
       details.final_translations_supplied === true &&
       details.same_structure === true &&
-      details.extensive_seo === false &&
+      (hasPhaseDLanguageEvidence || details.extensive_seo === false) &&
       details.language_specific_integrations === false &&
       details.complex_scope === false;
+    if (hasPhaseDLanguageEvidence && normal) {
+      selectCatalogProduct("first_extra_language");
+      if (additionalLanguages.length > 1) {
+        selectCatalogProduct("second_extra_language");
+      }
+      if (additionalLanguages.length > 2) {
+        selectCatalogProduct(
+          "subsequent_extra_language",
+          additionalLanguages.length - 2,
+        );
+      }
+    }
+    if (details.translation_required === true) selectCatalogProduct("translation");
+    if (details.same_structure === false) {
+      selectCatalogProduct("alternative_language_structure");
+    }
     modules.push({
       id: "multilingual",
-      classification: normal ? "normal" : "manual",
+      classification: hasPhaseDLanguageEvidence && normal
+        ? "catalog"
+        : normal
+        ? "normal"
+        : "manual",
       evidence: [
         ...(additionalLanguages.length ? ["additional_languages"] : []),
         ...(unknownLanguages.length ? ["unknown_languages"] : []),
@@ -342,18 +434,48 @@ export function normalizePricingScope(
   if (imageSupport.has("professional_photography")) {
     manualComponents.add("professional_photography");
   }
-  if (features.has("search")) manualComponents.add("unresolved_search");
+  if (features.has("search") && searchTier == null) {
+    manualComponents.add("unresolved_search");
+  }
   if (
     downloadDetails.access === "secured" || downloadDetails.access === "both"
   ) manualComponents.add("secured_downloads");
-  if (contentDetails.copywriting_scope === "substantial") {
-    manualComponents.add("substantial_copywriting");
+  if (downloadDetails.access === "download") selectCatalogProduct("secure_download");
+  else if (downloadDetails.access === "document_flow") {
+    selectCatalogProduct("professional_document_flow");
+  } else if (downloadDetails.access === "portal") {
+    selectCatalogProduct("customer_portal");
   }
-  if (contentDetails.image_work_scope === "exceptional") {
-    manualComponents.add("exceptional_image_work");
+  const copyPageCount = typeof contentDetails.copy_page_count === "number"
+    ? contentDetails.copy_page_count
+    : 1;
+  if (contentDetails.copywriting_scope === "light") {
+    selectCatalogProduct("light_copy_optimization");
+  } else if (contentDetails.copywriting_scope === "substantial") {
+    selectCatalogProduct("substantial_rewrite", copyPageCount);
+  } else if (contentDetails.copywriting_scope === "new") {
+    selectCatalogProduct("new_copy", copyPageCount);
+  } else if (contentDetails.copywriting_scope === "specialist") {
+    selectCatalogProduct("specialist_copy");
   }
-  if (contentDetails.paid_stock_handling === true) {
-    manualComponents.add("paid_stock_handling");
+  if (contentDetails.image_work_scope === "advanced") {
+    selectCatalogProduct("advanced_image_editing");
+  } else if (contentDetails.image_work_scope === "ai_set") {
+    selectCatalogProduct("ai_image_set");
+  } else if (contentDetails.image_work_scope === "stock") {
+    selectCatalogProduct("stock_selection");
+  } else if (contentDetails.image_work_scope === "photography") {
+    selectCatalogProduct("photography");
+  }
+  const brandingTier = contentDetails.branding_tier;
+  const brandingProducts: Record<string, string> = {
+    logo: "professional_logo",
+    identity: "visual_identity",
+    logo_identity: "logo_identity_combo",
+    extended: "extended_branding",
+  };
+  if (typeof brandingTier === "string" && brandingProducts[brandingTier]) {
+    selectCatalogProduct(brandingProducts[brandingTier]);
   }
   if (
     newsletterDetails.scope &&
@@ -382,9 +504,19 @@ export function normalizePricingScope(
         "complex_blog_scope",
       ].includes(component)
     );
+    const hasCatalogContentEvidence = [
+      "supplied", "light", "substantial", "new", "specialist",
+    ].includes(String(contentDetails.copywriting_scope)) ||
+      ["advanced", "ai_set", "stock", "photography"].includes(
+        String(contentDetails.image_work_scope),
+      ) || typeof brandingTier === "string";
     modules.push({
       id: "content_media",
-      classification: contentManual ? "manual" : "included",
+      classification: hasCatalogContentEvidence
+        ? "catalog"
+        : contentManual
+        ? "manual"
+        : "included",
       evidence: ["content_media"],
     });
   }
@@ -397,6 +529,25 @@ export function normalizePricingScope(
   ) manualComponents.add("indeterminate_normal_scope");
 
   const hostingDetails = objectValue(input.hosting_maintenance_details);
+  const domainDetails = hostingDetails;
+  const domainProducts: Record<string, string> = {
+    dns: "dns_configuration",
+    transfer: "domain_transfer",
+    migration: "simple_hosting_migration",
+    complex_dns_mail: "complex_dns_mail_migration",
+    complex_migration: "complex_migration",
+  };
+  if (
+    typeof domainDetails.domain_service === "string" &&
+    domainProducts[domainDetails.domain_service]
+  ) {
+    selectCatalogProduct(domainProducts[domainDetails.domain_service]);
+  }
+  if (hostingDetails.maintenance_plan === "care") {
+    recurringServices.push({ productId: "care" });
+  } else if (hostingDetails.maintenance_plan === "care_plus") {
+    recurringServices.push({ productId: "care_plus" });
+  }
   const hostingEvidence = input.hosting_support === "yes" ||
     input.hosting_support === "advice" ||
     input.hosting_status === "no_hosting" ||
@@ -405,19 +556,40 @@ export function normalizePricingScope(
     input.maintenance_interest === "info_requested" ||
     hasObjectData(hostingDetails);
   if (hostingEvidence) {
+    const hasLegacyHostingEvidence = input.hosting_support === "yes" ||
+      input.hosting_support === "advice" ||
+      input.hosting_status === "no_hosting" ||
+      input.maintenance_interest === "yes" ||
+      input.maintenance_interest === "maybe" ||
+      input.maintenance_interest === "info_requested" ||
+      hostingDetails.hosting_support != null ||
+      hostingDetails.maintenance_interest != null;
     modules.push({
       id: "hosting_maintenance",
-      classification: "manual",
+      classification: hasLegacyHostingEvidence ? "manual" : "catalog",
       evidence: ["hosting_maintenance"],
     });
   }
 
   const seoDetails = objectValue(input.seo_details);
   if (input.seo_priority != null || hasObjectData(seoDetails)) {
-    const extensive = seoDetails.extensive_services === true;
+    const extensive = seoDetails.extensive_services === true ||
+      seoDetails.scope === "launch";
+    if (seoDetails.scope === "launch") selectCatalogProduct("seo_launch");
+    else if (seoDetails.scope === "complex") selectCatalogProduct("complex_seo");
+    if (seoDetails.extra_language_seo === true) {
+      selectCatalogProduct("seo_extra_language");
+    }
+    if (seoDetails.advanced_language_seo === true) {
+      selectCatalogProduct("advanced_seo_language");
+    }
     modules.push({
       id: "seo",
-      classification: extensive ? "additional" : "included",
+      classification: seoDetails.scope != null
+        ? "catalog"
+        : extensive
+        ? "additional"
+        : "included",
       evidence: ["seo"],
     });
   }
@@ -426,13 +598,20 @@ export function normalizePricingScope(
   if (stringArray(input.integrations).length) {
     manualComponents.add("external_integration");
   }
+  const integrationDetails = newsletterDetails;
+  if (integrationDetails.analytics === "advanced") {
+    selectCatalogProduct("advanced_analytics");
+  }
+  if (integrationDetails.custom_integration === true) {
+    selectCatalogProduct("crm_api_erp_automation");
+  }
   const deadlineDetails = objectValue(input.deadline_details);
   if (
     deadlineDetails.commercially_critical === true ||
     deadlineDetails.hard_deadline === true
   ) manualComponents.add("rush_review");
 
-  return {
+  const normalized: NormalizedPricingScope = {
     standardPages: [...new Set(standardPages)],
     standardPageCount: new Set(standardPages).size,
     primaryLanguage,
@@ -441,4 +620,11 @@ export function normalizePricingScope(
     modules,
     manualComponents: [...manualComponents],
   };
+  if (catalogSelections.size) {
+    normalized.catalogSelections = [...catalogSelections].map(
+      ([productId, quantity]) => ({ productId, quantity }),
+    );
+  }
+  if (recurringServices.length) normalized.recurringServices = recurringServices;
+  return normalized;
 }

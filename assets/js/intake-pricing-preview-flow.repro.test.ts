@@ -507,17 +507,17 @@ Deno.test("every individual late-step pricing choice remains accepted", async ()
     ["customer login", (f) => f.choose("requested_features", "customer_login")],
     ["basic quote form", (f) => setQuoteForm(f)],
     ["custom quote logic", (f) => setQuoteForm(f, true)],
-    ["secured downloads", (f) => { f.choose("requested_features", "downloads"); f.value("download_access", "secured"); }],
+    ["document flow", (f) => { f.choose("requested_features", "downloads"); f.value("download_access", "document_flow"); }],
     ["newsletter automation", (f) => { f.choose("requested_features", "newsletter"); f.value("newsletter_scope", "automation_or_segmentation"); }],
     ["external integration", (f) => f.value("integrations", "crm_example")],
     ["content help", (f) => f.value("content_status", "needs_help")],
     ["substantial copywriting", (f) => f.value("copywriting_scope", "substantial")],
     ["professional photography", (f) => f.choose("image_support", "professional_photography")],
     ["uncertain image support", (f) => f.choose("image_support", "unsure")],
-    ["exceptional image work", (f) => f.value("image_work_scope", "exceptional")],
+    ["advanced image work", (f) => f.value("image_work_scope", "advanced")],
     ["paid stock handling", (f) => f.check("#paid_stock_handling")],
     ["search", (f) => f.choose("requested_features", "search")],
-    ["extensive SEO", (f) => { f.value("seo_priority", "high"); f.check("#seo_extensive_services"); }],
+    ["complex SEO", (f) => { f.value("seo_priority", "high"); f.value("seo_scope", "complex"); }],
     ["hosting support", (f) => { f.value("hosting_status", "no_hosting"); f.value("hosting_support", "yes"); }],
     ["maintenance", (f) => f.value("maintenance_interest", "info_requested")],
     ["rush deadline", (f) => { f.value("deadline_date", "2026-12-01"); f.check("#deadline_hard"); }],
@@ -555,8 +555,8 @@ Deno.test("content help plus substantial copywriting yields one frontend-valid m
   assertEquals(combined.duplicatePresentationKeys, []);
   const copywritingItems = combined.items.filter((item) => item.presentationKey === "COPYWRITING");
   assertEquals(copywritingItems.length, 1);
-  assertEquals(copywritingItems[0].state, "MANUAL_REVIEW");
-  assertEquals("amountMinor" in copywritingItems[0], false);
+  assertEquals(copywritingItems[0].state, "FROM_EXTRA");
+  assertEquals("amountMinor" in copywritingItems[0], true);
 });
 
 Deno.test("full realistic flow accepts every pricing transition", async () => {
@@ -572,17 +572,17 @@ Deno.test("full realistic flow accepts every pricing transition", async () => {
     ["booking", setBooking],
     ["multilingual", setMultilingual],
     ["customer login", (f) => f.choose("requested_features", "customer_login")],
-    ["secured downloads", (f) => { f.choose("requested_features", "downloads"); f.value("download_access", "secured"); }],
+    ["document flow", (f) => { f.choose("requested_features", "downloads"); f.value("download_access", "document_flow"); }],
     ["newsletter automation", (f) => { f.choose("requested_features", "newsletter"); f.value("newsletter_scope", "automation_or_segmentation"); }],
     ["content help", (f) => f.value("content_status", "needs_help")],
     ["substantial copywriting", (f) => f.value("copywriting_scope", "substantial")],
     ["images partial", (f) => f.value("image_status", "partial")],
     ["professional photography", (f) => f.choose("image_support", "professional_photography")],
-    ["exceptional image work", (f) => f.value("image_work_scope", "exceptional")],
+    ["advanced image work", (f) => f.value("image_work_scope", "advanced")],
     ["paid stock handling", (f) => f.check("#paid_stock_handling")],
     ["search", (f) => f.choose("requested_features", "search")],
     ["external integration", (f) => f.value("integrations", "crm_example")],
-    ["extensive SEO", (f) => { f.value("seo_priority", "high"); f.check("#seo_extensive_services"); }],
+    ["complex SEO", (f) => { f.value("seo_priority", "high"); f.value("seo_scope", "complex"); }],
     ["hosting support", (f) => { f.value("hosting_status", "no_hosting"); f.value("hosting_support", "yes"); }],
     ["maintenance", (f) => f.value("maintenance_interest", "info_requested")],
     ["rush deadline", (f) => { f.value("deadline_date", "2026-12-01"); f.check("#deadline_hard"); }],
@@ -601,7 +601,7 @@ Deno.test("full realistic flow accepts every pricing transition", async () => {
   }
   const firstFailure = results.find((result) => result.status !== 200 || !result.frontendAccepted);
   const sixthPage = results.find((result) => result.name === "flow: sixth standard page");
-  assertEquals(sixthPage?.knownMinimumMinor, 200_000);
+  assertEquals(sixthPage?.knownMinimumMinor, 202_500);
   assertEquals(results.length, 26);
   assertEquals(firstFailure, undefined);
   assertEquals(results.every((result) => result.duplicatePresentationKeys.length === 0), true);

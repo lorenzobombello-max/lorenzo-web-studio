@@ -5,6 +5,7 @@ import type {
 } from "./pricing-engine.ts";
 import {
   PRICING_CONFIG,
+  type PackageDefinitionId,
   type PackageEntitlementId,
 } from "./pricing-config.ts";
 
@@ -52,7 +53,14 @@ export type PricingPreviewPresentationKey =
   | "NEWSLETTER_SCOPE"
   | "INDETERMINATE_SCOPE"
   | "UNKNOWN_FEATURE_SCOPE"
-  | "PACKAGE_SCOPE";
+  | "PACKAGE_SCOPE"
+  | "DYNAMIC_PORTFOLIO"
+  | "DOCUMENT_FLOW"
+  | "CUSTOMER_PORTAL"
+  | "STOCK_SELECTION"
+  | "EXTENDED_BRANDING";
+
+export type PricingPreviewRecurringPresentationKey = "CARE" | "CARE_PLUS";
 
 export type PricingPreviewLabelKey = `pricing_preview.${Lowercase<PricingPreviewPresentationKey>}`;
 export type PricingPreviewContractVersion = 1 | 2;
@@ -82,6 +90,11 @@ export interface CustomerPricingPreviewDTOv1 {
     containsFromPricing: boolean;
     manualReviewRequired: boolean;
   };
+  recurringServices?: Array<{
+    presentationKey: PricingPreviewRecurringPresentationKey;
+    amountMinor: number;
+    unit: "MONTH";
+  }>;
   items: Array<{
     presentationKey: PricingPreviewPresentationKey;
     labelKey: PricingPreviewLabelKey;
@@ -101,7 +114,7 @@ export interface CustomerPricingPreviewDTOv2
   extends Omit<CustomerPricingPreviewDTOv1, "previewVersion"> {
   previewVersion: 2;
   selectedPackage: {
-    selectedPackageDefinitionId: "starter_v1" | "professional_v1";
+    selectedPackageDefinitionId: PackageDefinitionId;
     label: "Starter" | "Professional";
     floorMinor: number;
     standardPageCount: number;
@@ -131,6 +144,7 @@ const PACKAGE_INCLUSION_PRESENTATION = {
   },
   normal_ai_image_support: { label: "AI-beeldondersteuning binnen normale scope", group: "WHEN_REQUESTED", scope: "BASE" },
   primary_language: { label: "Eén hoofdtaal", group: "WHEN_REQUESTED", scope: "FULL" },
+  blog_news: { label: "Blog/Nieuws", group: "WHEN_REQUESTED", scope: "FULL" },
 } as const satisfies Record<PackageEntitlementId, Omit<PackageInclusionPresentation, "entitlement">>;
 
 function packageInclusionPresentation(
@@ -147,13 +161,17 @@ const PRESENTATION_KEYS = {
   extra_standard_page: "EXTRA_STANDARD_PAGE",
   extra_custom_page: "EXTRA_STANDARD_PAGE",
   extra_correction_round: "PACKAGE_SCOPE",
-  extra_language: "EXTRA_LANGUAGE",
+  first_extra_language: "EXTRA_LANGUAGE",
+  subsequent_extra_language: "EXTRA_LANGUAGE",
+  blog_news: "BLOG_SCOPE",
   contact_form: "CONTACT_FORM",
   simple_quote_form: "SIMPLE_QUOTE_FORM",
   extended_quote_form: "EXTENDED_QUOTE_FORM",
   other_extended_form: "EXTENDED_QUOTE_FORM",
   complex_form_manual: "COMPLEX_FORM",
+  complex_form_workflow: "COMPLEX_FORM",
   shop_manual: "SHOP",
+  webshop_base: "SHOP",
   booking_manual: "BOOKING",
   simple_booking: "BOOKING",
   multilingual_manual: "MULTILINGUAL_SCOPE",
@@ -163,6 +181,7 @@ const PRESENTATION_KEYS = {
   extensive_seo: "EXTENSIVE_SEO",
   basic_branding: "CONTENT_MEDIA",
   basic_logo: "CONTENT_MEDIA",
+  logo_identity_combo: "CONTENT_MEDIA",
   content_support: "COPYWRITING",
   extended_ai_imagery: "IMAGE_WORK",
   customer_login: "CUSTOMER_LOGIN",
@@ -181,9 +200,53 @@ const PRESENTATION_KEYS = {
   other_page_scope: "OTHER_PAGE_SCOPE",
   unknown_page_scope: "UNKNOWN_PAGE_SCOPE",
   newsletter_manual: "NEWSLETTER_SCOPE",
+  advanced_newsletter: "NEWSLETTER_SCOPE",
   indeterminate_normal_scope: "INDETERMINATE_SCOPE",
   unknown_feature_scope: "UNKNOWN_FEATURE_SCOPE",
   standard_page_count_above_professional_scope: "PACKAGE_SCOPE",
+  dynamic_portfolio: "DYNAMIC_PORTFOLIO",
+  advanced_gallery: "GALLERY_SCOPE",
+  live_reviews: "REVIEWS_SCOPE",
+  booking_widget: "BOOKING",
+  advanced_booking: "BOOKING",
+  custom_booking: "BOOKING",
+  site_search: "SEARCH",
+  advanced_search: "SEARCH",
+  secure_download: "SECURED_DOWNLOADS",
+  professional_document_flow: "DOCUMENT_FLOW",
+  customer_portal: "CUSTOMER_PORTAL",
+  extra_simple_products: "SHOP",
+  complex_product: "SHOP",
+  extra_payment_provider: "SHOP",
+  complex_shipping: "SHOP",
+  webshop_accounts: "SHOP",
+  catalog_import: "SHOP",
+  erp_inventory_api: "SHOP",
+  second_extra_language: "EXTRA_LANGUAGE",
+  translation: "MULTILINGUAL_SCOPE",
+  alternative_language_structure: "MULTILINGUAL_SCOPE",
+  light_copy_optimization: "COPYWRITING",
+  substantial_rewrite: "COPYWRITING",
+  new_copy: "COPYWRITING",
+  specialist_copy: "COPYWRITING",
+  advanced_image_editing: "IMAGE_WORK",
+  ai_image_set: "IMAGE_WORK",
+  stock_selection: "STOCK_SELECTION",
+  photography: "PROFESSIONAL_PHOTOGRAPHY",
+  professional_logo: "CONTENT_MEDIA",
+  visual_identity: "CONTENT_MEDIA",
+  extended_branding: "EXTENDED_BRANDING",
+  seo_launch: "EXTENSIVE_SEO",
+  seo_extra_language: "EXTENSIVE_SEO",
+  advanced_seo_language: "EXTENSIVE_SEO",
+  complex_seo: "EXTENSIVE_SEO",
+  dns_configuration: "HOSTING_MAINTENANCE",
+  domain_transfer: "HOSTING_MAINTENANCE",
+  simple_hosting_migration: "HOSTING_MAINTENANCE",
+  complex_dns_mail_migration: "HOSTING_MAINTENANCE",
+  complex_migration: "HOSTING_MAINTENANCE",
+  advanced_analytics: "EXTERNAL_INTEGRATION",
+  crm_api_erp_automation: "EXTERNAL_INTEGRATION",
 } as const satisfies Record<string, PricingPreviewPresentationKey>;
 
 function itemState(rule: AppliedPricingRule): PricingPreviewItemState {
@@ -192,6 +255,39 @@ function itemState(rule: AppliedPricingRule): PricingPreviewItemState {
   if (rule.mode === "from") return "FROM_EXTRA";
   if (rule.mode === "manual") return "MANUAL_REVIEW";
   throw new TypeError("UNKNOWN_PRICING_MODE");
+}
+
+function consolidatePresentationItems(
+  items: CustomerPricingPreviewDTOv1["items"],
+): CustomerPricingPreviewDTOv1["items"] {
+  const consolidated = new Map<
+    PricingPreviewPresentationKey,
+    CustomerPricingPreviewDTOv1["items"][number]
+  >();
+  const stateRank: Record<PricingPreviewItemState, number> = {
+    INCLUDED: 0,
+    MANUAL_REVIEW: 1,
+    FIXED_EXTRA: 2,
+    FROM_EXTRA: 3,
+  };
+  for (const item of items) {
+    const current = consolidated.get(item.presentationKey);
+    if (!current) {
+      consolidated.set(item.presentationKey, item);
+      continue;
+    }
+    const state = stateRank[item.state] > stateRank[current.state]
+      ? item.state
+      : current.state;
+    const amountMinor = (current.amountMinor ?? 0) + (item.amountMinor ?? 0);
+    consolidated.set(item.presentationKey, {
+      presentationKey: item.presentationKey,
+      labelKey: item.labelKey,
+      state,
+      ...(amountMinor > 0 ? { amountMinor } : {}),
+    });
+  }
+  return [...consolidated.values()];
 }
 
 function budgetState(
@@ -240,15 +336,25 @@ export function buildCustomerPricingPreview(
   ) throw new TypeError("INCOHERENT_PRICING_PREVIEW");
 
   const comparisonStatus = budgetState(pricing, budgetEvaluation);
-  const suppressItemAmounts = pricing.calculation.manualReviewRequired;
+  const suppressItemAmounts = previewContractVersion === 1 &&
+    pricing.calculation.manualReviewRequired;
   const hasSubstantialCopywriting = pricing.calculation.appliedRules.some((rule) =>
     rule.ruleId === "substantial_copywriting"
   );
-  const items = pricing.calculation.appliedRules
+  const visibleRules = pricing.calculation.appliedRules
     .filter((rule) =>
       !rule.ruleId.endsWith("_floor") &&
       !(hasSubstantialCopywriting && rule.ruleId === "content_support")
-    )
+    );
+  const items = consolidatePresentationItems(visibleRules
+    .filter((rule) => {
+      if (rule.mode !== "manual") return true;
+      const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
+      return !visibleRules.some((candidate) =>
+        candidate.mode !== "manual" &&
+        PRESENTATION_KEYS[candidate.ruleId as keyof typeof PRESENTATION_KEYS] === presentationKey
+      );
+    })
     .map((rule) => {
       const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
       if (!presentationKey) throw new TypeError("UNKNOWN_PRICING_RULE");
@@ -268,7 +374,7 @@ export function buildCustomerPricingPreview(
           ? { amountMinor: rule.amountMinor }
           : {}),
       };
-    });
+    }));
 
   const base: Omit<CustomerPricingPreviewDTOv1, "previewVersion"> = {
     previewContractVersion,
@@ -287,13 +393,19 @@ export function buildCustomerPricingPreview(
         : {}),
     },
     summary: {
-      ...(!pricing.calculation.manualReviewRequired ||
-          comparisonStatus === "KNOWN_MINIMUM_ABOVE_BUDGET"
-        ? { knownMinimumMinor: pricing.calculation.knownMinimumMinor }
-        : {}),
+      knownMinimumMinor: pricing.calculation.knownMinimumMinor,
       containsFromPricing: pricing.calculation.containsFromPricing,
       manualReviewRequired: pricing.calculation.manualReviewRequired,
     },
+    ...(pricing.recurringServices
+      ? {
+        recurringServices: pricing.recurringServices.map((service) => ({
+          presentationKey: service.productId === "care" ? "CARE" as const : "CARE_PLUS" as const,
+          amountMinor: service.amountMinor,
+          unit: "MONTH" as const,
+        })),
+      }
+      : {}),
     items,
     packageAdvice: { state: packageAdviceState(pricing.packageAdvice.status) },
   };

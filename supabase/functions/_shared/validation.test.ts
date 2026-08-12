@@ -199,7 +199,7 @@ Deno.test("pricing preview validator accepts only closed pricing scope", () => {
 Deno.test("package evidence accepts only immutable IDs and partitions as evidence", () => {
   for (const selected_package_definition_id of [
     "starter_v1",
-    "professional_v1",
+    "professional_v2",
     null,
   ]) {
     const result = sanitizeAndValidatePricingPreviewInput({
@@ -220,7 +220,7 @@ Deno.test("package evidence accepts only immutable IDs and partitions as evidenc
     "custom",
     "auto",
     "suggested",
-    "professional_v2",
+    "professional_v1",
     3200,
     {},
   ]) {
@@ -447,4 +447,145 @@ Deno.test("shared above-6000 label remains legacy without restored scheme and co
   const partitioned = partitionIntakeData(result);
   assertEquals(partitioned.legacyData.budget_update_category, "Meer dan EUR 6.000");
   assertEquals(partitioned.evidenceData, {});
+});
+
+Deno.test("D47-D48 Phase D evidence validates and partitions through existing detail objects", () => {
+  const evidence = {
+    shop_required: true,
+    shop_details: {
+      approx_product_count: 20,
+      categories: true,
+      online_payments: true,
+      shipping: true,
+      pickup: false,
+      existing_catalog: true,
+      complex_product_count: 2,
+      payment_provider_count: 2,
+      shipping_scope: "complex",
+      customer_accounts: true,
+      catalog_import: true,
+      erp_api: true,
+    },
+    booking_required: true,
+    booking_details: {
+      type: "appointments",
+      existing_system: false,
+      existing_system_name: null,
+      calendar_integration: false,
+      tier: "advanced",
+    },
+    page_scope_details: {
+      portfolio: "dynamic",
+      gallery: "advanced",
+      reviews: "live",
+      search: "advanced",
+    },
+    primary_language: "nl",
+    additional_languages: ["fr"],
+    multilingual_details: {
+      final_translations_supplied: true,
+      same_structure: true,
+      translation_required: false,
+      seo_per_language: true,
+      advanced_seo_research: true,
+      language_specific_integrations: false,
+      complex_scope: false,
+    },
+    download_details: { access: "document_flow" },
+    content_media_details: {
+      copywriting_scope: "new",
+      copy_page_count: 4,
+      image_work_scope: "stock",
+      branding_tier: "logo_identity",
+    },
+    hosting_maintenance_details: {
+      hosting_support: "yes",
+      maintenance_interest: "yes",
+      domain_service: "transfer",
+      maintenance_plan: "care_plus",
+    },
+    seo_details: {
+      scope: "launch",
+      extra_language_seo: true,
+      advanced_language_seo: true,
+    },
+    newsletter_details: {
+      scope: "automation_or_segmentation",
+      analytics: "advanced",
+      custom_integration: true,
+    },
+  };
+  const result = sanitizeAndValidateIntakeData(evidence, "draft");
+  assertEquals(result, evidence);
+  const { evidenceData } = partitionIntakeData(result);
+  for (const field of [
+    "page_scope_details", "multilingual_details", "download_details",
+    "content_media_details", "hosting_maintenance_details", "seo_details",
+    "newsletter_details",
+  ]) assertEquals(evidenceData[field], evidence[field as keyof typeof evidence]);
+});
+
+Deno.test("D49 Phase D enums and counts fail closed", () => {
+  const invalidCases: Array<[string, unknown]> = [
+    ["booking_details", {
+      type: "appointments", existing_system: false, existing_system_name: null,
+      calendar_integration: false, tier: "premium",
+    }],
+    ["page_scope_details", { search: "enterprise" }],
+    ["download_details", { access: "private" }],
+    ["content_media_details", { copywriting_scope: "generated" }],
+    ["content_media_details", { copywriting_scope: "new", copy_page_count: 0 }],
+    ["content_media_details", { branding_tier: "logo_and_more" }],
+    ["hosting_maintenance_details", { maintenance_plan: "seo_care" }],
+    ["shop_details", {
+      approx_product_count: 10, categories: true, online_payments: true,
+      shipping: true, pickup: false, existing_catalog: false,
+      complex_product_count: -1, payment_provider_count: 1,
+      shipping_scope: "standard", customer_accounts: false,
+      catalog_import: false, erp_api: false,
+    }],
+  ];
+  for (const [field, value] of invalidCases) {
+    assertThrows(
+      () => sanitizeAndValidateIntakeData({ [field]: value }, "draft"),
+      InputValidationError,
+    );
+  }
+});
+
+Deno.test("D50 Phase D evidence dependencies reject incompatible states", () => {
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      booking_required: false,
+      booking_details: {
+        type: "appointments", existing_system: false, existing_system_name: null,
+        calendar_integration: false, tier: "widget",
+      },
+    }, "draft"),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      multilingual_details: {
+        final_translations_supplied: true, same_structure: true,
+        translation_required: false, seo_per_language: true,
+        advanced_seo_research: true, language_specific_integrations: false,
+        complex_scope: false,
+      },
+      additional_languages: [],
+    }, "draft"),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      seo_details: {
+        scope: "included", extra_language_seo: false,
+        advanced_language_seo: true,
+      },
+    }, "draft"),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
 });

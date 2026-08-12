@@ -18,6 +18,7 @@ export interface PricingSnapshotIntegrityRoot {
   packageAdvice: unknown;
   budgetEvaluation: unknown;
   packageDefinition?: unknown;
+  recurringServices?: unknown;
 }
 
 function toHex(buffer: ArrayBuffer): string {
@@ -72,6 +73,9 @@ export function pricingSnapshotIntegrityRoot(
   };
   if (value.snapshotContractVersion === 3) {
     root.packageDefinition = value.packageDefinition;
+  }
+  if (value.recurringServices !== undefined) {
+    root.recurringServices = value.recurringServices;
   }
   return root;
 }

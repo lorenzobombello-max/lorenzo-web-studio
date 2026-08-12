@@ -273,7 +273,7 @@ Deno.test("idempotent retry returns the historical snapshot without rebuilding",
 Deno.test("explicit package evidence creates an immutable closed v3 snapshot", async () => {
   const snapshot = await buildPricingSnapshotV3(
     {
-      selected_package_definition_id: "professional_v1",
+      selected_package_definition_id: "professional_v2",
       requested_pages: ["home"],
     },
     budgetGuardEvidence("3200_to_6000_inclusive"),
@@ -290,8 +290,8 @@ Deno.test("explicit package evidence creates an immutable closed v3 snapshot", a
   ]);
   assertEquals(snapshot.snapshotContractVersion, 3);
   assertEquals(snapshot.calculation.basis, "package_floor");
-  assertEquals(snapshot.packageDefinition.id, "professional_v1");
-  assertEquals(snapshot.packageDefinition.floorMinor, 320_000);
-  assertEquals(snapshot.packageDefinition.standardPageLimit, 12);
+  assertEquals(snapshot.packageDefinition.id, "professional_v2");
+  assertEquals(snapshot.packageDefinition.floorMinor, 350_000);
+  assertEquals(snapshot.packageDefinition.standardPageLimit, 10);
   assertEquals(snapshot.packageDefinition.includedCorrectionRounds, 2);
 });
