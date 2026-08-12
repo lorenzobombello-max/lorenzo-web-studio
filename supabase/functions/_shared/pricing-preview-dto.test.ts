@@ -96,15 +96,43 @@ Deno.test("manual preview keeps review and compatible budget dimensions independ
     categoryCode: "3200_to_6000_inclusive",
     comparisonStatus: "WITHIN_KNOWN_BUDGET",
     knownMinimumExceedsBudget: false,
-    knownMinimumMinor: undefined,
+    knownMinimumMinor: 200_000,
     containsFromPricing: true,
   });
   assertEquals(result.summary.manualReviewRequired, true);
-  assertEquals("knownMinimumMinor" in result.summary, false);
+  assertEquals(result.summary.knownMinimumMinor, 200_000);
   assertEquals(result.items.some((item) => item.state === "MANUAL_REVIEW"), true);
   assertEquals(result.items.some((item) => item.state === "FROM_EXTRA"), true);
-  assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
+  assertEquals(
+    result.items.filter((item) => item.state === "FROM_EXTRA").every((item) => item.amountMinor === 20_000),
+    true,
+  );
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
+});
+
+Deno.test("preview preserves fixed and multiple from amounts beside manual review", () => {
+  const result = preview({
+    requested_pages: ["home", "quote_request"],
+    requested_features: ["quote_form", "customer_login"],
+    quote_form_details: { structure_scope: "basic_single_section" },
+    primary_language: "nl",
+    additional_languages: ["fr", "en"],
+    multilingual_details: {
+      final_translations_supplied: true,
+      same_structure: true,
+      extensive_seo: false,
+      language_specific_integrations: false,
+      complex_scope: false,
+    },
+  });
+
+  assertEquals(result.summary.knownMinimumMinor, 300_000);
+  assertEquals(result.summary.containsFromPricing, true);
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals(result.items.find((item) => item.state === "FIXED_EXTRA")?.amountMinor, 20_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.amountMinor, 50_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.quantity, 2);
+  assertEquals(result.items.find((item) => item.state === "MANUAL_REVIEW")?.amountMinor, undefined);
 });
 
 Deno.test("substantial copywriting supersedes generic content support in customer presentation", () => {
@@ -223,7 +251,7 @@ Deno.test("manual preview keeps unreliable budget evidence indeterminate", () =>
 
   assertEquals(result.budget.comparisonStatus, "INDETERMINATE");
   assertEquals(result.summary.manualReviewRequired, true);
-  assertEquals("knownMinimumMinor" in result.summary, false);
+  assertEquals(result.summary.knownMinimumMinor, 180_000);
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
 });
 

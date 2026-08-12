@@ -245,6 +245,62 @@ Deno.test("combined manual review and package-floor mismatch renders both warnin
   assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
 });
 
+Deno.test("manual review with a compatible budget keeps the known minimum visible", () => {
+  const combinedPreview = structuredClone(preview);
+  combinedPreview.budget.comparisonStatus = "WITHIN_KNOWN_BUDGET";
+  combinedPreview.budget.knownMinimumExceedsBudget = false;
+  combinedPreview.summary.manualReviewRequired = true;
+  combinedPreview.summary.containsFromPricing = true;
+  combinedPreview.items = [{
+    presentationKey: "CUSTOMER_LOGIN",
+    labelKey: "pricing_preview.customer_login",
+    state: "MANUAL_REVIEW",
+  }];
+
+  assertEquals(validPreview(combinedPreview, 5), true);
+  const ui = render(combinedPreview);
+  assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.200excl.btw");
+  assertEquals(ui.minimumRow.hidden, false);
+  assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
+  assertStringIncludes(ui.status.textContent, "persoonlijk beoordeeld");
+});
+
+Deno.test("known fixed and from badges keep their amounts beside manual review", () => {
+  function badge() {
+    const visible = { textContent: "" };
+    const accessible = { textContent: "" };
+    const classes = new Set<string>();
+    return {
+      hidden: true,
+      visible,
+      accessible,
+      classList: { add: (name: string) => classes.add(name), contains: (name: string) => classes.has(name) },
+      querySelector: (selector: string) => selector === ".pricing-status__visible" ? visible : accessible,
+    };
+  }
+  const fixedBadge = badge();
+  const fromBadge = badge();
+  const setPricingBadge = Function(
+    "pricingBadges",
+    "euroFormatter",
+    "euroNumberFormatter",
+    `"use strict"; return (${sourceFunction("setPricingBadge")});`,
+  )(
+    new Map([["SIMPLE_QUOTE_FORM", fixedBadge], ["EXTRA_LANGUAGE", fromBadge]]),
+    new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }),
+    new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 2 }),
+  ) as (item: Record<string, unknown>) => void;
+
+  setPricingBadge({ presentationKey: "SIMPLE_QUOTE_FORM", state: "FIXED_EXTRA", amountMinor: 20_000 });
+  setPricingBadge({ presentationKey: "EXTRA_LANGUAGE", state: "FROM_EXTRA", amountMinor: 50_000, quantity: 2 });
+
+  assertStringIncludes(fixedBadge.visible.textContent, "€\u00a0200");
+  assertEquals(fixedBadge.classList.contains("pricing-status--fixed"), true);
+  assertStringIncludes(fromBadge.visible.textContent, "€\u00a0500");
+  assertStringIncludes(fromBadge.visible.textContent, "× 2");
+  assertEquals(fromBadge.classList.contains("pricing-status--from"), true);
+});
+
 Deno.test("supplement mismatch keeps generic copy", () => {
   const supplementPreview = structuredClone(preview);
   supplementPreview.summary.knownMinimumMinor = 350_000;

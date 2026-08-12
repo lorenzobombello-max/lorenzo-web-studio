@@ -270,7 +270,7 @@ Deno.test("closed request schema rejects injections only after both valid limits
   assertEquals(calls.filter((name) => name === "consume_preview_rate_limit_v1").length, 2);
 });
 
-Deno.test("manual success keeps compatible budget independent and suppresses amounts", async () => {
+Deno.test("manual success keeps compatible budget and known pricing independent", async () => {
   const client: PreviewRateLimitRpcClient = {
     rpc(name) {
       if (name === "inspect_preview_budget_guard_context_v1") return Promise.resolve(context());
@@ -289,6 +289,9 @@ Deno.test("manual success keeps compatible budget independent and suppresses amo
   assertEquals(payload.preview.budget.comparisonStatus, "WITHIN_KNOWN_BUDGET");
   assertEquals(payload.preview.budget.knownMinimumExceedsBudget, false);
   assertEquals(payload.preview.summary.manualReviewRequired, true);
-  assertEquals(JSON.stringify(payload.preview).includes("amountMinor"), false);
-  assertEquals("knownMinimumMinor" in payload.preview.summary, false);
+  assertEquals(payload.preview.summary.knownMinimumMinor, 200_000);
+  assertEquals(
+    payload.preview.items.find((item: { state: string }) => item.state === "FROM_EXTRA")?.amountMinor,
+    20_000,
+  );
 });

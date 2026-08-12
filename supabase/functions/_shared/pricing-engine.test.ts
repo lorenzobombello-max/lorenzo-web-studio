@@ -413,6 +413,34 @@ Deno.test("known manual components normalize once and never add money", () => {
   );
 });
 
+Deno.test("manual review is additive metadata beside fixed and from known pricing", () => {
+  const result = calculateBudgetGuard({
+    requested_pages: ["home", "quote_request"],
+    requested_features: ["quote_form", "customer_login"],
+    quote_form_details: { structure_scope: "basic_single_section" },
+    primary_language: "nl",
+    additional_languages: ["fr", "en"],
+    multilingual_details: {
+      final_translations_supplied: true,
+      same_structure: true,
+      extensive_seo: false,
+      language_specific_integrations: false,
+      complex_scope: false,
+    },
+  });
+
+  assertEquals(rule(result, "simple_quote_form")?.mode, "fixed");
+  assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 20_000);
+  assertEquals(rule(result, "extra_language")?.mode, "from");
+  assertEquals(rule(result, "extra_language")?.quantity, 2);
+  assertEquals(rule(result, "extra_language")?.knownMinimumContributionMinor, 100_000);
+  assertEquals(rule(result, "customer_login")?.mode, "manual");
+  assertEquals(rule(result, "customer_login")?.knownMinimumContributionMinor, 0);
+  assertEquals(result.calculation.knownMinimumMinor, 300_000);
+  assertEquals(result.calculation.containsFromPricing, true);
+  assertEquals(result.calculation.manualReviewRequired, true);
+});
+
 Deno.test("content, hosting and SEO normalize to one canonical module each", () => {
   const scope = normalizePricingScope({
     requested_pages: ["home", "gallery"],

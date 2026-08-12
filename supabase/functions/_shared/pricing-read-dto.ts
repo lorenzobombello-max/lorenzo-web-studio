@@ -327,6 +327,14 @@ export function mapCustomerPricingReadRow(rowValue: unknown): CustomerPricingDTO
       requiresPersonalReview: true,
       formalQuotationRequired: true,
       budgetIndicator,
+      indicativeStartingPrice: {
+        amountMinor,
+        currency: "EUR",
+        vatLabel: "excl_btw",
+        nonBinding: true,
+        qualifier: "indicative_starting_price",
+        disclaimerCode: "formal_quotation_determines_final_scope_and_price",
+      },
     };
   }
 

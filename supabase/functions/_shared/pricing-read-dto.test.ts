@@ -139,7 +139,7 @@ Deno.test("customer automatic v2 exposes only historical indicative starting pri
   assertEquals(dto.budgetIndicator, "no_known_minimum_conflict_detected");
 });
 
-Deno.test("customer manual review omits amount property entirely", () => {
+Deno.test("customer manual review preserves the known minimum", () => {
   const dto = mapCustomerPricingReadRow(customerRow({
     manual_review_required: true,
     manual_reason_count: 1,
@@ -147,7 +147,8 @@ Deno.test("customer manual review omits amount property entirely", () => {
     outside_budget_wishes: null,
   }));
   assertEquals(dto.pricingState, "personal_review_required");
-  assertEquals("indicativeStartingPrice" in dto, false);
+  assertEquals(dto.requiresPersonalReview, true);
+  assertEquals(dto.indicativeStartingPrice?.amountMinor, 220_000);
 });
 
 Deno.test("customer v1 and missing snapshots never expose an amount", () => {

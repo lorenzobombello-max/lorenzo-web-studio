@@ -240,7 +240,8 @@ export function buildCustomerPricingPreview(
   ) throw new TypeError("INCOHERENT_PRICING_PREVIEW");
 
   const comparisonStatus = budgetState(pricing, budgetEvaluation);
-  const suppressItemAmounts = pricing.calculation.manualReviewRequired;
+  const suppressItemAmounts = previewContractVersion === 1 &&
+    pricing.calculation.manualReviewRequired;
   const hasSubstantialCopywriting = pricing.calculation.appliedRules.some((rule) =>
     rule.ruleId === "substantial_copywriting"
   );
@@ -287,10 +288,7 @@ export function buildCustomerPricingPreview(
         : {}),
     },
     summary: {
-      ...(!pricing.calculation.manualReviewRequired ||
-          comparisonStatus === "KNOWN_MINIMUM_ABOVE_BUDGET"
-        ? { knownMinimumMinor: pricing.calculation.knownMinimumMinor }
-        : {}),
+      knownMinimumMinor: pricing.calculation.knownMinimumMinor,
       containsFromPricing: pricing.calculation.containsFromPricing,
       manualReviewRequired: pricing.calculation.manualReviewRequired,
     },

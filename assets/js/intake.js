@@ -554,9 +554,7 @@
     } else if ("selectedPackage" in preview) return false;
     if (
       "knownMinimumMinor" in preview.summary &&
-        (!Number.isSafeInteger(preview.summary.knownMinimumMinor) || preview.summary.knownMinimumMinor < 0) ||
-      preview.summary.manualReviewRequired === true && "knownMinimumMinor" in preview.summary &&
-        preview.budget.comparisonStatus !== "KNOWN_MINIMUM_ABOVE_BUDGET"
+        (!Number.isSafeInteger(preview.summary.knownMinimumMinor) || preview.summary.knownMinimumMinor < 0)
     ) return false;
     const seenKeys = new Set();
     return preview.items.every((item) => {
@@ -567,9 +565,8 @@
       ) return false;
       seenKeys.add(item.presentationKey);
       const hasAmount = "amountMinor" in item;
-      if (preview.summary.manualReviewRequired && hasAmount) return false;
       if (item.state === "FIXED_EXTRA" || item.state === "FROM_EXTRA") {
-        return preview.summary.manualReviewRequired || hasAmount && Number.isSafeInteger(item.amountMinor) && item.amountMinor > 0;
+        return hasAmount && Number.isSafeInteger(item.amountMinor) && item.amountMinor > 0;
       }
       return !hasAmount;
     });
@@ -581,7 +578,7 @@
     return validPreview(preview, revision) ? "" : "INVALID_PREVIEW_DTO";
   }
 
-  function setPricingBadge(item, suppressAmounts) {
+  function setPricingBadge(item) {
     if (item.presentationKey === "PACKAGE_SCOPE") return;
     const badge = pricingBadges.get(item.presentationKey);
     if (!badge) throw new TypeError("Missing pricing presentation anchor");
@@ -595,10 +592,6 @@
     } else if (item.state === "MANUAL_REVIEW") {
       visibleText = "Prijs op maat";
       accessibleText = "Prijs op maat.";
-      stateClass = "manual";
-    } else if (suppressAmounts) {
-      visibleText = "Prijs na beoordeling";
-      accessibleText = "Prijs na persoonlijke beoordeling.";
       stateClass = "manual";
     } else {
       const amount = item.amountMinor / 100;
@@ -629,7 +622,7 @@
     currentBudgetGuardEvidenceFingerprint = evidenceFingerprint;
     if (acknowledgedBudgetGuardKey !== currentBudgetGuardKey) acknowledgedBudgetGuardKey = "";
     const manual = preview.summary.manualReviewRequired;
-    preview.items.forEach((item) => setPricingBadge(item, manual));
+    preview.items.forEach((item) => setPricingBadge(item));
     budgetGuardPreview.hidden = false;
     budgetGuardPreview.setAttribute("aria-busy", "false");
     budgetGuardBudget.textContent = selectedBudgetLabel(preview.budget.selectedBudgetCategoryCode);
