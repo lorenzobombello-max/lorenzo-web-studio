@@ -130,7 +130,7 @@ Deno.test("preview preserves fixed and multiple from amounts beside manual revie
   assertEquals(result.summary.containsFromPricing, true);
   assertEquals(result.summary.manualReviewRequired, true);
   assertEquals(result.items.find((item) => item.presentationKey === "SIMPLE_QUOTE_FORM")?.amountMinor, 25_000);
-  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.amountMinor, 65_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.amountMinor, 110_000);
   assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.quantity, undefined);
   assertEquals(result.items.find((item) => item.state === "MANUAL_REVIEW")?.amountMinor, undefined);
 });
@@ -144,8 +144,9 @@ Deno.test("substantial copywriting supersedes generic content support in custome
       paid_stock_handling: false,
     },
   });
-  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "content_support"), true);
-  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "substantial_copywriting"), true);
+  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "content_support"), false);
+  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "substantial_copywriting"), false);
+  assertEquals(pricing.calculation.appliedRules.some((rule) => rule.ruleId === "substantial_rewrite"), true);
 
   const result = buildCustomerPricingPreview(
     1,
@@ -154,9 +155,9 @@ Deno.test("substantial copywriting supersedes generic content support in custome
   );
   const copywritingItems = result.items.filter((item) => item.presentationKey === "COPYWRITING");
   assertEquals(copywritingItems.length, 1);
-  assertEquals(copywritingItems[0].state, "MANUAL_REVIEW");
-  assertEquals("amountMinor" in copywritingItems[0], false);
-  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals(copywritingItems[0].state, "FROM_EXTRA");
+  assertEquals("amountMinor" in copywritingItems[0], true);
+  assertEquals(result.summary.manualReviewRequired, false);
 });
 
 Deno.test("uncertain normal and feature scopes have explicit customer presentation keys", () => {
@@ -234,6 +235,34 @@ Deno.test("current preview contract preserves combined manual mismatch semantics
   assertEquals(result.summary.manualReviewRequired, true);
   assertEquals(result.summary.knownMinimumMinor, 350_000);
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
+});
+
+Deno.test("D43 D53 Phase D preview separates recurring services and presents catalog selections", () => {
+  const pricing = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_pages: ["portfolio"],
+    page_scope_details: { portfolio: "dynamic", search: "advanced" },
+    content_media_details: { image_work_scope: "stock", branding_tier: "extended" },
+    hosting_maintenance_details: { maintenance_plan: "care_plus" },
+  });
+  const result = buildCustomerPricingPreview(
+    12,
+    pricing,
+    evaluateBudget(pricing.calculation, boundedBudget()),
+  );
+
+  assertEquals(result.summary.knownMinimumMinor, 450_000);
+  assertEquals(result.recurringServices, [{
+    presentationKey: "CARE_PLUS",
+    amountMinor: 9_900,
+    unit: "MONTH",
+  }]);
+  assertEquals(result.items.map((item) => item.presentationKey), [
+    "DYNAMIC_PORTFOLIO",
+    "SEARCH",
+    "STOCK_SELECTION",
+    "EXTENDED_BRANDING",
+  ]);
 });
 
 Deno.test("manual preview keeps unreliable budget evidence indeterminate", () => {

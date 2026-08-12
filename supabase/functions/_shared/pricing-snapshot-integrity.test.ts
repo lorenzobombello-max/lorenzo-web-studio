@@ -84,6 +84,30 @@ Deno.test("snapshot v3 package definition is integrity protected", async () => {
   );
 });
 
+Deno.test("D43 recurring snapshot metadata is separate and integrity protected", async () => {
+  const snapshot = await buildPricingSnapshotV3(
+    {
+      selected_package_definition_id: "professional_v2",
+      hosting_maintenance_details: { maintenance_plan: "care" },
+    },
+    resolveBudgetEvidence(null, null, null),
+  );
+  assertEquals(snapshot.calculation.knownMinimumMinor, 350_000);
+  assertEquals(snapshot.recurringServices, [{
+    productId: "care",
+    amountMinor: 4_900,
+    unit: "month",
+  }]);
+  const integrity = await createPricingSnapshotIntegrity(snapshot, context, "v1", secret);
+  const changed = clone(snapshot);
+  if (!changed.recurringServices) throw new Error("expected recurring services");
+  changed.recurringServices[0].amountMinor = 9_900;
+  assertEquals(
+    await verifyPricingSnapshotIntegrity(changed, context, integrity, () => secret),
+    false,
+  );
+});
+
 Deno.test("every integrity-root mutation invalidates the producer proof", async () => {
   const { snapshot, integrity } = await fixture();
   const mutations: Array<[string, (value: Record<string, unknown>) => void]> = [

@@ -46,6 +46,8 @@
   const budgetGuardPackageRounds = document.getElementById("budgetGuardPackageRounds");
   const budgetGuardMinimumRow = document.getElementById("budgetGuardMinimumRow");
   const budgetGuardMinimum = document.getElementById("budgetGuardMinimum");
+  const budgetGuardRecurringRow = document.getElementById("budgetGuardRecurringRow");
+  const budgetGuardRecurring = document.getElementById("budgetGuardRecurring");
   const budgetGuardPackageAdvice = document.getElementById("budgetGuardPackageAdvice");
   const budgetGuardWarningActions = document.getElementById("budgetGuardWarningActions");
   const packageSelectionGroup = form.querySelector(".package-grid");
@@ -77,7 +79,7 @@
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
   const requiredSubmitFields = ["business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status", "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority"];
-  const scopedPages = ["reviews", "blog", "jobs", "gallery"];
+  const scopedPages = ["portfolio", "reviews", "blog", "jobs", "gallery"];
   const budgetCodes = {
     "Minder dan EUR 1.800": "below_1800",
     "EUR 1.800 tot minder dan EUR 3.200": "1800_to_below_3200",
@@ -107,13 +109,17 @@
     "selected_package_definition_id",
   ]);
   const conditionalPricingIds = new Set([
-    "shop_product_count", "shop_categories", "shop_payments", "shop_shipping", "shop_pickup", "shop_catalog",
-    "booking_type", "booking_existing", "booking_system_name", "booking_calendar", "page_scope_reviews",
-    "page_scope_blog", "page_scope_jobs", "page_scope_gallery", "quote_form_count", "quote_file_uploads",
+    "shop_product_count", "shop_complex_product_count", "shop_payment_provider_count", "shop_shipping_scope",
+    "shop_categories", "shop_payments", "shop_shipping", "shop_pickup", "shop_catalog", "shop_customer_accounts",
+    "shop_catalog_import", "shop_erp_api", "booking_tier", "booking_type", "booking_existing",
+    "booking_system_name", "booking_calendar", "page_scope_portfolio", "page_scope_reviews", "page_scope_blog",
+    "page_scope_jobs", "page_scope_gallery", "search_tier", "quote_form_count", "quote_file_uploads",
     "quote_database_workflow", "quote_automated_processing", "quote_review_approval", "quote_custom_logic",
-    "translations_supplied", "same_language_structure", "multilingual_extensive_seo", "language_integrations",
-    "multilingual_complex_scope", "download_access", "newsletter_scope", "copywriting_scope",
-    "image_work_scope", "paid_stock_handling", "seo_extensive_services", "deadline_commercially_critical",
+    "translations_supplied", "same_language_structure", "translation_required", "seo_per_language",
+    "advanced_seo_research", "language_integrations", "multilingual_complex_scope", "download_access",
+    "newsletter_scope", "copywriting_scope", "copy_page_count", "image_work_scope", "paid_stock_handling",
+    "branding_tier", "domain_service", "maintenance_plan", "seo_scope", "seo_extra_language",
+    "seo_advanced_language", "analytics_scope", "custom_integration", "deadline_commercially_critical",
     "deadline_hard", "deadline_date", "deadline_reason",
   ]);
   const presentationAnchorSelectors = Object.freeze({
@@ -148,6 +154,11 @@
     NEWSLETTER_SCOPE: "#newsletterFields",
     INDETERMINATE_SCOPE: 'input[name="image_support"][value="unsure"]',
     UNKNOWN_FEATURE_SCOPE: 'input[name="requested_features"][value="unsure"]',
+    DYNAMIC_PORTFOLIO: "#page_scope_portfolio",
+    DOCUMENT_FLOW: "#download_access",
+    CUSTOMER_PORTAL: "#download_access",
+    STOCK_SELECTION: "#image_work_scope",
+    EXTENDED_BRANDING: "#branding_tier",
     PACKAGE_SCOPE: null,
   });
   const pricingBadges = new Map();
@@ -251,16 +262,23 @@
     if (data.shop_required === true) {
       data.shop_details = {
         approx_product_count: Number(document.getElementById("shop_product_count").value),
+        complex_product_count: Number(document.getElementById("shop_complex_product_count").value),
+        payment_provider_count: Number(document.getElementById("shop_payment_provider_count").value),
+        shipping_scope: document.getElementById("shop_shipping_scope").value,
         categories: document.getElementById("shop_categories").checked,
         online_payments: document.getElementById("shop_payments").checked,
         shipping: document.getElementById("shop_shipping").checked,
         pickup: document.getElementById("shop_pickup").checked,
         existing_catalog: document.getElementById("shop_catalog").checked,
+        customer_accounts: document.getElementById("shop_customer_accounts").checked,
+        catalog_import: document.getElementById("shop_catalog_import").checked,
+        erp_api: document.getElementById("shop_erp_api").checked,
       };
     } else data.shop_details = null;
     if (data.booking_required === true) {
       const existingSystem = document.getElementById("booking_existing").checked;
       data.booking_details = {
+        tier: document.getElementById("booking_tier").value,
         type: document.getElementById("booking_type").value,
         existing_system: existingSystem,
         existing_system_name: existingSystem ? document.getElementById("booking_system_name").value.trim() || null : null,
@@ -277,13 +295,14 @@
     data.languages = [primaryLanguage, ...additionalLanguages];
 
     const requestedPages = new Set(data.requested_pages);
+    const requestedFeatures = new Set(data.requested_features);
     const pageScopeDetails = {};
     scopedPages.forEach((page) => {
       if (requestedPages.has(page)) pageScopeDetails[page] = document.getElementById(`page_scope_${page}`).value;
     });
+    if (requestedFeatures.has("search")) pageScopeDetails.search = document.getElementById("search_tier").value;
     data.page_scope_details = Object.keys(pageScopeDetails).length ? pageScopeDetails : null;
 
-    const requestedFeatures = new Set(data.requested_features);
     if (requestedFeatures.has("quote_form")) {
       const structureScope = form.querySelector('input[name="quote_structure_scope"]:checked')?.value;
       const quoteDetails = {
@@ -302,26 +321,45 @@
     data.multilingual_details = multilingual ? {
       final_translations_supplied: document.getElementById("translations_supplied").checked,
       same_structure: document.getElementById("same_language_structure").checked,
-      extensive_seo: document.getElementById("multilingual_extensive_seo").checked,
+      translation_required: document.getElementById("translation_required").checked,
+      seo_per_language: document.getElementById("seo_per_language").checked,
+      advanced_seo_research: document.getElementById("advanced_seo_research").checked,
       language_specific_integrations: document.getElementById("language_integrations").checked,
       complex_scope: document.getElementById("multilingual_complex_scope").checked,
     } : null;
     data.download_details = requestedFeatures.has("downloads") ? { access: document.getElementById("download_access").value } : null;
-    data.newsletter_details = requestedFeatures.has("newsletter") ? { scope: document.getElementById("newsletter_scope").value } : null;
+    const advancedAnalytics = document.getElementById("analytics_scope").value === "advanced";
+    const customIntegration = document.getElementById("custom_integration").checked;
+    data.newsletter_details = requestedFeatures.has("newsletter") || advancedAnalytics || customIntegration ? {
+      ...(requestedFeatures.has("newsletter") ? { scope: document.getElementById("newsletter_scope").value } : {}),
+      analytics: document.getElementById("analytics_scope").value,
+      custom_integration: customIntegration,
+    } : null;
+    const copywritingScope = document.getElementById("copywriting_scope").value;
     data.content_media_details = {
-      copywriting_scope: document.getElementById("copywriting_scope").value,
+      copywriting_scope: copywritingScope,
+      ...(["substantial", "new"].includes(copywritingScope)
+        ? { copy_page_count: Number(document.getElementById("copy_page_count").value) }
+        : {}),
       image_work_scope: document.getElementById("image_work_scope").value,
       paid_stock_handling: document.getElementById("paid_stock_handling").checked,
+      branding_tier: document.getElementById("branding_tier").value,
     };
     data.hosting_maintenance_details = data.hosting_support || data.maintenance_interest ? {
       ...(data.hosting_support ? { hosting_support: data.hosting_support } : {}),
       ...(data.maintenance_interest ? { maintenance_interest: data.maintenance_interest } : {}),
+      domain_service: document.getElementById("domain_service").value,
+      maintenance_plan: document.getElementById("maintenance_plan").value,
     } : null;
     data.deadline_details = data.deadline_date || data.deadline_reason ? {
       commercially_critical: document.getElementById("deadline_commercially_critical").checked,
       hard_deadline: document.getElementById("deadline_hard").checked,
     } : null;
-    data.seo_details = { extensive_services: document.getElementById("seo_extensive_services").checked };
+    data.seo_details = {
+      scope: document.getElementById("seo_scope").value,
+      extra_language_seo: document.getElementById("seo_extra_language").checked,
+      advanced_language_seo: document.getElementById("seo_advanced_language").checked,
+    };
 
     if (!budgetChoiceChanged && restoredLegacyBudget) data.budget_update_category = restoredLegacyBudget;
     const budgetCode = budgetCodes[data.budget_update_category];
@@ -350,7 +388,11 @@
       evidence.content_media_details?.image_work_scope === "unknown" &&
       evidence.content_media_details?.paid_stock_handling === false
     ) delete evidence.content_media_details;
-    if (evidence.seo_priority == null && evidence.seo_details?.extensive_services !== true) delete evidence.seo_details;
+    if (
+      evidence.seo_priority == null && evidence.seo_details?.scope === "included" &&
+      evidence.seo_details?.extra_language_seo !== true &&
+      evidence.seo_details?.advanced_language_seo !== true
+    ) delete evidence.seo_details;
     if (
       evidence.deadline_details?.commercially_critical !== true &&
       evidence.deadline_details?.hard_deadline !== true
@@ -380,6 +422,11 @@
       amountMinor: item.amountMinor ?? null,
       quantity: item.quantity ?? null,
     })).sort((left, right) => left.presentationKey.localeCompare(right.presentationKey));
+    const recurringServices = (preview.recurringServices || []).map((service) => ({
+      presentationKey: service.presentationKey,
+      amountMinor: service.amountMinor,
+      unit: service.unit,
+    })).sort((left, right) => left.presentationKey.localeCompare(right.presentationKey));
     return pricingFingerprint({
       evidenceFingerprint,
       previewVersion: preview.previewVersion,
@@ -393,6 +440,7 @@
       selectedPackageLabel: preview.selectedPackage?.label ?? null,
       packageFloorMinor: preview.selectedPackage?.floorMinor ?? null,
       itemSemantics,
+      recurringServices,
     });
   }
 
@@ -480,6 +528,8 @@
     });
     budgetGuardMinimumRow.hidden = true;
     budgetGuardMinimum.textContent = "";
+    budgetGuardRecurringRow.hidden = true;
+    budgetGuardRecurring.textContent = "";
     budgetGuardPackageRow.hidden = true;
     budgetGuardPackageName.textContent = "";
     budgetGuardPackagePages.textContent = "";
@@ -538,6 +588,12 @@
       typeof preview.summary.manualReviewRequired !== "boolean" || !Array.isArray(preview.items) ||
       !preview.packageAdvice || !packageAdviceStates.has(preview.packageAdvice.state)
     ) return false;
+    if ("recurringServices" in preview) {
+      if (!Array.isArray(preview.recurringServices) || !preview.recurringServices.every((service) =>
+        service && typeof service === "object" && ["CARE", "CARE_PLUS"].includes(service.presentationKey) &&
+        Number.isSafeInteger(service.amountMinor) && service.amountMinor > 0 && service.unit === "MONTH"
+      )) return false;
+    }
     const selectedPackageId = form.querySelector('input[name="selected_package_definition_id"]:checked')?.value;
     if (preview.previewVersion === 1 && selectedPackageId) return false;
     if (preview.previewVersion === 2) {
@@ -637,6 +693,13 @@
     if (Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
       budgetGuardMinimum.textContent = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
       budgetGuardMinimumRow.hidden = false;
+    }
+    if (Array.isArray(preview.recurringServices) && preview.recurringServices.length) {
+      budgetGuardRecurring.textContent = preview.recurringServices.map((service) => {
+        const label = service.presentationKey === "CARE" ? "LWS Care" : "LWS Care+";
+        return `${label}: ${euroFormatter.format(service.amountMinor / 100)} per maand`;
+      }).join(" · ");
+      budgetGuardRecurringRow.hidden = false;
     }
     const state = preview.budget.comparisonStatus;
     if (manual) {
@@ -855,13 +918,20 @@
     if (data.confirmation === true) document.getElementById("confirmation").checked = true;
     if (data.shop_details) {
       document.getElementById("shop_product_count").value = data.shop_details.approx_product_count || 1;
+      document.getElementById("shop_complex_product_count").value = data.shop_details.complex_product_count ?? 0;
+      document.getElementById("shop_payment_provider_count").value = data.shop_details.payment_provider_count ?? 1;
+      document.getElementById("shop_shipping_scope").value = data.shop_details.shipping_scope || "standard";
       document.getElementById("shop_categories").checked = data.shop_details.categories === true;
       document.getElementById("shop_payments").checked = data.shop_details.online_payments === true;
       document.getElementById("shop_shipping").checked = data.shop_details.shipping === true;
       document.getElementById("shop_pickup").checked = data.shop_details.pickup === true;
       document.getElementById("shop_catalog").checked = data.shop_details.existing_catalog === true;
+      document.getElementById("shop_customer_accounts").checked = data.shop_details.customer_accounts === true;
+      document.getElementById("shop_catalog_import").checked = data.shop_details.catalog_import === true;
+      document.getElementById("shop_erp_api").checked = data.shop_details.erp_api === true;
     }
     if (data.booking_details) {
+      document.getElementById("booking_tier").value = data.booking_details.tier || "widget";
       document.getElementById("booking_type").value = data.booking_details.type || "appointments";
       document.getElementById("booking_existing").checked = data.booking_details.existing_system === true;
       document.getElementById("booking_system_name").value = data.booking_details.existing_system_name || "";
@@ -882,6 +952,7 @@
     if (data.page_scope_details) scopedPages.forEach((page) => {
       if (typeof data.page_scope_details[page] === "string") document.getElementById(`page_scope_${page}`).value = data.page_scope_details[page];
     });
+    if (typeof data.page_scope_details?.search === "string") document.getElementById("search_tier").value = data.page_scope_details.search;
     if (data.quote_form_details) {
       if (typeof data.quote_form_details.structure_scope === "string") {
         setChoice("quote_structure_scope", data.quote_form_details.structure_scope);
@@ -896,22 +967,35 @@
     if (data.multilingual_details) {
       document.getElementById("translations_supplied").checked = data.multilingual_details.final_translations_supplied === true;
       document.getElementById("same_language_structure").checked = data.multilingual_details.same_structure === true;
-      document.getElementById("multilingual_extensive_seo").checked = data.multilingual_details.extensive_seo === true;
+      document.getElementById("translation_required").checked = data.multilingual_details.translation_required === true;
+      document.getElementById("seo_per_language").checked = data.multilingual_details.seo_per_language === true;
+      document.getElementById("advanced_seo_research").checked = data.multilingual_details.advanced_seo_research === true;
       document.getElementById("language_integrations").checked = data.multilingual_details.language_specific_integrations === true;
       document.getElementById("multilingual_complex_scope").checked = data.multilingual_details.complex_scope === true;
     }
     if (data.download_details?.access) document.getElementById("download_access").value = data.download_details.access;
     if (data.newsletter_details?.scope) document.getElementById("newsletter_scope").value = data.newsletter_details.scope;
+    if (data.newsletter_details?.analytics) document.getElementById("analytics_scope").value = data.newsletter_details.analytics;
+    document.getElementById("custom_integration").checked = data.newsletter_details?.custom_integration === true;
     if (data.content_media_details) {
       document.getElementById("copywriting_scope").value = data.content_media_details.copywriting_scope || "unknown";
+      document.getElementById("copy_page_count").value = data.content_media_details.copy_page_count || 1;
       document.getElementById("image_work_scope").value = data.content_media_details.image_work_scope || "unknown";
       document.getElementById("paid_stock_handling").checked = data.content_media_details.paid_stock_handling === true;
+      document.getElementById("branding_tier").value = data.content_media_details.branding_tier || "existing";
+    }
+    if (data.hosting_maintenance_details) {
+      document.getElementById("domain_service").value = data.hosting_maintenance_details.domain_service || "existing";
+      document.getElementById("maintenance_plan").value = data.hosting_maintenance_details.maintenance_plan || "none";
     }
     if (data.deadline_details) {
       document.getElementById("deadline_commercially_critical").checked = data.deadline_details.commercially_critical === true;
       document.getElementById("deadline_hard").checked = data.deadline_details.hard_deadline === true;
     }
-    document.getElementById("seo_extensive_services").checked = data.seo_details?.extensive_services === true;
+    document.getElementById("seo_scope").value = data.seo_details?.scope ||
+      (data.seo_details?.extensive_services === true ? "launch" : "included");
+    document.getElementById("seo_extra_language").checked = data.seo_details?.extra_language_seo === true;
+    document.getElementById("seo_advanced_language").checked = data.seo_details?.advanced_language_seo === true;
     updateConditionals();
     updatePriorities();
   }
@@ -925,16 +1009,20 @@
     const booking = selectedBoolean("booking_required") === true;
     document.getElementById("bookingFields").hidden = !booking;
     const requestedPages = new Set(selectedValues("requested_pages"));
-    document.getElementById("pageScopeFields").hidden = !scopedPages.some((page) => requestedPages.has(page));
+    const requestedFeatures = new Set(selectedValues("requested_features"));
+    document.getElementById("pageScopeFields").hidden =
+      !scopedPages.some((page) => requestedPages.has(page)) && !requestedFeatures.has("search");
     scopedPages.forEach((page) => {
       document.querySelector(`[data-page-scope="${page}"]`).hidden = !requestedPages.has(page);
     });
-    const requestedFeatures = new Set(selectedValues("requested_features"));
+    document.querySelector('[data-feature-scope="search"]').hidden = !requestedFeatures.has("search");
     document.getElementById("quoteFormFields").hidden = !requestedFeatures.has("quote_form");
     const hasAdditionalLanguage = form.querySelector("[data-additional-language]:checked") !== null;
     document.getElementById("multilingualFields").hidden = !(requestedFeatures.has("multilingual") || hasAdditionalLanguage);
     document.getElementById("downloadFields").hidden = !requestedFeatures.has("downloads");
     document.getElementById("newsletterFields").hidden = !requestedFeatures.has("newsletter");
+    document.getElementById("copyPageCountField").hidden =
+      !["substantial", "new"].includes(document.getElementById("copywriting_scope").value);
     document.getElementById("deadlineFields").hidden = !(document.getElementById("deadline_date").value || document.getElementById("deadline_reason").value.trim());
     const primaryLanguage = document.getElementById("primary_language").value;
     form.querySelectorAll("[data-additional-language]").forEach((input) => {

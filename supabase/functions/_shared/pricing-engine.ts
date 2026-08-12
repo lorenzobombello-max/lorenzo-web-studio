@@ -9,6 +9,10 @@ import {
   type ResolvedPackageDefinition,
 } from "./pricing-config.ts";
 import {
+  catalogProduct,
+  type CatalogProductId,
+} from "./pricing-catalog.ts";
+import {
   type NormalizedPricingScope,
   normalizePricingScope,
   type RawPricingScope,
@@ -30,7 +34,16 @@ interface AppliedRuleBase {
   knownMinimumContributionMinor: number;
 }
 
-export type AppliedPricingRule = AppliedRuleBase & { amountMinor?: number };
+export type AppliedPricingRule = AppliedRuleBase & {
+  amountMinor?: number;
+  externalCost?: string;
+};
+
+export interface RecurringPricingService {
+  productId: "care" | "care_plus";
+  amountMinor: number;
+  unit: "month";
+}
 
 export interface BudgetGuardResult {
   pricingConfigVersion: string;
@@ -52,6 +65,7 @@ export interface BudgetGuardResult {
     selectedPackage: null;
   };
   selectedPackageDefinition: ActiveResolvedPackageDefinition | null;
+  recurringServices?: RecurringPricingService[];
   nonBinding: true;
 }
 
@@ -103,6 +117,7 @@ export interface PricingSnapshotV2 {
   calculation: BudgetGuardResult["calculation"];
   packageAdvice: BudgetGuardResult["packageAdvice"];
   budgetEvaluation: BudgetEvaluationV2;
+  recurringServices?: RecurringPricingService[];
 }
 
 export interface PricingSnapshotV3 {
@@ -114,6 +129,7 @@ export interface PricingSnapshotV3 {
   packageAdvice: BudgetGuardResult["packageAdvice"];
   budgetEvaluation: BudgetEvaluationV2;
   packageDefinition: ResolvedPackageDefinition;
+  recurringServices?: RecurringPricingService[];
 }
 
 export function resolveSelectedPackageDefinition(
@@ -147,6 +163,34 @@ function configuredRule(
     mode: rule.mode,
     quantity,
     knownMinimumContributionMinor: 0,
+  };
+}
+
+function catalogRule(
+  productId: CatalogProductId,
+  quantity: number,
+): AppliedPricingRule {
+  const product = catalogProduct(productId);
+  const mode = product.pricing.mode.toLowerCase() as PriceMode;
+  if ("amountMinor" in product.pricing) {
+    return {
+      ruleId: productId,
+      mode,
+      amountMinor: product.pricing.amountMinor,
+      quantity,
+      knownMinimumContributionMinor: Math.max(
+        product.pricing.amountMinor * quantity,
+        product.pricing.minimumChargeMinor ?? 0,
+      ),
+      ...(product.externalCost ? { externalCost: product.externalCost } : {}),
+    };
+  }
+  return {
+    ruleId: productId,
+    mode,
+    quantity,
+    knownMinimumContributionMinor: 0,
+    ...(product.externalCost ? { externalCost: product.externalCost } : {}),
   };
 }
 
@@ -262,6 +306,9 @@ export function calculateBudgetGuard(
     quantity: 1,
     knownMinimumContributionMinor: effectivePackage.floorMinor,
   }];
+  const selectedCatalogProducts = new Set(
+    normalizedScope.catalogSelections?.map((selection) => selection.productId) ?? [],
+  );
 
   const extraPageCount = Math.max(
     0,
@@ -283,12 +330,16 @@ export function calculateBudgetGuard(
   for (const module of normalizedScope.modules) {
     if (module.id === "shop") {
       appliedRules.push(configuredRule("webshop_base"));
-      appliedRules.push(configuredRule("shop_manual"));
+      if (module.classification !== "catalog") {
+        appliedRules.push(configuredRule("shop_manual"));
+      }
     }
     else if (module.id === "booking") {
-      appliedRules.push(configuredRule(
-        module.classification === "simple" ? "simple_booking" : "booking_manual",
-      ));
+      if (!module.classification.startsWith("catalog:")) {
+        appliedRules.push(configuredRule(
+          module.classification === "simple" ? "simple_booking" : "booking_manual",
+        ));
+      }
     } else if (module.id === "forms") {
       if (module.classification === "contact") {
         appliedRules.push(entitledRule(
@@ -307,7 +358,9 @@ export function calculateBudgetGuard(
         appliedRules.push(configuredRule("complex_form_manual"));
       } else appliedRules.push(configuredRule("complex_form_manual"));
     } else if (module.id === "multilingual") {
-      if (module.classification === "normal") {
+      if (module.classification === "catalog") {
+        // Exact language tiers are applied from catalogSelections below.
+      } else if (module.classification === "normal") {
         appliedRules.push(configuredRule("first_extra_language"));
         const subsequentLanguageCount =
           normalizedScope.additionalLanguages.length - 1;
@@ -327,9 +380,11 @@ export function calculateBudgetGuard(
         "content_media_included",
       ));
     } else if (module.id === "hosting_maintenance") {
-      appliedRules.push(configuredRule("hosting_maintenance_manual"));
+      if (module.classification !== "catalog") {
+        appliedRules.push(configuredRule("hosting_maintenance_manual"));
+      }
     } else if (module.id === "seo") {
-      appliedRules.push(
+      if (module.classification !== "catalog") appliedRules.push(
         module.classification === "included"
           ? entitledRule(
             selectedPackageDefinition,
@@ -341,20 +396,44 @@ export function calculateBudgetGuard(
     }
   }
 
+  for (const selection of normalizedScope.catalogSelections ?? []) {
+    appliedRules.push(catalogRule(
+      selection.productId as CatalogProductId,
+      selection.quantity,
+    ));
+  }
+
   const customPageCount = normalizedScope.manualComponents.filter((component) =>
     component === "complex_blog_scope" || component === "complex_jobs_scope"
   ).length;
   if (customPageCount) {
     appliedRules.push(configuredRule("extra_custom_page", customPageCount));
   }
-  if (input.brand_status === "none" && input.logo_status === "needed") {
+  const hasCatalogBranding = [
+    "professional_logo",
+    "visual_identity",
+    "logo_identity_combo",
+    "extended_branding",
+  ].some((productId) => selectedCatalogProducts.has(productId));
+  if (hasCatalogBranding) {
+    // The exclusive Phase D tier supersedes legacy status inference.
+  } else if (input.brand_status === "none" && input.logo_status === "needed") {
     appliedRules.push(configuredRule("logo_identity_combo"));
   } else if (input.brand_status === "none") {
     appliedRules.push(configuredRule("basic_branding"));
   } else if (input.logo_status === "needed") {
     appliedRules.push(configuredRule("basic_logo"));
   }
-  if (input.content_status === "none" || input.content_status === "needs_help") {
+  const hasCatalogCopywriting = [
+    "light_copy_optimization",
+    "substantial_rewrite",
+    "new_copy",
+    "specialist_copy",
+  ].some((productId) => selectedCatalogProducts.has(productId));
+  if (
+    !hasCatalogCopywriting &&
+    (input.content_status === "none" || input.content_status === "needs_help")
+  ) {
     appliedRules.push(configuredRule("content_support"));
   }
 
@@ -365,7 +444,8 @@ export function calculateBudgetGuard(
   for (const component of normalizedScope.manualComponents) {
     if (
       component === "complex_blog_scope" || component === "complex_jobs_scope" ||
-      component === "rush_review"
+      component === "rush_review" ||
+      (component === "substantial_copywriting" && hasCatalogCopywriting)
     ) continue;
     const ruleId = MANUAL_COMPONENT_RULES[component];
     if (ruleId && !appliedManualComponents.has(ruleId)) {
@@ -387,12 +467,31 @@ export function calculateBudgetGuard(
     0,
   );
   const advice = packageAdvice(normalizedScope.standardPageCount);
-  const manualReasons = [...new Set(manualRules.map((rule) => rule.ruleId))];
+  const catalogManualReasons = (normalizedScope.catalogSelections ?? [])
+    .filter((selection) =>
+      catalogProduct(selection.productId as CatalogProductId).manualReview != null
+    )
+    .map((selection) => selection.productId);
+  const manualReasons = [...new Set([
+    ...manualRules.map((rule) => rule.ruleId),
+    ...catalogManualReasons,
+  ])];
   if (!selectedPackageDefinition && advice.status === "manual_scope_review") {
     manualReasons.push(
       ...advice.reasons.filter((reason) => !manualReasons.includes(reason)),
     );
   }
+  const recurringServices = normalizedScope.recurringServices?.map((service) => {
+    const product = catalogProduct(service.productId);
+    if (!("amountMinor" in product.pricing) || product.pricing.unit !== "month") {
+      throw new TypeError("INVALID_RECURRING_CATALOG_PRODUCT");
+    }
+    return {
+      productId: service.productId,
+      amountMinor: product.pricing.amountMinor,
+      unit: "month" as const,
+    };
+  });
 
   return {
     pricingConfigVersion: PRICING_CONFIG.version,
@@ -409,6 +508,9 @@ export function calculateBudgetGuard(
     },
     packageAdvice: advice,
     selectedPackageDefinition,
+    ...(recurringServices
+      ? { recurringServices }
+      : {}),
     nonBinding: true,
   };
 }
@@ -524,6 +626,9 @@ export async function buildPricingSnapshotV2(
     calculation: pricing.calculation,
     packageAdvice: pricing.packageAdvice,
     budgetEvaluation: evaluateBudget(pricing.calculation, budgetEvidence),
+    ...(pricing.recurringServices
+      ? { recurringServices: pricing.recurringServices }
+      : {}),
   };
 }
 
@@ -544,6 +649,9 @@ export async function buildPricingSnapshotV3(
     packageAdvice: pricing.packageAdvice,
     budgetEvaluation: evaluateBudget(pricing.calculation, budgetEvidence),
     packageDefinition: pricing.selectedPackageDefinition,
+    ...(pricing.recurringServices
+      ? { recurringServices: pricing.recurringServices }
+      : {}),
   };
 }
 

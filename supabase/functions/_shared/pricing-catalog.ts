@@ -889,6 +889,10 @@ const products = {
 export type CatalogProductId = keyof typeof products;
 export type CatalogPackageId = "starter_v1" | "professional_v2";
 
+export function catalogProduct(productId: CatalogProductId): CatalogProduct {
+  return products[productId];
+}
+
 interface CatalogPackageDefinition {
   id: CatalogPackageId;
   version: 1 | 2;
