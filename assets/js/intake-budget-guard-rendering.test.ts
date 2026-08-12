@@ -24,17 +24,17 @@ const preview = {
     knownMinimumExceedsBudget: true,
   },
   summary: {
-    knownMinimumMinor: 320_000,
+    knownMinimumMinor: 350_000,
     containsFromPricing: false,
     manualReviewRequired: false,
   },
   items: [] as Array<Record<string, unknown>>,
   packageAdvice: { state: "NO_PACKAGE_ADVICE" },
   selectedPackage: {
-    selectedPackageDefinitionId: "professional_v1",
+    selectedPackageDefinitionId: "professional_v2",
     label: "Professional",
-    floorMinor: 320_000,
-    standardPageLimit: 12,
+    floorMinor: 350_000,
+    standardPageLimit: 10,
     includedCorrectionRounds: 2,
   },
 };
@@ -50,12 +50,12 @@ const validPreview = Function(
   "itemStates",
   `"use strict"; return (${sourceFunction("validPreview")});`,
 )(
-  { querySelector: () => ({ value: "professional_v1" }) },
+  { querySelector: () => ({ value: "professional_v2" }) },
   2,
   new Set(["WITHIN_KNOWN_BUDGET", "KNOWN_MINIMUM_ABOVE_BUDGET", "INDETERMINATE", "MANUAL_REVIEW"]),
   { below_1800: "Minder dan € 1.800" },
   new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]),
-  new Set(["starter_v1", "professional_v1"]),
+  new Set(["starter_v1", "professional_v2"]),
   { PACKAGE_SCOPE: null, CUSTOMER_LOGIN: "#customer_login" },
   new Set(["INCLUDED", "FIXED_EXTRA", "FROM_EXTRA", "MANUAL_REVIEW"]),
 ) as (preview: unknown, revision: number) => boolean;
@@ -175,12 +175,12 @@ function render(renderedPreview: typeof preview) {
     budgetGuardMismatchMessage,
     "",
     "",
-    pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
+    pricingFingerprint({ budget: "below_1800", package: "professional_v2" }),
     "",
     pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
   ) as (renderedPreview: typeof preview, evidenceFingerprint: string) => void;
 
-  renderPricingPreview(renderedPreview, pricingFingerprint({ budget: "below_1800", package: "professional_v1" }));
+  renderPricingPreview(renderedPreview, pricingFingerprint({ budget: "below_1800", package: "professional_v2" }));
   return ui;
 }
 
@@ -191,7 +191,7 @@ Deno.test("package summary renders structured lines for Starter and Professional
 
   const professionalUi = render(preview);
   assertEquals(professionalUi.packageName.textContent, "Professional");
-  assertEquals(professionalUi.packagePages.textContent, "Max. 12 standaardpagina's");
+  assertEquals(professionalUi.packagePages.textContent, "Max. 10 standaardpagina's");
   assertEquals(professionalUi.packageRounds.textContent, "2 correctierondes");
 
   const starterPreview = structuredClone(preview);
@@ -214,11 +214,11 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
 
   assertEquals(unavailable, false);
   assertEquals(ui.state.textContent, "Budget en pakket niet compatibel");
-  assertEquals(ui.status.textContent.replaceAll(/\s/g, " "), "Het Professional-pakket start vanaf € 3.200 excl. btw. Je opgegeven budget ligt onder dit minimum.");
+  assertEquals(ui.status.textContent.replaceAll(/\s/g, " "), "Het Professional-pakket start vanaf € 3.500 excl. btw. Je opgegeven budget ligt onder dit minimum.");
   assertEquals(ui.packageName.textContent, "Professional");
-  assertEquals(ui.packagePages.textContent, "Max. 12 standaardpagina's");
+  assertEquals(ui.packagePages.textContent, "Max. 10 standaardpagina's");
   assertEquals(ui.packageRounds.textContent, "2 correctierondes");
-  assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.200excl.btw");
+  assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.500excl.btw");
   assertEquals(ui.minimumRow.hidden, false);
   assertEquals(ui.warning.hidden, false);
   assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
@@ -238,7 +238,7 @@ Deno.test("combined manual review and package-floor mismatch renders both warnin
   const ui = render(combinedPreview);
   assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
   assertStringIncludes(ui.status.textContent, "onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden");
-  assertStringIncludes(ui.status.textContent.replaceAll(/\s/g, " "), "start het gekozen Professional-pakket vanaf € 3.200 excl. btw");
+  assertStringIncludes(ui.status.textContent.replaceAll(/\s/g, " "), "start het gekozen Professional-pakket vanaf € 3.500 excl. btw");
   assertStringIncludes(ui.status.textContent, "budget daaronder ligt");
   assertEquals(ui.warning.hidden, false);
   assertEquals(ui.preview.classList.contains("budget-guard--manual"), true);
@@ -259,7 +259,7 @@ Deno.test("manual review with a compatible budget keeps the known minimum visibl
 
   assertEquals(validPreview(combinedPreview, 5), true);
   const ui = render(combinedPreview);
-  assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.200excl.btw");
+  assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.500excl.btw");
   assertEquals(ui.minimumRow.hidden, false);
   assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
   assertStringIncludes(ui.status.textContent, "persoonlijk beoordeeld");
@@ -303,7 +303,7 @@ Deno.test("known fixed and from badges keep their amounts beside manual review",
 
 Deno.test("supplement mismatch keeps generic copy", () => {
   const supplementPreview = structuredClone(preview);
-  supplementPreview.summary.knownMinimumMinor = 350_000;
+  supplementPreview.summary.knownMinimumMinor = 380_000;
   supplementPreview.items = [{
     presentationKey: "PACKAGE_SCOPE",
     labelKey: "pricing_preview.package_scope",

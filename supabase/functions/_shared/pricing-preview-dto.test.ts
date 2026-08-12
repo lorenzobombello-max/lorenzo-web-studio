@@ -64,12 +64,12 @@ Deno.test("preview maps included, fixed and from items without starter as an ext
 
   assertEquals(result.scopeRevision, 7);
   assertEquals(result.nonBinding, true);
-  assertEquals(result.pricingConfigVersion, "2.0.0");
+  assertEquals(result.pricingConfigVersion, "2026-08-12-v1");
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_STANDARD_PAGE"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "SIMPLE_QUOTE_FORM"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_LANGUAGE"), true);
   assertEquals(result.items.some((item) => item.labelKey.includes("starter_floor")), false);
-  assertEquals(result.items.find((item) => item.presentationKey === "SIMPLE_QUOTE_FORM")?.amountMinor, 20_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "SIMPLE_QUOTE_FORM")?.amountMinor, 25_000);
 });
 
 Deno.test("included scope has no supplement and duplicate evidence is charged once", () => {
@@ -82,7 +82,7 @@ Deno.test("included scope has no supplement and duplicate evidence is charged on
     image_status: "sufficient",
     seo_priority: "basic",
   });
-  assertEquals(result.summary.knownMinimumMinor, 200_000);
+  assertEquals(result.summary.knownMinimumMinor, 205_000);
   assertEquals(result.items.filter((item) => item.presentationKey === "SIMPLE_QUOTE_FORM").length, 1);
   assertEquals(result.items.filter((item) => item.state === "INCLUDED").every((item) => !("amountMinor" in item)), true);
 });
@@ -96,15 +96,15 @@ Deno.test("manual preview keeps review and compatible budget dimensions independ
     categoryCode: "3200_to_6000_inclusive",
     comparisonStatus: "WITHIN_KNOWN_BUDGET",
     knownMinimumExceedsBudget: false,
-    knownMinimumMinor: 200_000,
+    knownMinimumMinor: 202_500,
     containsFromPricing: true,
   });
   assertEquals(result.summary.manualReviewRequired, true);
-  assertEquals(result.summary.knownMinimumMinor, 200_000);
+  assertEquals(result.summary.knownMinimumMinor, 202_500);
   assertEquals(result.items.some((item) => item.state === "MANUAL_REVIEW"), true);
-  assertEquals(result.items.some((item) => item.state === "FROM_EXTRA"), true);
+  assertEquals(result.items.some((item) => item.state === "FROM_EXTRA"), false);
   assertEquals(
-    result.items.filter((item) => item.state === "FROM_EXTRA").every((item) => item.amountMinor === 20_000),
+    result.items.filter((item) => item.state === "FIXED_EXTRA").some((item) => item.amountMinor === 22_500),
     true,
   );
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
@@ -126,12 +126,12 @@ Deno.test("preview preserves fixed and multiple from amounts beside manual revie
     },
   });
 
-  assertEquals(result.summary.knownMinimumMinor, 300_000);
+  assertEquals(result.summary.knownMinimumMinor, 315_000);
   assertEquals(result.summary.containsFromPricing, true);
   assertEquals(result.summary.manualReviewRequired, true);
-  assertEquals(result.items.find((item) => item.state === "FIXED_EXTRA")?.amountMinor, 20_000);
-  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.amountMinor, 50_000);
-  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.quantity, 2);
+  assertEquals(result.items.find((item) => item.presentationKey === "SIMPLE_QUOTE_FORM")?.amountMinor, 25_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.amountMinor, 65_000);
+  assertEquals(result.items.find((item) => item.presentationKey === "EXTRA_LANGUAGE")?.quantity, undefined);
   assertEquals(result.items.find((item) => item.state === "MANUAL_REVIEW")?.amountMinor, undefined);
 });
 
@@ -196,7 +196,7 @@ Deno.test("manual preview retains a proven package-floor budget mismatch", () =>
 
 Deno.test("legacy preview contract keeps manual mismatch usable without combined fields", () => {
   const pricing = calculateBudgetGuard({
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
     requested_features: ["customer_login"],
   });
@@ -217,7 +217,7 @@ Deno.test("legacy preview contract keeps manual mismatch usable without combined
 
 Deno.test("current preview contract preserves combined manual mismatch semantics", () => {
   const pricing = calculateBudgetGuard({
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
     requested_features: ["customer_login"],
   });
@@ -232,7 +232,7 @@ Deno.test("current preview contract preserves combined manual mismatch semantics
   assertEquals(result.budget.comparisonStatus, "KNOWN_MINIMUM_ABOVE_BUDGET");
   assertEquals(result.budget.knownMinimumExceedsBudget, true);
   assertEquals(result.summary.manualReviewRequired, true);
-  assertEquals(result.summary.knownMinimumMinor, 320_000);
+  assertEquals(result.summary.knownMinimumMinor, 350_000);
   assertEquals(result.items.every((item) => !("amountMinor" in item)), true);
 });
 
@@ -258,10 +258,10 @@ Deno.test("manual preview keeps unreliable budget evidence indeterminate", () =>
 Deno.test("preview compares package known minimum safely for approved budget matrix A-E", () => {
   const cases = [
     ["starter_v1", "below_1800", 180_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
-    ["professional_v1", "below_1800", 320_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
-    ["professional_v1", "1800_to_below_3200", 320_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
-    ["professional_v1", "3200_to_6000_inclusive", 320_000, "WITHIN_KNOWN_BUDGET", false],
-    ["professional_v1", "above_6000", 320_000, "WITHIN_KNOWN_BUDGET", false],
+    ["professional_v2", "below_1800", 350_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v2", "1800_to_below_3200", 350_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v2", "3200_to_6000_inclusive", 350_000, "INDETERMINATE", undefined],
+    ["professional_v2", "above_6000", 350_000, "WITHIN_KNOWN_BUDGET", false],
   ] as const;
   for (const [packageId, categoryCode, knownMinimumMinor, comparisonStatus, exceeds] of cases) {
     const result = preview({
@@ -280,7 +280,7 @@ Deno.test("preview compares package known minimum safely for approved budget mat
 
 Deno.test("from pricing remains indeterminate above a bounded category lower bound", () => {
   const base = calculateBudgetGuard({
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
   });
   const pricing: BudgetGuardResult = {
@@ -302,7 +302,7 @@ Deno.test("from pricing remains indeterminate above a bounded category lower bou
 
 Deno.test("open category remains indeterminate above its lower bound", () => {
   const base = calculateBudgetGuard({
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
   });
   const pricing: BudgetGuardResult = {
@@ -374,7 +374,7 @@ Deno.test("preview package advice remains advisory and has no selected package o
 
 Deno.test("package preview v2 exposes only server-derived customer-safe package state", () => {
   const starter = preview({ selected_package_definition_id: "starter_v1", requested_pages: ["home"] }, 7);
-  const professional = preview({ selected_package_definition_id: "professional_v1", requested_pages: ["home"] }, 7);
+  const professional = preview({ selected_package_definition_id: "professional_v2", requested_pages: ["home"] }, 7);
   if (starter.previewVersion !== 2 || professional.previewVersion !== 2) throw new Error("expected preview v2");
 
   assertEquals(starter.selectedPackage.selectedPackageDefinitionId, "starter_v1");
@@ -383,13 +383,22 @@ Deno.test("package preview v2 exposes only server-derived customer-safe package 
   assertEquals(starter.selectedPackage.standardPageCount, 1);
   assertEquals(starter.selectedPackage.standardPageLimit, 5);
   assertEquals(starter.selectedPackage.includedCorrectionRounds, 1);
-  assertEquals(professional.selectedPackage.selectedPackageDefinitionId, "professional_v1");
+  assertEquals(professional.selectedPackage.selectedPackageDefinitionId, "professional_v2");
   assertEquals(professional.selectedPackage.label, "Professional");
-  assertEquals(professional.selectedPackage.floorMinor, 320_000);
+  assertEquals(professional.selectedPackage.floorMinor, 350_000);
   assertEquals(professional.selectedPackage.standardPageCount, 1);
-  assertEquals(professional.selectedPackage.standardPageLimit, 12);
+  assertEquals(professional.selectedPackage.standardPageLimit, 10);
   assertEquals(professional.selectedPackage.includedCorrectionRounds, 2);
-  assertEquals(professional.selectedPackage.includedPresentation, starter.selectedPackage.includedPresentation);
+  assertEquals(
+    professional.selectedPackage.includedPresentation.length,
+    starter.selectedPackage.includedPresentation.length + 1,
+  );
+  assertEquals(
+    professional.selectedPackage.includedPresentation.some((item) =>
+      item.entitlement === "blog_news"
+    ),
+    true,
+  );
   assertEquals(starter.selectedPackage.includedPresentation.length, 15);
   assertEquals(starter.selectedPackage.includedPresentation.find((item) =>
     item.entitlement === "technical_seo_base"

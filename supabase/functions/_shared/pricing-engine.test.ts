@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
+import { catalogAmountMinor } from "./pricing-catalog.ts";
 import { PRICING_CONFIG } from "./pricing-config.ts";
 import { normalizePricingScope } from "./pricing-normalization.ts";
 import { calculateBudgetGuard } from "./pricing-engine.ts";
@@ -15,34 +16,18 @@ function rule(result: ReturnType<typeof calculateBudgetGuard>, id: string) {
 }
 
 Deno.test("pricing config contains only approved amounts and amount-safe modes", () => {
-  assertEquals(PRICING_CONFIG.version, "2.0.0");
+  assertEquals(PRICING_CONFIG.version, "2026-08-12-v1");
   assertEquals(PRICING_CONFIG.currency, "EUR");
   assertEquals(PRICING_CONFIG.vatBasis, "exclusive");
   assertEquals(PRICING_CONFIG.packages.starter.startingPriceMinor, 180_000);
   assertEquals(
     PRICING_CONFIG.packages.professional.startingPriceMinor,
-    320_000,
+    350_000,
   );
-
-  const pricedRules = Object.values(PRICING_CONFIG.rules)
-    .filter((entry) => "amountMinor" in entry)
-    .map((entry) => entry.amountMinor)
-    .sort((left, right) => left - right);
-  assertEquals(pricedRules, [
-    15_000,
-    20_000,
-    20_000,
-    20_000,
-    25_000,
-    25_000,
-    30_000,
-    30_000,
-    30_000,
-    35_000,
-    40_000,
-    50_000,
-    50_000,
-  ]);
+  assertEquals(PRICING_CONFIG.rules.extra_standard_page.amountMinor, catalogAmountMinor("extra_standard_page"));
+  assertEquals(PRICING_CONFIG.rules.simple_quote_form.amountMinor, catalogAmountMinor("basic_quote_form"));
+  assertEquals(PRICING_CONFIG.rules.webshop_base.amountMinor, catalogAmountMinor("webshop_base"));
+  assertEquals(PRICING_CONFIG.rules.extensive_seo.amountMinor, catalogAmountMinor("seo_launch"));
 
   Object.values(PRICING_CONFIG.rules).forEach((entry) => {
     if (entry.mode === "manual" || entry.mode === "included") {
@@ -81,13 +66,13 @@ Deno.test("package-included functionality is not charged again beside one paid q
     1,
   );
   assertEquals(rule(result, "contact_form"), undefined);
-  assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 20_000);
+  assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 25_000);
   assertEquals(rule(result, "content_media_included")?.knownMinimumContributionMinor, 0);
   assertEquals(rule(result, "seo_included")?.knownMinimumContributionMinor, 0);
-  assertEquals(result.calculation.knownMinimumMinor, 200_000);
+  assertEquals(result.calculation.knownMinimumMinor, 205_000);
 });
 
-Deno.test("extra standard pages are unique and add from EUR 200 each above five", () => {
+Deno.test("extra standard pages are unique and add fixed EUR 225 each above five", () => {
   const input = {
     requested_pages: [
       "home",
@@ -106,9 +91,9 @@ Deno.test("extra standard pages are unique and add from EUR 200 each above five"
   assertEquals(rule(result, "extra_standard_page")?.quantity, 2);
   assertEquals(
     rule(result, "extra_standard_page")?.knownMinimumContributionMinor,
-    40_000,
+    45_000,
   );
-  assertEquals(result.calculation.knownMinimumMinor, 220_000);
+  assertEquals(result.calculation.knownMinimumMinor, 225_000);
 });
 
 Deno.test("normal extra languages are deduplicated and add a from lower bound", () => {
@@ -126,13 +111,13 @@ Deno.test("normal extra languages are deduplicated and add a from lower bound", 
   });
 
   assertEquals(result.normalizedScope.additionalLanguages, ["en", "fr"]);
-  assertEquals(rule(result, "extra_language")?.mode, "from");
-  assertEquals(rule(result, "extra_language")?.quantity, 2);
+  assertEquals(rule(result, "first_extra_language")?.mode, "fixed");
+  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 1);
   assertEquals(
-    rule(result, "extra_language")?.knownMinimumContributionMinor,
-    100_000,
+    rule(result, "first_extra_language")?.knownMinimumContributionMinor,
+    65_000,
   );
-  assertEquals(result.calculation.knownMinimumMinor, 280_000);
+  assertEquals(result.calculation.knownMinimumMinor, 290_000);
 });
 
 Deno.test("language aliases, casing and locales normalize to commercial base languages", () => {
@@ -182,8 +167,8 @@ Deno.test("language aliases, casing and locales normalize to commercial base lan
     "es",
   ]);
   assertEquals(result.normalizedScope.unknownLanguages, []);
-  assertEquals(rule(result, "extra_language")?.quantity, 5);
-  assertEquals(result.calculation.knownMinimumMinor, 430_000);
+  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 4);
+  assertEquals(result.calculation.knownMinimumMinor, 425_000);
   assertEquals(result.calculation.manualReviewRequired, false);
 });
 
@@ -204,7 +189,7 @@ Deno.test("unknown languages remain evidence, are not priced and require manual 
   assertEquals(result.normalizedScope.primaryLanguage, "nl");
   assertEquals(result.normalizedScope.additionalLanguages, ["fr"]);
   assertEquals(result.normalizedScope.unknownLanguages, ["português", "pt-br"]);
-  assertEquals(rule(result, "extra_language"), undefined);
+  assertEquals(rule(result, "first_extra_language"), undefined);
   assertEquals(rule(result, "multilingual_manual")?.mode, "manual");
   assertEquals(result.calculation.knownMinimumMinor, 180_000);
   assertEquals(result.calculation.manualReviewRequired, true);
@@ -248,7 +233,7 @@ Deno.test("shop evidence deduplicates and shop page is not a standard page", () 
     ).length,
     1,
   );
-  assertEquals(result.calculation.knownMinimumMinor, 180_000);
+  assertEquals(result.calculation.knownMinimumMinor, 355_000);
 });
 
 Deno.test("booking evidence deduplicates and reservation page is not a standard page", () => {
@@ -296,7 +281,7 @@ Deno.test("raw structure classifies simple and extended quote forms authoritativ
     ).length,
     1,
   );
-  assertEquals(simple.calculation.knownMinimumMinor, 200_000);
+  assertEquals(simple.calculation.knownMinimumMinor, 205_000);
 
   const extended = calculateBudgetGuard({
     requested_pages: ["home", "quote_request"],
@@ -307,7 +292,7 @@ Deno.test("raw structure classifies simple and extended quote forms authoritativ
     },
   });
   assertEquals(rule(extended, "extended_quote_form")?.mode, "from");
-  assertEquals(extended.calculation.knownMinimumMinor, 220_000);
+  assertEquals(extended.calculation.knownMinimumMinor, 225_000);
 });
 
 Deno.test("unsure or missing raw form structure is manual and contributes zero", () => {
@@ -329,7 +314,6 @@ Deno.test("unsure or missing raw form structure is manual and contributes zero",
 Deno.test("every complex workflow signal overrides raw standard structure", () => {
   for (
     const quote_form_details of [
-      { structure_scope: "basic_single_section", file_uploads: true },
       { structure_scope: "basic_single_section", form_count: 2 },
       { structure_scope: "extended_standard_structure", database_workflow: true },
       { structure_scope: "extended_standard_structure", automated_processing: true },
@@ -343,8 +327,9 @@ Deno.test("every complex workflow signal overrides raw standard structure", () =
       quote_form_details,
     });
     assertEquals(rule(result, "complex_form_manual")?.mode, "manual");
+    assertEquals(rule(result, "complex_form_workflow")?.mode, "from");
     assertEquals(rule(result, "simple_quote_form"), undefined);
-    assertEquals(result.calculation.knownMinimumMinor, 180_000);
+    assertEquals(result.calculation.knownMinimumMinor, 245_000);
     assertEquals(result.calculation.manualReviewRequired, true);
   }
 });
@@ -402,7 +387,7 @@ Deno.test("known manual components normalize once and never add money", () => {
     "secured_downloads",
     "unresolved_search",
   ]);
-  assertEquals(result.calculation.knownMinimumMinor, 216_000);
+  assertEquals(result.calculation.knownMinimumMinor, 246_000);
   assertEquals(result.calculation.manualReviewRequired, true);
   assert(
     result.calculation.appliedRules
@@ -430,13 +415,13 @@ Deno.test("manual review is additive metadata beside fixed and from known pricin
   });
 
   assertEquals(rule(result, "simple_quote_form")?.mode, "fixed");
-  assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 20_000);
-  assertEquals(rule(result, "extra_language")?.mode, "from");
-  assertEquals(rule(result, "extra_language")?.quantity, 2);
-  assertEquals(rule(result, "extra_language")?.knownMinimumContributionMinor, 100_000);
+  assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 25_000);
+  assertEquals(rule(result, "first_extra_language")?.mode, "fixed");
+  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 1);
+  assertEquals(rule(result, "first_extra_language")?.knownMinimumContributionMinor, 65_000);
   assertEquals(rule(result, "customer_login")?.mode, "manual");
   assertEquals(rule(result, "customer_login")?.knownMinimumContributionMinor, 0);
-  assertEquals(result.calculation.knownMinimumMinor, 300_000);
+  assertEquals(result.calculation.knownMinimumMinor, 315_000);
   assertEquals(result.calculation.containsFromPricing, true);
   assertEquals(result.calculation.manualReviewRequired, true);
 });
@@ -496,9 +481,7 @@ Deno.test("package advice follows page thresholds and never changes calculation 
       "pricing",
       "faq",
       "reviews",
-      "blog",
       "contact",
-      "jobs",
     ],
     page_scope_details: NORMAL_PAGE_SCOPES,
   });
@@ -513,9 +496,7 @@ Deno.test("package advice follows page thresholds and never changes calculation 
       "pricing",
       "faq",
       "reviews",
-      "blog",
       "contact",
-      "jobs",
       "gallery",
     ],
     page_scope_details: NORMAL_PAGE_SCOPES,
@@ -534,8 +515,8 @@ Deno.test("package advice follows page thresholds and never changes calculation 
   assertEquals(twelve.packageAdvice.selectedPackage, null);
   assertEquals(thirteen.packageAdvice.selectedPackage, null);
   assertEquals(rule(twelve, "starter_floor")?.amountMinor, 180_000);
-  assertEquals(twelve.calculation.knownMinimumMinor, 320_000);
-  assertEquals(thirteen.calculation.knownMinimumMinor, 340_000);
+  assertEquals(twelve.calculation.knownMinimumMinor, 292_500);
+  assertEquals(thirteen.calculation.knownMinimumMinor, 315_000);
   assertEquals(
     thirteen.calculation.appliedRules.some((entry) =>
       entry.ruleId === "standard_page_count_above_professional_scope"
@@ -574,7 +555,7 @@ Deno.test("13+ pages and another manual component remain deduplicated and amount
     "customer_login",
     "standard_page_count_above_professional_scope",
   ]);
-  assertEquals(result.calculation.knownMinimumMinor, 340_000);
+  assertEquals(result.calculation.knownMinimumMinor, 405_000);
   assertEquals(
     rule(result, "customer_login")?.knownMinimumContributionMinor,
     0,
@@ -587,7 +568,7 @@ Deno.test("authoritative evidence activates reconciled from supplements", () => 
     requested_pages: ["home", "gallery"],
     page_scope_details: { gallery: "complex" },
   });
-  assertEquals(rule(customPage, "extra_custom_page")?.amountMinor, 30_000);
+  assertEquals(rule(customPage, "complex_gallery_scope")?.amountMinor, 35_000);
   assertEquals(customPage.calculation.manualReviewRequired, false);
 
   const booking = calculateBudgetGuard({
@@ -596,14 +577,14 @@ Deno.test("authoritative evidence activates reconciled from supplements", () => 
     booking_required: true,
     booking_details: { existing_system: false, calendar_integration: false },
   });
-  assertEquals(rule(booking, "simple_booking")?.amountMinor, 50_000);
+  assertEquals(rule(booking, "simple_booking")?.mode, "manual");
 
   const seo = calculateBudgetGuard({
     selected_package_definition_id: "starter_v1",
     requested_pages: ["home"],
     seo_details: { extensive_services: true },
   });
-  assertEquals(rule(seo, "extensive_seo")?.amountMinor, 35_000);
+  assertEquals(rule(seo, "extensive_seo")?.amountMinor, 65_000);
 
   const support = calculateBudgetGuard({
     selected_package_definition_id: "starter_v1",
@@ -612,8 +593,9 @@ Deno.test("authoritative evidence activates reconciled from supplements", () => 
     logo_status: "needed",
     content_status: "needs_help",
   });
-  assertEquals(rule(support, "basic_branding")?.amountMinor, 30_000);
-  assertEquals(rule(support, "basic_logo")?.amountMinor, 25_000);
+  assertEquals(rule(support, "logo_identity_combo")?.amountMinor, 115_000);
+  assertEquals(rule(support, "basic_branding"), undefined);
+  assertEquals(rule(support, "basic_logo"), undefined);
   assertEquals(rule(support, "content_support")?.amountMinor, 30_000);
 });
 
@@ -632,8 +614,8 @@ Deno.test("rush uses the authoritative 20 to 30 percent from contract", () => {
 
 Deno.test("rules without authoritative request evidence remain registered but unapplied", () => {
   assertEquals(PRICING_CONFIG.rules.extra_correction_round.amountMinor, 15_000);
-  assertEquals(PRICING_CONFIG.rules.other_extended_form.amountMinor, 25_000);
-  assertEquals(PRICING_CONFIG.rules.extended_ai_imagery.amountMinor, 20_000);
+  assertEquals(PRICING_CONFIG.rules.other_extended_form.amountMinor, 35_000);
+  assertEquals(PRICING_CONFIG.rules.extended_ai_imagery.amountMinor, 25_000);
   const result = calculateBudgetGuard({
     selected_package_definition_id: "starter_v1",
     requested_pages: ["home"],
@@ -647,11 +629,11 @@ Deno.test("rules without authoritative request evidence remain registered but un
 
 Deno.test("unknown feature scope fails closed without a silent free fallback", () => {
   const result = calculateBudgetGuard({
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
     requested_features: ["unsure"],
   });
   assertEquals(rule(result, "unknown_feature_scope")?.mode, "manual");
   assertEquals(result.calculation.manualReviewRequired, true);
-  assertEquals(result.calculation.knownMinimumMinor, 320_000);
+  assertEquals(result.calculation.knownMinimumMinor, 350_000);
 });

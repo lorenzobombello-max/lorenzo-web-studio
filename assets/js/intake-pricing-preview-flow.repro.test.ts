@@ -601,7 +601,7 @@ Deno.test("full realistic flow accepts every pricing transition", async () => {
   }
   const firstFailure = results.find((result) => result.status !== 200 || !result.frontendAccepted);
   const sixthPage = results.find((result) => result.name === "flow: sixth standard page");
-  assertEquals(sixthPage?.knownMinimumMinor, 200_000);
+  assertEquals(sixthPage?.knownMinimumMinor, 202_500);
   assertEquals(results.length, 26);
   assertEquals(firstFailure, undefined);
   assertEquals(results.every((result) => result.duplicatePresentationKeys.length === 0), true);

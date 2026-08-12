@@ -5,6 +5,7 @@ import type {
 } from "./pricing-engine.ts";
 import {
   PRICING_CONFIG,
+  type PackageDefinitionId,
   type PackageEntitlementId,
 } from "./pricing-config.ts";
 
@@ -101,7 +102,7 @@ export interface CustomerPricingPreviewDTOv2
   extends Omit<CustomerPricingPreviewDTOv1, "previewVersion"> {
   previewVersion: 2;
   selectedPackage: {
-    selectedPackageDefinitionId: "starter_v1" | "professional_v1";
+    selectedPackageDefinitionId: PackageDefinitionId;
     label: "Starter" | "Professional";
     floorMinor: number;
     standardPageCount: number;
@@ -131,6 +132,7 @@ const PACKAGE_INCLUSION_PRESENTATION = {
   },
   normal_ai_image_support: { label: "AI-beeldondersteuning binnen normale scope", group: "WHEN_REQUESTED", scope: "BASE" },
   primary_language: { label: "Eén hoofdtaal", group: "WHEN_REQUESTED", scope: "FULL" },
+  blog_news: { label: "Blog/Nieuws", group: "WHEN_REQUESTED", scope: "FULL" },
 } as const satisfies Record<PackageEntitlementId, Omit<PackageInclusionPresentation, "entitlement">>;
 
 function packageInclusionPresentation(
@@ -147,13 +149,17 @@ const PRESENTATION_KEYS = {
   extra_standard_page: "EXTRA_STANDARD_PAGE",
   extra_custom_page: "EXTRA_STANDARD_PAGE",
   extra_correction_round: "PACKAGE_SCOPE",
-  extra_language: "EXTRA_LANGUAGE",
+  first_extra_language: "EXTRA_LANGUAGE",
+  subsequent_extra_language: "EXTRA_LANGUAGE",
+  blog_news: "BLOG_SCOPE",
   contact_form: "CONTACT_FORM",
   simple_quote_form: "SIMPLE_QUOTE_FORM",
   extended_quote_form: "EXTENDED_QUOTE_FORM",
   other_extended_form: "EXTENDED_QUOTE_FORM",
   complex_form_manual: "COMPLEX_FORM",
+  complex_form_workflow: "COMPLEX_FORM",
   shop_manual: "SHOP",
+  webshop_base: "SHOP",
   booking_manual: "BOOKING",
   simple_booking: "BOOKING",
   multilingual_manual: "MULTILINGUAL_SCOPE",
@@ -163,6 +169,7 @@ const PRESENTATION_KEYS = {
   extensive_seo: "EXTENSIVE_SEO",
   basic_branding: "CONTENT_MEDIA",
   basic_logo: "CONTENT_MEDIA",
+  logo_identity_combo: "CONTENT_MEDIA",
   content_support: "COPYWRITING",
   extended_ai_imagery: "IMAGE_WORK",
   customer_login: "CUSTOMER_LOGIN",
@@ -181,6 +188,7 @@ const PRESENTATION_KEYS = {
   other_page_scope: "OTHER_PAGE_SCOPE",
   unknown_page_scope: "UNKNOWN_PAGE_SCOPE",
   newsletter_manual: "NEWSLETTER_SCOPE",
+  advanced_newsletter: "NEWSLETTER_SCOPE",
   indeterminate_normal_scope: "INDETERMINATE_SCOPE",
   unknown_feature_scope: "UNKNOWN_FEATURE_SCOPE",
   standard_page_count_above_professional_scope: "PACKAGE_SCOPE",
@@ -245,11 +253,20 @@ export function buildCustomerPricingPreview(
   const hasSubstantialCopywriting = pricing.calculation.appliedRules.some((rule) =>
     rule.ruleId === "substantial_copywriting"
   );
-  const items = pricing.calculation.appliedRules
+  const visibleRules = pricing.calculation.appliedRules
     .filter((rule) =>
       !rule.ruleId.endsWith("_floor") &&
       !(hasSubstantialCopywriting && rule.ruleId === "content_support")
-    )
+    );
+  const items = visibleRules
+    .filter((rule) => {
+      if (rule.mode !== "manual") return true;
+      const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
+      return !visibleRules.some((candidate) =>
+        candidate.mode !== "manual" &&
+        PRESENTATION_KEYS[candidate.ruleId as keyof typeof PRESENTATION_KEYS] === presentationKey
+      );
+    })
     .map((rule) => {
       const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
       if (!presentationKey) throw new TypeError("UNKNOWN_PRICING_RULE");

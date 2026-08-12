@@ -64,7 +64,7 @@ Deno.test("restored, package-only and direct changes retain the complete budget 
       budgetCodes,
     ),
     serializeBudgetEvidence(
-      { budget_update_category: label, selected_package_definition_id: "professional_v1" },
+      { budget_update_category: label, selected_package_definition_id: "professional_v2" },
       false,
       null,
       null,

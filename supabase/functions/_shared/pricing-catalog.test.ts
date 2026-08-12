@@ -5,7 +5,7 @@ import {
   MASTER_PRICING_CATALOG,
 } from "./pricing-catalog.ts";
 import {
-  PACKAGE_DEFINITION_REGISTRY,
+  HISTORICAL_PACKAGE_DEFINITION_REGISTRY,
   PRICING_CONFIG,
 } from "./pricing-config.ts";
 
@@ -219,9 +219,9 @@ Deno.test("B23 catalog version and source identity are explicit", () => {
 });
 
 Deno.test("B24 historical Professional v1 remains isolated from catalog Professional v2", () => {
-  assertEquals(PACKAGE_DEFINITION_REGISTRY.professional_v1.floorMinor, 320_000);
+  assertEquals(HISTORICAL_PACKAGE_DEFINITION_REGISTRY.professional_v1.floorMinor, 320_000);
   assertEquals(
-    PACKAGE_DEFINITION_REGISTRY.professional_v1.standardPageLimit,
+    HISTORICAL_PACKAGE_DEFINITION_REGISTRY.professional_v1.standardPageLimit,
     12,
   );
   assertEquals(
@@ -235,14 +235,20 @@ Deno.test("B24 historical Professional v1 remains isolated from catalog Professi
   );
 });
 
-Deno.test("every legacy runtime rule has a closed catalog migration binding", () => {
-  assertEquals(
-    Object.keys(MASTER_PRICING_CATALOG.legacyRuleBindings).sort(),
-    Object.keys(PRICING_CONFIG.rules).sort(),
-  );
+Deno.test("every active runtime rule has a closed catalog migration binding", () => {
+  const mappedRuleIds = new Set([
+    ...Object.keys(MASTER_PRICING_CATALOG.legacyRuleBindings),
+    ...Object.keys(MASTER_PRICING_CATALOG.activeRuleBindings),
+  ]);
+  for (const ruleId of Object.keys(PRICING_CONFIG.rules)) {
+    assert(mappedRuleIds.has(ruleId), `${ruleId} must have a catalog binding`);
+  }
   const productIds = new Set(Object.keys(MASTER_PRICING_CATALOG.products));
   for (
-    const bindings of Object.values(MASTER_PRICING_CATALOG.legacyRuleBindings)
+    const bindings of [
+      ...Object.values(MASTER_PRICING_CATALOG.legacyRuleBindings),
+      ...Object.values(MASTER_PRICING_CATALOG.activeRuleBindings),
+    ]
   ) {
     assert(bindings.length > 0);
     for (const productId of bindings) assert(productIds.has(productId));

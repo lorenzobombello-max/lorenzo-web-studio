@@ -60,7 +60,7 @@ Deno.test("authoritative snapshot integrity verifies and is deterministic", asyn
 Deno.test("snapshot v3 package definition is integrity protected", async () => {
   const snapshot = await buildPricingSnapshotV3(
     {
-      selected_package_definition_id: "professional_v1",
+      selected_package_definition_id: "professional_v2",
       requested_pages: ["home"],
     },
     resolveBudgetEvidence(

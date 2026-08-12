@@ -199,7 +199,7 @@ Deno.test("pricing preview validator accepts only closed pricing scope", () => {
 Deno.test("package evidence accepts only immutable IDs and partitions as evidence", () => {
   for (const selected_package_definition_id of [
     "starter_v1",
-    "professional_v1",
+    "professional_v2",
     null,
   ]) {
     const result = sanitizeAndValidatePricingPreviewInput({
@@ -220,7 +220,7 @@ Deno.test("package evidence accepts only immutable IDs and partitions as evidenc
     "custom",
     "auto",
     "suggested",
-    "professional_v2",
+    "professional_v1",
     3200,
     {},
   ]) {

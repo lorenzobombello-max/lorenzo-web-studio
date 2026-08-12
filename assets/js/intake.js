@@ -90,7 +90,7 @@
     "3200_to_6000_inclusive": "€ 3.200 t/m € 6.000",
     above_6000: "Meer dan € 6.000",
   };
-  const packageDefinitionIds = new Set(["starter_v1", "professional_v1"]);
+  const packageDefinitionIds = new Set(["starter_v1", "professional_v2"]);
   const pricingEvidenceFields = [
     "requested_pages", "requested_features", "website_goals", "shop_required", "shop_details",
     "booking_required", "booking_details", "page_scope_details", "quote_form_details", "primary_language",

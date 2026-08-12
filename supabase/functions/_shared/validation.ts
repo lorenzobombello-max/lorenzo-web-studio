@@ -38,7 +38,7 @@ const BUDGET_GUARD_CATEGORIES = new Map([
   ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
   ["above_6000", "Meer dan EUR 6.000"],
 ]);
-const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v1"]);
+const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v2"]);
 const TIMINGS = new Set([
   "Binnen 1 maand",
   "Binnen 2 tot 3 maanden",

@@ -11,7 +11,10 @@ export type CustomerPricingState =
   | "pricing_result_unavailable";
 
 interface CustomerPackageDefinition {
-  selectedPackageDefinitionId: "starter_v1" | "professional_v1";
+  selectedPackageDefinitionId:
+    | "starter_v1"
+    | "professional_v1"
+    | "professional_v2";
   label: "Starter" | "Professional";
   floorMinor: number;
   standardPageLimit: number;
@@ -82,8 +85,8 @@ interface AdminCalculation {
 }
 
 interface AdminPackageDefinition {
-  id: "starter_v1" | "professional_v1";
-  version: 1;
+  id: "starter_v1" | "professional_v1" | "professional_v2";
+  version: 1 | 2;
   label: "Starter" | "Professional";
   floorMinor: number;
   standardPageLimit: number;
@@ -201,13 +204,15 @@ function stringArray(value: unknown): string[] | null {
 function parsePackageDefinition(value: unknown): AdminPackageDefinition | null {
   if (!isRecord(value)) return null;
   const expected = value.id === "starter_v1"
-    ? { label: "Starter", floorMinor: 180_000, standardPageLimit: 5, includedCorrectionRounds: 1 }
+    ? { version: 1, label: "Starter", floorMinor: 180_000, standardPageLimit: 5, includedCorrectionRounds: 1 }
     : value.id === "professional_v1"
-    ? { label: "Professional", floorMinor: 320_000, standardPageLimit: 12, includedCorrectionRounds: 2 }
+    ? { version: 1, label: "Professional", floorMinor: 320_000, standardPageLimit: 12, includedCorrectionRounds: 2 }
+    : value.id === "professional_v2"
+    ? { version: 2, label: "Professional", floorMinor: 350_000, standardPageLimit: 10, includedCorrectionRounds: 2 }
     : null;
   const entitlements = stringArray(value.entitlements);
   if (
-    !expected || value.version !== 1 || value.label !== expected.label ||
+    !expected || value.version !== expected.version || value.label !== expected.label ||
     value.floorMinor !== expected.floorMinor ||
     value.standardPageLimit !== expected.standardPageLimit ||
     value.includedCorrectionRounds !== expected.includedCorrectionRounds ||
@@ -216,7 +221,7 @@ function parsePackageDefinition(value: unknown): AdminPackageDefinition | null {
   ) return null;
   return {
     id: value.id as AdminPackageDefinition["id"],
-    version: 1,
+    version: expected.version as AdminPackageDefinition["version"],
     label: expected.label as AdminPackageDefinition["label"],
     floorMinor: expected.floorMinor,
     standardPageLimit: expected.standardPageLimit,

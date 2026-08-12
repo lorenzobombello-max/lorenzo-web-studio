@@ -979,6 +979,18 @@ export const MASTER_PRICING_CATALOG = {
     starter_v1: "starter_v1",
     professional_v1: "professional_v2",
   } as const,
+  activeRuleBindings: {
+    blog_news: ["blog_news"],
+    first_extra_language: ["first_extra_language"],
+    subsequent_extra_language: [
+      "second_extra_language",
+      "subsequent_extra_language",
+    ],
+    complex_form_workflow: ["complex_form_workflow"],
+    webshop_base: ["webshop_base"],
+    logo_identity_combo: ["logo_identity_combo"],
+    advanced_newsletter: ["advanced_newsletter"],
+  } satisfies Record<string, readonly CatalogProductId[]>,
   legacyRuleBindings: {
     extra_standard_page: ["extra_standard_page"],
     extra_custom_page: ["complex_page"],
@@ -1052,6 +1064,14 @@ export interface CatalogContributionContext {
   quantity?: number;
   billingContext?: "PROJECT" | "RECURRING";
   percentageBaseMinor?: number;
+}
+
+export function catalogAmountMinor(productId: CatalogProductId): number {
+  const pricing = products[productId].pricing;
+  if (!("amountMinor" in pricing)) {
+    throw new TypeError("CATALOG_PRODUCT_HAS_NO_AMOUNT");
+  }
+  return pricing.amountMinor;
 }
 
 export function catalogKnownMinimumContributionMinor(

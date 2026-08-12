@@ -246,8 +246,7 @@ export function normalizePricingScope(
   }
 
   const formDetails = objectValue(input.quote_form_details);
-  const hasComplexFormSignals = formDetails.file_uploads === true ||
-    formDetails.database_workflow === true ||
+  const hasComplexFormSignals = formDetails.database_workflow === true ||
     formDetails.automated_processing === true ||
     formDetails.review_approval === true ||
     formDetails.custom_logic === true ||
@@ -276,7 +275,9 @@ export function normalizePricingScope(
     addEvidence(evidence, contactEvidence, "contact_form_intent");
     const classification = quoteEvidence
       ? hasComplexFormSignals
-        ? "manual"
+      ? "complex"
+      : formDetails.file_uploads === true
+      ? "upload"
         : formDetails.structure_scope === "basic_single_section"
         ? "simple"
         : formDetails.structure_scope === "extended_standard_structure"

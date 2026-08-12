@@ -19,6 +19,10 @@ export type PackageAdviceStatus =
   | "consider_professional"
   | "manual_scope_review";
 
+type ActiveResolvedPackageDefinition = ResolvedPackageDefinition & {
+  id: PackageDefinitionId;
+};
+
 interface AppliedRuleBase {
   ruleId: string;
   mode: PriceMode;
@@ -47,7 +51,7 @@ export interface BudgetGuardResult {
     advisoryOnly: true;
     selectedPackage: null;
   };
-  selectedPackageDefinition: ResolvedPackageDefinition | null;
+  selectedPackageDefinition: ActiveResolvedPackageDefinition | null;
   nonBinding: true;
 }
 
@@ -114,12 +118,14 @@ export interface PricingSnapshotV3 {
 
 export function resolveSelectedPackageDefinition(
   value: unknown,
-): ResolvedPackageDefinition | null {
+): ActiveResolvedPackageDefinition | null {
   if (value === null || value === undefined) return null;
-  if (value !== "starter_v1" && value !== "professional_v1") {
+  if (value !== "starter_v1" && value !== "professional_v2") {
     throw new TypeError("INVALID_PACKAGE_DEFINITION_ID");
   }
-  return resolvePackageDefinition(value as PackageDefinitionId);
+  return resolvePackageDefinition(
+    value as PackageDefinitionId,
+  ) as ActiveResolvedPackageDefinition;
 }
 
 function configuredRule(
@@ -162,14 +168,30 @@ function percentageRule(
 
 function entitledRule(
   packageDefinition: ResolvedPackageDefinition | null,
-  entitlement: "standard_contact_form" | "supplied_content_media_processing" | "technical_seo_base",
-  ruleId: "contact_form" | "content_media_included" | "seo_included",
+  entitlement:
+    | "standard_contact_form"
+    | "supplied_content_media_processing"
+    | "technical_seo_base"
+    | "blog_news",
+  ruleId:
+    | "contact_form"
+    | "content_media_included"
+    | "seo_included"
+    | "blog_news",
 ): AppliedPricingRule {
-  if (
-    packageDefinition === null ||
-    packageDefinition.entitlements.includes(entitlement)
-  ) return configuredRule(ruleId);
-  return configuredRule("indeterminate_normal_scope");
+  const configured = configuredRule(ruleId);
+  if (packageDefinition === null) return configured;
+  if (!packageDefinition.entitlements.includes(entitlement)) {
+    return ruleId === "blog_news"
+      ? configured
+      : configuredRule("indeterminate_normal_scope");
+  }
+  return {
+    ruleId,
+    mode: "included",
+    quantity: configured.quantity,
+    knownMinimumContributionMinor: 0,
+  };
 }
 
 function packageAdvice(
@@ -250,8 +272,19 @@ export function calculateBudgetGuard(
     appliedRules.push(configuredRule("extra_standard_page", extraPageCount));
   }
 
+  if (normalizedScope.standardPages.includes("blog")) {
+    appliedRules.push(entitledRule(
+      selectedPackageDefinition,
+      "blog_news",
+      "blog_news",
+    ));
+  }
+
   for (const module of normalizedScope.modules) {
-    if (module.id === "shop") appliedRules.push(configuredRule("shop_manual"));
+    if (module.id === "shop") {
+      appliedRules.push(configuredRule("webshop_base"));
+      appliedRules.push(configuredRule("shop_manual"));
+    }
     else if (module.id === "booking") {
       appliedRules.push(configuredRule(
         module.classification === "simple" ? "simple_booking" : "booking_manual",
@@ -267,15 +300,23 @@ export function calculateBudgetGuard(
         appliedRules.push(configuredRule("simple_quote_form"));
       } else if (module.classification === "extended") {
         appliedRules.push(configuredRule("extended_quote_form"));
+      } else if (module.classification === "upload") {
+        appliedRules.push(configuredRule("other_extended_form"));
+      } else if (module.classification === "complex") {
+        appliedRules.push(configuredRule("complex_form_workflow"));
+        appliedRules.push(configuredRule("complex_form_manual"));
       } else appliedRules.push(configuredRule("complex_form_manual"));
     } else if (module.id === "multilingual") {
       if (module.classification === "normal") {
-        appliedRules.push(
-          configuredRule(
-            "extra_language",
-            normalizedScope.additionalLanguages.length,
-          ),
-        );
+        appliedRules.push(configuredRule("first_extra_language"));
+        const subsequentLanguageCount =
+          normalizedScope.additionalLanguages.length - 1;
+        if (subsequentLanguageCount > 0) {
+          appliedRules.push(configuredRule(
+            "subsequent_extra_language",
+            subsequentLanguageCount,
+          ));
+        }
       } else appliedRules.push(configuredRule("multilingual_manual"));
     } else if (
       module.id === "content_media" && module.classification === "included"
@@ -301,17 +342,16 @@ export function calculateBudgetGuard(
   }
 
   const customPageCount = normalizedScope.manualComponents.filter((component) =>
-    component === "complex_gallery_scope" ||
-    component === "complex_reviews_scope" ||
     component === "complex_blog_scope" || component === "complex_jobs_scope"
   ).length;
   if (customPageCount) {
     appliedRules.push(configuredRule("extra_custom_page", customPageCount));
   }
-  if (input.brand_status === "none") {
+  if (input.brand_status === "none" && input.logo_status === "needed") {
+    appliedRules.push(configuredRule("logo_identity_combo"));
+  } else if (input.brand_status === "none") {
     appliedRules.push(configuredRule("basic_branding"));
-  }
-  if (input.logo_status === "needed") {
+  } else if (input.logo_status === "needed") {
     appliedRules.push(configuredRule("basic_logo"));
   }
   if (input.content_status === "none" || input.content_status === "needs_help") {
@@ -319,10 +359,11 @@ export function calculateBudgetGuard(
   }
 
   const appliedManualComponents = new Set<string>();
+  if (normalizedScope.manualComponents.includes("newsletter_manual")) {
+    appliedRules.push(configuredRule("advanced_newsletter"));
+  }
   for (const component of normalizedScope.manualComponents) {
     if (
-      component === "complex_gallery_scope" ||
-      component === "complex_reviews_scope" ||
       component === "complex_blog_scope" || component === "complex_jobs_scope" ||
       component === "rush_review"
     ) continue;

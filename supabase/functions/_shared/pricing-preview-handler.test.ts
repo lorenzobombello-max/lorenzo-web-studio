@@ -66,7 +66,7 @@ function staleV5Accepts(preview: Record<string, unknown>): boolean {
     preview.currency === "EUR" && preview.vatBasis === "exclusive" && preview.nonBinding === true &&
     budget.selectedBudgetCategoryCode === "below_1800" && budget.comparisonStatus === "MANUAL_REVIEW" &&
     summary.containsFromPricing === true && summary.manualReviewRequired === true &&
-    !("knownMinimumMinor" in summary) && selectedPackage.selectedPackageDefinitionId === "professional_v1" &&
+    !("knownMinimumMinor" in summary) && selectedPackage.selectedPackageDefinitionId === "professional_v2" &&
     selectedPackage.label === "Professional" && Number.isSafeInteger(selectedPackage.floorMinor) &&
     Array.isArray(items) && items.every((item) =>
       typeof item.presentationKey === "string" && typeof item.labelKey === "string" &&
@@ -119,7 +119,7 @@ Deno.test("stale and current clients remain usable across a backend rollout", as
   };
   const { clientPreviewVersion: _version, ...legacyBody } = body;
   const manualMismatchData = {
-    selected_package_definition_id: "professional_v1",
+    selected_package_definition_id: "professional_v2",
     requested_pages: ["home"],
     requested_features: ["customer_login"],
   };
@@ -145,7 +145,7 @@ Deno.test("stale and current clients remain usable across a backend rollout", as
   assertEquals(currentPayload.preview.previewContractVersion, 2);
   assertEquals(currentPayload.preview.budget.comparisonStatus, "KNOWN_MINIMUM_ABOVE_BUDGET");
   assertEquals(currentPayload.preview.summary.manualReviewRequired, true);
-  assertEquals(currentPayload.preview.summary.knownMinimumMinor, 320_000);
+  assertEquals(currentPayload.preview.summary.knownMinimumMinor, 350_000);
   assertEquals(JSON.stringify(currentPayload.preview).includes("amountMinor"), false);
 });
 
@@ -289,9 +289,9 @@ Deno.test("manual success keeps compatible budget and known pricing independent"
   assertEquals(payload.preview.budget.comparisonStatus, "WITHIN_KNOWN_BUDGET");
   assertEquals(payload.preview.budget.knownMinimumExceedsBudget, false);
   assertEquals(payload.preview.summary.manualReviewRequired, true);
-  assertEquals(payload.preview.summary.knownMinimumMinor, 200_000);
+  assertEquals(payload.preview.summary.knownMinimumMinor, 202_500);
   assertEquals(
-    payload.preview.items.find((item: { state: string }) => item.state === "FROM_EXTRA")?.amountMinor,
-    20_000,
+    payload.preview.items.find((item: { state: string }) => item.state === "FIXED_EXTRA")?.amountMinor,
+    22_500,
   );
 });
