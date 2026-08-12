@@ -82,7 +82,7 @@ address { font-style:normal; }
 .quality-band { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:#34424c; border:1px solid #34424c; }
 .quality-band article { min-height:230px; padding:2rem; background:var(--ink-soft); }
 .quality-band b { color:var(--signal); font:800 .72rem "Segoe UI",Arial,sans-serif; }
-.quality-band h3 { margin:3rem 0 .6rem; font:700 1.3rem "Segoe UI",Arial,sans-serif; }
+.quality-band h3 { margin:3rem 0 .6rem; color:var(--white); font:700 1.3rem "Segoe UI",Arial,sans-serif; }
 .quality-band p { color:#aeb9c0; }
 
 .demo-stage { min-height:980px; color:var(--white); background:var(--ink); overflow:hidden; }
