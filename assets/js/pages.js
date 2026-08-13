@@ -60,6 +60,9 @@
   function initDemoPagination() {
     const pages = Array.from(document.querySelectorAll("[data-demo-page]"));
     if (!pages.length) return;
+    const carousel = document.querySelector("[data-demo-carousel]");
+    const track = carousel?.querySelector("[data-demo-track]");
+    if (!carousel || !track) return;
     const pageLinks = Array.from(document.querySelectorAll("[data-page-link]"));
     const label = document.querySelector("[data-current-page]");
     const previous = document.querySelector("[data-previous-page]");
@@ -70,14 +73,19 @@
       return requested >= 1 && requested <= pages.length ? requested : 1;
     }
 
-    function renderPage(current) {
-      const activePanel = pages.find((panel) => Number(panel.dataset.demoPage) === current);
-      activePanel.hidden = false;
-      activePanel.classList.add("is-active");
+    function setTrackPosition(current, dragOffset = 0, immediate = false) {
+      if (immediate) track.style.transition = "none";
+      const position = -((current - 1) * carousel.clientWidth) + dragOffset;
+      track.style.transform = `translate3d(${position}px,0,0)`;
+      if (immediate) window.setTimeout(() => track.style.removeProperty("transition"), 20);
+    }
+
+    function renderPage(current, immediate = false) {
       pages.forEach((panel) => {
-        if (panel === activePanel) return;
-        panel.classList.remove("is-active");
-        panel.hidden = true;
+        const active = Number(panel.dataset.demoPage) === current;
+        panel.classList.toggle("is-active", active);
+        panel.setAttribute("aria-hidden", String(!active));
+        panel.inert = !active;
       });
       pageLinks.forEach((link) => {
         if (Number(link.dataset.pageLink) === current) link.setAttribute("aria-current", "page");
@@ -92,6 +100,7 @@
         next.href = `?page=${Math.min(pages.length, current + 1)}`;
         next.toggleAttribute("aria-disabled", current === pages.length);
       }
+      setTrackPosition(current, 0, immediate);
     }
 
     function navigateToPage(target) {
@@ -115,8 +124,87 @@
       event.preventDefault();
       navigateToPage(target);
     });
+
+    if (carousel) {
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let dragged = false;
+      let suppressClickUntil = 0;
+      let lastX = 0;
+      let lastTime = 0;
+      let velocityX = 0;
+      const movementThreshold = 48;
+
+      carousel.addEventListener("pointerdown", (event) => {
+        if (event.target.closest(".demo-pagination")) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        lastX = event.clientX;
+        lastTime = performance.now();
+        velocityX = 0;
+        dragged = false;
+      });
+
+      carousel.addEventListener("pointermove", (event) => {
+        if (event.pointerId !== pointerId) return;
+        const horizontal = event.clientX - startX;
+        const vertical = event.clientY - startY;
+        if (!dragged && Math.abs(horizontal) > 8 && Math.abs(horizontal) > Math.abs(vertical)) {
+          dragged = true;
+          carousel.classList.add("is-dragging");
+          carousel.setPointerCapture(pointerId);
+        }
+        if (!dragged) return;
+        const now = performance.now();
+        const elapsed = Math.max(now - lastTime, 8);
+        velocityX = ((event.clientX - lastX) / elapsed) * 1000;
+        lastX = event.clientX;
+        lastTime = now;
+        const current = getRequestedPage();
+        const atStart = current === 1 && horizontal > 0;
+        const atEnd = current === pages.length && horizontal < 0;
+        const resistance = atStart || atEnd ? 0.24 : 1;
+        setTrackPosition(current, horizontal * resistance);
+      });
+
+      function releaseGesture(event) {
+        if (event.pointerId !== pointerId) return;
+        const horizontal = event.clientX - startX;
+        const vertical = event.clientY - startY;
+        if (dragged) {
+          suppressClickUntil = performance.now() + 500;
+          const horizontalGesture = Math.abs(horizontal) > Math.abs(vertical) * 1.2;
+          const shouldNavigate = horizontalGesture &&
+            (Math.abs(horizontal) >= movementThreshold || (Math.abs(horizontal) > 12 && Math.abs(velocityX) >= 520));
+          const direction = horizontal < 0 ? 1 : -1;
+          const target = getRequestedPage() + direction;
+          carousel.classList.remove("is-dragging");
+          if (shouldNavigate && target >= 1 && target <= pages.length) {
+            navigateToPage(target);
+          } else {
+            setTrackPosition(getRequestedPage());
+          }
+        }
+        carousel.classList.remove("is-dragging");
+        if (carousel.hasPointerCapture(pointerId)) carousel.releasePointerCapture(pointerId);
+        pointerId = null;
+      }
+
+      carousel.addEventListener("pointerup", releaseGesture);
+      carousel.addEventListener("pointercancel", releaseGesture);
+      carousel.addEventListener("dragstart", (event) => event.preventDefault());
+      carousel.addEventListener("click", (event) => {
+        if (performance.now() >= suppressClickUntil || !event.target.closest(".demo-card")) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+      window.addEventListener("resize", () => renderPage(getRequestedPage(), true));
+    }
     window.addEventListener("popstate", () => renderPage(getRequestedPage()));
-    renderPage(getRequestedPage());
+    renderPage(getRequestedPage(), true);
   }
 
   function createIdempotencyKey() {

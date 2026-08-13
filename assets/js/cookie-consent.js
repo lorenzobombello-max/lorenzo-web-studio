@@ -92,11 +92,51 @@
     return button;
   }
 
+  function enhanceMainFooter() {
+    const footer = document.querySelector(".preview-footer");
+    if (!(footer instanceof HTMLElement)) return;
+
+    const servicesHeading = Array.from(footer.querySelectorAll("h2"))
+      .find((heading) => heading.textContent.trim() === "Diensten");
+    const servicesList = servicesHeading?.nextElementSibling;
+    const allServicesLink = servicesList?.querySelector('a[href$="services.html"]');
+    if (servicesList instanceof HTMLUListElement && allServicesLink instanceof HTMLAnchorElement) {
+      const prefix = allServicesLink.getAttribute("href").replace(/services\.html$/, "");
+      const services = [
+        ["Alle diensten", "services.html"],
+        ["Websites op maat", "websites-op-maat.html"],
+        ["Webshops", "webshops.html"],
+        ["SEO & vindbaarheid", "seo.html"],
+        ["Integraties & automatisering", "integraties-automatisering.html"],
+        ["Klanten- & ledenomgevingen", "klanten-ledenomgevingen.html"],
+        ["Multimedia & social", "multimedia-social.html"],
+        ["Hosting, onderhoud & nazorg", "hosting-onderhoud.html"],
+      ];
+      servicesList.replaceChildren(...services.map(([label, path]) => {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = `${prefix}${path}`;
+        link.textContent = label;
+        item.append(link);
+        return item;
+      }));
+    }
+  }
+
   function ensurePreferencesLauncher() {
     const existing = document.getElementById("cookiePreferencesLink");
     if (existing instanceof HTMLButtonElement) return existing;
 
     const button = createPreferencesButton();
+    const footer = document.querySelector("footer");
+    const legalLinks = Array.from(footer?.querySelectorAll("p, nav") || []).find((container) =>
+      container.querySelector('a[href*="privacy.html"]') && container.querySelector('a[href*="cookies.html"]')
+    );
+    if (legalLinks instanceof HTMLElement) {
+      legalLinks.append(document.createTextNode(" · "), button);
+      return button;
+    }
+
     const footerList = document.querySelector(".site-footer .footer-grid > div:last-child ul, .site-footer ul:last-of-type");
     if (footerList instanceof HTMLUListElement) {
       const item = document.createElement("li");
@@ -105,7 +145,13 @@
       return button;
     }
 
-    const footerTarget = document.querySelector(".industrial-footer__inner > div:last-child, .mb-footer__inner, .site-footer .footer-bottom, footer, .legal-content, main");
+    const footerTarget = document.querySelector(".industrial-footer__inner > div:last-child") ||
+      document.querySelector(".mb-footer__inner") ||
+      document.querySelector(".site-footer .footer-bottom") ||
+      document.querySelector(".preview-footer__top > div:last-child") ||
+      footer ||
+      document.querySelector(".legal-content") ||
+      document.querySelector("main");
     if (!(footerTarget instanceof HTMLElement)) return null;
 
     const slot = document.createElement("p");
@@ -326,6 +372,8 @@
   }
 
   let state = readConsent();
+
+  enhanceMainFooter();
 
   const api = {
     getConsent() {

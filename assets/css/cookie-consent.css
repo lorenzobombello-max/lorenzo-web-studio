@@ -13,6 +13,11 @@
   text-decoration: underline;
 }
 
+.preview-footer .cookie-preferences-link {
+  display: inline;
+  font-size: inherit;
+}
+
 .cookie-preferences-slot {
   margin-top: 0.75rem;
 }
