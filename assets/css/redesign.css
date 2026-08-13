@@ -17,7 +17,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { background: #070c11; scroll-behavior: smooth; }
 body {
   margin: 0;
   color: var(--text);

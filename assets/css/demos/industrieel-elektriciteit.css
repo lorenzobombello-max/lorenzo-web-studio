@@ -536,6 +536,10 @@
   letter-spacing: 0.01em;
 }
 
+.service-matrix .section-head h2 {
+  overflow-wrap: anywhere;
+}
+
 .incident-module__head p,
 .section-head p {
   margin: 0;

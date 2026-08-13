@@ -1,6 +1,6 @@
 :root { --ink:#0b1118; --ink-soft:#17212b; --paper:#f5f7f8; --white:#fff; --mist:#e7edf0; --line:#cad5da; --text:#101820; --muted:#56636d; --signal:#0ed8e6; --signal-deep:#008d9a; --focus:#006dff; --shell:1280px; --radius:8px; }
 * { box-sizing:border-box; }
-html { scroll-behavior:smooth; }
+html { background:#070c11; scroll-behavior:smooth; }
 body { margin:0; color:var(--text); background:var(--paper); font:400 1rem/1.6 "Segoe UI",Arial,sans-serif; overflow-x:hidden; -webkit-font-smoothing:antialiased; }
 body.menu-open { overflow:hidden; }
 img { display:block; max-width:100%; }
