@@ -16,7 +16,8 @@ function rule(result: ReturnType<typeof calculateBudgetGuard>, id: string) {
 }
 
 Deno.test("pricing config contains only approved amounts and amount-safe modes", () => {
-  assertEquals(PRICING_CONFIG.version, "2026-08-12-v1");
+  assertEquals(PRICING_CONFIG.version, "2026-08-13-v2");
+  assertEquals(PRICING_CONFIG.catalogVersion, "2026-08-12-v1");
   assertEquals(PRICING_CONFIG.currency, "EUR");
   assertEquals(PRICING_CONFIG.vatBasis, "exclusive");
   assertEquals(PRICING_CONFIG.packages.starter.startingPriceMinor, 180_000);
@@ -383,11 +384,10 @@ Deno.test("known manual components normalize once and never add money", () => {
     "customer_login",
     "external_integration",
     "professional_photography",
-    "rush_review",
     "secured_downloads",
     "unresolved_search",
   ]);
-  assertEquals(result.calculation.knownMinimumMinor, 246_000);
+  assertEquals(result.calculation.knownMinimumMinor, 205_000);
   assertEquals(result.calculation.manualReviewRequired, true);
   assert(
     result.calculation.appliedRules
@@ -462,7 +462,8 @@ Deno.test("content, hosting and SEO normalize to one canonical module each", () 
   });
   assertEquals(rule(result, "content_media_included")?.mode, "included");
   assertEquals(rule(result, "seo_included")?.mode, "included");
-  assertEquals(rule(result, "hosting_maintenance_manual")?.mode, "manual");
+  assertEquals(rule(result, "hosting_maintenance_manual"), undefined);
+  assertEquals(result.calculation.manualReviewRequired, false);
   assertEquals(result.calculation.knownMinimumMinor, 180_000);
 });
 
@@ -599,7 +600,7 @@ Deno.test("authoritative evidence activates reconciled from supplements", () => 
   assertEquals(rule(support, "content_support")?.amountMinor, 30_000);
 });
 
-Deno.test("rush uses the authoritative 20 to 30 percent from contract", () => {
+Deno.test("customer deadline evidence never applies the registered rush surcharge", () => {
   assertEquals(PRICING_CONFIG.rules.rush_review.minimumPercentage, 20);
   assertEquals(PRICING_CONFIG.rules.rush_review.maximumPercentage, 30);
   const result = calculateBudgetGuard({
@@ -607,9 +608,9 @@ Deno.test("rush uses the authoritative 20 to 30 percent from contract", () => {
     requested_pages: ["home"],
     deadline_details: { hard_deadline: true },
   });
-  assertEquals(rule(result, "rush_review")?.mode, "from");
-  assertEquals(rule(result, "rush_review")?.amountMinor, 36_000);
-  assertEquals(result.calculation.knownMinimumMinor, 216_000);
+  assertEquals(rule(result, "rush_review"), undefined);
+  assertEquals(result.calculation.knownMinimumMinor, 180_000);
+  assertEquals(result.calculation.manualReviewRequired, false);
 });
 
 Deno.test("rules without authoritative request evidence remain registered but unapplied", () => {

@@ -114,7 +114,10 @@ export async function handlePricingPreview(
     }, origin);
   }
   const previewContractVersion = (body.clientPreviewVersion ?? 1) as number;
-  if (previewContractVersion !== 1 && previewContractVersion !== 2) {
+  if (
+    previewContractVersion !== 1 && previewContractVersion !== 2 &&
+    previewContractVersion !== 3
+  ) {
     return response(400, {
       ok: false,
       code: "UNSUPPORTED_PREVIEW_CLIENT_VERSION",

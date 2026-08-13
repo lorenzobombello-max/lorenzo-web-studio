@@ -589,3 +589,75 @@ Deno.test("D50 Phase D evidence dependencies reject incompatible states", () => 
     "INVALID_CONDITION",
   );
 });
+
+Deno.test("pickup scope is closed and coherent with legacy pickup evidence", () => {
+  const shopDetails = {
+    approx_product_count: 15,
+    categories: true,
+    online_payments: true,
+    shipping: true,
+    pickup: true,
+    existing_catalog: false,
+    complex_product_count: 0,
+    payment_provider_count: 1,
+    shipping_scope: "standard",
+    customer_accounts: false,
+    catalog_import: false,
+    erp_api: false,
+  };
+  for (const pickup_scope of ["simple", "scheduled", "complex"]) {
+    const result = sanitizeAndValidateIntakeData({
+      shop_required: true,
+      shop_details: { ...shopDetails, pickup_scope },
+    }, "draft");
+    assertEquals(
+      (result.shop_details as Record<string, unknown>).pickup_scope,
+      pickup_scope,
+    );
+  }
+  const none = sanitizeAndValidateIntakeData({
+    shop_required: true,
+    shop_details: { ...shopDetails, pickup: false, pickup_scope: "none" },
+  }, "draft");
+  assertEquals(
+    (none.shop_details as Record<string, unknown>).pickup_scope,
+    "none",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      shop_required: true,
+      shop_details: { ...shopDetails, pickup_scope: "unsupported" },
+    }, "draft"),
+    InputValidationError,
+    "INVALID_OPTION",
+  );
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      shop_required: true,
+      shop_details: { ...shopDetails, pickup: false, pickup_scope: "simple" },
+    }, "draft"),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+});
+
+Deno.test("vacancy page and application evidence use closed existing scopes", () => {
+  for (
+    const jobs_application of ["none", "basic", "upload", "complex", "ats"]
+  ) {
+    const result = sanitizeAndValidateIntakeData({
+      page_scope_details: { jobs: "dynamic", jobs_application },
+    }, "draft");
+    assertEquals(
+      (result.page_scope_details as Record<string, unknown>).jobs_application,
+      jobs_application,
+    );
+  }
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      page_scope_details: { jobs: "dynamic", jobs_application: "invented" },
+    }, "draft"),
+    InputValidationError,
+    "INVALID_OPTION",
+  );
+});

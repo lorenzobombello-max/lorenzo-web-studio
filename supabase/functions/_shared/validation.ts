@@ -257,7 +257,7 @@ function normalizeShopDetails(value: unknown): Record<string, unknown> | null {
   const legacyKeys = ["approx_product_count", "categories", "online_payments", "shipping", "pickup", "existing_catalog"];
   const phaseDKeys = [
     "complex_product_count", "payment_provider_count", "shipping_scope",
-    "customer_accounts", "catalog_import", "erp_api",
+    "pickup_scope", "customer_accounts", "catalog_import", "erp_api",
   ];
   if (
     Object.keys(input).some((key) => ![...legacyKeys, ...phaseDKeys].includes(key)) ||
@@ -286,6 +286,19 @@ function normalizeShopDetails(value: unknown): Record<string, unknown> | null {
       input.shipping_scope,
       new Set(["standard", "complex"]),
     );
+  }
+  if ("pickup_scope" in input) {
+    output.pickup_scope = normalizeRequiredOption(
+      "shop_details.pickup_scope",
+      input.pickup_scope,
+      new Set(["none", "simple", "scheduled", "complex"]),
+    );
+    if (input.pickup !== (output.pickup_scope !== "none")) {
+      throw new InputValidationError(
+        "INVALID_CONDITION",
+        "shop_details.pickup_scope",
+      );
+    }
   }
   for (const key of ["customer_accounts", "catalog_import", "erp_api"]) {
     if (key in input) output[key] = normalizeBoolean(`shop_details.${key}`, input[key]);
@@ -347,12 +360,17 @@ function normalizeEvidenceBooleanObject(field: string, value: unknown, keys: rea
 
 function normalizePageScopeDetails(value: unknown): Record<string, unknown> | null {
   const field = "page_scope_details";
-  const input = normalizeEvidenceObject(field, value, ["reviews", "blog", "jobs", "gallery", "portfolio", "search"]);
+  const input = normalizeEvidenceObject(field, value, [
+    "reviews", "blog", "jobs", "jobs_application", "gallery", "portfolio",
+    "search",
+  ]);
   if (input === null) return null;
   const allowedByKey: Record<string, Set<string>> = {
     reviews: new Set(["normal", "complex", "unknown", "live"]),
     gallery: new Set(["normal", "complex", "unknown", "advanced"]),
     portfolio: new Set(["normal", "dynamic"]),
+    jobs: new Set(["normal", "complex", "unknown", "dynamic"]),
+    jobs_application: new Set(["none", "basic", "upload", "complex", "ats"]),
     search: new Set(["none", "basic", "advanced"]),
   };
   const defaultAllowed = new Set(["normal", "complex", "unknown"]);

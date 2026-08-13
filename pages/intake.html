@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="../assets/css/intake.css?v=20260811-1" />
     <script defer src="../assets/js/cookie-consent.js"></script>
 <script defer src="../assets/js/pages.js"></script>
-  <script defer src="../assets/js/intake.js?v=20260811-7"></script>
+  <script defer src="../assets/js/intake.js?v=20260813-1"></script>
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
 </head>
 <body class="intake-page">
@@ -180,7 +180,8 @@
                 <div class="field" data-page-scope="portfolio"><label for="page_scope_portfolio">Portfolio</label><select id="page_scope_portfolio"><option value="normal">Gewone projectpagina's</option><option value="dynamic">Dynamisch projectsysteem</option></select></div>
                 <div class="field" data-page-scope="reviews"><label for="page_scope_reviews">Reviews-pagina</label><select id="page_scope_reviews"><option value="unknown">Nog te bepalen</option><option value="normal">Statisch getoond</option><option value="live">Automatisch ingeladen</option><option value="complex">Andere uitgebreide werking</option></select></div>
                 <div class="field" data-page-scope="blog"><label for="page_scope_blog">Blog</label><select id="page_scope_blog"><option value="unknown">Nog te bepalen</option><option value="normal">Standaard</option><option value="complex">Uitgebreid</option></select></div>
-                <div class="field" data-page-scope="jobs"><label for="page_scope_jobs">Vacatures</label><select id="page_scope_jobs"><option value="unknown">Nog te bepalen</option><option value="normal">Standaard</option><option value="complex">Uitgebreid</option></select></div>
+                <div class="field" data-page-scope="jobs"><label for="page_scope_jobs">Vacaturepagina</label><select id="page_scope_jobs"><option value="unknown">Nog te bepalen</option><option value="normal">Gewone vacaturepagina</option><option value="dynamic">Complexe of dynamische vacaturepagina</option></select></div>
+                <div class="field" data-page-scope="jobs"><label for="jobs_application">Solliciteren</label><select id="jobs_application"><option value="none">Geen sollicitatieformulier</option><option value="basic">Standaard sollicitatieformulier</option><option value="upload">Sollicitatieformulier met CV-upload</option><option value="complex">Complexe sollicitatieworkflow</option><option value="ats">Externe ATS- of API-koppeling</option></select></div>
                 <div class="field" data-page-scope="gallery"><label for="page_scope_gallery">Galerij</label><select id="page_scope_gallery"><option value="unknown">Nog te bepalen</option><option value="normal">Statische galerij</option><option value="advanced">Geavanceerde galerij</option><option value="complex">Andere uitgebreide werking</option></select></div>
                 <div class="field" data-feature-scope="search"><label for="search_tier">Zoekfunctie</label><select id="search_tier"><option value="none">Geen</option><option value="basic">Zoeken op de website</option><option value="advanced">Zoeken met uitgebreide filters</option></select></div>
               </div>
@@ -215,7 +216,8 @@
                 <div class="field"><label for="shop_complex_product_count">Producten met varianten of extra complexiteit</label><input id="shop_complex_product_count" type="number" min="0" max="10000" value="0" /></div>
                 <div class="field"><label for="shop_payment_provider_count">Aantal betaalproviders</label><input id="shop_payment_provider_count" type="number" min="1" max="20" value="1" /></div>
                 <div class="field"><label for="shop_shipping_scope">Verzending</label><select id="shop_shipping_scope"><option value="standard">Standaard verzending</option><option value="complex">Complexe verzendregels</option></select></div>
-                <div class="choice-grid compact"><label><input id="shop_categories" type="checkbox" /> Categorieën</label><label><input id="shop_payments" type="checkbox" /> Online betalen</label><label><input id="shop_shipping" type="checkbox" /> Verzending</label><label><input id="shop_pickup" type="checkbox" /> Afhalen</label><label><input id="shop_catalog" type="checkbox" /> Bestaande catalogus</label></div>
+                <div class="field"><label for="shop_pickup_scope">Afhalen</label><select id="shop_pickup_scope"><option value="none">Geen afhaling</option><option value="simple">Eén vaste afhaallocatie</option><option value="scheduled">Afhaling met planning of tijdsloten</option><option value="complex">Complexe afhaallocaties of voorraadworkflow</option></select></div>
+                <div class="choice-grid compact"><label><input id="shop_categories" type="checkbox" /> Categorieën</label><label><input id="shop_payments" type="checkbox" /> Online betalen</label><label><input id="shop_shipping" type="checkbox" /> Verzending</label><label><input id="shop_catalog" type="checkbox" /> Bestaande catalogus</label></div>
                 <div class="choice-grid compact"><label><input id="shop_customer_accounts" type="checkbox" /> Klantaccounts</label><label><input id="shop_catalog_import" type="checkbox" /> Bestaande catalogus importeren</label><label><input id="shop_erp_api" type="checkbox" /> Voorraad-, ERP- of API-koppeling</label></div>
               </div>
               <div class="field field--full"><span class="field-label">Zijn reservaties of afspraken nodig?</span><div class="choice-row"><label><input type="radio" name="booking_required" value="true" /> Ja</label><label><input type="radio" name="booking_required" value="false" checked /> Nee</label></div></div>
@@ -280,7 +282,7 @@
 
             <fieldset class="intake-step" data-step="8" hidden>
               <legend>Planning</legend>
-              <p class="intake-step__intro">Een realistische planning helpt bij een passend voorstel.</p>
+              <p class="intake-step__intro">Een realistische planning helpt bij een passend voorstel. Een gewenste of harde datum past de prijs niet automatisch aan.</p>
               <div class="field"><label for="deadline_date">Gewenste deadline</label><input id="deadline_date" name="deadline_date" type="date" min="2000-01-01" max="2100-12-31" /></div>
               <div class="field"><label for="deadline_reason">Waarom deze deadline?</label><textarea id="deadline_reason" name="deadline_reason" rows="3" maxlength="1000"></textarea></div>
               <div id="deadlineFields" class="conditional-panel field--full" hidden><div class="choice-grid compact field--full"><label><input id="deadline_commercially_critical" type="checkbox" /> De datum is commercieel belangrijk</label><label><input id="deadline_hard" type="checkbox" /> De datum is een harde deadline</label></div></div>

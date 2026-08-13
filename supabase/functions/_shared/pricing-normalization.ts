@@ -182,6 +182,7 @@ export function normalizePricingScope(
   const modules: NormalizedModule[] = [];
   const catalogSelections = new Map<string, number>();
   const recurringServices: NormalizedRecurringService[] = [];
+  let pickupScope: unknown;
   const selectCatalogProduct = (productId: string, quantity = 1) => {
     if (quantity > 0) catalogSelections.set(productId, quantity);
   };
@@ -203,6 +204,7 @@ export function normalizePricingScope(
   addEvidence(shopEvidence, hasObjectData(input.shop_details), "shop_details");
   if (shopEvidence.size) {
     const shopDetails = objectValue(input.shop_details);
+    pickupScope = shopDetails.pickup_scope;
     const simpleProductCount = typeof shopDetails.approx_product_count === "number"
       ? shopDetails.approx_product_count
       : 0;
@@ -281,6 +283,11 @@ export function normalizePricingScope(
       evidence: [...bookingEvidence],
     });
   }
+  if (pickupScope === "scheduled" && bookingEvidence.size === 0) {
+    selectCatalogProduct("booking_widget");
+  } else if (pickupScope === "complex") {
+    selectCatalogProduct("custom_booking");
+  }
 
   const standardPages: string[] = [];
   const pageScopes = objectValue(input.page_scope_details);
@@ -297,6 +304,12 @@ export function normalizePricingScope(
       if (!shopEvidence.size) standardPages.push(page);
     } else if (CONDITIONAL_STANDARD_PAGES.has(page)) {
       if (pageScopes[page] === "normal") standardPages.push(page);
+      else if (
+        page === "jobs" &&
+        (pageScopes[page] === "dynamic" || pageScopes[page] === "complex")
+      ) {
+        selectCatalogProduct("complex_page");
+      }
       else if (page === "gallery" && pageScopes[page] === "advanced") {
         standardPages.push(page);
         selectCatalogProduct("advanced_gallery");
@@ -309,6 +322,20 @@ export function normalizePricingScope(
       manualComponents.add("other_page_scope");
     } else if (!KNOWN_PAGE_IDS.has(page)) {
       manualComponents.add("unknown_page_scope");
+    }
+  }
+  if (pages.includes("jobs")) {
+    const jobsApplication = pageScopes.jobs_application;
+    if (jobsApplication === "basic") {
+      selectCatalogProduct("basic_quote_form");
+    } else if (jobsApplication === "upload") {
+      selectCatalogProduct("upload_form");
+    } else if (jobsApplication === "complex") {
+      selectCatalogProduct("complex_form_workflow");
+    } else if (jobsApplication === "ats") {
+      selectCatalogProduct("crm_api_erp_automation");
+    } else if (jobsApplication != null && jobsApplication !== "none") {
+      manualComponents.add("complex_jobs_scope");
     }
   }
 
@@ -548,25 +575,58 @@ export function normalizePricingScope(
   } else if (hostingDetails.maintenance_plan === "care_plus") {
     recurringServices.push({ productId: "care_plus" });
   }
-  const hostingEvidence = input.hosting_support === "yes" ||
-    input.hosting_support === "advice" ||
-    input.hosting_status === "no_hosting" ||
-    input.maintenance_interest === "yes" ||
-    input.maintenance_interest === "maybe" ||
-    input.maintenance_interest === "info_requested" ||
+  const hostingEvidence = input.hosting_status != null ||
+    input.hosting_support != null ||
+    input.maintenance_interest != null ||
     hasObjectData(hostingDetails);
   if (hostingEvidence) {
-    const hasLegacyHostingEvidence = input.hosting_support === "yes" ||
-      input.hosting_support === "advice" ||
-      input.hosting_status === "no_hosting" ||
-      input.maintenance_interest === "yes" ||
-      input.maintenance_interest === "maybe" ||
-      input.maintenance_interest === "info_requested" ||
-      hostingDetails.hosting_support != null ||
-      hostingDetails.maintenance_interest != null;
+    const recognizedValues: Record<string, Set<unknown>> = {
+      hosting_status: new Set([undefined, null, "has_hosting", "no_hosting"]),
+      hosting_support: new Set([undefined, null, "yes", "no", "advice"]),
+      maintenance_interest: new Set([
+        undefined,
+        null,
+        "yes",
+        "no",
+        "maybe",
+        "info_requested",
+      ]),
+      domain_service: new Set([
+        undefined,
+        null,
+        "existing",
+        "new",
+        ...Object.keys(domainProducts),
+      ]),
+      maintenance_plan: new Set([undefined, null, "none", "care", "care_plus"]),
+    };
+    const unsupportedEvidence =
+      !recognizedValues.hosting_status.has(input.hosting_status) ||
+      !recognizedValues.hosting_support.has(input.hosting_support) ||
+      !recognizedValues.maintenance_interest.has(input.maintenance_interest) ||
+      !recognizedValues.hosting_support.has(hostingDetails.hosting_support) ||
+      !recognizedValues.maintenance_interest.has(
+        hostingDetails.maintenance_interest,
+      ) ||
+      !recognizedValues.domain_service.has(hostingDetails.domain_service) ||
+      !recognizedValues.maintenance_plan.has(hostingDetails.maintenance_plan);
+    const maintenanceInterest = hostingDetails.maintenance_interest ??
+      input.maintenance_interest;
+    const incoherentEvidence =
+      (maintenanceInterest === "no" &&
+        (hostingDetails.maintenance_plan === "care" ||
+          hostingDetails.maintenance_plan === "care_plus")) ||
+      (input.hosting_support != null &&
+        hostingDetails.hosting_support != null &&
+        input.hosting_support !== hostingDetails.hosting_support) ||
+      (input.maintenance_interest != null &&
+        hostingDetails.maintenance_interest != null &&
+        input.maintenance_interest !== hostingDetails.maintenance_interest);
     modules.push({
       id: "hosting_maintenance",
-      classification: hasLegacyHostingEvidence ? "manual" : "catalog",
+      classification: unsupportedEvidence || incoherentEvidence
+        ? "manual"
+        : "catalog",
       evidence: ["hosting_maintenance"],
     });
   }
@@ -605,12 +665,6 @@ export function normalizePricingScope(
   if (integrationDetails.custom_integration === true) {
     selectCatalogProduct("crm_api_erp_automation");
   }
-  const deadlineDetails = objectValue(input.deadline_details);
-  if (
-    deadlineDetails.commercially_critical === true ||
-    deadlineDetails.hard_deadline === true
-  ) manualComponents.add("rush_review");
-
   const normalized: NormalizedPricingScope = {
     standardPages: [...new Set(standardPages)],
     standardPageCount: new Set(standardPages).size,

@@ -11,7 +11,7 @@ function sourceFunction(name: string) {
 }
 
 const preview = {
-  previewContractVersion: 2,
+  previewContractVersion: 3,
   previewVersion: 2,
   scopeRevision: 5,
   pricingConfigVersion: "production",
@@ -27,6 +27,9 @@ const preview = {
     knownMinimumMinor: 350_000,
     containsFromPricing: false,
     manualReviewRequired: false,
+    ...(false as boolean
+      ? { manualScope: "ESSENTIAL" as "ESSENTIAL" | "OPTIONAL" }
+      : {}),
   },
   items: [] as Array<Record<string, unknown>>,
   packageAdvice: { state: "NO_PACKAGE_ADVICE" },
@@ -51,7 +54,7 @@ const validPreview = Function(
   `"use strict"; return (${sourceFunction("validPreview")});`,
 )(
   { querySelector: () => ({ value: "professional_v2" }) },
-  2,
+  3,
   new Set(["WITHIN_KNOWN_BUDGET", "KNOWN_MINIMUM_ABOVE_BUDGET", "INDETERMINATE", "MANUAL_REVIEW"]),
   { below_1800: "Minder dan € 1.800" },
   new Set(["NO_PACKAGE_ADVICE", "CONSIDER_PROFESSIONAL", "PERSONAL_REVIEW_RECOMMENDED"]),
@@ -227,6 +230,7 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
 Deno.test("combined manual review and package-floor mismatch renders both warnings", () => {
   const combinedPreview = structuredClone(preview);
   combinedPreview.summary.manualReviewRequired = true;
+  combinedPreview.summary.manualScope = "ESSENTIAL";
   combinedPreview.summary.containsFromPricing = true;
   combinedPreview.items = [{
     presentationKey: "CUSTOMER_LOGIN",
@@ -236,7 +240,7 @@ Deno.test("combined manual review and package-floor mismatch renders both warnin
 
   assertEquals(validPreview(combinedPreview, 5), true);
   const ui = render(combinedPreview);
-  assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
+  assertEquals(ui.state.textContent, "Essentieel maatwerk te beoordelen");
   assertStringIncludes(ui.status.textContent, "onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden");
   assertStringIncludes(ui.status.textContent.replaceAll(/\s/g, " "), "start het gekozen Professional-pakket vanaf € 3.500 excl. btw");
   assertStringIncludes(ui.status.textContent, "budget daaronder ligt");
@@ -250,6 +254,7 @@ Deno.test("manual review with a compatible budget keeps the known minimum visibl
   combinedPreview.budget.comparisonStatus = "WITHIN_KNOWN_BUDGET";
   combinedPreview.budget.knownMinimumExceedsBudget = false;
   combinedPreview.summary.manualReviewRequired = true;
+  combinedPreview.summary.manualScope = "ESSENTIAL";
   combinedPreview.summary.containsFromPricing = true;
   combinedPreview.items = [{
     presentationKey: "CUSTOMER_LOGIN",
@@ -261,7 +266,7 @@ Deno.test("manual review with a compatible budget keeps the known minimum visibl
   const ui = render(combinedPreview);
   assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.500excl.btw");
   assertEquals(ui.minimumRow.hidden, false);
-  assertEquals(ui.state.textContent, "Persoonlijke beoordeling vereist");
+  assertEquals(ui.state.textContent, "Essentieel maatwerk te beoordelen");
   assertStringIncludes(ui.status.textContent, "persoonlijk beoordeeld");
 });
 
@@ -331,6 +336,7 @@ Deno.test("mismatch requires acknowledgement for the current key", () => {
 Deno.test("combined state requires a current Model B acknowledgement", () => {
   const combinedPreview = structuredClone(preview);
   combinedPreview.summary.manualReviewRequired = true;
+  combinedPreview.summary.manualScope = "ESSENTIAL";
   const evidence = pricingFingerprint({ budget: "below_1800", manual: true });
   const key = budgetGuardAcknowledgementKey(combinedPreview, evidence);
   assertEquals(budgetGuardAllowsSubmit(combinedPreview.budget.comparisonStatus, key, "", evidence, evidence), false);
@@ -343,6 +349,7 @@ Deno.test("review or budget status changes invalidate acknowledgement", () => {
 
   const reviewChanged = structuredClone(preview);
   reviewChanged.summary.manualReviewRequired = true;
+  reviewChanged.summary.manualScope = "ESSENTIAL";
   assertNotEquals(budgetGuardAcknowledgementKey(reviewChanged, evidence), before);
 
   const budgetChanged = structuredClone(preview);
@@ -496,9 +503,11 @@ Deno.test("unknown and manual-only rendering do not invent a budget warning", ()
   manualPreview.budget.knownMinimumExceedsBudget = false;
   delete (manualPreview.summary as Partial<typeof manualPreview.summary>).knownMinimumMinor;
   manualPreview.summary.manualReviewRequired = true;
+  manualPreview.summary.manualScope = "ESSENTIAL";
   const manualUi = render(manualPreview);
-  assertEquals(manualUi.state.textContent, "Persoonlijke beoordeling vereist");
-  assertEquals(manualUi.status.textContent, "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden.");
+  assertEquals(manualUi.state.textContent, "Essentieel maatwerk te beoordelen");
+  assertStringIncludes(manualUi.status.textContent, "Noodzakelijk maatwerk");
+  assertStringIncludes(manualUi.status.textContent, "niet geprijsd als €0");
   assertEquals(manualUi.warning.hidden, true);
   assertEquals(manualUi.preview.classList.contains("budget-guard--warning"), false);
 });
@@ -531,5 +540,5 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
   assertStringIncludes(html, '../assets/css/intake.css?v=20260811-1');
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260811-7');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260813-1');
 });

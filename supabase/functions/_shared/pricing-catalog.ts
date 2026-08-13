@@ -54,6 +54,11 @@ export interface CatalogProduct {
   };
   externalCost?: string;
   validityMonths?: number;
+  quantityPricing?: {
+    initialQuantity: number;
+    initialAmountMinor: number;
+    subsequentAmountMinor: number;
+  };
 }
 
 type ProductOptions = Partial<
@@ -86,6 +91,9 @@ function baseProduct(
     ...(options.externalCost ? { externalCost: options.externalCost } : {}),
     ...(options.validityMonths
       ? { validityMonths: options.validityMonths }
+      : {}),
+    ...(options.quantityPricing
+      ? { quantityPricing: options.quantityPricing }
       : {}),
   };
 }
@@ -496,6 +504,11 @@ const products = {
     "product",
     {
       dependencies: ["webshop_base"],
+      quantityPricing: {
+        initialQuantity: 10,
+        initialAmountMinor: 5_000,
+        subsequentAmountMinor: 3_000,
+      },
       manualReview: {
         category: "SCOPE",
         reason: "Complexity beyond the base range requires review",

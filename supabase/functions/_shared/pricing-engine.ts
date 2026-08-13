@@ -172,6 +172,29 @@ function catalogRule(
 ): AppliedPricingRule {
   const product = catalogProduct(productId);
   const mode = product.pricing.mode.toLowerCase() as PriceMode;
+  const quantityPricing = productId === "complex_product"
+    ? PRICING_CONFIG.catalogQuantityPricing.complexProduct
+    : product.quantityPricing;
+  if (quantityPricing) {
+    const initialQuantity = Math.min(
+      quantity,
+      quantityPricing.initialQuantity,
+    );
+    const subsequentQuantity = Math.max(
+      0,
+      quantity - quantityPricing.initialQuantity,
+    );
+    const amountMinor =
+      initialQuantity * quantityPricing.initialAmountMinor +
+      subsequentQuantity * quantityPricing.subsequentAmountMinor;
+    return {
+      ruleId: productId,
+      mode,
+      amountMinor,
+      quantity: 1,
+      knownMinimumContributionMinor: amountMinor,
+    };
+  }
   if ("amountMinor" in product.pricing) {
     return {
       ruleId: productId,

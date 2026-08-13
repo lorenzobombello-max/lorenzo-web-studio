@@ -74,7 +74,7 @@
   let validationMessageActive = false;
 
   const PREVIEW_DEBOUNCE_MS = 350;
-  const PREVIEW_CONTRACT_VERSION = 2;
+  const PREVIEW_CONTRACT_VERSION = 3;
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
@@ -110,10 +110,10 @@
   ]);
   const conditionalPricingIds = new Set([
     "shop_product_count", "shop_complex_product_count", "shop_payment_provider_count", "shop_shipping_scope",
-    "shop_categories", "shop_payments", "shop_shipping", "shop_pickup", "shop_catalog", "shop_customer_accounts",
+    "shop_categories", "shop_payments", "shop_shipping", "shop_pickup_scope", "shop_catalog", "shop_customer_accounts",
     "shop_catalog_import", "shop_erp_api", "booking_tier", "booking_type", "booking_existing",
     "booking_system_name", "booking_calendar", "page_scope_portfolio", "page_scope_reviews", "page_scope_blog",
-    "page_scope_jobs", "page_scope_gallery", "search_tier", "quote_form_count", "quote_file_uploads",
+    "page_scope_jobs", "jobs_application", "page_scope_gallery", "search_tier", "quote_form_count", "quote_file_uploads",
     "quote_database_workflow", "quote_automated_processing", "quote_review_approval", "quote_custom_logic",
     "translations_supplied", "same_language_structure", "translation_required", "seo_per_language",
     "advanced_seo_research", "language_integrations", "multilingual_complex_scope", "download_access",
@@ -260,6 +260,7 @@
       data.improvement_areas = null;
     }
     if (data.shop_required === true) {
+      const pickupScope = document.getElementById("shop_pickup_scope").value;
       data.shop_details = {
         approx_product_count: Number(document.getElementById("shop_product_count").value),
         complex_product_count: Number(document.getElementById("shop_complex_product_count").value),
@@ -268,7 +269,8 @@
         categories: document.getElementById("shop_categories").checked,
         online_payments: document.getElementById("shop_payments").checked,
         shipping: document.getElementById("shop_shipping").checked,
-        pickup: document.getElementById("shop_pickup").checked,
+        pickup: pickupScope !== "none",
+        pickup_scope: pickupScope,
         existing_catalog: document.getElementById("shop_catalog").checked,
         customer_accounts: document.getElementById("shop_customer_accounts").checked,
         catalog_import: document.getElementById("shop_catalog_import").checked,
@@ -300,6 +302,9 @@
     scopedPages.forEach((page) => {
       if (requestedPages.has(page)) pageScopeDetails[page] = document.getElementById(`page_scope_${page}`).value;
     });
+    if (requestedPages.has("jobs")) {
+      pageScopeDetails.jobs_application = document.getElementById("jobs_application").value;
+    }
     if (requestedFeatures.has("search")) pageScopeDetails.search = document.getElementById("search_tier").value;
     data.page_scope_details = Object.keys(pageScopeDetails).length ? pageScopeDetails : null;
 
@@ -588,6 +593,11 @@
       typeof preview.summary.manualReviewRequired !== "boolean" || !Array.isArray(preview.items) ||
       !preview.packageAdvice || !packageAdviceStates.has(preview.packageAdvice.state)
     ) return false;
+    if (
+      preview.summary.manualReviewRequired
+        ? preview.summary.manualScope !== "ESSENTIAL" && preview.summary.manualScope !== "OPTIONAL"
+        : "manualScope" in preview.summary
+    ) return false;
     if ("recurringServices" in preview) {
       if (!Array.isArray(preview.recurringServices) || !preview.recurringServices.every((service) =>
         service && typeof service === "object" && ["CARE", "CARE_PLUS"].includes(service.presentationKey) &&
@@ -704,14 +714,17 @@
     const state = preview.budget.comparisonStatus;
     if (manual) {
       budgetGuardPreview.classList.add("budget-guard--manual");
-      budgetGuardState.textContent = "Persoonlijke beoordeling vereist";
+      const essentialManual = preview.summary.manualScope === "ESSENTIAL";
+      budgetGuardState.textContent = essentialManual
+        ? "Essentieel maatwerk te beoordelen"
+        : "Persoonlijke beoordeling vereist";
       if (state === "KNOWN_MINIMUM_ABOVE_BUDGET") {
         budgetGuardPreview.classList.add("budget-guard--warning");
         if (isPackageFloorMismatch(preview)) {
           const floor = euroFormatter.format(preview.selectedPackage.floorMinor / 100);
           budgetGuardStatus.textContent = `Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden. Daarnaast start het gekozen ${preview.selectedPackage.label}-pakket vanaf ${floor} excl. btw, terwijl je opgegeven budget daaronder ligt.`;
         } else {
-          budgetGuardStatus.textContent = "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden. Daarnaast ligt het huidige bekende minimum boven je opgegeven budget.";
+          budgetGuardStatus.textContent = `${essentialManual ? "Noodzakelijk maatwerk voor de aangevraagde functionaliteit" : "Je aanvraag bevat onderdelen"} waarvoor de prijs persoonlijk beoordeeld moet worden. Daarnaast ligt het huidige bekende minimum boven je opgegeven budget.`;
         }
         budgetGuardWarningActions.hidden = budgetGuardAllowsSubmit(
           state,
@@ -721,7 +734,9 @@
           pricingEvidenceFingerprint,
         );
       } else {
-        budgetGuardStatus.textContent = "Je aanvraag bevat onderdelen waarvoor de prijs persoonlijk beoordeeld moet worden.";
+        budgetGuardStatus.textContent = essentialManual
+          ? "Noodzakelijk maatwerk voor de aangevraagde functionaliteit wordt persoonlijk beoordeeld en komt boven op het getoonde bekende minimum. Dit maatwerk is niet geprijsd als €0."
+          : "Je aanvraag bevat een vrijblijvende uitbreiding waarvoor de prijs persoonlijk beoordeeld moet worden.";
       }
     } else if (state === "WITHIN_KNOWN_BUDGET") {
       budgetGuardPreview.classList.add("budget-guard--within");

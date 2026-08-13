@@ -63,7 +63,7 @@ export type PricingPreviewPresentationKey =
 export type PricingPreviewRecurringPresentationKey = "CARE" | "CARE_PLUS";
 
 export type PricingPreviewLabelKey = `pricing_preview.${Lowercase<PricingPreviewPresentationKey>}`;
-export type PricingPreviewContractVersion = 1 | 2;
+export type PricingPreviewContractVersion = 1 | 2 | 3;
 
 export type PackageInclusionPresentation = {
   entitlement: PackageEntitlementId;
@@ -89,6 +89,7 @@ export interface CustomerPricingPreviewDTOv1 {
     knownMinimumMinor?: number;
     containsFromPricing: boolean;
     manualReviewRequired: boolean;
+    manualScope?: "ESSENTIAL" | "OPTIONAL";
   };
   recurringServices?: Array<{
     presentationKey: PricingPreviewRecurringPresentationKey;
@@ -326,7 +327,10 @@ export function buildCustomerPricingPreview(
   if (!Number.isSafeInteger(scopeRevision) || scopeRevision < 0) {
     throw new TypeError("INVALID_SCOPE_REVISION");
   }
-  if (previewContractVersion !== 1 && previewContractVersion !== 2) {
+  if (
+    previewContractVersion !== 1 && previewContractVersion !== 2 &&
+    previewContractVersion !== 3
+  ) {
     throw new TypeError("INVALID_PREVIEW_CONTRACT_VERSION");
   }
   if (
@@ -396,6 +400,9 @@ export function buildCustomerPricingPreview(
       knownMinimumMinor: pricing.calculation.knownMinimumMinor,
       containsFromPricing: pricing.calculation.containsFromPricing,
       manualReviewRequired: pricing.calculation.manualReviewRequired,
+      ...(previewContractVersion === 3 && pricing.calculation.manualReviewRequired
+        ? { manualScope: "ESSENTIAL" as const }
+        : {}),
     },
     ...(pricing.recurringServices
       ? {

@@ -64,7 +64,7 @@ Deno.test("preview maps included, fixed and from items without starter as an ext
 
   assertEquals(result.scopeRevision, 7);
   assertEquals(result.nonBinding, true);
-  assertEquals(result.pricingConfigVersion, "2026-08-12-v1");
+  assertEquals(result.pricingConfigVersion, "2026-08-13-v2");
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_STANDARD_PAGE"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "SIMPLE_QUOTE_FORM"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_LANGUAGE"), true);
@@ -108,6 +108,24 @@ Deno.test("manual preview keeps review and compatible budget dimensions independ
     true,
   );
   assertEquals(JSON.stringify(result).includes("manualReasons"), false);
+});
+
+Deno.test("preview contract v3 marks requested manual scope essential beside known minimum", () => {
+  const pricing = calculateBudgetGuard({
+    selected_package_definition_id: "starter_v1",
+    requested_features: ["customer_login"],
+  });
+  const result = buildCustomerPricingPreview(
+    1,
+    pricing,
+    evaluateBudget(pricing.calculation, boundedBudget()),
+    3,
+  );
+
+  assertEquals(result.previewContractVersion, 3);
+  assertEquals(result.summary.knownMinimumMinor, 180_000);
+  assertEquals(result.summary.manualReviewRequired, true);
+  assertEquals(result.summary.manualScope, "ESSENTIAL");
 });
 
 Deno.test("preview preserves fixed and multiple from amounts beside manual review", () => {

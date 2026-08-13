@@ -181,6 +181,114 @@ Deno.test("D11-D18 webshop allowances and extras do not double charge", () => {
   );
 });
 
+Deno.test("D62 complex webshop products use the approved 50/30 staircase", () => {
+  for (
+    const [complex_product_count, expected] of [
+      [5, 25_000],
+      [10, 50_000],
+      [11, 53_000],
+      [15, 65_000],
+      [20, 80_000],
+    ] as const
+  ) {
+    const result = price({
+      shop_required: true,
+      shop_details: {
+        approx_product_count: 15,
+        complex_product_count,
+        payment_provider_count: 1,
+        shipping_scope: "standard",
+        customer_accounts: false,
+        catalog_import: false,
+        erp_api: false,
+      },
+    });
+    assertEquals(contribution(result, "complex_product"), expected);
+  }
+});
+
+Deno.test("D63-D65 pickup reuses included, booking and manual catalog semantics", () => {
+  const base = {
+    shop_required: true,
+    shop_details: {
+      approx_product_count: 15,
+      complex_product_count: 0,
+      payment_provider_count: 1,
+      shipping_scope: "standard",
+      customer_accounts: false,
+      catalog_import: false,
+      erp_api: false,
+    },
+  };
+
+  const simple = price({
+    ...base,
+    shop_details: { ...base.shop_details, pickup_scope: "simple" },
+  });
+  assertEquals(simple.calculation.manualReviewRequired, false);
+  assertEquals(contribution(simple, "booking_widget"), 0);
+
+  const scheduled = price({
+    ...base,
+    shop_details: { ...base.shop_details, pickup_scope: "scheduled" },
+  });
+  assertEquals(
+    contribution(scheduled, "booking_widget"),
+    catalogAmountMinor("booking_widget"),
+  );
+
+  const complex = price({
+    ...base,
+    shop_details: { ...base.shop_details, pickup_scope: "complex" },
+  });
+  assertEquals(complex.calculation.manualReviewRequired, true);
+  assertEquals(
+    complex.calculation.manualReasons.includes("custom_booking"),
+    true,
+  );
+});
+
+Deno.test("D66-D70 vacancies reuse page, form, upload and integration rules", () => {
+  const normal = price({
+    requested_pages: ["home", "jobs"],
+    page_scope_details: { jobs: "normal", jobs_application: "none" },
+  });
+  assertEquals(normal.normalizedScope.standardPages.includes("jobs"), true);
+
+  const dynamic = price({
+    requested_pages: ["home", "jobs"],
+    page_scope_details: { jobs: "dynamic", jobs_application: "none" },
+  });
+  assertEquals(
+    contribution(dynamic, "complex_page"),
+    catalogAmountMinor("complex_page"),
+  );
+
+  for (
+    const [jobs_application, productId] of [
+      ["basic", "basic_quote_form"],
+      ["upload", "upload_form"],
+      ["complex", "complex_form_workflow"],
+    ] as const
+  ) {
+    const result = price({
+      requested_pages: ["home", "jobs"],
+      page_scope_details: { jobs: "normal", jobs_application },
+    });
+    assertEquals(contribution(result, productId), catalogAmountMinor(productId));
+  }
+
+  const ats = price({
+    requested_pages: ["home", "jobs"],
+    page_scope_details: { jobs: "normal", jobs_application: "ats" },
+  });
+  assertEquals(ats.calculation.manualReviewRequired, true);
+  assertEquals(
+    ats.calculation.manualReasons.includes("crm_api_erp_automation"),
+    true,
+  );
+});
+
 Deno.test("D19-D21 exact extra-language ladder remains catalog backed", () => {
   for (
     const [count, expected] of [[1, 65_000], [2, 110_000], [
@@ -341,6 +449,94 @@ Deno.test("D41-D43 recurring Care services never inflate one-time minimum", () =
       unit: "month",
     }]);
   }
+});
+
+Deno.test("D59 recognized hosting and maintenance evidence remains catalog scope", () => {
+  const result = price({
+    hosting_status: "no_hosting",
+    hosting_support: "advice",
+    maintenance_interest: "info_requested",
+    hosting_maintenance_details: {
+      hosting_support: "advice",
+      maintenance_interest: "info_requested",
+      domain_service: "new",
+      maintenance_plan: "none",
+    },
+  });
+
+  assertEquals(result.calculation.manualReviewRequired, false);
+  assertEquals(
+    result.normalizedScope.modules.find((module) =>
+      module.id === "hosting_maintenance"
+    )?.classification,
+    "catalog",
+  );
+});
+
+Deno.test("D60 unsupported or incoherent hosting evidence remains manual", () => {
+  for (
+    const input of [
+      { hosting_support: "unsupported" },
+      { hosting_status: "unknown" },
+      {
+        hosting_maintenance_details: {
+          domain_service: "unsupported",
+          maintenance_plan: "none",
+        },
+      },
+      {
+        hosting_maintenance_details: {
+          domain_service: "existing",
+          maintenance_plan: "enterprise",
+        },
+      },
+      {
+        maintenance_interest: "no",
+        hosting_maintenance_details: {
+          domain_service: "existing",
+          maintenance_plan: "care",
+        },
+      },
+      {
+        hosting_support: "yes",
+        hosting_maintenance_details: {
+          hosting_support: "no",
+          domain_service: "existing",
+          maintenance_plan: "none",
+        },
+      },
+    ]
+  ) {
+    const result = price(input);
+    assertEquals(result.calculation.manualReviewRequired, true);
+    assertEquals(
+      result.normalizedScope.modules.find((module) =>
+        module.id === "hosting_maintenance"
+      )?.classification,
+      "manual",
+    );
+  }
+});
+
+Deno.test("D61 recognized complex migration keeps its catalog manual review", () => {
+  const result = price({
+    hosting_maintenance_details: {
+      domain_service: "complex_migration",
+      maintenance_plan: "none",
+    },
+  });
+
+  assertEquals(
+    result.normalizedScope.modules.find((module) =>
+      module.id === "hosting_maintenance"
+    )?.classification,
+    "catalog",
+  );
+  assertEquals(result.calculation.manualReviewRequired, true);
+  assertEquals(
+    result.calculation.manualReasons.includes("complex_migration"),
+    true,
+  );
 });
 
 Deno.test("D44-D46 integrations distinguish known from manual scope", () => {

@@ -4,6 +4,8 @@ import {
   MASTER_PRICING_CATALOG,
 } from "./pricing-catalog.ts";
 
+export const PRICING_CONFIG_VERSION = "2026-08-13-v2" as const;
+
 export type PriceMode = "included" | "fixed" | "from" | "manual";
 
 interface RuleBase {
@@ -408,7 +410,8 @@ const rules = {
 } as const satisfies Record<string, PricingRule>;
 
 export const PRICING_CONFIG = {
-  version: CATALOG_VERSION,
+  version: PRICING_CONFIG_VERSION,
+  catalogVersion: CATALOG_VERSION,
   currency: "EUR",
   vatBasis: "exclusive",
   packages: {
@@ -423,6 +426,10 @@ export const PRICING_CONFIG = {
     custom: { id: "custom", priceMode: "manual" },
   },
   packageDefinitions: PACKAGE_DEFINITION_REGISTRY,
+  catalogQuantityPricing: {
+    complexProduct: MASTER_PRICING_CATALOG.products.complex_product
+      .quantityPricing,
+  },
   rules,
   budgetEvaluation: {
     contractVersion: 2,

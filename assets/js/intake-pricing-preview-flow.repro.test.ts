@@ -99,7 +99,7 @@ function buildFrontendHarness() {
     `"use strict"; return (${sourceFunction("validPreview")});`,
   )(
     form,
-    2,
+    3,
     sourceValue<Set<string>>("budgetStates"),
     sourceValue<Record<string, string>>("budgetLabels"),
     sourceValue<Set<string>>("packageAdviceStates"),
@@ -248,7 +248,7 @@ async function runTransition(
     action: "preview_budget_guard",
     token,
     scopeRevision: revision,
-    clientPreviewVersion: 2,
+    clientPreviewVersion: 3,
     data: evidence,
   }, origin, client, dependencies);
   const body = await response.json();
