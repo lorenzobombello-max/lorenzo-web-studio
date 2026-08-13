@@ -1,0 +1,106 @@
+.service-detail .page-hero__ticker {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.service-detail h1,
+.service-detail h2,
+.service-detail h3 {
+  overflow-wrap: anywhere;
+}
+
+.service-detail .service-audience,
+.service-detail .service-capabilities,
+.service-detail .service-examples,
+.service-detail .service-scope,
+.service-detail .service-faq {
+  display: grid;
+  gap: 1rem;
+}
+
+.service-detail .service-audience,
+.service-detail .service-capabilities,
+.service-detail .service-examples {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.service-detail .service-audience article,
+.service-detail .service-capabilities article,
+.service-detail .service-examples article,
+.service-detail .service-scope > div,
+.service-detail .service-faq details {
+  border: 1px solid var(--line);
+  background: var(--white);
+  padding: clamp(1.25rem, 2.5vw, 2rem);
+}
+
+.service-detail .page-section--dark .service-capabilities article {
+  border-color: rgba(255,255,255,.16);
+  background: rgba(255,255,255,.05);
+}
+
+.service-detail .service-audience span,
+.service-detail .service-capabilities span,
+.service-detail .service-examples span {
+  color: var(--signal-deep);
+  font-weight: 700;
+}
+
+.service-detail .service-capabilities h3,
+.service-detail .service-audience h3,
+.service-detail .service-examples h3 {
+  margin: .45rem 0 .65rem;
+}
+
+.service-detail .service-capabilities p,
+.service-detail .service-audience p,
+.service-detail .service-examples p {
+  margin: 0;
+}
+
+.service-detail .service-scope {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.service-detail .service-scope ul {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.service-detail .service-price-anchor {
+  border-left: 4px solid var(--signal);
+  padding: 1rem 1.25rem;
+  background: var(--mist);
+}
+
+.service-detail .service-price-anchor strong {
+  display: block;
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+}
+
+.service-detail .service-faq details {
+  padding-block: 1rem;
+}
+
+.service-detail .service-faq summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.service-detail .service-faq details p {
+  margin: .8rem 0 0;
+}
+
+@media (max-width: 850px) {
+  .service-detail .service-audience,
+  .service-detail .service-capabilities,
+  .service-detail .service-examples {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .service-detail .service-scope {
+    grid-template-columns: 1fr;
+  }
+}
