@@ -117,7 +117,7 @@ function element() {
   };
 }
 
-function render(renderedPreview: typeof preview) {
+function renderSequence(renderedPreviews: Array<typeof preview>) {
   const ui = {
     preview: element(), budget: element(), packageRow: element(), minimum: element(),
     packageName: element(), packagePages: element(), packageRounds: element(),
@@ -151,7 +151,10 @@ function render(renderedPreview: typeof preview) {
     "pricingEvidenceFingerprint",
     `"use strict"; return (${sourceFunction("renderPricingPreview")});`,
   )(
-    () => {},
+    () => {
+      ui.advice.textContent = "";
+      ui.advice.hidden = true;
+    },
     () => {},
     ui.preview,
     ui.budget,
@@ -183,8 +186,17 @@ function render(renderedPreview: typeof preview) {
     pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
   ) as (renderedPreview: typeof preview, evidenceFingerprint: string) => void;
 
-  renderPricingPreview(renderedPreview, pricingFingerprint({ budget: "below_1800", package: "professional_v2" }));
+  renderedPreviews.forEach((renderedPreview) => {
+    renderPricingPreview(renderedPreview, pricingFingerprint({
+      budget: "below_1800",
+      package: renderedPreview.selectedPackage.selectedPackageDefinitionId,
+    }));
+  });
   return ui;
+}
+
+function render(renderedPreview: typeof preview) {
+  return renderSequence([renderedPreview]);
 }
 
 Deno.test("package summary renders structured lines for Starter and Professional", () => {
@@ -207,6 +219,51 @@ Deno.test("package summary renders structured lines for Starter and Professional
   assertEquals(starterUi.packageName.textContent, "Starter");
   assertEquals(starterUi.packagePages.textContent, "Max. 5 standaardpagina's");
   assertEquals(starterUi.packageRounds.textContent, "1 correctieronde");
+});
+
+Deno.test("selected Professional suppresses redundant Professional recommendation", () => {
+  const professionalPreview = structuredClone(preview);
+  professionalPreview.packageAdvice.state = "CONSIDER_PROFESSIONAL";
+
+  const ui = render(professionalPreview);
+
+  assertEquals(ui.packageName.textContent, "Professional");
+  assertEquals(ui.advice.hidden, true);
+  assertEquals(ui.advice.textContent, "");
+});
+
+Deno.test("Professional recommendation remains visible when Starter is selected", () => {
+  const starterPreview = structuredClone(preview);
+  starterPreview.selectedPackage.selectedPackageDefinitionId = "starter_v1";
+  starterPreview.selectedPackage.label = "Starter";
+  starterPreview.selectedPackage.floorMinor = 180_000;
+  starterPreview.selectedPackage.standardPageLimit = 5;
+  starterPreview.selectedPackage.includedCorrectionRounds = 1;
+  starterPreview.packageAdvice.state = "CONSIDER_PROFESSIONAL";
+
+  const ui = render(starterPreview);
+
+  assertEquals(ui.packageName.textContent, "Starter");
+  assertEquals(ui.advice.hidden, false);
+  assertEquals(
+    ui.advice.textContent,
+    "Op basis van je wensen kan Professional interessanter zijn. Er is geen pakket automatisch geselecteerd.",
+  );
+});
+
+Deno.test("current Professional render clears prior advice from print-visible DOM", () => {
+  const starterPreview = structuredClone(preview);
+  starterPreview.selectedPackage.selectedPackageDefinitionId = "starter_v1";
+  starterPreview.selectedPackage.label = "Starter";
+  starterPreview.packageAdvice.state = "CONSIDER_PROFESSIONAL";
+  const professionalPreview = structuredClone(preview);
+  professionalPreview.packageAdvice.state = "CONSIDER_PROFESSIONAL";
+
+  const ui = renderSequence([starterPreview, professionalPreview]);
+
+  assertEquals(ui.packageName.textContent, "Professional");
+  assertEquals(ui.advice.hidden, true);
+  assertEquals(ui.advice.textContent, "");
 });
 
 Deno.test("exact Professional above-budget response renders instead of unavailable", () => {
@@ -356,6 +413,47 @@ Deno.test("review or budget status changes invalidate acknowledgement", () => {
   budgetChanged.budget.comparisonStatus = "WITHIN_KNOWN_BUDGET";
   budgetChanged.budget.knownMinimumExceedsBudget = false;
   assertNotEquals(budgetGuardAcknowledgementKey(budgetChanged, evidence), before);
+});
+
+Deno.test("multilingual A-B-C-B-A fingerprints reject stale and aborted responses", () => {
+  const sequence = [["fr"], ["fr", "en"], ["fr", "en", "de"], ["fr", "en"], ["fr"]];
+  let previousFingerprint = "";
+
+  sequence.forEach((additionalLanguages, index) => {
+    const revision = index + 1;
+    const fingerprint = pricingFingerprint({
+      primary_language: "nl",
+      additional_languages: additionalLanguages,
+      multilingual_details: {
+        final_translations_supplied: false,
+        same_structure: true,
+        translation_required: true,
+      },
+    });
+
+    assertNotEquals(fingerprint, previousFingerprint);
+    assertEquals(
+      pricingPreviewMatchesCurrentEvidence(revision, revision, fingerprint, fingerprint, false),
+      true,
+    );
+    assertEquals(
+      pricingPreviewMatchesCurrentEvidence(revision, revision, fingerprint, fingerprint, true),
+      false,
+    );
+    if (previousFingerprint) {
+      assertEquals(
+        pricingPreviewMatchesCurrentEvidence(
+          revision - 1,
+          revision,
+          previousFingerprint,
+          fingerprint,
+          false,
+        ),
+        false,
+      );
+    }
+    previousFingerprint = fingerprint;
+  });
 });
 
 Deno.test("budget change invalidates acknowledgement", () => {
@@ -540,5 +638,5 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
   assertStringIncludes(html, '../assets/css/intake.css?v=20260811-1');
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260813-1');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260813-2');
 });

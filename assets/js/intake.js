@@ -758,7 +758,10 @@
       budgetGuardState.textContent = "Nog te bepalen";
       budgetGuardStatus.textContent = "We kunnen budget en scope nog niet betrouwbaar vergelijken.";
     }
-    if (preview.packageAdvice.state === "CONSIDER_PROFESSIONAL") {
+    if (
+      preview.packageAdvice.state === "CONSIDER_PROFESSIONAL" &&
+      preview.selectedPackage?.selectedPackageDefinitionId !== "professional_v2"
+    ) {
       budgetGuardPackageAdvice.textContent = "Op basis van je wensen kan Professional interessanter zijn. Er is geen pakket automatisch geselecteerd.";
       budgetGuardPackageAdvice.hidden = false;
     } else if (preview.packageAdvice.state === "PERSONAL_REVIEW_RECOMMENDED") {

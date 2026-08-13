@@ -289,13 +289,14 @@ Deno.test("D66-D70 vacancies reuse page, form, upload and integration rules", ()
   );
 });
 
-Deno.test("D19-D21 exact extra-language ladder remains catalog backed", () => {
-  for (
-    const [count, expected] of [[1, 65_000], [2, 110_000], [
-      3,
-      155_000,
-    ]] as const
-  ) {
+Deno.test("D19-D21 extra-language ladder increases and decreases exactly", () => {
+  for (const [count, expected] of [
+    [1, 65_000],
+    [2, 110_000],
+    [3, 155_000],
+    [2, 110_000],
+    [1, 65_000],
+  ] as const) {
     const result = price({
       primary_language: "nl",
       additional_languages: ["fr", "en", "de"].slice(0, count),
@@ -310,6 +311,58 @@ Deno.test("D19-D21 exact extra-language ladder remains catalog backed", () => {
       },
     });
     assertEquals(result.calculation.knownMinimumMinor, 180_000 + expected);
+    assertEquals(
+      result.normalizedScope.modules.find((module) =>
+        module.id === "multilingual"
+      )?.classification,
+      "catalog",
+    );
+    assertEquals(
+      contribution(result, "first_extra_language") +
+        contribution(result, "second_extra_language") +
+        contribution(result, "subsequent_extra_language"),
+      expected,
+    );
+  }
+});
+
+Deno.test("manual translation scope stays amount-stable through A-B-C-B-A", () => {
+  for (const count of [1, 2, 3, 2, 1]) {
+    const result = price({
+      primary_language: "nl",
+      additional_languages: ["fr", "en", "de"].slice(0, count),
+      multilingual_details: {
+        final_translations_supplied: false,
+        same_structure: true,
+        translation_required: true,
+        seo_per_language: false,
+        advanced_seo_research: false,
+        language_specific_integrations: false,
+        complex_scope: false,
+      },
+    });
+
+    assertEquals(
+      result.normalizedScope.modules.find((module) =>
+        module.id === "multilingual"
+      )?.classification,
+      "manual",
+    );
+    assertEquals(contribution(result, "first_extra_language"), 0);
+    assertEquals(contribution(result, "second_extra_language"), 0);
+    assertEquals(contribution(result, "subsequent_extra_language"), 0);
+    assertEquals(
+      result.calculation.appliedRules.find((rule) =>
+        rule.ruleId === "translation"
+      )?.mode,
+      "manual",
+    );
+    assertEquals(result.calculation.knownMinimumMinor, 180_000);
+    assertEquals(result.calculation.manualReviewRequired, true);
+    assertEquals(result.calculation.manualReasons, [
+      "multilingual_manual",
+      "translation",
+    ]);
   }
 });
 
