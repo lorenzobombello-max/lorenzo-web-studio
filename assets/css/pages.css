@@ -221,7 +221,7 @@ address { font-style:normal; }
 .faq-accordion details p { max-width:64ch; padding:0 3.5rem 1.8rem 0; color:var(--muted); }
 
 .page-hero--commercial h1 { max-width:14ch; }
-.page-hero--commercial h1:has(em) { animation-fill-mode:backwards; }
+.page-hero--commercial h1:has(em) { animation-name:page-title-entry-unclipped; }
 .page-hero--commercial h1 em { color:var(--signal); font-style:normal; }
 .hero-actions { margin-top:2rem; display:flex; align-items:center; gap:1.5rem; }
 .text-link { width:max-content; display:inline-flex; align-items:center; gap:.55rem; padding-bottom:.2rem; border-bottom:1px solid currentColor; color:var(--signal-deep); font-weight:700; transition:gap 180ms ease,color 180ms ease; }
@@ -343,6 +343,7 @@ address { font-style:normal; }
 @keyframes hero-light { to { filter:hue-rotate(7deg); transform:scale(1.04); } }
 @keyframes ticker { to { transform:translateX(-42%); } }
 @keyframes page-title-entry { from { opacity:0; transform:translate3d(0,22px,0); clip-path:inset(0 0 24% 0); } to { opacity:1; transform:none; clip-path:inset(0); } }
+@keyframes page-title-entry-unclipped { from { opacity:0; transform:translate3d(0,22px,0); } to { opacity:1; transform:none; } }
 @keyframes page-copy-entry { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:none; } }
 @keyframes about-logo-float { 0%,100% { translate:0 0; rotate:0deg; } 50% { translate:0 -10px; rotate:1.5deg; } }
 @keyframes page-signal-sweep { 0% { opacity:0; transform:translateX(0); } 10%,72% { opacity:.55; } 82%,100% { opacity:0; transform:translateX(102vw); } }
