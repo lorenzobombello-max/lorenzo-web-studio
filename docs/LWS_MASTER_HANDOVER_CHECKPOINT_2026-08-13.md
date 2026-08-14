@@ -1,5 +1,7 @@
 # LWS Master Handover Checkpoint 2026-08-13
 
+> **Historical checkpoint:** The current primary resume authority is [`FINAL-PRODUCTION-CHECKPOINT-20260814.md`](FINAL-PRODUCTION-CHECKPOINT-20260814.md). Keep this document for the 2026-08-13 phase evidence; do not use its Git or open-status statements as the current production baseline.
+
 ## Doel
 
 Compact hervattingspunt voor Lorenzo Web Solutions na de werkzaamheden van 13 augustus 2026. Dit document vult bestaande historische checkpoints aan en verwijdert of overschrijft geen eerdere evidence.

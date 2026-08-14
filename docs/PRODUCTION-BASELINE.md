@@ -1,5 +1,7 @@
 # Production Baseline
 
+> **Current authority (2026-08-14):** This document preserves the verified 2026-08-09 baseline and later historical additions. For the current production commit, final website status, Git/worktree preservation state and safe resume procedure, use [`FINAL-PRODUCTION-CHECKPOINT-20260814.md`](FINAL-PRODUCTION-CHECKPOINT-20260814.md) as the primary source.
+
 ## Identificatie
 
 - Project: Lorenzo Web Solutions / `lorenzo-web-studio`
