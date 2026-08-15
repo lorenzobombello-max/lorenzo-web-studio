@@ -27,3 +27,6 @@ verify_jwt = false
 
 [functions.submit-privacy-request]
 verify_jwt = false
+
+[functions.quotation-acceptance]
+verify_jwt = false

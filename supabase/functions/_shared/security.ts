@@ -30,6 +30,16 @@ async function intakeInvitationEncryptionKey(): Promise<CryptoKey> {
   return await crypto.subtle.importKey("raw", keyMaterial, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+async function quotationDeliveryEncryptionKey(): Promise<CryptoKey> {
+  const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
+  const keyMaterial = await crypto.subtle.digest(
+    "SHA-256",
+    textEncoder.encode(`quotation-delivery-encryption:v1:${secret}`),
+  );
+  return await crypto.subtle.importKey("raw", keyMaterial, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
 function intakeInvitationAdditionalData(accessTokenHash: string): Uint8Array<ArrayBuffer> {
   return textEncoder.encode(`intake-invitation:v1:${accessTokenHash}`);
 }
@@ -120,6 +130,33 @@ export async function decryptIntakeInvitationToken(encryptedToken: string, acces
   );
   const token = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error("Invalid encrypted intake token");
+  return token;
+}
+
+export async function encryptQuotationDeliveryToken(rawToken: string, tokenDigest: string): Promise<string> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken) || !/^[0-9a-f]{64}$/.test(tokenDigest)) throw new Error("Invalid quotation delivery token");
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: textEncoder.encode(`quotation-delivery:v1:${tokenDigest}`) },
+    await quotationDeliveryEncryptionKey(),
+    textEncoder.encode(rawToken),
+  );
+  return `v1.${toBase64Url(iv.buffer)}.${toBase64Url(ciphertext)}`;
+}
+
+export async function decryptQuotationDeliveryToken(encryptedToken: string, tokenDigest: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(tokenDigest)) throw new Error("Invalid quotation delivery token");
+  const parts = encryptedToken.split(".");
+  if (parts.length !== 3 || parts[0] !== "v1") throw new Error("Invalid quotation delivery token");
+  const iv = fromBase64Url(parts[1]);
+  if (iv.byteLength !== 12) throw new Error("Invalid quotation delivery token");
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv, additionalData: textEncoder.encode(`quotation-delivery:v1:${tokenDigest}`) },
+    await quotationDeliveryEncryptionKey(),
+    fromBase64Url(parts[2]),
+  );
+  const token = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error("Invalid quotation delivery token");
   return token;
 }
 

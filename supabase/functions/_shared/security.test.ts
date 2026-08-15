@@ -1,7 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   decryptIntakeInvitationToken,
+  decryptQuotationDeliveryToken,
   encryptIntakeInvitationToken,
+  encryptQuotationDeliveryToken,
   hashApprovalToken,
   hashIntakeToken,
 } from "./security.ts";
@@ -11,6 +13,15 @@ const token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const accessTokenHash = "a".repeat(64);
 const preRemediationEncryptedToken =
   "v1.jiVbJqLtKdTxxXv2.qgCUgzGSkpjEIvPiM-QuyWi0F8Q2fiy6OcJYyz2-wVXyopMRp5zoAL31o2-gqNvGQKZvqHk1191M2yQ";
+
+Deno.test("quotation delivery token encryption is digest-bound", async () => {
+  await withApprovalTokenSecret(async () => {
+    const digest = "a".repeat(64);
+    const encrypted = await encryptQuotationDeliveryToken(token, digest);
+    assertEquals(await decryptQuotationDeliveryToken(encrypted, digest), token);
+    await assertRejects(() => decryptQuotationDeliveryToken(encrypted, "b".repeat(64)));
+  });
+});
 
 async function withApprovalTokenSecret(run: () => Promise<void>): Promise<void> {
   const previous = Deno.env.get("APPROVAL_TOKEN_SECRET");
