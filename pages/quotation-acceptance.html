@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offerte bekijken en aanvaarden | Lorenzo Web Solutions</title>
+  <meta name="description" content="Beveiligde pagina om een persoonlijke offerte van Lorenzo Web Solutions te bekijken en expliciet te aanvaarden." />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="../assets/css/pages.css" />
+  <link rel="stylesheet" href="../assets/css/quotation-acceptance.css?v=20260815-1" />
+  <script defer src="../assets/js/quotation-acceptance.js?v=20260815-1"></script>
+</head>
+<body class="quotation-acceptance-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+  <header class="acceptance-header">
+    <div class="shell acceptance-header__inner">
+      <span class="brand" aria-label="Lorenzo Web Solutions">
+        <img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" />
+        <span class="brand__name">Lorenzo <strong>Web Solutions</strong></span>
+      </span>
+      <span class="acceptance-secure"><span aria-hidden="true"></span>Persoonlijke offerte</span>
+    </div>
+  </header>
+
+  <main id="main-content" class="acceptance-main">
+    <div id="acceptanceApp" class="shell acceptance-app" data-state="loading">
+      <header class="acceptance-intro">
+        <div>
+          <p class="kicker">Offerteportaal</p>
+          <h1>Controleer eerst.<br />Bevestig bewust.</h1>
+          <p>Deze beveiligde pagina toont de commerciële afspraken uit jouw uitgegeven offerte. Aanvaarding gebeurt nooit automatisch.</p>
+        </div>
+        <div class="acceptance-status-card" aria-live="polite">
+          <span>Huidige status</span>
+          <strong id="acceptanceStatus">Offerte wordt geladen...</strong>
+          <p id="acceptanceMessage">De persoonlijke link wordt veilig gecontroleerd.</p>
+        </div>
+      </header>
+
+      <section id="activeAcceptance" class="acceptance-layout" hidden>
+        <div class="acceptance-column">
+          <section class="acceptance-panel" aria-labelledby="quotationHeading">
+            <div class="acceptance-panel__heading">
+              <p class="kicker">Overzicht</p>
+              <h2 id="quotationHeading">Offertegegevens</h2>
+            </div>
+            <dl id="quotationDetails" class="acceptance-details"></dl>
+          </section>
+
+          <section class="acceptance-panel" aria-labelledby="scopeHeading">
+            <div class="acceptance-panel__heading">
+              <p class="kicker">Commerciële scope</p>
+              <h2 id="scopeHeading">Offerteonderdelen</h2>
+            </div>
+            <ul id="quotationLines" class="acceptance-lines"></ul>
+          </section>
+
+          <section class="acceptance-panel" aria-labelledby="paymentHeading">
+            <div class="acceptance-panel__heading">
+              <p class="kicker">Afspraken</p>
+              <h2 id="paymentHeading">Betalingsschema</h2>
+            </div>
+            <dl id="paymentSchedule" class="acceptance-details acceptance-details--single"></dl>
+          </section>
+        </div>
+
+        <form id="acceptanceForm" class="acceptance-panel acceptance-form">
+          <div class="acceptance-panel__heading">
+            <p class="kicker">Expliciete bevestiging</p>
+            <h2>Offerte aanvaarden</h2>
+          </div>
+          <div class="acceptance-field">
+            <label for="acceptingName">Naam van de bevoegde persoon</label>
+            <input id="acceptingName" name="accepting_name" type="text" required maxlength="200" autocomplete="name" />
+          </div>
+          <div class="acceptance-field">
+            <label for="acceptingEmail">E-mailadres</label>
+            <input id="acceptingEmail" name="accepting_email" type="email" required maxlength="320" autocomplete="email" />
+          </div>
+          <div class="acceptance-field">
+            <label for="acceptingOrganization">Organisatie <span>(optioneel)</span></label>
+            <input id="acceptingOrganization" name="accepting_organization" type="text" autocomplete="organization" />
+          </div>
+          <div class="acceptance-field">
+            <label for="acceptingRole">Functie of rol <span>(optioneel)</span></label>
+            <input id="acceptingRole" name="accepting_role" type="text" autocomplete="organization-title" />
+          </div>
+          <div class="acceptance-terms">
+            <h3>Aanvaardingsverklaring</h3>
+            <p id="acceptanceTerms"></p>
+          </div>
+          <label class="acceptance-check">
+            <input id="authorityDeclaration" type="checkbox" required />
+            <span>Ik bevestig dat ik bevoegd ben om deze exacte offerte namens de vermelde klant te aanvaarden.</span>
+          </label>
+          <button id="acceptanceSubmit" class="acceptance-submit" type="submit" disabled>Offerte definitief aanvaarden</button>
+          <p class="acceptance-help">De registratie is definitief. Controleer je gegevens voordat je bevestigt.</p>
+        </form>
+      </section>
+
+      <section id="acceptanceResult" class="acceptance-result" aria-live="polite" hidden>
+        <span class="acceptance-result__mark" aria-hidden="true"></span>
+        <p class="kicker">Status</p>
+        <h2 id="resultTitle" tabindex="-1">Offerte wordt gecontroleerd</h2>
+        <p id="resultMessage">Even geduld.</p>
+        <a href="contact.html">Contact opnemen</a>
+      </section>
+    </div>
+  </main>
+
+  <footer class="acceptance-footer">
+    <div class="shell"><p>Lorenzo Web Solutions · Beveiligde offerteaanvaarding</p></div>
+  </footer>
+</body>
+</html>

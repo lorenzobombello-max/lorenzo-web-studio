@@ -292,6 +292,7 @@ address { font-style: normal; }
 .motion-enabled .quality-item.reveal { transform: perspective(800px) translateY(70px) rotateX(14deg) scale(.9); transform-origin: bottom; }
 .motion-enabled .about__portrait.reveal { transform: translateX(-80px) scale(.94); clip-path: inset(0 0 0 35%); }
 .motion-enabled .reveal.is-visible { opacity: 1; transform: none; clip-path: inset(0); }
+.motion-enabled .services .section-heading.reveal.is-visible { clip-path: inset(-0.2em -0.08em); }
 
 @keyframes signal-sweep { 0% { opacity: 0; transform: translateX(0); } 12% { opacity: 1; } 84% { opacity: 1; } 100% { opacity: 0; transform: translateX(102vw); } }
 @keyframes header-arrive { from { opacity: 0; transform: translateY(-26px); } to { opacity: 1; transform: none; } }

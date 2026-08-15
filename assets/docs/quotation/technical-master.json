@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "template_id": "LWS_QUOTATION_NL_BE",
+  "template_version": "1.0.0-technical",
+  "authority_status": "CANDIDATE",
+  "locale": "nl-BE",
+  "renderer_version": "quotation-docx-v1",
+  "file": "LWS_QUOTATION_NL_BE_TECHNICAL_v1.docx",
+  "sha256": "3AD2FAAAA6A0A06E566F462E1C65C631006019C0D2D462333B8C693EB11154DE",
+  "final_document_presentation_phase": "DEFERRED"
+}

@@ -45,6 +45,22 @@ interface SubmittedIntakeAdminEmailData {
   adminUrl: string;
 }
 
+export interface QuotationEmailData {
+  clientName: string;
+  quotationNumber: string;
+  quotationVersion: number;
+  projectTitle: string;
+  validUntil?: string;
+  acceptanceUrl?: string;
+  acceptedAt?: string;
+  acceptingName?: string;
+}
+
+export type QuotationEmailTemplate =
+  | "QUOTATION_DELIVERY_NL_BE_v1"
+  | "ACCEPTANCE_CONFIRMATION_CUSTOMER_NL_BE_v1"
+  | "ACCEPTANCE_CONFIRMATION_INTERNAL_NL_BE_v1";
+
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
@@ -532,6 +548,30 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
     `Briefing bekijken: ${data.adminUrl}`,
   ].join("\n");
 
+  return { subject, html, text };
+}
+
+export function buildQuotationEmail(template: QuotationEmailTemplate, data: QuotationEmailData) {
+  const isDelivery = template === "QUOTATION_DELIVERY_NL_BE_v1";
+  if (isDelivery && (!data.acceptanceUrl || !data.validUntil)) throw new Error("Quotation delivery data incomplete");
+  if (!isDelivery && (!data.acceptedAt || !data.acceptingName)) throw new Error("Acceptance confirmation data incomplete");
+
+  const reference = `${data.quotationNumber} (versie ${data.quotationVersion})`;
+  const acceptedAt = data.acceptedAt ? new Date(data.acceptedAt).toLocaleString("nl-BE", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Europe/Brussels",
+  }) : null;
+  const subject = isDelivery ? `Offerte ${reference}` : `Aanvaarding geregistreerd voor offerte ${reference}`;
+  const heading = isDelivery ? "Je offerte is klaar" : "Aanvaarding geregistreerd";
+  const body = isDelivery
+    ? `Bekijk de offerte voor ${data.projectTitle} en registreer je beslissing uiterlijk op ${data.validUntil}.`
+    : `${data.acceptingName} heeft de aanvaarding voor ${data.projectTitle} geregistreerd op ${acceptedAt}. Dit bericht is geen factuur of betalingsbewijs.`;
+  const action = isDelivery
+    ? `<p style="margin:24px 0;"><a href="${escapeHtml(data.acceptanceUrl!)}" style="display:inline-block;padding:13px 18px;background:#12346b;color:#fff;text-decoration:none;border-radius:4px;font-weight:bold;">Offerte bekijken</a></p><p style="color:#5a6475;font-size:13px;word-break:break-all;">Deze persoonlijke link niet doorsturen. Werkt de knop niet? Open:<br><a href="${escapeHtml(data.acceptanceUrl!)}">${escapeHtml(data.acceptanceUrl!)}</a></p>`
+    : "";
+  const html = `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:24px 12px;background:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;"><main style="max-width:600px;margin:auto;padding:28px 32px;background:#fff;border:1px solid #dfe4ea;border-top:4px solid #12346b;"><h1 style="margin:0 0 20px;color:#12346b;font-size:25px;">${heading}</h1><p>Beste ${escapeHtml(data.clientName)},</p><p>${escapeHtml(body)}</p><p><strong>Offerte:</strong> ${escapeHtml(reference)}</p>${action}<p style="margin-top:24px;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p></main></body></html>`;
+  const text = [heading, "", `Beste ${data.clientName},`, "", body, `Offerte: ${reference}`, ...(isDelivery ? ["", "Offerte bekijken:", data.acceptanceUrl!, "", "Stuur deze persoonlijke link niet door."] : []), "", "Met vriendelijke groet,", "Lorenzo Web Solutions"].join("\n");
   return { subject, html, text };
 }
 

@@ -1,5 +1,5 @@
 import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildAdminNotificationEmail } from "./email-templates.ts";
+import { buildAdminNotificationEmail, buildQuotationEmail } from "./email-templates.ts";
 
 const base = {
   requestId: "22222222-2222-4222-8222-222222222222",
@@ -62,4 +62,30 @@ Deno.test("admin email omits business lines for individual requests", () => {
   assertStringIncludes(result.text, "Klanttype: Particulier");
   assertEquals(result.text.includes("Ondernemingsnummer:"), false);
   assertEquals(result.text.includes("Facturatieadres:"), false);
+});
+
+Deno.test("quotation delivery keeps the capability transient and contains no remote assets or trackers", () => {
+  const tokenUrl = "https://example.test/pages/quotation-acceptance.html#token=secret-token";
+  const result = buildQuotationEmail("QUOTATION_DELIVERY_NL_BE_v1", {
+    clientName: "Klant <Test>", quotationNumber: "LWS-OFF-2026-0001", quotationVersion: 1,
+    projectTitle: "Website & shop", validUntil: "31 augustus 2026", acceptanceUrl: tokenUrl,
+  });
+  assertStringIncludes(result.html, "Klant &lt;Test&gt;");
+  assertStringIncludes(result.text, tokenUrl);
+  assertFalse(result.html.includes("<img"));
+  assertFalse(result.html.includes("https://lorenzowebsolutions.be"));
+  assertFalse(/tracking|pixel|open[-_ ]?track/i.test(result.html));
+  assertFalse(/factuur|betaling|betaald/i.test(`${result.subject} ${result.html} ${result.text}`));
+});
+
+Deno.test("acceptance confirmations record acceptance without invoice side effects", () => {
+  for (const template of ["ACCEPTANCE_CONFIRMATION_CUSTOMER_NL_BE_v1", "ACCEPTANCE_CONFIRMATION_INTERNAL_NL_BE_v1"] as const) {
+    const result = buildQuotationEmail(template, {
+      clientName: "Klant", quotationNumber: "LWS-OFF-2026-0001", quotationVersion: 1,
+      projectTitle: "Website", acceptedAt: "2026-08-15T10:00:00Z", acceptingName: "Bevoegde Persoon",
+    });
+    assertStringIncludes(result.text, "Aanvaarding geregistreerd");
+    assertStringIncludes(result.text, "geen factuur of betalingsbewijs");
+    assertFalse(/betaald|betaling ontvangen|factuur aangemaakt/i.test(`${result.subject} ${result.html} ${result.text}`));
+  }
 });
