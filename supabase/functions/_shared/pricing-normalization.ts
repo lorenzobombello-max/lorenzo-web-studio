@@ -554,7 +554,10 @@ export function normalizePricingScope(
         : contentManual
         ? "manual"
         : "included",
-      evidence: ["content_media"],
+      evidence: [
+        "content_media",
+        ...(contentDetails.paid_stock_handling === true ? ["paid_stock_handling"] : []),
+      ],
     });
   }
   if (features.has("other") || features.has("unsure")) {

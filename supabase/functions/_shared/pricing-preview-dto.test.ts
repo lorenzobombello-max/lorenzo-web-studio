@@ -310,6 +310,64 @@ Deno.test("D43 D53 Phase D preview separates recurring services and presents cat
   ]);
 });
 
+Deno.test("webshop badge uses authoritative minimum-charge contributions", () => {
+  for (const [products, expectedShop, expectedTotal] of [
+    [14, 175_000, 525_000],
+    [15, 175_000, 525_000],
+    [16, 185_000, 535_000],
+    [20, 185_000, 535_000],
+    [25, 195_000, 545_000],
+  ] as const) {
+    const result = preview({
+      selected_package_definition_id: "professional_v2",
+      shop_required: true,
+      shop_details: {
+        approx_product_count: products,
+        complex_product_count: 0,
+        payment_provider_count: 1,
+        shipping_scope: "standard",
+        customer_accounts: false,
+        catalog_import: false,
+        erp_api: false,
+        pickup_scope: "none",
+      },
+    });
+    assertEquals(result.summary.knownMinimumMinor, expectedTotal);
+    const shop = result.items.find((item) => item.presentationKey === "SHOP");
+    assertEquals(shop?.amountMinor, expectedShop);
+    assertEquals(shop?.quantity, undefined);
+  }
+});
+
+Deno.test("paid stock presentation carries external-cost authority at its own control", () => {
+  const off = preview({
+    selected_package_definition_id: "professional_v2",
+    content_media_details: {
+      copywriting_scope: "supplied",
+      image_work_scope: "standard",
+      paid_stock_handling: false,
+      branding_tier: "existing",
+    },
+  });
+  assertEquals(off.items.some((item) => item.presentationKey === "PAID_STOCK"), false);
+
+  const on = preview({
+    selected_package_definition_id: "professional_v2",
+    content_media_details: {
+      copywriting_scope: "supplied",
+      image_work_scope: "standard",
+      paid_stock_handling: true,
+      branding_tier: "existing",
+    },
+  });
+  assertEquals(on.summary.knownMinimumMinor, 360_000);
+  assertEquals(on.items.filter((item) => item.presentationKey === "PAID_STOCK").length, 1);
+  const stock = on.items.find((item) => item.presentationKey === "PAID_STOCK");
+  assertEquals(stock?.state, "FROM_EXTRA");
+  assertEquals(stock?.amountMinor, 10_000);
+  assertEquals(stock?.externalCost, true);
+});
+
 Deno.test("manual preview keeps unreliable budget evidence indeterminate", () => {
   const pricing = calculateBudgetGuard({
     selected_package_definition_id: "starter_v1",

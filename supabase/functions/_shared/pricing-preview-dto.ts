@@ -102,6 +102,7 @@ export interface CustomerPricingPreviewDTOv1 {
     state: PricingPreviewItemState;
     quantity?: number;
     amountMinor?: number;
+    externalCost?: true;
   }>;
   packageAdvice: {
     state:
@@ -259,11 +260,16 @@ function itemState(rule: AppliedPricingRule): PricingPreviewItemState {
 }
 
 function consolidatePresentationItems(
-  items: CustomerPricingPreviewDTOv1["items"],
+  items: Array<CustomerPricingPreviewDTOv1["items"][number] & {
+    knownMinimumContributionMinor: number;
+  }>,
 ): CustomerPricingPreviewDTOv1["items"] {
+  type ConsolidationItem = CustomerPricingPreviewDTOv1["items"][number] & {
+    knownMinimumContributionMinor: number;
+  };
   const consolidated = new Map<
     PricingPreviewPresentationKey,
-    CustomerPricingPreviewDTOv1["items"][number]
+    ConsolidationItem
   >();
   const stateRank: Record<PricingPreviewItemState, number> = {
     INCLUDED: 0,
@@ -280,17 +286,24 @@ function consolidatePresentationItems(
     const state = stateRank[item.state] > stateRank[current.state]
       ? item.state
       : current.state;
-    const amountMinor =
-      (current.amountMinor ?? 0) * (current.quantity ?? 1) +
-      (item.amountMinor ?? 0) * (item.quantity ?? 1);
+    const knownMinimumContributionMinor =
+      current.knownMinimumContributionMinor + item.knownMinimumContributionMinor;
     consolidated.set(item.presentationKey, {
       presentationKey: item.presentationKey,
       labelKey: item.labelKey,
       state,
-      ...(amountMinor > 0 ? { amountMinor } : {}),
+      knownMinimumContributionMinor,
+      ...(knownMinimumContributionMinor > 0
+        ? { amountMinor: knownMinimumContributionMinor }
+        : {}),
+      ...(current.externalCost === true || item.externalCost === true
+        ? { externalCost: true as const }
+        : {}),
     });
   }
-  return [...consolidated.values()];
+  return [...consolidated.values()].map(
+    ({ knownMinimumContributionMinor: _knownMinimumContributionMinor, ...item }) => item,
+  );
 }
 
 function budgetState(
@@ -366,7 +379,13 @@ export function buildCustomerPricingPreview(
       );
     })
     .map((rule) => {
-      const presentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
+      const defaultPresentationKey = PRESENTATION_KEYS[rule.ruleId as keyof typeof PRESENTATION_KEYS];
+      const paidStockHandling = pricing.normalizedScope.modules.some((module) =>
+        module.id === "content_media" && module.evidence.includes("paid_stock_handling")
+      );
+      const presentationKey = rule.ruleId === "stock_selection" && paidStockHandling
+        ? "PAID_STOCK"
+        : defaultPresentationKey;
       if (!presentationKey) throw new TypeError("UNKNOWN_PRICING_RULE");
       const state = itemState(rule);
       if (
@@ -380,9 +399,11 @@ export function buildCustomerPricingPreview(
         labelKey: `pricing_preview.${presentationKey.toLowerCase()}` as PricingPreviewLabelKey,
         state,
         ...(rule.quantity === 1 ? {} : { quantity: rule.quantity }),
+        knownMinimumContributionMinor: rule.knownMinimumContributionMinor,
         ...(!suppressItemAmounts && (state === "FIXED_EXTRA" || state === "FROM_EXTRA")
           ? { amountMinor: rule.amountMinor }
           : {}),
+        ...(rule.externalCost ? { externalCost: true as const } : {}),
       };
     }));
 
