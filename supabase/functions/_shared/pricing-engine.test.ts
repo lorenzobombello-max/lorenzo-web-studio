@@ -16,8 +16,8 @@ function rule(result: ReturnType<typeof calculateBudgetGuard>, id: string) {
 }
 
 Deno.test("pricing config contains only approved amounts and amount-safe modes", () => {
-  assertEquals(PRICING_CONFIG.version, "2026-08-13-v2");
-  assertEquals(PRICING_CONFIG.catalogVersion, "2026-08-12-v1");
+  assertEquals(PRICING_CONFIG.version, "2026-08-16-v3");
+  assertEquals(PRICING_CONFIG.catalogVersion, "2026-08-13-v2");
   assertEquals(PRICING_CONFIG.currency, "EUR");
   assertEquals(PRICING_CONFIG.vatBasis, "exclusive");
   assertEquals(PRICING_CONFIG.packages.starter.startingPriceMinor, 180_000);

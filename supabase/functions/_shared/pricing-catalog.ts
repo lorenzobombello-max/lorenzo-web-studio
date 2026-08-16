@@ -1,4 +1,4 @@
-export const CATALOG_VERSION = "2026-08-12-v1" as const;
+export const CATALOG_VERSION = "2026-08-13-v2" as const;
 
 export type CatalogPricingMode = "INCLUDED" | "FIXED" | "FROM" | "MANUAL";
 export type CatalogUnit =
@@ -504,11 +504,6 @@ const products = {
     "product",
     {
       dependencies: ["webshop_base"],
-      quantityPricing: {
-        initialQuantity: 10,
-        initialAmountMinor: 5_000,
-        subsequentAmountMinor: 3_000,
-      },
       manualReview: {
         category: "SCOPE",
         reason: "Complexity beyond the base range requires review",
@@ -981,9 +976,9 @@ export const MASTER_PRICING_CATALOG = {
   currency: "EUR",
   vatBasis: "exclusive",
   source: {
-    document: "LWS_Master_Product_Price_Catalog_v1_2026-08-12.md",
-    date: "2026-08-12",
-    sha256: "d95ad2392ea18c518ae21e8965379cdd377a68027cc6ca0f3f8e5e54a907e7c3",
+    document: "LWS_Master_Product_Price_Catalog_v2_2026-08-13.md",
+    date: "2026-08-13",
+    sha256: "c313f91c602ad6d584f20636f7beab77248efbda14efd939ecb1477b55772f31",
   },
   dependencies: {
     publicPricingPage: "https://lorenzowebsolutions.be/pages/pricing.html",

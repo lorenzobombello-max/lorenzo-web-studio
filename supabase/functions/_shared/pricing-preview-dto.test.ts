@@ -14,12 +14,12 @@ const budgetEvidence = (categoryCode: BudgetCategoryCode) => resolveBudgetEviden
   categoryCode,
 );
 
-const boundedBudget = () => budgetEvidence("3200_to_6000_inclusive");
+const boundedBudget = () => budgetEvidence("3500_to_6000_inclusive");
 
 function preview(
   input: Record<string, unknown>,
   revision = 1,
-  categoryCode: BudgetCategoryCode = "3200_to_6000_inclusive",
+  categoryCode: BudgetCategoryCode = "3500_to_6000_inclusive",
 ) {
   const pricing = calculateBudgetGuard(input);
   return buildCustomerPricingPreview(
@@ -64,7 +64,7 @@ Deno.test("preview maps included, fixed and from items without starter as an ext
 
   assertEquals(result.scopeRevision, 7);
   assertEquals(result.nonBinding, true);
-  assertEquals(result.pricingConfigVersion, "2026-08-13-v2");
+  assertEquals(result.pricingConfigVersion, "2026-08-16-v3");
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_STANDARD_PAGE"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "SIMPLE_QUOTE_FORM"), true);
   assertEquals(result.items.some((item) => item.presentationKey === "EXTRA_LANGUAGE"), true);
@@ -93,7 +93,7 @@ Deno.test("manual preview keeps review and compatible budget dimensions independ
     requested_features: ["customer_login"],
   });
   assertBudgetResult(result, {
-    categoryCode: "3200_to_6000_inclusive",
+    categoryCode: "3500_to_6000_inclusive",
     comparisonStatus: "WITHIN_KNOWN_BUDGET",
     knownMinimumExceedsBudget: false,
     knownMinimumMinor: 202_500,
@@ -306,8 +306,8 @@ Deno.test("preview compares package known minimum safely for approved budget mat
   const cases = [
     ["starter_v1", "below_1800", 180_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
     ["professional_v2", "below_1800", 350_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
-    ["professional_v2", "1800_to_below_3200", 350_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
-    ["professional_v2", "3200_to_6000_inclusive", 350_000, "INDETERMINATE", undefined],
+    ["professional_v2", "1800_to_below_3500", 350_000, "KNOWN_MINIMUM_ABOVE_BUDGET", true],
+    ["professional_v2", "3500_to_6000_inclusive", 350_000, "WITHIN_KNOWN_BUDGET", false],
     ["professional_v2", "above_6000", 350_000, "WITHIN_KNOWN_BUDGET", false],
   ] as const;
   for (const [packageId, categoryCode, knownMinimumMinor, comparisonStatus, exceeds] of cases) {
@@ -340,7 +340,7 @@ Deno.test("from pricing remains indeterminate above a bounded category lower bou
     evaluateBudget(pricing.calculation, boundedBudget()),
   );
   assertBudgetResult(result, {
-    categoryCode: "3200_to_6000_inclusive",
+    categoryCode: "3500_to_6000_inclusive",
     comparisonStatus: "INDETERMINATE",
     knownMinimumMinor: 400_000,
     containsFromPricing: true,
@@ -402,7 +402,7 @@ Deno.test("preview supports within-known-budget when a coherent calculation has 
   };
   const evaluation = evaluateBudget(pricing.calculation, boundedBudget());
   assertBudgetResult(buildCustomerPricingPreview(1, pricing, evaluation), {
-    categoryCode: "3200_to_6000_inclusive",
+    categoryCode: "3500_to_6000_inclusive",
     comparisonStatus: "WITHIN_KNOWN_BUDGET",
     knownMinimumExceedsBudget: false,
     knownMinimumMinor: 400_000,

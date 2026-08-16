@@ -394,7 +394,7 @@ Deno.test("intake validator rejects every authoritative pricing output field", (
   }
 });
 
-Deno.test("intake validator enforces all Budget Guard category triples", () => {
+Deno.test("intake validator preserves all historical Budget Guard v1 category triples", () => {
   for (const [code, label] of [
     ["below_1800", "Minder dan EUR 1.800"],
     ["1800_to_below_3200", "EUR 1.800 tot minder dan EUR 3.200"],
@@ -659,5 +659,30 @@ Deno.test("vacancy page and application evidence use closed existing scopes", ()
     }, "draft"),
     InputValidationError,
     "INVALID_OPTION",
+  );
+});
+
+Deno.test("intake validator enforces current Budget Guard v2 and rejects mixed schemes", () => {
+  for (const [code, label] of [
+    ["below_1800", "Minder dan EUR 1.800"],
+    ["1800_to_below_3500", "EUR 1.800 tot minder dan EUR 3.500"],
+    ["3500_to_6000_inclusive", "EUR 3.500 t/m EUR 6.000"],
+    ["above_6000", "Meer dan EUR 6.000"],
+  ]) {
+    const result = sanitizeAndValidateIntakeData({
+      budget_update_category: label,
+      budget_update_category_scheme: "budget_guard_v2",
+      budget_update_category_code: code,
+    }, "draft");
+    assertEquals(result.budget_update_category_code, code);
+  }
+  assertThrows(
+    () => sanitizeAndValidateIntakeData({
+      budget_update_category: "EUR 1.800 tot minder dan EUR 3.200",
+      budget_update_category_scheme: "budget_guard_v2",
+      budget_update_category_code: "1800_to_below_3200",
+    }, "draft"),
+    InputValidationError,
+    "INCOHERENT_BUDGET_EVIDENCE",
   );
 });

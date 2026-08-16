@@ -18,7 +18,7 @@ const amount = (id: keyof typeof MASTER_PRICING_CATALOG.products) => {
   return pricing.amountMinor;
 };
 
-Deno.test("B01-B05 package catalog matches Master Catalog v1", () => {
+Deno.test("B01-B05 package catalog matches Master Catalog v2", () => {
   assertEquals(amount("starter"), 180_000);
   assertEquals(amount("professional"), 350_000);
   assertEquals(MASTER_PRICING_CATALOG.packages.starter_v1.standardPageLimit, 5);
@@ -67,6 +67,16 @@ Deno.test("B09 webshop base records every included base component", () => {
       normal_categories: 1,
     },
   );
+});
+
+Deno.test("complex products preserve the approved range without an unapproved quantity staircase", () => {
+  assertEquals(product("complex_product").pricing, {
+    mode: "FROM",
+    amountMinor: 3_000,
+    unit: "product",
+  });
+  assertEquals(product("complex_product").quantityPricing, undefined);
+  assertEquals(product("complex_product").manualReview?.category, "SCOPE");
 });
 
 Deno.test("B12 branding prices and alternatives are explicit", () => {
@@ -201,7 +211,7 @@ Deno.test("B22 manual-only products never fabricate an amount", () => {
 });
 
 Deno.test("B23 catalog version and source identity are explicit", () => {
-  assertEquals(CATALOG_VERSION, "2026-08-12-v1");
+  assertEquals(CATALOG_VERSION, "2026-08-13-v2");
   assertEquals(MASTER_PRICING_CATALOG.catalogVersion, CATALOG_VERSION);
   assertEquals(MASTER_PRICING_CATALOG.packages.professional_v2.version, 2);
   assertEquals(
@@ -210,7 +220,7 @@ Deno.test("B23 catalog version and source identity are explicit", () => {
   );
   assertEquals(
     MASTER_PRICING_CATALOG.source.sha256,
-    "d95ad2392ea18c518ae21e8965379cdd377a68027cc6ca0f3f8e5e54a907e7c3",
+    "c313f91c602ad6d584f20636f7beab77248efbda14efd939ecb1477b55772f31",
   );
   assertEquals(
     MASTER_PRICING_CATALOG.dependencies.publicPricingPage,

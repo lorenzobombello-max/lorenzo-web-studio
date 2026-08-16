@@ -1,6 +1,7 @@
 import {
   type BudgetCategoryCode,
   computePricingConfigHash,
+  type HistoricalBudgetCategoryCode,
   type PackageDefinitionId,
   type PriceMode,
   PRICING_CONFIG,
@@ -71,9 +72,15 @@ export interface BudgetGuardResult {
 
 export type BudgetEvidence =
   | {
+    evidenceProvenance: "budget_guard_v2";
+    categoryScheme: "budget_guard_v2";
+    categoryCode: BudgetCategoryCode;
+    originalLabel: string;
+  }
+  | {
     evidenceProvenance: "budget_guard_v1";
     categoryScheme: "budget_guard_v1";
-    categoryCode: BudgetCategoryCode;
+    categoryCode: HistoricalBudgetCategoryCode;
     originalLabel: string;
   }
   | {
@@ -172,9 +179,7 @@ function catalogRule(
 ): AppliedPricingRule {
   const product = catalogProduct(productId);
   const mode = product.pricing.mode.toLowerCase() as PriceMode;
-  const quantityPricing = productId === "complex_product"
-    ? PRICING_CONFIG.catalogQuantityPricing.complexProduct
-    : product.quantityPricing;
+  const quantityPricing = product.quantityPricing;
   if (quantityPricing) {
     const initialQuantity = Math.min(
       quantity,
@@ -555,6 +560,21 @@ export function resolveBudgetEvidence(
     const code = categoryCode as BudgetCategoryCode;
     if (label === categories[code].originalLabel) {
       return {
+        evidenceProvenance: "budget_guard_v2",
+        categoryScheme: "budget_guard_v2",
+        categoryCode: code,
+        originalLabel: label,
+      };
+    }
+  }
+  const historical = PRICING_CONFIG.historicalBudgetEvaluation;
+  if (
+    categoryScheme === historical.schemeId &&
+    typeof categoryCode === "string" && categoryCode in historical.categories
+  ) {
+    const code = categoryCode as HistoricalBudgetCategoryCode;
+    if (label === historical.categories[code].originalLabel) {
+      return {
         evidenceProvenance: "budget_guard_v1",
         categoryScheme: "budget_guard_v1",
         categoryCode: code,
@@ -622,8 +642,9 @@ export function evaluateBudget(
     return result(status ?? policy.statusMapping.belowStarter, true);
   }
 
-  const upperBound = policy.categories[evidence.categoryCode]
-    .upperInclusiveMinor;
+  const upperBound = evidence.evidenceProvenance === "budget_guard_v1"
+    ? PRICING_CONFIG.historicalBudgetEvaluation.categories[evidence.categoryCode].upperInclusiveMinor
+    : policy.categories[evidence.categoryCode].upperInclusiveMinor;
   if (upperBound === null) {
     return result(status ?? policy.statusMapping.openUpper, null);
   }

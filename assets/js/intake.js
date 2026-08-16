@@ -82,15 +82,23 @@
   const scopedPages = ["portfolio", "reviews", "blog", "jobs", "gallery"];
   const budgetCodes = {
     "Minder dan EUR 1.800": "below_1800",
-    "EUR 1.800 tot minder dan EUR 3.200": "1800_to_below_3200",
-    "EUR 3.200 t/m EUR 6.000": "3200_to_6000_inclusive",
+    "EUR 1.800 tot minder dan EUR 3.500": "1800_to_below_3500",
+    "EUR 3.500 t/m EUR 6.000": "3500_to_6000_inclusive",
     "Meer dan EUR 6.000": "above_6000",
   };
   const budgetLabels = {
     below_1800: "Minder dan € 1.800",
-    "1800_to_below_3200": "€ 1.800 tot minder dan € 3.200",
-    "3200_to_6000_inclusive": "€ 3.200 t/m € 6.000",
+    "1800_to_below_3500": "€ 1.800 tot minder dan € 3.500",
+    "3500_to_6000_inclusive": "€ 3.500 t/m € 6.000",
     above_6000: "Meer dan € 6.000",
+    "1800_to_below_3200": "Historisch: € 1.800 tot minder dan € 3.200",
+    "3200_to_6000_inclusive": "Historisch: € 3.200 t/m € 6.000",
+  };
+  const historicalBudgetCodes = {
+    "Minder dan EUR 1.800": "below_1800",
+    "EUR 1.800 tot minder dan EUR 3.200": "1800_to_below_3200",
+    "EUR 3.200 t/m EUR 6.000": "3200_to_6000_inclusive",
+    "Meer dan EUR 6.000": "above_6000",
   };
   const packageDefinitionIds = new Set(["starter_v1", "professional_v2"]);
   const pricingEvidenceFields = [
@@ -368,13 +376,13 @@
 
     if (!budgetChoiceChanged && restoredLegacyBudget) data.budget_update_category = restoredLegacyBudget;
     const budgetCode = budgetCodes[data.budget_update_category];
-    if (budgetCode) {
-      data.budget_update_category_scheme = "budget_guard_v1";
-      data.budget_update_category_code = budgetCode;
-    } else if (!budgetCode && restoredBudgetEvidence) {
+    if (!budgetChoiceChanged && restoredBudgetEvidence) {
       data.budget_update_category = restoredBudgetEvidence.label;
-      data.budget_update_category_scheme = "budget_guard_v1";
+      data.budget_update_category_scheme = restoredBudgetEvidence.scheme;
       data.budget_update_category_code = restoredBudgetEvidence.code;
+    } else if (budgetCode) {
+      data.budget_update_category_scheme = "budget_guard_v2";
+      data.budget_update_category_code = budgetCode;
     }
     return data;
   }
@@ -910,10 +918,21 @@
     if (!data || typeof data !== "object" || Array.isArray(data)) return;
     const restoredBudgetLabel = typeof data.budget_update_category === "string" ? data.budget_update_category : null;
     const restoredBudgetCode = typeof data.budget_update_category_code === "string" ? data.budget_update_category_code : null;
-    const hasBudgetEvidence = data.budget_update_category_scheme === "budget_guard_v1" &&
-      restoredBudgetLabel !== null && budgetCodes[restoredBudgetLabel] === restoredBudgetCode;
-    restoredBudgetEvidence = hasBudgetEvidence ? { label: restoredBudgetLabel, code: restoredBudgetCode } : null;
+    const restoredScheme = data.budget_update_category_scheme;
+    const restoredCodes = restoredScheme === "budget_guard_v2" ? budgetCodes
+      : restoredScheme === "budget_guard_v1" ? historicalBudgetCodes : null;
+    const hasBudgetEvidence = restoredCodes !== null && restoredBudgetLabel !== null &&
+      restoredCodes[restoredBudgetLabel] === restoredBudgetCode;
+    restoredBudgetEvidence = hasBudgetEvidence
+      ? { label: restoredBudgetLabel, code: restoredBudgetCode, scheme: restoredScheme }
+      : null;
     restoredLegacyBudget = restoredBudgetLabel && !hasBudgetEvidence ? restoredBudgetLabel : null;
+    if (restoredScheme === "budget_guard_v1" && restoredBudgetLabel) {
+      const budgetSelect = document.getElementById("budget_update_category");
+      if (![...budgetSelect.options].some((option) => option.value === restoredBudgetLabel)) {
+        budgetSelect.add(new Option(`${restoredBudgetLabel} (historisch)`, restoredBudgetLabel));
+      }
+    }
     budgetChoiceChanged = false;
     if (packageDefinitionIds.has(data.selected_package_definition_id)) {
       setChoice("selected_package_definition_id", data.selected_package_definition_id);

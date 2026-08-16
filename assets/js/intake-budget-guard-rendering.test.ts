@@ -458,7 +458,7 @@ Deno.test("multilingual A-B-C-B-A fingerprints reject stale and aborted response
 
 Deno.test("budget change invalidates acknowledgement", () => {
   const before = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ budget: "below_1800" }));
-  const after = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ budget: "1800_to_below_3200" }));
+  const after = budgetGuardAcknowledgementKey(preview, pricingFingerprint({ budget: "1800_to_below_3500" }));
   assertNotEquals(after, before);
   assertEquals(budgetGuardAllowsSubmit("KNOWN_MINIMUM_ABOVE_BUDGET", after, before, "budget-after", "budget-after"), false);
 });
@@ -637,6 +637,6 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 });
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
-  assertStringIncludes(html, '../assets/css/intake.css?v=20260811-1');
+  assertStringIncludes(html, '../assets/css/intake.css?v=20260816-1');
   assertStringIncludes(html, '../assets/js/intake.js?v=20260813-2');
 });

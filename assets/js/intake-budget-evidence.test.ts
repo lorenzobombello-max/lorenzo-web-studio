@@ -1,12 +1,13 @@
 import { assertEquals, assertExists } from "jsr:@std/assert@1";
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
+const contactHtml = await Deno.readTextFile(new URL("../../pages/contact.html", import.meta.url));
 const mappingMatch = source.match(/const budgetCodes = (\{[\s\S]*?\n  \});/);
 assertExists(mappingMatch);
 const budgetCodes = Function(`"use strict"; return (${mappingMatch[1]});`)() as Record<string, string>;
 
 const serializationMatch = source.match(
-  /(if \(!budgetChoiceChanged && restoredLegacyBudget\)[\s\S]*?data\.budget_update_category_code = restoredBudgetEvidence\.code;\r?\n    })/,
+  /(if \(!budgetChoiceChanged && restoredLegacyBudget\)[\s\S]*?data\.budget_update_category_code = budgetCode;\r?\n    })/,
 );
 assertExists(serializationMatch);
 const serializeBudgetEvidence = Function(
@@ -20,20 +21,20 @@ const serializeBudgetEvidence = Function(
   data: Record<string, unknown>,
   budgetChoiceChanged: boolean,
   restoredLegacyBudget: string | null,
-  restoredBudgetEvidence: { label: string; code: string } | null,
+  restoredBudgetEvidence: { label: string; code: string; scheme: string } | null,
   budgetCodes: Record<string, string>,
 ) => Record<string, unknown>;
 
 const expectedMappings = new Map([
   ["Minder dan EUR 1.800", "below_1800"],
-  ["EUR 1.800 tot minder dan EUR 3.200", "1800_to_below_3200"],
-  ["EUR 3.200 t/m EUR 6.000", "3200_to_6000_inclusive"],
+  ["EUR 1.800 tot minder dan EUR 3.500", "1800_to_below_3500"],
+  ["EUR 3.500 t/m EUR 6.000", "3500_to_6000_inclusive"],
   ["Meer dan EUR 6.000", "above_6000"],
 ]);
 
-function assertTriplet(data: Record<string, unknown>, label: string, code: string) {
+function assertTriplet(data: Record<string, unknown>, label: string, code: string, scheme = "budget_guard_v2") {
   assertEquals(data.budget_update_category, label);
-  assertEquals(data.budget_update_category_scheme, "budget_guard_v1");
+  assertEquals(data.budget_update_category_scheme, scheme);
   assertEquals(data.budget_update_category_code, code);
 }
 
@@ -51,7 +52,7 @@ Deno.test("recognized budget labels serialize their complete evidence triplet", 
   }
 });
 
-Deno.test("restored, package-only and direct changes retain the complete budget triplet", () => {
+Deno.test("restored v2, package-only and direct changes retain the complete current triplet", () => {
   const label = "Minder dan EUR 1.800";
   const code = "below_1800";
   const scenarios = [
@@ -60,7 +61,7 @@ Deno.test("restored, package-only and direct changes retain the complete budget 
       { budget_update_category: label },
       false,
       null,
-      { label, code },
+      { label, code, scheme: "budget_guard_v2" },
       budgetCodes,
     ),
     serializeBudgetEvidence(
@@ -75,6 +76,26 @@ Deno.test("restored, package-only and direct changes retain the complete budget 
   scenarios.forEach((data) => assertTriplet(data, label, code));
 });
 
+Deno.test("unchanged restored v1 evidence remains historical", () => {
+  const data = serializeBudgetEvidence(
+    { budget_update_category: "EUR 3.200 t/m EUR 6.000" },
+    false,
+    null,
+    {
+      label: "EUR 3.200 t/m EUR 6.000",
+      code: "3200_to_6000_inclusive",
+      scheme: "budget_guard_v1",
+    },
+    budgetCodes,
+  );
+  assertTriplet(
+    data,
+    "EUR 3.200 t/m EUR 6.000",
+    "3200_to_6000_inclusive",
+    "budget_guard_v1",
+  );
+});
+
 Deno.test("unrecognized budget labels do not fabricate evidence", () => {
   const data = serializeBudgetEvidence(
     { budget_update_category: "Unknown budget" },
@@ -84,4 +105,15 @@ Deno.test("unrecognized budget labels do not fabricate evidence", () => {
     budgetCodes,
   );
   assertEquals(data, { budget_update_category: "Unknown budget" });
+});
+
+Deno.test("public contact budget options follow current Budget Guard labels", () => {
+  const select = contactHtml.match(/<select id="budget"[^>]*>([\s\S]*?)<\/select>/);
+  assertExists(select);
+  const options = Array.from(select[1].matchAll(/<option(?:\s+value="[^"]*")?>([^<]*)<\/option>/g))
+    .map((match) => match[1].trim())
+    .filter((label) => label !== "Selecteer");
+
+  assertEquals(options, Array.from(expectedMappings.keys()));
+  assertEquals(options.some((label) => /(?:1\.500|3\.000|3\.200)/.test(label)), false);
 });

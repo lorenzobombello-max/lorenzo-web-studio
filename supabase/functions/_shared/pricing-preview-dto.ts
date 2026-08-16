@@ -295,10 +295,14 @@ function budgetState(
   pricing: BudgetGuardResult,
   budget: BudgetEvaluationV2,
 ): PricingPreviewBudgetState {
-  if (budget.evidenceProvenance !== "budget_guard_v1") return "INDETERMINATE";
+  if (
+    budget.evidenceProvenance !== "budget_guard_v1" &&
+    budget.evidenceProvenance !== "budget_guard_v2"
+  ) return "INDETERMINATE";
   if (budget.outsideBudgetWishes === true) return "KNOWN_MINIMUM_ABOVE_BUDGET";
-  const lowerInclusiveMinor = PRICING_CONFIG.budgetEvaluation.categories[budget.categoryCode]
-    .lowerInclusiveMinor;
+  const lowerInclusiveMinor = budget.evidenceProvenance === "budget_guard_v1"
+    ? PRICING_CONFIG.historicalBudgetEvaluation.categories[budget.categoryCode].lowerInclusiveMinor
+    : PRICING_CONFIG.budgetEvaluation.categories[budget.categoryCode].lowerInclusiveMinor;
   if (
     lowerInclusiveMinor !== null &&
     pricing.calculation.knownMinimumMinor <= lowerInclusiveMinor
