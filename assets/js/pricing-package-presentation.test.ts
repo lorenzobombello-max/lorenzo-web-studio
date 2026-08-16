@@ -49,7 +49,7 @@ Deno.test("C36 pricing page keeps the responsive viewport contract", () => {
     pricingHtml,
     /<meta name="viewport" content="width=device-width, initial-scale=1\.0" \/>/,
   );
-  assertMatch(pricingHtml, /href="\.\.\/assets\/css\/pages\.css"/);
+  assertMatch(pricingHtml, /href="\.\.\/assets\/css\/pages\.css\?v=20260816-1"/);
 });
 
 Deno.test("C37 every local pricing-page link resolves", async () => {
