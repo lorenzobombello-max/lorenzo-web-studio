@@ -363,6 +363,40 @@ Deno.test("known fixed and from badges keep their amounts beside manual review",
   assertEquals(fromBadge.classList.contains("pricing-status--from"), true);
 });
 
+Deno.test("paid stock badge discloses separate external licence costs", () => {
+  const visible = { textContent: "" };
+  const accessible = { textContent: "" };
+  const classes = new Set<string>();
+  const paidStockBadge = {
+    hidden: true,
+    classList: { add: (name: string) => classes.add(name) },
+    querySelector: (selector: string) => selector === ".pricing-status__visible" ? visible : accessible,
+  };
+  const setPricingBadge = Function(
+    "pricingBadges",
+    "euroFormatter",
+    "euroNumberFormatter",
+    `"use strict"; return (${sourceFunction("setPricingBadge")});`,
+  )(
+    new Map([["PAID_STOCK", paidStockBadge]]),
+    new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }),
+    new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 2 }),
+  ) as (item: Record<string, unknown>) => void;
+
+  setPricingBadge({
+    presentationKey: "PAID_STOCK",
+    state: "FROM_EXTRA",
+    amountMinor: 10_000,
+    externalCost: true,
+  });
+
+  assertStringIncludes(visible.textContent, "€\u00a0100");
+  assertStringIncludes(visible.textContent, "licentiekosten niet inbegrepen");
+  assertStringIncludes(accessible.textContent, "Externe licentiekosten niet inbegrepen");
+  assertEquals(classes.has("pricing-status--from"), true);
+  assertEquals(paidStockBadge.hidden, false);
+});
+
 Deno.test("supplement mismatch keeps generic copy", () => {
   const supplementPreview = structuredClone(preview);
   supplementPreview.summary.knownMinimumMinor = 380_000;
@@ -638,5 +672,5 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
   assertStringIncludes(html, '../assets/css/intake.css?v=20260816-1');
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260813-2');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260816-1');
 });

@@ -635,7 +635,8 @@
       if (
         !item || typeof item !== "object" || !(item.presentationKey in presentationAnchorSelectors) ||
         seenKeys.has(item.presentationKey) || item.labelKey !== `pricing_preview.${item.presentationKey.toLowerCase()}` ||
-        !itemStates.has(item.state) || ("quantity" in item && (!Number.isSafeInteger(item.quantity) || item.quantity < 2))
+        !itemStates.has(item.state) || ("quantity" in item && (!Number.isSafeInteger(item.quantity) || item.quantity < 2)) ||
+        ("externalCost" in item && item.externalCost !== true)
       ) return false;
       seenKeys.add(item.presentationKey);
       const hasAmount = "amountMinor" in item;
@@ -682,6 +683,10 @@
         accessibleText = `Vanaf plus ${spokenAmount} euro exclusief btw${quantitySpoken}.`;
         stateClass = "from";
       }
+    }
+    if (item.externalCost === true) {
+      visibleText += " · licentiekosten niet inbegrepen";
+      accessibleText += " Externe licentiekosten niet inbegrepen.";
     }
     badge.classList.add(`pricing-status--${stateClass}`);
     badge.querySelector(".pricing-status__visible").textContent = visibleText;
