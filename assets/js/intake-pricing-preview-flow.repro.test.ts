@@ -353,6 +353,59 @@ Deno.test("reproduction baseline uses real frontend evidence and returns a usabl
   assertEquals(frontend.pricingFingerprint(result.evidence).length > 0, true);
 });
 
+Deno.test("Professional multilingual transitions update the visible preview minimum", async () => {
+  const frontend = buildFrontendHarness();
+  frontend.choose("selected_package_definition_id", "professional_v2");
+  let previous = frontend.collectPricingEvidence();
+  let revision = 2;
+  const amounts: number[] = [];
+  const transition = async (name: string) => {
+    const result = await runTransition(name, frontend, revision++, previous);
+    assertEquals(result.frontendAccepted, true);
+    assertEquals(result.duplicatePresentationKeys, []);
+    amounts.push(result.knownMinimumMinor!);
+    previous = result.evidence;
+  };
+
+  await transition("languages: 0");
+  frontend.check('[data-additional-language][value="fr"]');
+  await transition("languages: add fr");
+  frontend.check('[data-additional-language][value="en"]');
+  await transition("languages: add en");
+  frontend.check('[data-additional-language][value="de"]');
+  await transition("languages: add de");
+  frontend.check('[data-additional-language][value="en"]', false);
+  await transition("languages: remove en");
+  frontend.check('[data-additional-language][value="fr"]', false);
+  frontend.check('[data-additional-language][value="en"]');
+  await transition("languages: change fr to en");
+  frontend.check('[data-additional-language][value="en"]', false);
+  frontend.check('[data-additional-language][value="de"]', false);
+  await transition("languages: remove all");
+
+  assertEquals(amounts, [350_000, 415_000, 460_000, 505_000, 460_000, 460_000, 350_000]);
+});
+
+Deno.test("multilingual SEO controls scale once across step 3 and step 8", async () => {
+  const frontend = buildFrontendHarness();
+  frontend.choose("selected_package_definition_id", "professional_v2");
+  frontend.check('[data-additional-language][value="fr"]');
+  frontend.check('[data-additional-language][value="en"]');
+  frontend.check("#translations_supplied");
+  frontend.check("#seo_per_language");
+  frontend.check("#advanced_seo_research");
+  frontend.check("#seo_extra_language");
+  frontend.check("#seo_advanced_language");
+
+  const result = await runTransition("languages: deduplicated SEO", frontend, 20);
+  assertEquals(result.frontendAccepted, true);
+  assertEquals(result.duplicatePresentationKeys, []);
+  assertEquals(result.knownMinimumMinor, 630_000);
+  const seo = result.items.find((item) => item.presentationKey === "EXTENSIVE_SEO");
+  assertEquals(seo?.amountMinor, 170_000);
+  assertEquals("quantity" in (seo ?? {}), false);
+});
+
 Deno.test("frontend and backend pricing preview schemas remain machine-readable peers", () => {
   const frontend = buildFrontendHarness();
   const frontendFields = new Set(sourceValue<string[]>("pricingEvidenceFields"));

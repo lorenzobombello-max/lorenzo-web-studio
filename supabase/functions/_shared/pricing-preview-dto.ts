@@ -280,7 +280,9 @@ function consolidatePresentationItems(
     const state = stateRank[item.state] > stateRank[current.state]
       ? item.state
       : current.state;
-    const amountMinor = (current.amountMinor ?? 0) + (item.amountMinor ?? 0);
+    const amountMinor =
+      (current.amountMinor ?? 0) * (current.quantity ?? 1) +
+      (item.amountMinor ?? 0) * (item.quantity ?? 1);
     consolidated.set(item.presentationKey, {
       presentationKey: item.presentationKey,
       labelKey: item.labelKey,
