@@ -29,14 +29,26 @@ const BUDGETS = new Set([
   "EUR 3.000 - EUR 6.000",
   "Meer dan EUR 6.000",
   "Minder dan EUR 1.800",
+  "EUR 1.800 tot minder dan EUR 3.500",
+  "EUR 3.500 t/m EUR 6.000",
   "EUR 1.800 tot minder dan EUR 3.200",
   "EUR 3.200 t/m EUR 6.000",
 ]);
-const BUDGET_GUARD_CATEGORIES = new Map([
+const BUDGET_GUARD_V1_CATEGORIES = new Map([
   ["below_1800", "Minder dan EUR 1.800"],
   ["1800_to_below_3200", "EUR 1.800 tot minder dan EUR 3.200"],
   ["3200_to_6000_inclusive", "EUR 3.200 t/m EUR 6.000"],
   ["above_6000", "Meer dan EUR 6.000"],
+]);
+const BUDGET_GUARD_V2_CATEGORIES = new Map([
+  ["below_1800", "Minder dan EUR 1.800"],
+  ["1800_to_below_3500", "EUR 1.800 tot minder dan EUR 3.500"],
+  ["3500_to_6000_inclusive", "EUR 3.500 t/m EUR 6.000"],
+  ["above_6000", "Meer dan EUR 6.000"],
+]);
+const BUDGET_GUARD_SCHEMES = new Map([
+  ["budget_guard_v1", BUDGET_GUARD_V1_CATEGORIES],
+  ["budget_guard_v2", BUDGET_GUARD_V2_CATEGORIES],
 ]);
 const PACKAGE_DEFINITION_IDS = new Set(["starter_v1", "professional_v2"]);
 const TIMINGS = new Set([
@@ -587,9 +599,11 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
         output[field] = details;
       }
     } else if (field === "budget_update_category_scheme") {
-      output[field] = normalizeOption(field, value, new Set(["budget_guard_v1"]));
+      output[field] = normalizeOption(field, value, new Set(BUDGET_GUARD_SCHEMES.keys()));
     } else if (field === "budget_update_category_code") {
-      output[field] = normalizeOption(field, value, new Set(BUDGET_GUARD_CATEGORIES.keys()));
+      output[field] = normalizeOption(field, value, new Set([
+        ...BUDGET_GUARD_V1_CATEGORIES.keys(), ...BUDGET_GUARD_V2_CATEGORIES.keys(),
+      ]));
     } else if (field === "selected_package_definition_id") {
       output[field] = normalizeOption(field, value, PACKAGE_DEFINITION_IDS);
     }
@@ -607,7 +621,8 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
     ) {
       throw new InputValidationError("INCOHERENT_BUDGET_EVIDENCE", "budget_update_category");
     }
-    if (BUDGET_GUARD_CATEGORIES.get(String(output.budget_update_category_code)) !== output.budget_update_category) {
+    const categories = BUDGET_GUARD_SCHEMES.get(String(output.budget_update_category_scheme));
+    if (!categories || categories.get(String(output.budget_update_category_code)) !== output.budget_update_category) {
       throw new InputValidationError("INCOHERENT_BUDGET_EVIDENCE", "budget_update_category");
     }
   }

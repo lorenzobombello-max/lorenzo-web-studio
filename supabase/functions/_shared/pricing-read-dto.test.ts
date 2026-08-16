@@ -48,7 +48,7 @@ function calculation(manualReviewRequired = false) {
 }
 
 function budgetEvaluation(
-  evidenceProvenance = "budget_guard_v1",
+  evidenceProvenance = "budget_guard_v2",
   outsideBudgetWishes: boolean | null = false,
 ) {
   const status = outsideBudgetWishes === true
@@ -61,16 +61,20 @@ function budgetEvaluation(
   return {
     contractVersion: 2,
     evidenceProvenance,
-    categoryScheme: evidenceProvenance === "budget_guard_v1"
-      ? "budget_guard_v1"
+    categoryScheme: evidenceProvenance === "budget_guard_v1" || evidenceProvenance === "budget_guard_v2"
+      ? evidenceProvenance
       : null,
     categoryCode: evidenceProvenance === "budget_guard_v1"
       ? "3200_to_6000_inclusive"
+      : evidenceProvenance === "budget_guard_v2"
+      ? "3500_to_6000_inclusive"
       : null,
     originalLabel: evidenceProvenance === "missing"
       ? null
       : evidenceProvenance === "budget_guard_v1"
       ? "EUR 3.200 t/m EUR 6.000"
+      : evidenceProvenance === "budget_guard_v2"
+      ? "EUR 3.500 t/m EUR 6.000"
       : "EUR 3.000 - EUR 6.000",
     status,
     outsideBudgetWishes,
@@ -233,7 +237,7 @@ Deno.test("admin v2 preserves approved operational and audit fields", () => {
   assertEquals(dto.calculation?.appliedRules[0].ruleId, "starter_floor");
   assertEquals(dto.packageAdvice?.status, "consider_professional");
   assertEquals(dto.budget?.outsideBudgetWishes, false);
-  assertEquals(dto.budget?.evidenceProvenance, "budget_guard_v1");
+  assertEquals(dto.budget?.evidenceProvenance, "budget_guard_v2");
   assertEquals(dto.normalizedScope?.standardPages, ["home"]);
   assertEquals(dto.audit?.pricingConfigHash, "a".repeat(64));
 });

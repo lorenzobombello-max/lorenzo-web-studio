@@ -46,6 +46,7 @@ type PackageAdviceStatus =
   | "manual_scope_review";
 type BudgetProvenance =
   | "budget_guard_v1"
+  | "budget_guard_v2"
   | "legacy_label"
   | "missing"
   | "ambiguous";
@@ -60,6 +61,8 @@ type BudgetCategoryCode =
   | "below_1800"
   | "1800_to_below_3200"
   | "3200_to_6000_inclusive"
+  | "1800_to_below_3500"
+  | "3500_to_6000_inclusive"
   | "above_6000";
 
 interface AdminReason {
@@ -104,7 +107,7 @@ interface AdminPackageAdvice {
 
 interface AdminBudgetEvaluation {
   evidenceProvenance: BudgetProvenance;
-  categoryScheme: "budget_guard_v1" | null;
+  categoryScheme: "budget_guard_v1" | "budget_guard_v2" | null;
   categoryCode: BudgetCategoryCode | null;
   originalLabel: string | null;
   status: BudgetStatus;
@@ -260,7 +263,7 @@ function coherentBudgetSource(row: Record<string, unknown>): boolean {
   const provenance = row.evidence_provenance;
   const outside = row.outside_budget_wishes;
   const status = row.budget_status;
-  if (provenance === "budget_guard_v1") {
+  if (provenance === "budget_guard_v1" || provenance === "budget_guard_v2") {
     if (status === "legacy_category_not_safely_comparable") return false;
     if (
       status === "below_starter_starting_price" ||
@@ -484,13 +487,14 @@ function parseNormalizedScope(value: unknown): AdminNormalizedScope | null {
 }
 
 function isProvenance(value: unknown): value is BudgetProvenance {
-  return value === "budget_guard_v1" || value === "legacy_label" ||
+  return value === "budget_guard_v1" || value === "budget_guard_v2" || value === "legacy_label" ||
     value === "missing" || value === "ambiguous";
 }
 
 function isCategoryCode(value: unknown): value is BudgetCategoryCode {
   return value === "below_1800" || value === "1800_to_below_3200" ||
-    value === "3200_to_6000_inclusive" || value === "above_6000";
+    value === "3200_to_6000_inclusive" || value === "1800_to_below_3500" ||
+    value === "3500_to_6000_inclusive" || value === "above_6000";
 }
 
 function budgetExplanation(provenance: BudgetProvenance, status: BudgetStatus): string {
@@ -525,8 +529,8 @@ function parseBudgetEvaluation(value: unknown): AdminBudgetEvaluation | null {
   };
   if (!coherentBudgetSource(source)) return null;
 
-  const categoryScheme = value.categoryScheme === "budget_guard_v1"
-    ? "budget_guard_v1"
+  const categoryScheme = value.categoryScheme === "budget_guard_v1" || value.categoryScheme === "budget_guard_v2"
+    ? value.categoryScheme
     : value.categoryScheme === null
     ? null
     : undefined;
@@ -545,11 +549,11 @@ function parseBudgetEvaluation(value: unknown): AdminBudgetEvaluation | null {
     originalLabel === undefined
   ) return null;
   if (
-    value.evidenceProvenance === "budget_guard_v1" &&
-    (categoryScheme !== "budget_guard_v1" || categoryCode === null || originalLabel === null)
+    (value.evidenceProvenance === "budget_guard_v1" || value.evidenceProvenance === "budget_guard_v2") &&
+    (categoryScheme !== value.evidenceProvenance || categoryCode === null || originalLabel === null)
   ) return null;
   if (
-    value.evidenceProvenance !== "budget_guard_v1" &&
+    value.evidenceProvenance !== "budget_guard_v1" && value.evidenceProvenance !== "budget_guard_v2" &&
     (categoryScheme !== null || categoryCode !== null)
   ) return null;
   if (value.evidenceProvenance === "missing" && originalLabel !== null) return null;

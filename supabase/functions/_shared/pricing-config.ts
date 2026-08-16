@@ -4,7 +4,7 @@ import {
   MASTER_PRICING_CATALOG,
 } from "./pricing-catalog.ts";
 
-export const PRICING_CONFIG_VERSION = "2026-08-13-v2" as const;
+export const PRICING_CONFIG_VERSION = "2026-08-16-v3" as const;
 
 export type PriceMode = "included" | "fixed" | "from" | "manual";
 
@@ -426,14 +426,10 @@ export const PRICING_CONFIG = {
     custom: { id: "custom", priceMode: "manual" },
   },
   packageDefinitions: PACKAGE_DEFINITION_REGISTRY,
-  catalogQuantityPricing: {
-    complexProduct: MASTER_PRICING_CATALOG.products.complex_product
-      .quantityPricing,
-  },
   rules,
   budgetEvaluation: {
     contractVersion: 2,
-    schemeId: "budget_guard_v1",
+    schemeId: "budget_guard_v2",
     starterStartingPriceMinor: 180_000,
     categories: {
       below_1800: {
@@ -441,14 +437,14 @@ export const PRICING_CONFIG = {
         lowerInclusiveMinor: null,
         upperInclusiveMinor: 179_999,
       },
-      "1800_to_below_3200": {
-        originalLabel: "EUR 1.800 tot minder dan EUR 3.200",
+      "1800_to_below_3500": {
+        originalLabel: "EUR 1.800 tot minder dan EUR 3.500",
         lowerInclusiveMinor: 180_000,
-        upperInclusiveMinor: 319_999,
+        upperInclusiveMinor: 349_999,
       },
-      "3200_to_6000_inclusive": {
-        originalLabel: "EUR 3.200 t/m EUR 6.000",
-        lowerInclusiveMinor: 320_000,
+      "3500_to_6000_inclusive": {
+        originalLabel: "EUR 3.500 t/m EUR 6.000",
+        lowerInclusiveMinor: 350_000,
         upperInclusiveMinor: 600_000,
       },
       above_6000: {
@@ -484,10 +480,21 @@ export const PRICING_CONFIG = {
       indeterminate: null,
     },
   },
+  historicalBudgetEvaluation: {
+    contractVersion: 2,
+    schemeId: "budget_guard_v1",
+    categories: {
+      below_1800: { originalLabel: "Minder dan EUR 1.800", lowerInclusiveMinor: null, upperInclusiveMinor: 179_999 },
+      "1800_to_below_3200": { originalLabel: "EUR 1.800 tot minder dan EUR 3.200", lowerInclusiveMinor: 180_000, upperInclusiveMinor: 319_999 },
+      "3200_to_6000_inclusive": { originalLabel: "EUR 3.200 t/m EUR 6.000", lowerInclusiveMinor: 320_000, upperInclusiveMinor: 600_000 },
+      above_6000: { originalLabel: "Meer dan EUR 6.000", lowerInclusiveMinor: 600_001, upperInclusiveMinor: null },
+    },
+  },
 } as const;
 
 export type PricingRuleId = keyof typeof PRICING_CONFIG.rules;
 export type BudgetCategoryCode = keyof typeof PRICING_CONFIG.budgetEvaluation.categories;
+export type HistoricalBudgetCategoryCode = keyof typeof PRICING_CONFIG.historicalBudgetEvaluation.categories;
 
 function canonicalDataProperty(
   value: object,

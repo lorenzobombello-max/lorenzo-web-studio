@@ -27,7 +27,7 @@ function budgetGuardEvidence(code: keyof typeof PRICING_CONFIG.budgetEvaluation.
   const category = PRICING_CONFIG.budgetEvaluation.categories[code];
   return resolveBudgetEvidence(
     category.originalLabel,
-    "budget_guard_v1",
+    "budget_guard_v2",
     code,
   );
 }
@@ -145,7 +145,7 @@ Deno.test("budget evaluator preserves manual status while comparing reliable bud
     outsideBudgetWishes: true,
   });
 
-  const sufficient = budgetGuardEvidence("3200_to_6000_inclusive");
+  const sufficient = budgetGuardEvidence("3500_to_6000_inclusive");
   assertEquals(evaluateBudget(calculation(180_000, true), sufficient), {
     contractVersion: 2,
     ...sufficient,
@@ -177,20 +177,32 @@ Deno.test("budget evaluator applies missing, ambiguous and legacy precedence", (
   assertEquals(evaluateBudget(calculation(180_000), ambiguous).outsideBudgetWishes, null);
 });
 
+Deno.test("historical v1 evidence remains readable without v2 reinterpretation", () => {
+  const historical = resolveBudgetEvidence(
+    "EUR 3.200 t/m EUR 6.000",
+    "budget_guard_v1",
+    "3200_to_6000_inclusive",
+  );
+  assertEquals(historical.evidenceProvenance, "budget_guard_v1");
+  assertEquals(historical.categoryScheme, "budget_guard_v1");
+  assertEquals(historical.categoryCode, "3200_to_6000_inclusive");
+  assertEquals(evaluateBudget(calculation(320_000), historical).outsideBudgetWishes, false);
+});
+
 Deno.test("budget evaluator honors every approved bounded and unbounded edge", () => {
   const below = evaluateBudget(calculation(180_000), budgetGuardEvidence("below_1800"));
   assertEquals([below.status, below.outsideBudgetWishes], ["below_starter_starting_price", true]);
 
-  const lower = budgetGuardEvidence("1800_to_below_3200");
-  for (const amount of [180_000, 319_900, 319_999]) {
+  const lower = budgetGuardEvidence("1800_to_below_3500");
+  for (const amount of [180_000, 349_900, 349_999]) {
     const result = evaluateBudget(calculation(amount), lower);
     assertEquals([result.status, result.outsideBudgetWishes], ["possibly_compatible_with_category", false]);
   }
-  const exact3200 = evaluateBudget(calculation(320_000), lower);
-  assertEquals([exact3200.status, exact3200.outsideBudgetWishes], ["known_minimum_exceeds_category_upper_bound", true]);
+  const exact3500 = evaluateBudget(calculation(350_000), lower);
+  assertEquals([exact3500.status, exact3500.outsideBudgetWishes], ["known_minimum_exceeds_category_upper_bound", true]);
 
-  const upper = budgetGuardEvidence("3200_to_6000_inclusive");
-  for (const amount of [320_000, 600_000]) {
+  const upper = budgetGuardEvidence("3500_to_6000_inclusive");
+  for (const amount of [350_000, 600_000]) {
     const result = evaluateBudget(calculation(amount), upper);
     assertEquals([result.status, result.outsideBudgetWishes], ["possibly_compatible_with_category", false]);
   }
@@ -210,7 +222,7 @@ Deno.test("shared above-6000 label remains legacy without scheme and code", () =
 Deno.test("authoritative snapshot has exactly the closed v2 shape", async () => {
   const snapshot = await buildPricingSnapshotV2(
     { requested_pages: ["home"] },
-    budgetGuardEvidence("1800_to_below_3200"),
+    budgetGuardEvidence("1800_to_below_3500"),
   );
   assertEquals(Object.keys(snapshot).sort(), [
     "budgetEvaluation",
@@ -229,7 +241,7 @@ Deno.test("authoritative snapshot has exactly the closed v2 shape", async () => 
 Deno.test("missing package evidence selects legacy v2 without inventing Starter", async () => {
   const snapshot = await selectPricingSnapshotForSubmit(
     { requested_pages: ["home"] },
-    budgetGuardEvidence("1800_to_below_3200"),
+    budgetGuardEvidence("1800_to_below_3500"),
     null,
   );
   assertEquals(snapshot.snapshotContractVersion, 2);
@@ -243,7 +255,7 @@ Deno.test("v2 builder rejects explicit package evidence", async () => {
         selected_package_definition_id: "starter_v1",
         requested_pages: ["home"],
       },
-      budgetGuardEvidence("1800_to_below_3200"),
+      budgetGuardEvidence("1800_to_below_3500"),
     ),
     TypeError,
     "PACKAGE_DEFINITION_NOT_ALLOWED_IN_SNAPSHOT_V2",
@@ -259,7 +271,7 @@ Deno.test("idempotent retry returns the historical snapshot without rebuilding",
   let buildCalls = 0;
   const selected = await selectPricingSnapshotForSubmit(
     { requested_pages: ["home"] },
-    budgetGuardEvidence("1800_to_below_3200"),
+    budgetGuardEvidence("1800_to_below_3500"),
     historicalSnapshot,
     () => {
       buildCalls += 1;
@@ -276,7 +288,7 @@ Deno.test("explicit package evidence creates an immutable closed v3 snapshot", a
       selected_package_definition_id: "professional_v2",
       requested_pages: ["home"],
     },
-    budgetGuardEvidence("3200_to_6000_inclusive"),
+    budgetGuardEvidence("3500_to_6000_inclusive"),
   );
   assertEquals(Object.keys(snapshot).sort(), [
     "budgetEvaluation",
@@ -294,4 +306,30 @@ Deno.test("explicit package evidence creates an immutable closed v3 snapshot", a
   assertEquals(snapshot.packageDefinition.floorMinor, 350_000);
   assertEquals(snapshot.packageDefinition.standardPageLimit, 10);
   assertEquals(snapshot.packageDefinition.includedCorrectionRounds, 2);
+});
+
+Deno.test("Budget Guard v2 stores every approved integer-minor boundary exactly", () => {
+  assertEquals(PRICING_CONFIG.budgetEvaluation.schemeId, "budget_guard_v2");
+  assertEquals(PRICING_CONFIG.budgetEvaluation.categories, {
+    below_1800: {
+      originalLabel: "Minder dan EUR 1.800",
+      lowerInclusiveMinor: null,
+      upperInclusiveMinor: 179_999,
+    },
+    "1800_to_below_3500": {
+      originalLabel: "EUR 1.800 tot minder dan EUR 3.500",
+      lowerInclusiveMinor: 180_000,
+      upperInclusiveMinor: 349_999,
+    },
+    "3500_to_6000_inclusive": {
+      originalLabel: "EUR 3.500 t/m EUR 6.000",
+      lowerInclusiveMinor: 350_000,
+      upperInclusiveMinor: 600_000,
+    },
+    above_6000: {
+      originalLabel: "Meer dan EUR 6.000",
+      lowerInclusiveMinor: 600_001,
+      upperInclusiveMinor: null,
+    },
+  });
 });

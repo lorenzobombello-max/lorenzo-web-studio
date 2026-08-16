@@ -181,14 +181,14 @@ Deno.test("D11-D18 webshop allowances and extras do not double charge", () => {
   );
 });
 
-Deno.test("D62 complex webshop products use the approved 50/30 staircase", () => {
+Deno.test("D62 complex webshop products use the approved from-price without a quantity staircase", () => {
   for (
     const [complex_product_count, expected] of [
-      [5, 25_000],
-      [10, 50_000],
-      [11, 53_000],
-      [15, 65_000],
-      [20, 80_000],
+      [5, 15_000],
+      [10, 30_000],
+      [11, 33_000],
+      [15, 45_000],
+      [20, 60_000],
     ] as const
   ) {
     const result = price({
