@@ -423,17 +423,23 @@ export function normalizePricingScope(
       (hasPhaseDLanguageEvidence || details.extensive_seo === false) &&
       details.language_specific_integrations === false &&
       details.complex_scope === false;
-    if (hasPhaseDLanguageEvidence && normal) {
+    if (additionalLanguages.length) {
       selectCatalogProduct("first_extra_language");
-      if (additionalLanguages.length > 1) {
-        selectCatalogProduct("second_extra_language");
-      }
-      if (additionalLanguages.length > 2) {
-        selectCatalogProduct(
-          "subsequent_extra_language",
-          additionalLanguages.length - 2,
-        );
-      }
+    }
+    if (additionalLanguages.length > 1) {
+      selectCatalogProduct("second_extra_language");
+    }
+    if (additionalLanguages.length > 2) {
+      selectCatalogProduct(
+        "subsequent_extra_language",
+        additionalLanguages.length - 2,
+      );
+    }
+    if (details.seo_per_language === true) {
+      selectCatalogProduct("seo_extra_language", additionalLanguages.length);
+    }
+    if (details.advanced_seo_research === true) {
+      selectCatalogProduct("advanced_seo_language", additionalLanguages.length);
     }
     if (details.translation_required === true) selectCatalogProduct("translation");
     if (details.same_structure === false) {
@@ -441,11 +447,7 @@ export function normalizePricingScope(
     }
     modules.push({
       id: "multilingual",
-      classification: hasPhaseDLanguageEvidence && normal
-        ? "catalog"
-        : normal
-        ? "normal"
-        : "manual",
+      classification: normal ? "catalog" : "manual",
       evidence: [
         ...(additionalLanguages.length ? ["additional_languages"] : []),
         ...(unknownLanguages.length ? ["unknown_languages"] : []),
@@ -494,6 +496,9 @@ export function normalizePricingScope(
   } else if (contentDetails.image_work_scope === "photography") {
     selectCatalogProduct("photography");
   }
+  if (contentDetails.paid_stock_handling === true) {
+    selectCatalogProduct("stock_selection");
+  }
   const brandingTier = contentDetails.branding_tier;
   const brandingProducts: Record<string, string> = {
     logo: "professional_logo",
@@ -505,6 +510,11 @@ export function normalizePricingScope(
     selectCatalogProduct(brandingProducts[brandingTier]);
   }
   if (
+    newsletterDetails.scope === "new_service_setup" ||
+    newsletterDetails.scope === "automation_or_segmentation"
+  ) {
+    selectCatalogProduct("advanced_newsletter");
+  } else if (
     newsletterDetails.scope &&
     newsletterDetails.scope !== "simple_existing_service"
   ) manualComponents.add("newsletter_manual");
@@ -638,10 +648,10 @@ export function normalizePricingScope(
     if (seoDetails.scope === "launch") selectCatalogProduct("seo_launch");
     else if (seoDetails.scope === "complex") selectCatalogProduct("complex_seo");
     if (seoDetails.extra_language_seo === true) {
-      selectCatalogProduct("seo_extra_language");
+      selectCatalogProduct("seo_extra_language", additionalLanguages.length);
     }
     if (seoDetails.advanced_language_seo === true) {
-      selectCatalogProduct("advanced_seo_language");
+      selectCatalogProduct("advanced_seo_language", additionalLanguages.length);
     }
     modules.push({
       id: "seo",

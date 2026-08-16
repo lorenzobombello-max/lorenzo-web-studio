@@ -961,7 +961,7 @@
       document.getElementById("shop_categories").checked = data.shop_details.categories === true;
       document.getElementById("shop_payments").checked = data.shop_details.online_payments === true;
       document.getElementById("shop_shipping").checked = data.shop_details.shipping === true;
-      document.getElementById("shop_pickup").checked = data.shop_details.pickup === true;
+      document.getElementById("shop_pickup_scope").value = restoredPickupScope(data.shop_details);
       document.getElementById("shop_catalog").checked = data.shop_details.existing_catalog === true;
       document.getElementById("shop_customer_accounts").checked = data.shop_details.customer_accounts === true;
       document.getElementById("shop_catalog_import").checked = data.shop_details.catalog_import === true;
@@ -1033,8 +1033,53 @@
       (data.seo_details?.extensive_services === true ? "launch" : "included");
     document.getElementById("seo_extra_language").checked = data.seo_details?.extra_language_seo === true;
     document.getElementById("seo_advanced_language").checked = data.seo_details?.advanced_language_seo === true;
+    synchronizePricingChoices();
     updateConditionals();
     updatePriorities();
+  }
+
+  function restoredPickupScope(shopDetails) {
+    if (["none", "simple", "scheduled", "complex"].includes(shopDetails?.pickup_scope)) {
+      return shopDetails.pickup_scope;
+    }
+    return shopDetails?.pickup === true ? "simple" : "none";
+  }
+
+  function synchronizePricingChoices(target) {
+    const translationsSupplied = document.getElementById("translations_supplied");
+    const translationRequired = document.getElementById("translation_required");
+    const seoPerLanguage = document.getElementById("seo_per_language");
+    const advancedSeoResearch = document.getElementById("advanced_seo_research");
+    const seoExtraLanguage = document.getElementById("seo_extra_language");
+    const seoAdvancedLanguage = document.getElementById("seo_advanced_language");
+
+    if (target === translationsSupplied && translationsSupplied.checked) translationRequired.checked = false;
+    else if (target === translationRequired && translationRequired.checked) translationsSupplied.checked = false;
+    else if (!target && translationsSupplied.checked && translationRequired.checked) translationsSupplied.checked = false;
+    if (target === seoPerLanguage && !seoPerLanguage.checked) advancedSeoResearch.checked = false;
+    else if (advancedSeoResearch.checked) seoPerLanguage.checked = true;
+    if (target === seoExtraLanguage && !seoExtraLanguage.checked) seoAdvancedLanguage.checked = false;
+    else if (seoAdvancedLanguage.checked) seoExtraLanguage.checked = true;
+
+    const shopIntents = [
+      'input[name="requested_pages"][value="shop"]',
+      'input[name="requested_features"][value="shop"]',
+      'input[name="requested_features"][value="online_payment"]',
+      'input[name="website_goals"][value="sell_products"]',
+    ];
+    const bookingIntents = [
+      'input[name="requested_pages"][value="reservations"]',
+      'input[name="requested_features"][value="appointments"]',
+      'input[name="requested_features"][value="reservations"]',
+      'input[name="website_goals"][value="appointments"]',
+      'input[name="website_goals"][value="reservations"]',
+    ];
+    const shopNo = form.querySelector('input[name="shop_required"][value="false"]');
+    const bookingNo = form.querySelector('input[name="booking_required"][value="false"]');
+    if (target === shopNo && shopNo.checked) shopIntents.forEach((selector) => { form.querySelector(selector).checked = false; });
+    else if (shopIntents.some((selector) => form.querySelector(selector)?.checked)) setChoice("shop_required", true);
+    if (target === bookingNo && bookingNo.checked) bookingIntents.forEach((selector) => { form.querySelector(selector).checked = false; });
+    else if (bookingIntents.some((selector) => form.querySelector(selector)?.checked)) setChoice("booking_required", true);
   }
 
   function updateConditionals() {
@@ -1334,6 +1379,7 @@
 
   form.addEventListener("input", (event) => {
     if (readOnly) return;
+    synchronizePricingChoices(event.target);
     dirty = true;
     if (event.target.name === "budget_update_category") budgetChoiceChanged = true;
     if (event.target.name === "selected_package_definition_id") {
@@ -1343,7 +1389,7 @@
     }
     if (event.target.name === "priorities") updatePriorities(event.target);
     if (
-      ["has_existing_website", "shop_required", "booking_required", "requested_pages", "requested_features", "primary_language"].includes(event.target.name) ||
+      ["has_existing_website", "shop_required", "booking_required", "requested_pages", "requested_features", "website_goals", "primary_language"].includes(event.target.name) ||
       event.target.matches("[data-additional-language], #deadline_date, #deadline_reason")
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();

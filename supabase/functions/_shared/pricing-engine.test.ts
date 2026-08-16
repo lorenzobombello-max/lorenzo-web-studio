@@ -113,7 +113,7 @@ Deno.test("normal extra languages are deduplicated and add a from lower bound", 
 
   assertEquals(result.normalizedScope.additionalLanguages, ["en", "fr"]);
   assertEquals(rule(result, "first_extra_language")?.mode, "fixed");
-  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 1);
+  assertEquals(rule(result, "second_extra_language")?.quantity, 1);
   assertEquals(
     rule(result, "first_extra_language")?.knownMinimumContributionMinor,
     65_000,
@@ -168,12 +168,12 @@ Deno.test("language aliases, casing and locales normalize to commercial base lan
     "es",
   ]);
   assertEquals(result.normalizedScope.unknownLanguages, []);
-  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 4);
+  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 3);
   assertEquals(result.calculation.knownMinimumMinor, 425_000);
   assertEquals(result.calculation.manualReviewRequired, false);
 });
 
-Deno.test("unknown languages remain evidence, are not priced and require manual review", () => {
+Deno.test("unknown languages remain unpriced while known languages remain additive", () => {
   const result = calculateBudgetGuard({
     requested_pages: ["home"],
     primary_language: "nl_BE",
@@ -190,13 +190,13 @@ Deno.test("unknown languages remain evidence, are not priced and require manual 
   assertEquals(result.normalizedScope.primaryLanguage, "nl");
   assertEquals(result.normalizedScope.additionalLanguages, ["fr"]);
   assertEquals(result.normalizedScope.unknownLanguages, ["português", "pt-br"]);
-  assertEquals(rule(result, "first_extra_language"), undefined);
+  assertEquals(rule(result, "first_extra_language")?.knownMinimumContributionMinor, 65_000);
   assertEquals(rule(result, "multilingual_manual")?.mode, "manual");
-  assertEquals(result.calculation.knownMinimumMinor, 180_000);
+  assertEquals(result.calculation.knownMinimumMinor, 245_000);
   assertEquals(result.calculation.manualReviewRequired, true);
 });
 
-Deno.test("unsafe multilingual scope is manual and adds no amount", () => {
+Deno.test("unsafe multilingual scope keeps known language amounts beside review", () => {
   const result = calculateBudgetGuard({
     requested_pages: ["home"],
     primary_language: "nl",
@@ -209,7 +209,8 @@ Deno.test("unsafe multilingual scope is manual and adds no amount", () => {
     rule(result, "multilingual_manual")?.knownMinimumContributionMinor,
     0,
   );
-  assertEquals(result.calculation.knownMinimumMinor, 180_000);
+  assertEquals(rule(result, "first_extra_language")?.knownMinimumContributionMinor, 65_000);
+  assertEquals(result.calculation.knownMinimumMinor, 245_000);
   assertEquals(result.calculation.manualReviewRequired, true);
 });
 
@@ -417,7 +418,7 @@ Deno.test("manual review is additive metadata beside fixed and from known pricin
   assertEquals(rule(result, "simple_quote_form")?.mode, "fixed");
   assertEquals(rule(result, "simple_quote_form")?.knownMinimumContributionMinor, 25_000);
   assertEquals(rule(result, "first_extra_language")?.mode, "fixed");
-  assertEquals(rule(result, "subsequent_extra_language")?.quantity, 1);
+  assertEquals(rule(result, "second_extra_language")?.quantity, 1);
   assertEquals(rule(result, "first_extra_language")?.knownMinimumContributionMinor, 65_000);
   assertEquals(rule(result, "customer_login")?.mode, "manual");
   assertEquals(rule(result, "customer_login")?.knownMinimumContributionMinor, 0);

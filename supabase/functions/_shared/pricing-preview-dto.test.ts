@@ -153,6 +153,33 @@ Deno.test("preview preserves fixed and multiple from amounts beside manual revie
   assertEquals(result.items.find((item) => item.state === "MANUAL_REVIEW")?.amountMinor, undefined);
 });
 
+Deno.test("preview consolidates multilingual SEO quantities to their total minimum", () => {
+  const result = preview({
+    selected_package_definition_id: "professional_v2",
+    primary_language: "nl",
+    additional_languages: ["fr", "en"],
+    multilingual_details: {
+      final_translations_supplied: true,
+      same_structure: true,
+      translation_required: false,
+      seo_per_language: true,
+      advanced_seo_research: true,
+      language_specific_integrations: false,
+      complex_scope: false,
+    },
+    seo_details: {
+      scope: "included",
+      extra_language_seo: true,
+      advanced_language_seo: true,
+    },
+  });
+
+  assertEquals(result.summary.knownMinimumMinor, 630_000);
+  const seo = result.items.find((item) => item.presentationKey === "EXTENSIVE_SEO");
+  assertEquals(seo?.amountMinor, 170_000);
+  assertEquals(seo?.quantity, undefined);
+});
+
 Deno.test("substantial copywriting supersedes generic content support in customer presentation", () => {
   const pricing = calculateBudgetGuard({
     content_status: "needs_help",

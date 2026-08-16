@@ -214,7 +214,7 @@ Deno.test("C23-C25 existing add-on evidence uses catalog values without tier sta
   );
 });
 
-Deno.test("C20 C25 C30 known webshop and newsletter minima survive manual review", () => {
+Deno.test("C20 C25 C30 known webshop and newsletter minima preserve their catalog states", () => {
   const webshop = price({
     selected_package_definition_id: "professional_v2",
     shop_required: true,
@@ -227,7 +227,7 @@ Deno.test("C20 C25 C30 known webshop and newsletter minima survive manual review
     newsletter_details: { scope: "automation_or_segmentation" },
   });
   assertEquals(newsletter.calculation.knownMinimumMinor, 205_000);
-  assertEquals(newsletter.calculation.manualReviewRequired, true);
+  assertEquals(newsletter.calculation.manualReviewRequired, false);
 });
 
 Deno.test("C26 unsupported catalog products remain outside active runtime config", () => {

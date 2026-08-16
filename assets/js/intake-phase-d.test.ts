@@ -154,3 +154,19 @@ Deno.test("D53 recurring preview is validated, fingerprinted, cleared and render
   assertMatch(source, /budgetGuardRecurring\.textContent/);
   assertEquals(/knownMinimumMinor[^\n]*recurringServices/.test(source), false);
 });
+
+Deno.test("webshop restore uses pickup scope with a conservative legacy fallback", () => {
+  assertMatch(source, /function restoredPickupScope\(shopDetails\)/);
+  assertMatch(source, /getElementById\("shop_pickup_scope"\)\.value = restoredPickupScope\(data\.shop_details\)/);
+  assert(!source.includes('getElementById("shop_pickup").checked = data.shop_details.pickup'));
+});
+
+Deno.test("pricing dependencies and contradictory choices synchronize client-side", () => {
+  assertMatch(source, /function synchronizePricingChoices\(target\)/);
+  assertMatch(source, /advanced_seo_research[\s\S]*seo_per_language/);
+  assertMatch(source, /seo_advanced_language[\s\S]*seo_extra_language/);
+  assertMatch(source, /translations_supplied[\s\S]*translation_required/);
+  assertMatch(source, /shop_required[\s\S]*requested_features/);
+  assertMatch(source, /booking_required[\s\S]*appointments[\s\S]*reservations/);
+  assertMatch(source, /synchronizePricingChoices\(event\.target\)/);
+});

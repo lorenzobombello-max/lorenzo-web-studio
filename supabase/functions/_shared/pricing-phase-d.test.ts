@@ -326,7 +326,34 @@ Deno.test("D19-D21 extra-language ladder increases and decreases exactly", () =>
   }
 });
 
-Deno.test("manual translation scope stays amount-stable through A-B-C-B-A", () => {
+Deno.test("Professional language ladder derives from catalog tiers", () => {
+  for (const [count, expected] of [
+    [0, 350_000],
+    [1, 415_000],
+    [2, 460_000],
+    [3, 505_000],
+  ] as const) {
+    const result = price({
+      selected_package_definition_id: "professional_v2",
+      primary_language: "nl",
+      additional_languages: ["fr", "en", "de"].slice(0, count),
+      multilingual_details: count
+        ? {
+          final_translations_supplied: false,
+          same_structure: true,
+          translation_required: false,
+          seo_per_language: false,
+          advanced_seo_research: false,
+          language_specific_integrations: false,
+          complex_scope: false,
+        }
+        : null,
+    });
+    assertEquals(result.calculation.knownMinimumMinor, expected);
+  }
+});
+
+Deno.test("manual translation preserves deterministic language tiers through A-B-C-B-A", () => {
   for (const count of [1, 2, 3, 2, 1]) {
     const result = price({
       primary_language: "nl",
@@ -348,21 +375,83 @@ Deno.test("manual translation scope stays amount-stable through A-B-C-B-A", () =
       )?.classification,
       "manual",
     );
-    assertEquals(contribution(result, "first_extra_language"), 0);
-    assertEquals(contribution(result, "second_extra_language"), 0);
-    assertEquals(contribution(result, "subsequent_extra_language"), 0);
+    const expectedLanguageMinimum = count === 1 ? 65_000 : 65_000 + ((count - 1) * 45_000);
+    assertEquals(
+      contribution(result, "first_extra_language") +
+        contribution(result, "second_extra_language") +
+        contribution(result, "subsequent_extra_language"),
+      expectedLanguageMinimum,
+    );
     assertEquals(
       result.calculation.appliedRules.find((rule) =>
         rule.ruleId === "translation"
       )?.mode,
       "manual",
     );
-    assertEquals(result.calculation.knownMinimumMinor, 180_000);
+    assertEquals(result.calculation.knownMinimumMinor, 180_000 + expectedLanguageMinimum);
     assertEquals(result.calculation.manualReviewRequired, true);
     assertEquals(result.calculation.manualReasons, [
       "multilingual_manual",
       "translation",
     ]);
+  }
+});
+
+Deno.test("all manual multilingual options preserve deterministic language tiers", () => {
+  const manualDetails = [
+    { final_translations_supplied: false, same_structure: true, translation_required: true, seo_per_language: false, advanced_seo_research: false, language_specific_integrations: false, complex_scope: false },
+    { final_translations_supplied: true, same_structure: false, translation_required: false, seo_per_language: false, advanced_seo_research: false, language_specific_integrations: false, complex_scope: false },
+    { final_translations_supplied: true, same_structure: true, translation_required: false, seo_per_language: false, advanced_seo_research: false, language_specific_integrations: true, complex_scope: false },
+    { final_translations_supplied: true, same_structure: true, translation_required: false, seo_per_language: false, advanced_seo_research: false, language_specific_integrations: false, complex_scope: true },
+  ];
+  for (const multilingual_details of manualDetails) {
+    const result = price({
+      selected_package_definition_id: "professional_v2",
+      primary_language: "nl",
+      additional_languages: ["fr", "en"],
+      multilingual_details,
+    });
+    assertEquals(result.calculation.knownMinimumMinor, 460_000);
+    assertEquals(result.calculation.manualReviewRequired, true);
+    assertEquals(
+      result.normalizedScope.modules.find((module) => module.id === "multilingual")?.classification,
+      "manual",
+    );
+  }
+});
+
+Deno.test("multilingual SEO controls scale by language and deduplicate across steps", () => {
+  for (const count of [1, 2, 3]) {
+    const additionalLanguages = ["fr", "en", "de"].slice(0, count);
+    const result = price({
+      selected_package_definition_id: "professional_v2",
+      primary_language: "nl",
+      additional_languages: additionalLanguages,
+      multilingual_details: {
+        final_translations_supplied: true,
+        same_structure: true,
+        translation_required: false,
+        seo_per_language: true,
+        advanced_seo_research: true,
+        language_specific_integrations: false,
+        complex_scope: false,
+      },
+      seo_details: {
+        scope: "included",
+        extra_language_seo: true,
+        advanced_language_seo: true,
+      },
+    });
+    assertEquals(contribution(result, "seo_extra_language"), count * 35_000);
+    assertEquals(contribution(result, "advanced_seo_language"), count * 50_000);
+    assertEquals(
+      result.calculation.appliedRules.filter((rule) => rule.ruleId === "seo_extra_language").length,
+      1,
+    );
+    assertEquals(
+      result.calculation.appliedRules.filter((rule) => rule.ruleId === "advanced_seo_language").length,
+      1,
+    );
   }
 });
 
@@ -650,4 +739,35 @@ Deno.test("D54-D58 package and bundle double-charge regressions", () => {
     ).length,
     1,
   );
+});
+
+Deno.test("paid stock handling maps to the catalog minimum and external cost", () => {
+  const result = price({
+    content_media_details: {
+      copywriting_scope: "supplied",
+      image_work_scope: "standard",
+      paid_stock_handling: true,
+      branding_tier: "existing",
+    },
+  });
+  const stock = result.calculation.appliedRules.find((rule) => rule.ruleId === "stock_selection");
+  assertEquals(stock?.knownMinimumContributionMinor, 10_000);
+  assertEquals(stock?.externalCost, "Actual stock license cost is additional");
+  assertEquals(result.calculation.manualReviewRequired, false);
+});
+
+Deno.test("recognized newsletter scopes retain only the catalog from-price", () => {
+  for (const [scope, expected] of [
+    [undefined, 180_000],
+    ["simple_existing_service", 180_000],
+    ["new_service_setup", 205_000],
+    ["automation_or_segmentation", 205_000],
+  ] as const) {
+    const result = price(scope ? { newsletter_details: { scope } } : {});
+    assertEquals(result.calculation.knownMinimumMinor, expected);
+    assertEquals(result.calculation.manualReviewRequired, false);
+  }
+  const unknown = price({ newsletter_details: { scope: "unknown" } });
+  assertEquals(unknown.calculation.knownMinimumMinor, 205_000);
+  assertEquals(unknown.calculation.manualReviewRequired, true);
 });
