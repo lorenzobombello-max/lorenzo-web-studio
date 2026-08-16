@@ -60,6 +60,18 @@ function validData(): Record<string, unknown> {
   };
 }
 
+Deno.test("intake token survives URL sanitization and reload through history state", () => {
+  const intakeTokenCandidate = Function(
+    `"use strict"; return (${sourceFunction("intakeTokenCandidate")});`,
+  )() as (search: string, state: unknown) => string;
+  const token = "A".repeat(43);
+
+  assertEquals(intakeTokenCandidate(`?token=${token}`, null), token);
+  assertEquals(intakeTokenCandidate("", { intakeToken: token }), token);
+  assertEquals(intakeTokenCandidate("", { intakeToken: "invalid" }), "");
+  assertStringIncludes(source, "intakeToken: token");
+});
+
 Deno.test("multiple simultaneous failures are all collected with concrete messages", () => {
   const data = validData();
   data.business_description = "";

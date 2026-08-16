@@ -4,12 +4,25 @@
   const form = document.getElementById("intakeForm");
   if (!form) return;
 
-  const tokenCandidate = new URLSearchParams(window.location.search).get("token") || "";
-  const token = /^[A-Za-z0-9_-]{43}$/.test(tokenCandidate.trim()) ? tokenCandidate.trim() : "";
-  if (tokenCandidate) {
+  function intakeTokenCandidate(search, state) {
+    const queryToken = new URLSearchParams(search).get("token") || "";
+    const historyToken = state && typeof state === "object" && typeof state.intakeToken === "string"
+      ? state.intakeToken
+      : "";
+    const candidate = (queryToken || historyToken).trim();
+    return /^[A-Za-z0-9_-]{43}$/.test(candidate) ? candidate : "";
+  }
+
+  const queryTokenCandidate = new URLSearchParams(window.location.search).get("token") || "";
+  const token = intakeTokenCandidate(window.location.search, window.history.state);
+  if (queryTokenCandidate) {
     const sanitizedUrl = new URL(window.location.href);
     sanitizedUrl.searchParams.delete("token");
-    window.history.replaceState(window.history.state, "", `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`);
+    const currentState = window.history.state && typeof window.history.state === "object"
+      ? window.history.state
+      : {};
+    const nextState = token ? { ...currentState, intakeToken: token } : currentState;
+    window.history.replaceState(nextState, "", `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`);
   }
 
   const metaBase = document.querySelector('meta[name="lws-functions-base-url"]')?.getAttribute("content") || "";
