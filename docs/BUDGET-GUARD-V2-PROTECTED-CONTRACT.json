@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "status": "FROZEN",
+  "contract": "Budget Guard V2",
+  "productionBaseline": {
+    "mainSha": "3867b6b6dde73528d92d1b7457c8309c87d5098e",
+    "pagesRun": 31942851899,
+    "edgeFunction": "intake-quote-request",
+    "edgeVersion": 22,
+    "pricingConfigVersion": "2026-08-16-v3",
+    "catalogVersion": "2026-08-13-v2",
+    "currency": "EUR",
+    "vatBasis": "exclusive"
+  },
+  "authority": {
+    "businessContract": "supabase/functions/_shared/pricing-catalog.ts",
+    "packageAndBudgetContract": "supabase/functions/_shared/pricing-config.ts",
+    "normalization": "supabase/functions/_shared/pricing-normalization.ts",
+    "calculation": "supabase/functions/_shared/pricing-engine.ts",
+    "customerPreview": "supabase/functions/_shared/pricing-preview-dto.ts",
+    "frontendCollectionAndRendering": "assets/js/intake.js",
+    "validation": "supabase/functions/_shared/validation.ts",
+    "draftAtomicity": "supabase/migrations/20260816130000_fix_intake_draft_recovery.sql",
+    "note": "This manifest is a non-runtime freeze baseline. The listed production sources remain the runtime source of truth. Guards compare their business semantics with this approved baseline."
+  },
+  "protected": {
+    "packages": {
+      "starter": {
+        "id": "starter_v1",
+        "floorMinor": 180000,
+        "standardPageLimit": 5,
+        "includedCorrectionRounds": 1
+      },
+      "professional": {
+        "id": "professional_v2",
+        "floorMinor": 350000,
+        "standardPageLimit": 10,
+        "includedCorrectionRounds": 2
+      },
+      "selectionSemantics": "The selected package floor remains the known-minimum base; supplements add authoritative known-minimum contributions without silently lowering that floor."
+    },
+    "budgetV2": {
+      "contractVersion": 2,
+      "schemeId": "budget_guard_v2",
+      "categories": {
+        "below_1800": [null, 179999],
+        "1800_to_below_3500": [180000, 349999],
+        "3500_to_6000_inclusive": [350000, 600000],
+        "above_6000": [600001, null]
+      }
+    },
+    "multilingual": {
+      "primaryLanguageIncluded": true,
+      "firstExtraLanguageMinor": 65000,
+      "secondAndSubsequentExtraLanguageMinor": 45000,
+      "nlFrEnSupplementMinor": 110000,
+      "normalScopeRequiresSuppliedFinalTranslationsAndSameStructure": true
+    },
+    "webshop": {
+      "baseMinor": 175000,
+      "includedSimpleProducts": 15,
+      "extraSimpleProductMinor": 2000,
+      "extraSimpleProductsMinimumChargeMinor": 10000,
+      "scenarios": {
+        "10": 175000,
+        "16": 185000,
+        "20": 185000,
+        "25": 195000
+      }
+    },
+    "paidStock": {
+      "minimumMinor": 10000,
+      "externalCostAdditional": true,
+      "customerDisclosure": "licentiekosten niet inbegrepen",
+      "presentationKey": "PAID_STOCK"
+    },
+    "newsletter": {
+      "recognizedPaidScopes": [
+        "new_service_setup",
+        "automation_or_segmentation"
+      ],
+      "minimumMinor": 25000,
+      "recognizedPaidScopesRequireManualReview": false
+    },
+    "seo": {
+      "extraLanguageMinor": 35000,
+      "advancedExtraLanguageMinor": 50000,
+      "advancedRequiresBaseExtraLanguageSeo": true,
+      "advancedRemainsReviewable": true
+    },
+    "coherence": {
+      "translationsSuppliedAndRequiredAreMutuallyExclusive": true,
+      "disablingBaseExtraLanguageSeoDisablesAdvanced": true,
+      "enablingAdvancedExtraLanguageSeoEnablesBase": true,
+      "explicitShopNoClearsShopIntents": true,
+      "explicitBookingNoClearsBookingIntents": true,
+      "shopOrBookingIntentRestoresItsRequiredFlag": true
+    },
+    "persistence": {
+      "validSaveDraftSucceeds": true,
+      "savedDraftReloadsThroughSameValidHistoryEntry": true,
+      "failedSaveIsAtomic": true,
+      "failedSaveDoesNotChangeStatusOrStartedAt": true,
+      "retryAfterFailureIsSafe": true,
+      "retryDoesNotCreateDuplicateIntakes": true
+    },
+    "customerPresentation": {
+      "amountsUseKnownMinimumContributionMinor": true,
+      "frontendMustNotRecalculateCatalogMinimumCharges": true,
+      "externalCostMetadataMustReachRendering": true,
+      "backendAndCustomerVisibleAmountsMustRemainEqual": true
+    },
+    "legacyCompatibility": {
+      "professionalV1FloorMinor": 320000,
+      "professionalV1RemainsHistoricalOnly": true,
+      "budgetGuardV1SchemeRemainsReadable": true,
+      "newSelectionsUseBudgetGuardV2": true
+    }
+  },
+  "existingGuards": [
+    "supabase/functions/_shared/pricing-catalog.test.ts",
+    "supabase/functions/_shared/pricing-engine.test.ts",
+    "supabase/functions/_shared/pricing-preview-dto.test.ts",
+    "supabase/functions/_shared/validation.test.ts",
+    "assets/js/intake-budget-evidence.test.ts",
+    "assets/js/intake-budget-guard-rendering.test.ts",
+    "assets/js/intake-phase-d.test.ts",
+    "assets/js/intake-validation-ux.test.ts",
+    "supabase/tests/budget_guard_phase33_draft_recovery.sql",
+    "supabase/tests/budget_guard_v2_authority.sql"
+  ],
+  "changeControl": {
+    "authorizationRequired": "The task must explicitly approve a Budget Guard or pricing contract change.",
+    "notAuthorization": [
+      "UI task",
+      "copy change",
+      "intake layout change",
+      "non-pricing bug fix",
+      "documentation change",
+      "SEO content change",
+      "refactor"
+    ],
+    "onUnexpectedDiff": "STOP — BUDGET GUARD V2 PROTECTED CONTRACT CHANGE DETECTED",
+    "requiredReport": [
+      "affected contract",
+      "old value or semantics",
+      "new value or semantics",
+      "failing guard",
+      "required explicit approval"
+    ],
+    "autoFix": false
+  }
+}
