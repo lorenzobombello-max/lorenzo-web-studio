@@ -686,3 +686,38 @@ Deno.test("intake validator enforces current Budget Guard v2 and rejects mixed s
     "INCOHERENT_BUDGET_EVIDENCE",
   );
 });
+
+Deno.test("pricing preview rejects contradictory translation evidence", () => {
+  assertThrows(
+    () => sanitizeAndValidatePricingPreviewInput({
+      primary_language: "nl",
+      additional_languages: ["fr"],
+      multilingual_details: {
+        final_translations_supplied: true,
+        same_structure: true,
+        translation_required: true,
+        seo_per_language: false,
+        advanced_seo_research: false,
+        language_specific_integrations: false,
+        complex_scope: false,
+      },
+    }),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+});
+
+Deno.test("pricing preview rejects cross-step shop and booking contradictions", () => {
+  for (const input of [
+    { requested_features: ["shop"], shop_required: false },
+    { website_goals: ["sell_products"], shop_required: false },
+    { requested_features: ["appointments"], booking_required: false },
+    { requested_pages: ["reservations"], booking_required: false },
+  ]) {
+    assertThrows(
+      () => sanitizeAndValidatePricingPreviewInput(input),
+      InputValidationError,
+      "INVALID_CONDITION",
+    );
+  }
+});

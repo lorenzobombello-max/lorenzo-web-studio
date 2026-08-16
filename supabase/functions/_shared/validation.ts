@@ -651,7 +651,31 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
   if (output.booking_details && output.booking_required !== true) {
     throw new InputValidationError("INVALID_CONDITION", "booking_required");
   }
+  const requestedPages = new Set(Array.isArray(output.requested_pages) ? output.requested_pages : []);
+  const requestedFeatures = new Set(Array.isArray(output.requested_features) ? output.requested_features : []);
+  const websiteGoals = new Set(Array.isArray(output.website_goals) ? output.website_goals : []);
+  if (
+    output.shop_required === false &&
+    (requestedPages.has("shop") || requestedFeatures.has("shop") ||
+      requestedFeatures.has("online_payment") || websiteGoals.has("sell_products"))
+  ) {
+    throw new InputValidationError("INVALID_CONDITION", "shop_required");
+  }
+  if (
+    output.booking_required === false &&
+    (requestedPages.has("reservations") || requestedFeatures.has("appointments") ||
+      requestedFeatures.has("reservations") || websiteGoals.has("appointments") ||
+      websiteGoals.has("reservations"))
+  ) {
+    throw new InputValidationError("INVALID_CONDITION", "booking_required");
+  }
   const multilingualDetails = output.multilingual_details as Record<string, unknown> | null | undefined;
+  if (
+    multilingualDetails?.final_translations_supplied === true &&
+    multilingualDetails.translation_required === true
+  ) {
+    throw new InputValidationError("INVALID_CONDITION", "multilingual_details.translation_required");
+  }
   if (
     multilingualDetails &&
     (multilingualDetails.seo_per_language === true || multilingualDetails.advanced_seo_research === true) &&

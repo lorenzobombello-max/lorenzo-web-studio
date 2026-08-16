@@ -740,3 +740,34 @@ Deno.test("D54-D58 package and bundle double-charge regressions", () => {
     1,
   );
 });
+
+Deno.test("paid stock handling maps to the catalog minimum and external cost", () => {
+  const result = price({
+    content_media_details: {
+      copywriting_scope: "supplied",
+      image_work_scope: "standard",
+      paid_stock_handling: true,
+      branding_tier: "existing",
+    },
+  });
+  const stock = result.calculation.appliedRules.find((rule) => rule.ruleId === "stock_selection");
+  assertEquals(stock?.knownMinimumContributionMinor, 10_000);
+  assertEquals(stock?.externalCost, "Actual stock license cost is additional");
+  assertEquals(result.calculation.manualReviewRequired, false);
+});
+
+Deno.test("recognized newsletter scopes retain only the catalog from-price", () => {
+  for (const [scope, expected] of [
+    [undefined, 180_000],
+    ["simple_existing_service", 180_000],
+    ["new_service_setup", 205_000],
+    ["automation_or_segmentation", 205_000],
+  ] as const) {
+    const result = price(scope ? { newsletter_details: { scope } } : {});
+    assertEquals(result.calculation.knownMinimumMinor, expected);
+    assertEquals(result.calculation.manualReviewRequired, false);
+  }
+  const unknown = price({ newsletter_details: { scope: "unknown" } });
+  assertEquals(unknown.calculation.knownMinimumMinor, 205_000);
+  assertEquals(unknown.calculation.manualReviewRequired, true);
+});

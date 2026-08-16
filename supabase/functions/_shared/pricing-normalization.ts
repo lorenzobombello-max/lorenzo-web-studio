@@ -496,6 +496,9 @@ export function normalizePricingScope(
   } else if (contentDetails.image_work_scope === "photography") {
     selectCatalogProduct("photography");
   }
+  if (contentDetails.paid_stock_handling === true) {
+    selectCatalogProduct("stock_selection");
+  }
   const brandingTier = contentDetails.branding_tier;
   const brandingProducts: Record<string, string> = {
     logo: "professional_logo",
@@ -507,6 +510,11 @@ export function normalizePricingScope(
     selectCatalogProduct(brandingProducts[brandingTier]);
   }
   if (
+    newsletterDetails.scope === "new_service_setup" ||
+    newsletterDetails.scope === "automation_or_segmentation"
+  ) {
+    selectCatalogProduct("advanced_newsletter");
+  } else if (
     newsletterDetails.scope &&
     newsletterDetails.scope !== "simple_existing_service"
   ) manualComponents.add("newsletter_manual");
