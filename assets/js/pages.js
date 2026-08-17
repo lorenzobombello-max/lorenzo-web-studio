@@ -242,10 +242,12 @@
     const privacyNote = document.getElementById("privacyNote");
     const successTitle = document.getElementById("successTitle");
     const successDescription = document.getElementById("successDescription");
-    const projectFields = [...form.querySelectorAll("[data-project-field]")];
+    const commercialFields = [...form.querySelectorAll("[data-commercial-field]")];
+    const websiteFields = [...form.querySelectorAll("[data-website-field]")];
     const customerTypeControls = [...form.querySelectorAll('input[name="customer-type"]')];
     const businessFields = document.getElementById("businessFields");
     const businessControls = [...businessFields.querySelectorAll("input, select, textarea")];
+    const packageInterest = document.getElementById("packageInterest");
     let idempotencyKey = "";
     let isSubmitting = false;
     let modalTimer = null;
@@ -333,10 +335,18 @@
 
     function applyRequestMode() {
       const isPrivacyRequest = requestKind?.value === "privacy";
-      projectFields.forEach((field) => {
+      const isDocumentenflowRequest = requestKind?.value === "slimme_documentenflow";
+      commercialFields.forEach((field) => {
         field.hidden = isPrivacyRequest;
         field.querySelectorAll("input, select, textarea").forEach((control) => {
           control.required = !isPrivacyRequest;
+        });
+      });
+      websiteFields.forEach((field) => {
+        field.hidden = !(!isPrivacyRequest && !isDocumentenflowRequest);
+        field.querySelectorAll("input, select, textarea").forEach((control) => {
+          control.required = !isPrivacyRequest && !isDocumentenflowRequest;
+          control.disabled = isPrivacyRequest || isDocumentenflowRequest;
         });
       });
       customerTypeControls.forEach((control) => { control.required = !isPrivacyRequest; });
@@ -344,11 +354,18 @@
       email.required = !isPrivacyRequest;
       emailLabel.textContent = isPrivacyRequest ? "E-mailadres (e-mail of telefoon vereist)" : "E-mailadres";
       phoneLabel.textContent = isPrivacyRequest ? "Telefoonnummer (e-mail of telefoon vereist)" : "Telefoonnummer (optioneel)";
-      descriptionLabel.textContent = isPrivacyRequest ? "Bericht / privacyverzoek" : "Projectomschrijving";
+      descriptionLabel.textContent = isPrivacyRequest
+        ? "Bericht / privacyverzoek"
+        : isDocumentenflowRequest ? "Welke documentenflow wil je bespreken?" : "Projectomschrijving";
       privacyNote.textContent = isPrivacyRequest
         ? "Je privacyverzoek wordt afzonderlijk en vertrouwelijk verwerkt. Vraag hier geen identiteitsbewijs mee te sturen."
+        : isDocumentenflowRequest
+        ? "Je aanvraag voor Slimme Documentenflow wordt afzonderlijk herkend en persoonlijk nagekeken."
         : "Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.";
-      submit.textContent = isPrivacyRequest ? "Verstuur privacyverzoek" : "Verstuur aanvraag";
+      submit.textContent = isPrivacyRequest
+        ? "Verstuur privacyverzoek"
+        : isDocumentenflowRequest ? "Verstuur Documentenflow-aanvraag" : "Verstuur aanvraag";
+      if (packageInterest && !isDocumentenflowRequest) packageInterest.hidden = true;
       setMessage("", null);
       idempotencyKey = "";
     }
@@ -376,12 +393,14 @@
       const data = new FormData(form);
       const text = (name) => String(data.get(name) || "").trim();
       const isBusinessCustomer = text("customer-type") === "business";
+      const isDocumentenflowRequest = requestKind?.value === "slimme_documentenflow";
       const payload = isPrivacyRequest
         ? {
             name: text("name"), email: text("email"), phone: text("phone"),
             message: text("description"), website: text("website")
           }
         : {
+          request_kind: isDocumentenflowRequest ? "slimme_documentenflow" : "website",
             name: text("name"), customer_type: text("customer-type"),
             ...(isBusinessCustomer ? {
               company: text("company"), enterprise_number: text("enterprise-number"), vat_number: text("vat-number"),
@@ -389,7 +408,9 @@
               billing_city: text("billing-city"), billing_country: text("billing-country"), billing_email: text("billing-email")
             } : {}),
             email: text("email"), phone: text("phone"),
-            website_type: text("website-type"), budget: text("budget"), timing: text("timing"),
+            ...(!isDocumentenflowRequest ? {
+              website_type: text("website-type"), budget: text("budget"), timing: text("timing")
+            } : {}),
             description: text("description"), privacy_consent: data.get("privacy") === "on", website: text("website")
           };
       isSubmitting = true;
@@ -439,7 +460,9 @@
         isSubmitting = false;
         submit.disabled = false;
         submit.removeAttribute("aria-busy");
-        submit.textContent = requestKind?.value === "privacy" ? "Verstuur privacyverzoek" : "Verstuur aanvraag";
+        submit.textContent = requestKind?.value === "privacy"
+          ? "Verstuur privacyverzoek"
+          : requestKind?.value === "slimme_documentenflow" ? "Verstuur Documentenflow-aanvraag" : "Verstuur aanvraag";
       }
     });
     form.addEventListener("input", () => {
@@ -450,6 +473,17 @@
       if (!isSubmitting) idempotencyKey = "";
       setMessage("", null);
     });
+    const params = new URLSearchParams(window.location.search);
+    const requestedKind = params.get("request-kind");
+    if (requestedKind === "slimme_documentenflow") requestKind.value = requestedKind;
+    else if (requestedKind === "website") requestKind.value = "quote";
+    else if (requestedKind === "privacy") requestKind.value = "privacy";
+    const packageLabels = new Map([["start", "Start"], ["groei", "Groei"], ["maatwerk", "Maatwerk"]]);
+    const packageLabel = packageLabels.get(params.get("package-interest"));
+    if (packageInterest && requestedKind === "slimme_documentenflow" && packageLabel) {
+      packageInterest.textContent = `Interesse in pakket ${packageLabel} (niet-bindende voorkeur).`;
+      packageInterest.hidden = false;
+    }
     requestKind?.addEventListener("change", applyRequestMode);
     customerTypeControls.forEach((control) => control.addEventListener("change", applyCustomerType));
     close.addEventListener("click", closeModal);

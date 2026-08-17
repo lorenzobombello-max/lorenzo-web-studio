@@ -51,8 +51,9 @@
     <section class="page-section"><div class="shell contact-layout">
       <aside class="contact-intro reveal" data-reveal aria-label="Waarom contact opnemen"><p class="kicker">Projectstart</p><h2>Een helder begin.</h2><p>Vrijblijvend bespreken we doel, context, timing en budgetrichting. Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.</p><ul><li>Persoonlijk antwoord</li><li>Transparante prijsinschatting</li><li>Geen verplichtingen</li></ul></aside>
       <form class="contact-form" id="contactForm" aria-label="Contact formulier" novalidate>
-        <div class="field field--full"><label for="request-kind">Waarmee kunnen we helpen?</label><select id="request-kind" name="request-kind"><option value="quote">Website / offerte</option><option value="privacy">Privacy / persoonsgegevens</option></select></div>
-        <fieldset class="field field--full customer-type-field" data-project-field>
+        <div class="field field--full"><label for="request-kind">Waarmee kunnen we helpen?</label><select id="request-kind" name="request-kind"><option value="quote">Website / offerte</option><option value="slimme_documentenflow">Slimme Documentenflow</option><option value="privacy">Privacy / persoonsgegevens</option></select></div>
+        <p class="form-assurance field--full" id="packageInterest" hidden></p>
+        <fieldset class="field field--full customer-type-field" data-commercial-field>
           <legend>Ik vraag aan als</legend>
           <div class="segmented-options">
             <label><input type="radio" name="customer-type" value="individual" checked /><span>Particulier</span></label>
@@ -77,13 +78,13 @@
           </div>
         </fieldset>
 
-        <div class="field" data-project-field><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Andere</option></select></div>
-        <div class="field" data-project-field><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Minder dan EUR 1.800</option><option>EUR 1.800 tot minder dan EUR 3.500</option><option>EUR 3.500 t/m EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+        <div class="field" data-website-field><label for="website-type">Type website</label><select id="website-type" name="website-type" required><option value="">Selecteer</option><option>Bedrijfswebsite</option><option>Portfolio-website</option><option>Website voor lokale onderneming</option><option>Andere</option></select></div>
+        <div class="field" data-website-field><label for="budget">Verwacht budget</label><select id="budget" name="budget" required><option value="">Selecteer</option><option>Minder dan EUR 1.800</option><option>EUR 1.800 tot minder dan EUR 3.500</option><option>EUR 3.500 t/m EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
 
-        <div class="field field--full" data-project-field><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
+        <div class="field field--full" data-website-field><label for="timing">Gewenste timing</label><select id="timing" name="timing" required><option value="">Selecteer</option><option>Binnen 1 maand</option><option>Binnen 2 tot 3 maanden</option><option>Flexibel / nog te bepalen</option></select></div>
         <div class="field field--full"><label for="description" id="descriptionLabel">Projectomschrijving</label><textarea id="description" name="description" rows="5" minlength="10" maxlength="3000" required></textarea></div>
 
-        <div class="field field--full consent-field" data-project-field>
+        <div class="field field--full consent-field" data-commercial-field>
           <input id="privacy" name="privacy" type="checkbox" required />
           <label for="privacy">Ik ga akkoord met de verwerking van mijn gegevens voor contact over deze aanvraag.</label>
         </div>
