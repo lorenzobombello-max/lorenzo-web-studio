@@ -183,6 +183,7 @@ $socialImageUrl = "https://lorenzowebsolutions.be/$socialImagePath"
 $primarySocialTargets = @(
   "index.html",
   "pages/services.html",
+  "pages/slimme-documentenflow.html",
   "pages/websites-op-maat.html",
   "pages/seo.html",
   "pages/about.html",
