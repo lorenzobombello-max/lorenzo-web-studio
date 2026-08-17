@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [string]$DistDir = "dist",
-  [string]$ExpectedFunctionsBaseUrl = "https://xcsptvntvrizwhskaphr.supabase.co/functions/v1"
+  [string]$ExpectedFunctionsBaseUrl = "https://xcsptvntvrizwhskaphr.supabase.co/functions/v1",
+  [string]$ReportPath = "dist-verification-report.json"
 )
 
 Set-StrictMode -Version Latest
@@ -19,6 +20,7 @@ $requiredRootEntries = @(
   "index.html",
   "404.html",
   "assets",
+  "operator",
   "pages",
   "robots.txt",
   "sitemap.xml",
@@ -225,6 +227,39 @@ foreach ($relativeTarget in $primarySocialTargets) {
   }
 }
 
+$operatorAuthMismatches = @()
+$operatorRequiredPaths = @(
+  "operator/index.html",
+  "operator/login/index.html",
+  "operator/auth/callback/index.html",
+  "assets/css/operator-auth.css",
+  "assets/js/operator-auth-core.mjs",
+  "assets/js/operator-auth-client.mjs",
+  "assets/js/operator-login.mjs",
+  "assets/js/operator-callback.mjs",
+  "assets/js/operator-shell.mjs",
+  "assets/config/operator-auth.json"
+)
+foreach ($relativePath in $operatorRequiredPaths) {
+  if (-not (Test-Path (Join-Path $distPath $relativePath) -PathType Leaf)) {
+    $operatorAuthMismatches += "Missing operator Auth artifact: $relativePath"
+  }
+}
+
+$operatorConfigPath = Join-Path $distPath "assets/config/operator-auth.json"
+if (Test-Path $operatorConfigPath -PathType Leaf) {
+  $operatorConfig = Get-Content $operatorConfigPath -Raw | ConvertFrom-Json
+  if ($operatorConfig.supabaseUrl -ne "https://xcsptvntvrizwhskaphr.supabase.co") {
+    $operatorAuthMismatches += "Unexpected operator Supabase URL"
+  }
+  if ($operatorConfig.callbackUrl -ne "https://lorenzowebsolutions.be/operator/auth/callback/") {
+    $operatorAuthMismatches += "Unexpected operator callback URL"
+  }
+  if ([string]::IsNullOrWhiteSpace($operatorConfig.publishableKey) -or $operatorConfig.publishableKey -match '(?i)service_role|secret') {
+    $operatorAuthMismatches += "Missing or forbidden operator browser key"
+  }
+}
+
 $allFiles = Get-ChildItem -Path $distPath -File -Recurse
 $topLevelPaths = Get-ChildItem -Path $distPath -Force | ForEach-Object { $_.Name } | Sort-Object
 
@@ -245,11 +280,13 @@ $report = [ordered]@{
   functionBaseUrlMismatches = $functionMetaMismatchList
   socialMetaCheckCount = $primarySocialTargets.Count
   socialMetaMismatches = @($socialMetaMismatches)
+  operatorAuthCheckCount = $operatorRequiredPaths.Count
+  operatorAuthMismatches = @($operatorAuthMismatches)
   requiredRootMissing = $missingRequiredList
   publishedLegacyPaths = $publishedLegacyPaths
 }
 
-$reportPath = Join-Path $repoRoot "dist-verification-report.json"
+$reportPath = if ([IO.Path]::IsPathRooted($ReportPath)) { $ReportPath } else { Join-Path $repoRoot $ReportPath }
 $report | ConvertTo-Json -Depth 6 | Set-Content -Path $reportPath -Encoding UTF8
 
 Write-Host "DIST_REPORT=$reportPath"
@@ -259,6 +296,7 @@ Write-Host "FORBIDDEN_COUNT=$($report.forbiddenCount)"
 Write-Host "BROKEN_LINKS=$($report.brokenLinksCount)"
 Write-Host "FUNCTION_META_MISMATCHES=$($functionMetaMismatchList.Count)"
 Write-Host "SOCIAL_META_MISMATCHES=$($socialMetaMismatches.Count)"
+Write-Host "OPERATOR_AUTH_MISMATCHES=$($operatorAuthMismatches.Count)"
 Write-Host "REQUIRED_MISSING=$($missingRequiredList.Count)"
 Write-Host "PUBLISHED_LEGACY_PATHS=$($publishedLegacyPaths.Count)"
 
@@ -267,6 +305,7 @@ if ($report.forbiddenCount -ne 0) { $hasFailures = $true }
 if ($report.brokenLinksCount -ne 0) { $hasFailures = $true }
 if ($functionMetaMismatchList.Count -ne 0) { $hasFailures = $true }
 if ($socialMetaMismatches.Count -ne 0) { $hasFailures = $true }
+if ($operatorAuthMismatches.Count -ne 0) { $hasFailures = $true }
 if ($missingRequiredList.Count -ne 0) { $hasFailures = $true }
 if ($publishedLegacyPaths.Count -ne 0) { $hasFailures = $true }
 

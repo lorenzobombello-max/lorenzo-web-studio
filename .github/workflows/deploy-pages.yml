@@ -25,6 +25,8 @@ jobs:
 
       - name: Build allowlisted Pages artifact
         shell: pwsh
+        env:
+          LWS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
         run: ./scripts/prepare-pages-dist.ps1 -OutputDir dist
 
       - name: Verify dist security and link integrity

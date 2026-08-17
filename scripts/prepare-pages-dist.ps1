@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-  [string]$OutputDir = "dist"
+  [string]$OutputDir = "dist",
+  [string]$OperatorSupabaseUrl = "https://xcsptvntvrizwhskaphr.supabase.co",
+  [string]$OperatorPublishableKey = $env:LWS_SUPABASE_PUBLISHABLE_KEY
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +18,9 @@ $requiredFiles = @(
   "robots.txt",
   "sitemap.xml",
   "site.webmanifest",
+  "operator/index.html",
+  "operator/login/index.html",
+  "operator/auth/callback/index.html",
   "pages/about.html",
   "pages/admin-intake.html",
   "pages/algemene-voorwaarden.html",
@@ -42,6 +47,7 @@ $requiredFiles = @(
   "assets/css/cookie-consent.css",
   "assets/css/intake.css",
   "assets/css/legal.css",
+  "assets/css/operator-auth.css",
   "assets/css/pages.css",
   "assets/css/quotation-acceptance.css",
   "assets/css/redesign.css",
@@ -64,6 +70,11 @@ $requiredFiles = @(
   "assets/js/cookie-consent.js",
   "assets/js/homepage-studio.js",
   "assets/js/intake.js",
+  "assets/js/operator-auth-client.mjs",
+  "assets/js/operator-auth-core.mjs",
+  "assets/js/operator-callback.mjs",
+  "assets/js/operator-login.mjs",
+  "assets/js/operator-shell.mjs",
   "assets/js/pages.js",
   "assets/js/quotation-acceptance.js",
   "assets/js/redesign.js",
@@ -170,6 +181,25 @@ $requiredFiles | ForEach-Object { Copy-AllowlistedPath -RelativePath $_ -Require
 $requiredDirectories | ForEach-Object { Copy-AllowlistedPath -RelativePath $_ -Required $true }
 $optionalFiles | ForEach-Object { Copy-AllowlistedPath -RelativePath $_ -Required $false }
 
+if ($OperatorSupabaseUrl -ne "https://xcsptvntvrizwhskaphr.supabase.co") {
+  throw "Unexpected operator Supabase URL"
+}
+if ([string]::IsNullOrWhiteSpace($OperatorPublishableKey)) {
+  throw "LWS_SUPABASE_PUBLISHABLE_KEY is required for the operator Auth build"
+}
+if ($OperatorPublishableKey -match '(?i)service_role|secret') {
+  throw "Operator Auth build received a forbidden browser key"
+}
+
+$operatorConfigPath = Join-Path $outputPath "assets/config/operator-auth.json"
+New-Item -ItemType Directory -Path (Split-Path -Parent $operatorConfigPath) -Force | Out-Null
+$operatorConfig = [ordered]@{
+  supabaseUrl = $OperatorSupabaseUrl
+  publishableKey = $OperatorPublishableKey
+  callbackUrl = "https://lorenzowebsolutions.be/operator/auth/callback/"
+}
+$operatorConfig | ConvertTo-Json | Set-Content -Path $operatorConfigPath -Encoding UTF8
+
 $allEntries = Get-ChildItem -Path $outputPath -Recurse -Force
 $forbidden = @()
 
@@ -206,3 +236,4 @@ Write-Host "DIST_READY=$outputPath"
 Write-Host "DIST_FILES=$totalFiles"
 Write-Host "ALLOWLIST_COPIED=$($copiedItems -join ',')"
 Write-Host "FORBIDDEN_COUNT=0"
+Write-Host "OPERATOR_AUTH_CONFIG=GENERATED"

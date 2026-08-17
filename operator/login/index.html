@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; connect-src 'self' https://xcsptvntvrizwhskaphr.supabase.co; base-uri 'none'; form-action 'self'; object-src 'none'" />
+  <title>Operator aanmelden | Lorenzo Web Solutions</title>
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/assets/css/pages.css" />
+  <link rel="stylesheet" href="/assets/css/operator-auth.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
+  <script type="module" src="/assets/js/operator-login.mjs"></script>
+</head>
+<body class="operator-auth-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+  <header class="operator-auth-header"><div class="shell operator-auth-header__inner"><a class="brand" href="/" aria-label="Lorenzo Web Solutions home"><img src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></a><span class="operator-auth-label"><span aria-hidden="true"></span>Operatoromgeving</span></div></header>
+  <main id="main-content" class="operator-auth-main"><section class="operator-auth-panel" aria-labelledby="operatorLoginTitle"><p class="kicker">Beveiligde toegang</p><h1 id="operatorLoginTitle">Aanmelden als operator</h1><p class="operator-auth-intro">Ontvang een eenmalige beveiligde link op het e-mailadres van je bestaande operatoraccount.</p><form data-operator-login class="operator-auth-form"><label for="operatorEmail">E-mailadres</label><input id="operatorEmail" name="email" type="email" inputmode="email" autocomplete="email" required /><button class="button" type="submit">Stuur aanmeldlink</button></form><p id="operatorLoginMessage" class="operator-auth-message" role="status" aria-live="polite"></p><p class="operator-auth-note">De browser bepaalt geen owner- of projectrechten. Autorisatie gebeurt uitsluitend server-side.</p></section></main>
+</body>
+</html>

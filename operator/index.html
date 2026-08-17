@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self'; connect-src 'self' https://xcsptvntvrizwhskaphr.supabase.co; base-uri 'none'; form-action 'self'; object-src 'none'" />
+  <title>Operatoromgeving | Lorenzo Web Solutions</title>
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/assets/css/pages.css" />
+  <link rel="stylesheet" href="/assets/css/operator-auth.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
+  <script type="module" src="/assets/js/operator-shell.mjs"></script>
+</head>
+<body class="operator-auth-page operator-shell-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+  <header class="operator-auth-header"><div class="shell operator-auth-header__inner"><a class="brand" href="/" aria-label="Lorenzo Web Solutions home"><img src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></a><span class="operator-auth-label"><span aria-hidden="true"></span>Beveiligde sessie</span></div></header>
+  <main id="main-content" class="operator-auth-main"><section id="operatorLoading" class="operator-auth-panel operator-auth-panel--center" role="status"><span class="operator-auth-spinner" aria-hidden="true"></span><h1>Sessie wordt gecontroleerd</h1></section><section id="operatorShell" class="operator-shell" aria-labelledby="operatorShellTitle" hidden><div><p class="kicker">Operatoromgeving</p><h1 id="operatorShellTitle">Sessie actief</h1><p class="operator-auth-intro">Je menselijke sessie is bevestigd. Project- en ownerrechten worden bij iedere actie server-side gecontroleerd.</p></div><dl class="operator-session-meta"><div><dt>Aangemeld als</dt><dd id="operatorSessionEmail"></dd></div><div><dt>Autorisatie</dt><dd>Databasegestuurd</dd></div></dl><p id="operatorShellMessage" class="operator-auth-message" role="status" aria-live="polite"></p><button id="operatorLogout" class="button button--dark" type="button">Afmelden</button></section></main>
+</body>
+</html>
