@@ -11,11 +11,13 @@ import {
 } from "../_shared/security.ts";
 import { validateAction, validateToken } from "../_shared/validation.ts";
 import type { ReviewAction } from "../_shared/types.ts";
+import { allowsWebsiteLifecycle } from "../_shared/request-kind.ts";
 
 type ReviewState = "pending" | "approved" | "rejected" | "expired" | "invalid";
 type ReviewRequestDetails = {
   id: string;
   created_at: string;
+  request_kind: "website" | "slimme_documentenflow";
   name: string;
   customer_type: string | null;
   company: string | null;
@@ -31,9 +33,9 @@ type ReviewRequestDetails = {
   billing_email: string | null;
   email: string;
   phone: string | null;
-  website_type: string;
-  budget: string;
-  timing: string;
+  website_type: string | null;
+  budget: string | null;
+  timing: string | null;
   description: string;
   reviewed_at?: string | null;
 };
@@ -67,6 +69,7 @@ function serializeRequest(data: ReviewRequestDetails, reviewedAt = data.reviewed
   return {
     id: data.id,
     created_at: data.created_at,
+    request_kind: data.request_kind,
     name: data.name,
     customer_type: data.customer_type,
     company: data.company,
@@ -184,7 +187,7 @@ Deno.serve(async (request) => {
 
     const { data, error } = await supabase
       .from("quote_requests")
-      .select("id, created_at, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
+      .select("id, created_at, request_kind, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
       .eq("approval_token_hash", tokenHash)
       .maybeSingle();
 
@@ -295,12 +298,22 @@ Deno.serve(async (request) => {
 
     const { data: existing, error: fetchError } = await supabase
       .from("quote_requests")
-      .select("id, created_at, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
+      .select("id, created_at, request_kind, name, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email, email, phone, website_type, budget, timing, description, status, approval_token_expires_at, reviewed_at")
       .eq("approval_token_hash", tokenHash)
       .maybeSingle();
 
     if (fetchError || !existing) {
       return jsonResponse(200, { ok: true, state: "invalid" satisfies ReviewState }, origin);
+    }
+
+    if (!allowsWebsiteLifecycle(existing.request_kind)) {
+      return jsonResponse(409, {
+        ok: false,
+        code: "REQUEST_KIND_ACTION_NOT_ALLOWED",
+        state: existing.status as ReviewState,
+        message: "Website review actions are not available for this request kind.",
+        request: serializeRequest(existing),
+      }, origin);
     }
 
     const expiresAt = existing.approval_token_expires_at ? Date.parse(existing.approval_token_expires_at) : 0;
@@ -537,7 +550,7 @@ Deno.serve(async (request) => {
         clientName: transition.request_name,
         requestId: existing.id,
         createdAt: existing.created_at,
-        websiteType: existing.website_type,
+        websiteType: existing.website_type || "Website",
       });
       const delivery = await deliverEmailJob({
         supabase,

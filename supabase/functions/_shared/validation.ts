@@ -1,4 +1,5 @@
-import type { CustomerType, EnterpriseValidationStatus, ReviewAction, SanitizedQuotePayload, SubmitQuotePayload } from "./types.ts";
+import type { CustomerType, EnterpriseValidationStatus, RequestKind, ReviewAction, SanitizedQuotePayload, SubmitQuotePayload } from "./types.ts";
+import { REQUEST_KINDS } from "./request-kind.ts";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_CHARACTERS_REGEX = /^[+0-9().\s-]+$/;
@@ -769,6 +770,12 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
     throw new InputValidationError("INVALID_FORMAT", "email");
   }
 
+  if (input.request_kind !== undefined && typeof input.request_kind !== "string") {
+    throw new InputValidationError("INVALID_TYPE", "request_kind");
+  }
+  const requestKindInput = input.request_kind === undefined ? "website" : normalizeText(input.request_kind);
+  assertAllowed("request_kind", requestKindInput, REQUEST_KINDS);
+  const requestKind = requestKindInput as RequestKind;
   const name = normalizeText(input.name);
   const customerTypeInput = input.customer_type === undefined
     ? null
@@ -785,9 +792,9 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   const billingEmail = (normalizeNullableText("billing_email", input.billing_email ?? null, 254) || "").toLowerCase();
   const email = normalizeText(input.email).toLowerCase();
   const phone = normalizeText(input.phone ?? "");
-  const websiteType = normalizeText(input.website_type);
-  const budget = normalizeText(input.budget);
-  const timing = normalizeText(input.timing);
+  const websiteType = normalizeNullableText("website_type", input.website_type ?? null, 80);
+  const budget = normalizeNullableText("budget", input.budget ?? null, 80);
+  const timing = normalizeNullableText("timing", input.timing ?? null, 80);
   const description = normalizeText(input.description);
   const honeypotValue = normalizeText(input.website ?? "");
 
@@ -868,13 +875,17 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
       throw new InputValidationError("INVALID_FORMAT", "phone");
     }
   }
-  assertLength("website_type", websiteType, 2, 80);
-  assertLength("budget", budget, 2, 80);
-  assertLength("timing", timing, 2, 80);
   assertLength("description", description, 10, 3000);
-  assertAllowed("website_type", websiteType, WEBSITE_TYPES);
-  assertAllowed("budget", budget, BUDGETS);
-  assertAllowed("timing", timing, TIMINGS);
+  if (requestKind === "website") {
+    if (!websiteType) throw new InputValidationError("REQUIRED_FIELD", "website_type");
+    if (!budget) throw new InputValidationError("REQUIRED_FIELD", "budget");
+    if (!timing) throw new InputValidationError("REQUIRED_FIELD", "timing");
+    assertAllowed("website_type", websiteType, WEBSITE_TYPES);
+    assertAllowed("budget", budget, BUDGETS);
+    assertAllowed("timing", timing, TIMINGS);
+  } else if (websiteType !== null || budget !== null || timing !== null) {
+    throw new InputValidationError("INVALID_CONDITION", "request_kind");
+  }
 
   if (!EMAIL_REGEX.test(email)) {
     throw new InputValidationError("INVALID_FORMAT", "email");
@@ -885,6 +896,7 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   }
 
   return {
+    request_kind: requestKind,
     name,
     customer_type: customerType,
     company: company || null,

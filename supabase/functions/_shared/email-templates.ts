@@ -1,6 +1,9 @@
+import { requestKindLabel } from "./request-kind.ts";
+
 interface AdminEmailData {
   requestId: string;
   createdAt: string;
+  requestKind: "website" | "slimme_documentenflow";
   name: string;
   customerType: "individual" | "business" | null;
   company: string | null;
@@ -16,9 +19,9 @@ interface AdminEmailData {
   billingEmail: string | null;
   email: string;
   phone: string | null;
-  websiteType: string;
-  budget: string;
-  timing: string;
+  websiteType: string | null;
+  budget: string | null;
+  timing: string | null;
   description: string;
   reviewUrl: string;
 }
@@ -64,7 +67,10 @@ export type QuotationEmailTemplate =
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
-  const subject = `Nieuwe offerteaanvraag #${data.requestId.slice(0, 8)}`;
+  const requestKindName = requestKindLabel(data.requestKind);
+  const subject = data.requestKind === "slimme_documentenflow"
+    ? `Nieuwe Slimme Documentenflow-aanvraag #${data.requestId.slice(0, 8)}`
+    : `Nieuwe offerteaanvraag #${data.requestId.slice(0, 8)}`;
   const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
   const receivedAt = new Date(data.createdAt).toLocaleString("nl-BE", {
     dateStyle: "long",
@@ -96,9 +102,10 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
   const safeBusinessSummary = businessLines.map((line) => escapeHtml(line)).join("<br>");
   const safeEmail = escapeHtml(data.email);
   const safePhone = escapeHtml(data.phone || "Niet ingevuld");
-  const safeWebsiteType = escapeHtml(data.websiteType);
-  const safeBudget = escapeHtml(data.budget);
-  const safeTiming = escapeHtml(data.timing);
+  const safeRequestKind = escapeHtml(requestKindName);
+  const safeWebsiteType = escapeHtml(data.websiteType || "Niet van toepassing");
+  const safeBudget = escapeHtml(data.budget || "Niet van toepassing");
+  const safeTiming = escapeHtml(data.timing || "Niet van toepassing");
   const safeDescription = escapeHtml(data.description).replace(/\n/g, "<br>");
   const safeReviewUrl = escapeHtml(data.reviewUrl);
 
@@ -110,7 +117,7 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
   <title>${escapeHtml(subject)}</title>
 </head>
 <body bgcolor="#0b1118" style="margin:0!important;padding:0!important;background-color:#0b1118;color:#ffffff;font-family:Arial,Helvetica,sans-serif;">
-  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#0b1118;">Nieuwe offerteaanvraag van ${safeName} — ${safeWebsiteType}.</div>
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#0b1118;">Nieuwe ${safeRequestKind}-aanvraag van ${safeName}.</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#0b1118;">
     <tr>
       <td align="center" style="padding:28px 12px;">
@@ -132,7 +139,7 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
           <tr>
             <td style="padding:30px 28px 10px;font-size:16px;line-height:1.6;">
               <p style="margin:0 0 8px;color:#0ed8e6;font-size:11px;font-weight:bold;letter-spacing:1.2px;text-transform:uppercase;">Interne opvolging</p>
-              <h1 style="margin:0 0 12px;color:#ffffff;font-size:30px;line-height:1.18;font-weight:700;">Nieuwe offerteaanvraag</h1>
+              <h1 style="margin:0 0 12px;color:#ffffff;font-size:30px;line-height:1.18;font-weight:700;">Nieuwe ${safeRequestKind}-aanvraag</h1>
               <p style="margin:0;color:#aeb9c0;">Er is een nieuwe aanvraag binnengekomen. Controleer de gegevens en bepaal de volgende stap.</p>
             </td>
           </tr>
@@ -181,16 +188,20 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
                 </tr>
                 <tr>
                   <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
+                    <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Aanvraagtype</p>
+                    <p style="margin:0;color:#ffffff;font-size:14px;font-weight:bold;">${safeRequestKind}</p>
+                  </td>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Type website</p>
                     <p style="margin:0;color:#ffffff;font-size:14px;">${safeWebsiteType}</p>
                   </td>
-                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
+                </tr>
+                <tr>
+                  <td width="50%" valign="top" style="padding:14px 16px;border-right:1px solid #34424c;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Budgetindicatie</p>
                     <p style="margin:0;color:#ffffff;font-size:14px;">${safeBudget}</p>
                   </td>
-                </tr>
-                <tr>
-                  <td colspan="2" valign="top" style="padding:14px 16px;">
+                  <td width="50%" valign="top" style="padding:14px 16px;border-bottom:1px solid #34424c;">
                     <p style="margin:0 0 4px;color:#7e8b94;font-size:10px;font-weight:bold;letter-spacing:.7px;text-transform:uppercase;">Timing</p>
                     <p style="margin:0;color:#ffffff;font-size:14px;">${safeTiming}</p>
                   </td>
@@ -237,17 +248,18 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
 </html>`;
 
   const text = [
-    "Nieuwe offerteaanvraag",
+    `Nieuwe ${requestKindName}-aanvraag`,
     `Aanvraagnummer: ${data.requestId}`,
+    `Aanvraagtype: ${requestKindName}`,
     `Ontvangstdatum: ${new Date(data.createdAt).toLocaleString("nl-BE")}`,
     `Naam: ${data.name}`,
     `Klanttype: ${safeCustomerType}`,
     ...businessLines,
     `E-mailadres: ${data.email}`,
     `Telefoon: ${data.phone || "Niet ingevuld"}`,
-    `Type website: ${data.websiteType}`,
-    `Budget: ${data.budget}`,
-    `Timing: ${data.timing}`,
+    `Type website: ${data.websiteType || "Niet van toepassing"}`,
+    `Budget: ${data.budget || "Niet van toepassing"}`,
+    `Timing: ${data.timing || "Niet van toepassing"}`,
     `Projectomschrijving: ${data.description}`,
     `Aanvraag beoordelen: ${data.reviewUrl}`,
   ].join("\n");

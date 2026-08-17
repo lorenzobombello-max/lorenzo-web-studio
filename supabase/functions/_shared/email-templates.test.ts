@@ -4,6 +4,7 @@ import { buildAdminNotificationEmail, buildQuotationEmail } from "./email-templa
 const base = {
   requestId: "22222222-2222-4222-8222-222222222222",
   createdAt: "2026-08-09T10:00:00.000Z",
+  requestKind: "website" as const,
   name: "Test Contact",
   email: "contact@example.com",
   phone: null,
@@ -62,6 +63,31 @@ Deno.test("admin email omits business lines for individual requests", () => {
   assertStringIncludes(result.text, "Klanttype: Particulier");
   assertEquals(result.text.includes("Ondernemingsnummer:"), false);
   assertEquals(result.text.includes("Facturatieadres:"), false);
+});
+
+Deno.test("admin email identifies Documentenflow without fabricated website fields", () => {
+  const result = buildAdminNotificationEmail({
+    ...base,
+    requestKind: "slimme_documentenflow",
+    customerType: "individual",
+    company: null,
+    enterpriseNumber: null,
+    enterpriseValidationStatus: "not_checked",
+    vatNumber: null,
+    vatValidationStatus: "not_checked",
+    vatValidatedAt: null,
+    billingAddress: null,
+    billingPostalCode: null,
+    billingCity: null,
+    billingCountry: null,
+    billingEmail: null,
+    websiteType: null,
+    budget: null,
+    timing: null,
+  });
+  assertStringIncludes(result.subject, "Slimme Documentenflow");
+  assertStringIncludes(result.text, "Aanvraagtype: Slimme Documentenflow");
+  assertStringIncludes(result.text, "Type website: Niet van toepassing");
 });
 
 Deno.test("quotation delivery keeps the capability transient and contains no remote assets or trackers", () => {

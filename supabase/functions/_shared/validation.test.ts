@@ -8,6 +8,7 @@ import {
 } from "./validation.ts";
 
 const basePayload = {
+  request_kind: "website" as const,
   name: "Lorenzo Bombello",
   email: "hello@example.com",
   phone: "",
@@ -47,9 +48,45 @@ Deno.test("business quote keeps required billing data and optional VAT", () => {
 });
 
 Deno.test("legacy quote payload remains compatible", () => {
-  const result = sanitizeAndValidateSubmitPayload({ ...basePayload, company: "Legacy BV" });
+  const { request_kind: _requestKind, ...legacyPayload } = basePayload;
+  const result = sanitizeAndValidateSubmitPayload({ ...legacyPayload, company: "Legacy BV" });
+  assertEquals(result.request_kind, "website");
   assertEquals(result.customer_type, null);
   assertEquals(result.company, "Legacy BV");
+});
+
+Deno.test("documentenflow request accepts common commercial fields without website fields", () => {
+  const { website_type: _websiteType, budget: _budget, timing: _timing, ...common } = basePayload;
+  const result = sanitizeAndValidateSubmitPayload({
+    ...common,
+    request_kind: "slimme_documentenflow",
+    description: "Een veilige testaanvraag voor een slimme documentenflow.",
+  });
+  assertEquals(result.request_kind, "slimme_documentenflow");
+  assertEquals(result.website_type, null);
+  assertEquals(result.budget, null);
+  assertEquals(result.timing, null);
+});
+
+Deno.test("documentenflow request rejects fabricated website fields", () => {
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...basePayload, request_kind: "slimme_documentenflow" }),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+});
+
+Deno.test("request kind rejects unknown and malformed values", () => {
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...basePayload, request_kind: "unknown" as never }),
+    InputValidationError,
+    "INVALID_OPTION",
+  );
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...basePayload, request_kind: 42 as never }),
+    InputValidationError,
+    "INVALID_TYPE",
+  );
 });
 
 Deno.test("rejects invalid customer type", () => {

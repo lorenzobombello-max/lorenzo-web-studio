@@ -150,6 +150,7 @@
     const map = new Map([
       ["Aanvraagnummer", request?.id || "-"],
       ["Ontvangstdatum", request?.created_at ? new Date(request.created_at).toLocaleString("nl-BE") : "-"],
+      ["Aanvraagtype", request?.request_kind === "slimme_documentenflow" ? "Slimme Documentenflow" : "Website"],
       ["Naam", request?.name || "-"],
       ["Klanttype", isBusiness ? "Onderneming / zelfstandige" : request?.customer_type === "individual" ? "Particulier" : "Niet opgegeven"],
       ["Bedrijfsnaam", request?.company || "-"],
@@ -161,14 +162,15 @@
       ["Facturatie-e-mail", request?.billing_email || request?.email || "-"],
       ["E-mailadres", request?.email || "-"],
       ["Telefoon", request?.phone || "Niet ingevuld"],
-      ["Type website", request?.website_type || "-"],
-      ["Budget", request?.budget || "-"],
-      ["Timing", request?.timing || "-"],
+      ["Type website", request?.website_type || "Niet van toepassing"],
+      ["Budget", request?.budget || "Niet van toepassing"],
+      ["Timing", request?.timing || "Niet van toepassing"],
       ["Projectomschrijving", request?.description || "-"],
     ]);
 
     detailsNode.querySelectorAll("div").forEach((row) => {
       if (row.hasAttribute("data-business-detail")) row.hidden = !isBusiness;
+      if (row.hasAttribute("data-website-detail")) row.hidden = request?.request_kind === "slimme_documentenflow";
       const dt = row.querySelector("dt")?.textContent?.trim() || "";
       const dd = row.querySelector("dd");
       if (!dd) return;
@@ -239,6 +241,13 @@
     setIntakeInvitationState(data);
 
     if (state === "pending") {
+      if (currentRequest?.request_kind === "slimme_documentenflow") {
+        setStatus("Slimme Documentenflow - wacht op opvolging");
+        setMessage("Deze aanvraag blijft buiten de website-intake en het website-prijstraject.", "success");
+        setRetryButton(false);
+        setButtons(false);
+        return;
+      }
       setStatus("Pending - wacht op beoordeling");
       setRetryButton(false);
       setButtons(true);

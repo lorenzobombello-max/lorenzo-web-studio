@@ -1,5 +1,6 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
 export type CustomerType = "individual" | "business";
+export type RequestKind = "website" | "slimme_documentenflow";
 export type EnterpriseValidationStatus = "format_valid_not_externally_verified" | "not_checked";
 export type ReviewAction = QuoteRequestStatus | "retry_confirmation" | "send_intake_invitation" | "retry_intake_invitation";
 export type EmailJobKind = "admin_notification" | "customer_confirmation" | "intake_invitation" | "intake_submitted_notification";
@@ -16,6 +17,7 @@ export type IntakeAction =
 export type IntakeStatus = "invited" | "in_progress" | "submitted" | "reviewed";
 
 export interface SubmitQuotePayload {
+  request_kind?: RequestKind;
   name: string;
   customer_type?: CustomerType;
   company?: string;
@@ -28,15 +30,16 @@ export interface SubmitQuotePayload {
   billing_email?: string;
   email: string;
   phone?: string;
-  website_type: string;
-  budget: string;
-  timing: string;
+  website_type?: string;
+  budget?: string;
+  timing?: string;
   description: string;
   privacy_consent: boolean;
   website?: string; // Honeypot field.
 }
 
 export interface SanitizedQuotePayload {
+  request_kind: RequestKind;
   name: string;
   customer_type: CustomerType | null;
   company: string | null;
@@ -50,9 +53,9 @@ export interface SanitizedQuotePayload {
   billing_email: string | null;
   email: string;
   phone: string | null;
-  website_type: string;
-  budget: string;
-  timing: string;
+  website_type: string | null;
+  budget: string | null;
+  timing: string | null;
   description: string;
   privacy_consent: true;
   honeypotValue: string;

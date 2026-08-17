@@ -154,6 +154,7 @@ Deno.serve(async (request) => {
   }
 
   const requestFingerprint = await fingerprintPayload({
+    request_kind: sanitized.request_kind,
     name: sanitized.name,
     customer_type: sanitized.customer_type,
     company: sanitized.company,
@@ -246,6 +247,7 @@ Deno.serve(async (request) => {
   const { data: createData, error: createError } = await supabase.rpc("create_quote_request_idempotent", {
     p_idempotency_key: idempotencyKey,
     p_request_fingerprint: requestFingerprint,
+    p_request_kind: sanitized.request_kind,
     p_name: sanitized.name,
     p_customer_type: sanitized.customer_type,
     p_company: sanitized.company,
@@ -302,6 +304,7 @@ Deno.serve(async (request) => {
   const adminEmailPayload = buildAdminNotificationEmail({
     requestId: created.request_id,
     createdAt: created.request_created_at,
+    requestKind: sanitized.request_kind,
     name: sanitized.name,
     customerType: sanitized.customer_type,
     company: sanitized.company,
