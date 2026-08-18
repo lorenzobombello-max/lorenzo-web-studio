@@ -1171,6 +1171,21 @@
     validationErrors.delete(name);
   }
 
+  function validateInspirationSites(values) {
+    if (!values?.length) return null;
+    if (values.length > 10) return "Vul maximaal 10 inspiratie-URL's in.";
+    if (values.some((value) => value.length > 2048)) return "Een inspiratie-URL mag maximaal 2048 tekens bevatten.";
+    const invalid = values.some((value) => {
+      try {
+        const url = new URL(value);
+        return !["http:", "https:"].includes(url.protocol) || Boolean(url.username || url.password);
+      } catch {
+        return true;
+      }
+    });
+    return invalid ? "Vul geldige http- of https-URL's in, één per regel." : null;
+  }
+
   function collectValidationIssues(data) {
     const issues = [];
     requiredSubmitFields.forEach((name) => {
@@ -1188,6 +1203,8 @@
     if (data.domain_status === "has_domain" && !data.domain_name) {
       issues.push({ name: "domain_name", message: "Vul je domeinnaam in." });
     }
+    const inspirationSitesMessage = validateInspirationSites(data.inspiration_sites);
+    if (inspirationSitesMessage) issues.push({ name: "inspiration_sites", message: inspirationSitesMessage });
     if (!data.confirmation) issues.push({ name: "confirmation", message: "Bevestig je briefing voor verzending." });
     return issues;
   }
@@ -1220,6 +1237,16 @@
     updateStepErrorIndicators();
     validationMessageActive = issues.length > 0;
     setMessage(validationSummary(issues.length), issues.length ? "error" : null);
+  }
+
+  function revealFirstValidationIssue(name) {
+    const firstInvalid = validationControl(name);
+    updateStepErrorIndicators();
+    if (!firstInvalid) return;
+    const step = firstInvalid.closest?.(".intake-step");
+    if (step) showStep(steps.indexOf(step));
+    firstInvalid.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    firstInvalid.focus?.();
   }
 
   function revalidateFields(names) {
@@ -1265,11 +1292,7 @@
     const issues = orderValidationIssues(collectValidationIssues(data), orderedNames);
     renderValidationIssues(issues);
     if (issues.length) {
-      const firstInvalid = validationControl(issues[0].name);
-      const step = firstInvalid.closest?.(".intake-step");
-      if (step) showStep(steps.indexOf(step));
-      firstInvalid.scrollIntoView?.({ behavior: "smooth", block: "center" });
-      firstInvalid.focus?.();
+      revealFirstValidationIssue(issues[0].name);
       return false;
     }
     return validateBudgetGuardAcknowledgement();
@@ -1308,13 +1331,32 @@
     return { response, body };
   }
 
+  function apiErrorPresentation(status, code) {
+    if (status === 400) return { kind: "validation", message: "Controleer de gemarkeerde velden." };
+    if (status === 401) return { kind: "unavailable", message: "Deze intake-link is ongeldig of niet meer geldig." };
+    if (status === 409) return { kind: code === "INTAKE_ALREADY_SUBMITTED" ? "submitted" : "reviewed", message: "" };
+    if (status === 429 || status >= 500) {
+      return { kind: "temporary", message: "Verzenden lukt tijdelijk niet. Je antwoorden blijven staan. Probeer later opnieuw." };
+    }
+    return { kind: "unknown", message: "Er ging iets mis. Probeer later opnieuw." };
+  }
+
   function handleApiError(response, body) {
-    if (response.status === 400) {
-      if (body.field) markError(body.field, "Controleer dit veld.");
-      setMessage("Controleer de gemarkeerde velden.", "error");
-    } else if (response.status === 401) showUnavailable("Deze intake-link is ongeldig of niet meer geldig.");
-    else if (response.status === 409) setReadOnly(body.code === "INTAKE_ALREADY_SUBMITTED" ? "submitted" : "reviewed");
-    else setMessage("Er ging iets mis. Probeer later opnieuw.", "error");
+    const presentation = apiErrorPresentation(response.status, body.code);
+    if (presentation.kind === "validation") {
+      if (body.field) {
+        markError(body.field, "Controleer dit veld.");
+        validationMessageActive = true;
+        revealFirstValidationIssue(body.field);
+      }
+      setMessage(presentation.message, "error");
+    } else if (presentation.kind === "unavailable") showUnavailable(presentation.message);
+    else if (["submitted", "reviewed"].includes(presentation.kind)) setReadOnly(presentation.kind);
+    else setMessage(presentation.message, "error");
+  }
+
+  function handleNetworkError() {
+    setMessage("De service is niet bereikbaar. Controleer je internetverbinding en probeer opnieuw.", "error");
   }
 
   async function saveDraft() {
@@ -1327,7 +1369,7 @@
       contextStatus.textContent = "In uitvoering";
       setMessage("Concept opgeslagen.", "success");
       lastSaved.textContent = `Laatst opgeslagen om ${new Date().toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit" })}.`;
-    } catch { setMessage("Er ging iets mis. Probeer later opnieuw.", "error"); }
+    } catch { handleNetworkError(); }
     finally { setBusy(false); }
   }
 
@@ -1356,7 +1398,7 @@
         dirty = false;
         setReadOnly("submitted");
       }
-    } catch { setMessage("Er ging iets mis. Probeer later opnieuw.", "error"); }
+    } catch { handleNetworkError(); }
     finally { setBusy(false); }
   }
 
