@@ -2,7 +2,10 @@ export const OPERATOR_ROUTES = Object.freeze({
   login: "/operator/login/",
   callback: "/operator/auth/callback/",
   home: "/operator/",
+  dashboard: "/operator/dashboard/",
 });
+
+const OPERATOR_AUTHORIZATION_PROBE_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
 
 const AUTH_PARAMETER_NAMES = new Set([
   "access_token",
@@ -88,6 +91,18 @@ export async function requireOperatorSession(client, nowSeconds) {
   const { data, error } = await client.auth.getSession();
   if (error || !isUsableSession(data.session, nowSeconds)) return null;
   return data.session;
+}
+
+export async function requireAuthorizedOperator(client, nowSeconds) {
+  const session = await requireOperatorSession(client, nowSeconds);
+  if (!session) return { status: "unauthenticated", session: null };
+  const { error } = await client.rpc("get_commercial_project_view_v2", {
+    p_project_id: OPERATOR_AUTHORIZATION_PROBE_PROJECT_ID,
+  });
+  if (!error || (error.code === "23503" && error.message === "PROJECT_NOT_FOUND")) {
+    return { status: "authorized", session };
+  }
+  return { status: "unauthorized", session: null };
 }
 
 export function watchOperatorSession(client, onSession, onSignedOut) {

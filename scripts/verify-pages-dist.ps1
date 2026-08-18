@@ -231,13 +231,18 @@ foreach ($relativeTarget in $primarySocialTargets) {
 $operatorAuthMismatches = @()
 $operatorRequiredPaths = @(
   "operator/index.html",
+  "operator/dashboard/index.html",
   "operator/login/index.html",
   "operator/auth/callback/index.html",
   "assets/css/operator-auth.css",
+  "assets/css/operator-dashboard.css",
   "assets/js/operator-auth-core.mjs",
   "assets/js/operator-auth-client.mjs",
   "assets/js/operator-login.mjs",
   "assets/js/operator-callback.mjs",
+  "assets/js/operator-dashboard-contract.js",
+  "assets/js/operator-dashboard-guard.mjs",
+  "assets/js/operator-dashboard.js",
   "assets/js/operator-shell.mjs",
   "assets/config/operator-auth.json"
 )

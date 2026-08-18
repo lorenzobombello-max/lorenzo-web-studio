@@ -6,6 +6,7 @@ import {
   hasAuthCallbackMaterial,
   isUsableSession,
   OPERATOR_ROUTES,
+  requireAuthorizedOperator,
   requireOperatorSession,
   resolveAuthCallback,
   scrubAuthUrl,
@@ -30,5 +31,9 @@ test("callback establishes session and always cleans URL",async()=>{let replaced
 test("callback without auth result fails safely",async()=>{const result=await resolveAuthCallback({auth:{getSession:async()=>({data:{session:null},error:null})}},{location:{href:"https://lorenzowebsolutions.be/operator/auth/callback/",pathname:OPERATOR_ROUTES.callback},history:{replaceState(){}},nowSeconds:()=>1700000000});assert.equal(result.code,"SESSION_NOT_AVAILABLE")});
 test("protected route restores valid SDK session",async()=>assert.equal((await requireOperatorSession({auth:{getSession:async()=>({data:{session},error:null})}},1700000000)).user.id,session.user.id));
 test("protected route rejects missing session",async()=>assert.equal(await requireOperatorSession({auth:{getSession:async()=>({data:{session:null},error:null})}},1700000000),null));
+test("dashboard route is canonical",()=>assert.equal(OPERATOR_ROUTES.dashboard,"/operator/dashboard/"));
+test("active operator passes the read-only database authority probe",async()=>assert.equal((await requireAuthorizedOperator({auth:{getSession:async()=>({data:{session},error:null})},rpc:async()=>({data:null,error:{code:"23503",message:"PROJECT_NOT_FOUND"}})},1700000000)).status,"authorized"));
+test("non-operator session is denied by the database authority probe",async()=>assert.equal((await requireAuthorizedOperator({auth:{getSession:async()=>({data:{session},error:null})},rpc:async()=>({data:null,error:{code:"42501",message:"UNKNOWN_OPERATOR"}})},1700000000)).status,"unauthorized"));
+test("logged-out dashboard request does not call the authority RPC",async()=>{let called=false;const result=await requireAuthorizedOperator({auth:{getSession:async()=>({data:{session:null},error:null})},rpc:async()=>{called=true;return{data:null,error:null}}},1700000000);assert.equal(result.status,"unauthenticated");assert.equal(called,false)});
 test("logout uses SDK local scope",async()=>{let scope;await signOutOperator({auth:{signOut:async(options)=>(scope=options.scope,{error:null})}});assert.equal(scope,"local")});
 test("Edge request uses current session bearer only",async()=>{let headers;await callCommercialOperator({auth:{getSession:async()=>({data:{session},error:null})}},"https://xcsptvntvrizwhskaphr.supabase.co/functions/v1",{command_type:"archive_project"},async(_url,options)=>(headers=options.headers,{status:409,json:async()=>({code:"COMMAND_REJECTED"})}));assert.equal(headers.Authorization,`Bearer ${session.access_token}`)});
