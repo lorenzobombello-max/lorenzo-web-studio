@@ -16,6 +16,7 @@
   const submittedNode = document.getElementById("adminBriefingSubmitted");
   const typeNode = document.getElementById("adminBriefingType");
   const printButton = document.getElementById("adminBriefingPrint");
+  const applicationNode = document.getElementById("adminBriefingApplication");
   const functionsBaseUrl = (
     document.querySelector('meta[name="lws-functions-base-url"]')?.getAttribute("content") || ""
   ).replace(/\/$/, "");
@@ -203,7 +204,8 @@
   function renderBriefing(payload) {
     if (
       !isRecord(payload) || payload.ok !== true || !isRecord(payload.intake) ||
-      payload.intake.status !== "submitted" || !isRecord(payload.request) || !isRecord(payload.data)
+      payload.intake.status !== "submitted" || !isRecord(payload.request) || !isRecord(payload.data) ||
+      (payload.application !== undefined && (!isRecord(payload.application) || !isRecord(payload.application.commercial)))
     ) {
       showState(technicalError);
       return;
@@ -211,6 +213,7 @@
 
     const request = payload.request;
     const data = payload.data;
+    const application = isRecord(payload.application) ? payload.application : null;
     const submittedAt = payload.intake.submitted_at;
     const isBusiness = request.customer_type === "business";
     const billingAddress = isBusiness
@@ -224,10 +227,24 @@
       ? "Controle tijdelijk niet beschikbaar; later opnieuw controleren"
       : "Niet gecontroleerd";
     clientNode.textContent = request.company ? `${request.company} · ${request.name}` : request.name || "Onbekende klant";
-    referenceNode.textContent = request.id ? `#${String(request.id).slice(0, 8).toUpperCase()}` : "Niet opgegeven";
+    const legacyReference = request.id ? `Legacy #${String(request.id).slice(0, 8).toUpperCase()}` : "Legacy aanvraag";
+    applicationNode.textContent = application?.applicationReference || legacyReference;
+    referenceNode.textContent = application?.applicationReference || legacyReference;
     submittedNode.textContent = formatDateTime(submittedAt);
     typeNode.textContent = displayValue(request.website_type) || "Niet opgegeven";
     sectionsNode.replaceChildren();
+
+    if (application) appendSection("Application", (list) => {
+      const euro = new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" });
+      addDetail(list, "Aanvraagnummer", application.applicationReference);
+      addDetail(list, "Ingediend", formatDateTime(application.submittedAt));
+      addDetail(list, "Status", "Definitief ingediend");
+      addDetail(list, "Pakket", application.commercial.packageLabel);
+      addDetail(list, "Budget", application.commercial.budgetLabel);
+      addDetail(list, "Indicatief projectminimum", `${euro.format(application.commercial.knownMinimumMinor / 100)} excl. btw`);
+      addDetail(list, "Budget Guard", application.commercial.budgetStatus);
+      addDetail(list, "Vervolgservice", (application.commercial.recurringServices || []).map((service) => `${service.label}: ${euro.format(service.amountMinor / 100)} per maand excl. btw`));
+    });
 
     appendSection("Klant & aanvraag", (list) => {
       addDetail(list, "Naam contactpersoon", request.name);
@@ -241,10 +258,11 @@
         addDetail(list, "Facturatie-e-mail", request.billing_email || request.email);
       }
       addDetail(list, "Contact-e-mail", request.email);
+      addDetail(list, "Telefoon", request.phone);
       addDetail(list, "Website type", request.website_type);
       addDetail(list, "Oorspronkelijke timing", request.timing);
       addDetail(list, "Oorspronkelijke budgetcategorie", request.budget);
-      addDetail(list, "Aanvraagreferentie", request.id ? `#${String(request.id).slice(0, 8).toUpperCase()}` : null);
+      addDetail(list, "Aanvraagreferentie", application?.applicationReference || legacyReference);
     });
 
     appendSection("Bedrijf & doelgroep", (list) => {
@@ -320,6 +338,18 @@
     appendSection("Prioriteiten & opmerkingen", (list) => {
       addDetail(list, "Prioriteiten", data.priorities);
       addDetail(list, "Aanvullende opmerkingen", data.additional_notes);
+    });
+
+    appendSection("Operationele scopedetails", (list) => {
+      addObjectDetails(list, data.page_scope_details, Object.keys(data.page_scope_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.quote_form_details, Object.keys(data.quote_form_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.multilingual_details, Object.keys(data.multilingual_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.download_details, Object.keys(data.download_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.newsletter_details, Object.keys(data.newsletter_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.content_media_details, Object.keys(data.content_media_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.hosting_maintenance_details, Object.keys(data.hosting_maintenance_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.seo_details, Object.keys(data.seo_details || {}).map((key) => [key.replaceAll("_", " "), key]));
+      addObjectDetails(list, data.deadline_details, Object.keys(data.deadline_details || {}).map((key) => [key.replaceAll("_", " "), key]));
     });
 
     appendSection("Bevestiging", (list) => {

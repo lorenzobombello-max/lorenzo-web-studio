@@ -12,10 +12,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/intake.css?v=20260819-ux2" />
+  <link rel="stylesheet" href="../assets/css/intake.css?v=20260819-output2" />
     <script defer src="../assets/js/cookie-consent.js"></script>
 <script defer src="../assets/js/pages.js"></script>
-  <script defer src="../assets/js/intake.js?v=20260819-ux2"></script>
+  <script defer src="../assets/js/intake.js?v=20260819-output2"></script>
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
 </head>
 <body class="intake-page">
@@ -47,9 +47,34 @@
       </div>
 
       <div id="intakeSuccess" class="intake-state intake-state--success" hidden tabindex="-1">
-        <p class="eyebrow">Briefing ontvangen</p>
-        <h2>Bedankt. Je websitebriefing is succesvol verzonden.</h2>
-        <p>Lorenzo bekijkt je informatie zorgvuldig en neemt persoonlijk contact met je op.</p>
+        <p class="eyebrow">Aanvraag ontvangen</p>
+        <h2>Aanvraag ontvangen</h2>
+        <p class="intake-success__reference"><span>Aanvraagnummer</span><strong id="intakeSuccessReference"></strong></p>
+        <p id="intakeSuccessCustomer"></p>
+        <div id="intakeSuccessSummary" class="intake-success__summary" hidden>
+          <section><h3>Project</h3><dl>
+            <div data-success-row="package"><dt>Pakket</dt><dd id="intakeSuccessPackage"></dd></div>
+            <div data-success-row="budget"><dt>Budget</dt><dd id="intakeSuccessBudget"></dd></div>
+            <div data-success-row="minimum"><dt>Indicatieve projectprijs</dt><dd id="intakeSuccessMinimum"></dd></div>
+          </dl></section>
+          <section><h3>Website</h3><dl>
+            <div data-success-row="pages"><dt>Belangrijkste pagina's</dt><dd id="intakeSuccessPages"></dd></div>
+            <div data-success-row="shop"><dt>Webshop</dt><dd id="intakeSuccessShop"></dd></div>
+            <div data-success-row="booking"><dt>Boeking/reservatie</dt><dd id="intakeSuccessBooking"></dd></div>
+            <div data-success-row="languages"><dt>Talen</dt><dd id="intakeSuccessLanguages"></dd></div>
+          </dl></section>
+          <section><h3>Branding & content</h3><dl>
+            <div data-success-row="branding"><dt>Huisstijl en logo</dt><dd id="intakeSuccessBranding"></dd></div>
+            <div data-success-row="content"><dt>Content en beelden</dt><dd id="intakeSuccessContent"></dd></div>
+          </dl></section>
+          <section><h3>Service & planning</h3><dl>
+            <div data-success-row="recurring"><dt>Vervolgservice</dt><dd id="intakeSuccessRecurring"></dd></div>
+            <div data-success-row="deadline"><dt>Planning</dt><dd id="intakeSuccessDeadline"></dd></div>
+            <div data-success-row="submitted"><dt>Ingediend</dt><dd id="intakeSuccessSubmitted"></dd></div>
+          </dl></section>
+        </div>
+        <p class="intake-success__disclaimer">Dit is een niet-bindende prijsindicatie op basis van de opgegeven informatie. De definitieve offerte volgt na controle van je aanvraag.</p>
+        <p>Lorenzo controleert je aanvraag en neemt persoonlijk contact met je op om de scope te bespreken. Daarna ontvang je de definitieve offerte.</p>
       </div>
 
       <div id="intakeWorkspace" hidden>

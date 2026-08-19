@@ -1,4 +1,5 @@
 import { requestKindLabel } from "./request-kind.ts";
+import type { ApplicationOutput } from "./application-output.ts";
 
 interface AdminEmailData {
   requestId: string;
@@ -41,10 +42,7 @@ interface IntakeInvitationEmailData {
 }
 
 interface SubmittedIntakeAdminEmailData {
-  clientName: string;
-  company: string | null;
-  requestId: string;
-  submittedAt: string;
+  output: ApplicationOutput;
   adminUrl: string;
 }
 
@@ -492,19 +490,40 @@ function replaceAsciiControlRunsWithSpace(value: string): string {
 }
 
 export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailData) {
-  const subjectLabel = replaceAsciiControlRunsWithSpace(data.company || data.clientName).trim();
-  const subject = `Nieuwe websitebriefing ontvangen — ${subjectLabel}`;
-  const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
-  const submittedAt = new Date(data.submittedAt).toLocaleString("nl-BE", {
+  const output = data.output;
+  const subjectLabel = replaceAsciiControlRunsWithSpace(output.customer.company || output.customer.name).trim();
+  const subject = `Nieuwe aanvraag ${output.applicationReference} — ${subjectLabel}`;
+  const submittedAt = new Date(output.submittedAt).toLocaleString("nl-BE", {
     dateStyle: "long",
     timeStyle: "short",
     timeZone: "Europe/Brussels",
   });
-  const safeName = escapeHtml(data.clientName);
-  const safeCompany = data.company ? escapeHtml(data.company) : null;
-  const safeReference = escapeHtml(requestReference);
-  const safeSubmittedAt = escapeHtml(submittedAt);
   const safeAdminUrl = escapeHtml(data.adminUrl);
+  const money = (minor: number) => new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" }).format(minor / 100);
+  const display = (value: unknown): string => {
+    if (Array.isArray(value)) return value.map(display).filter(Boolean).join(", ");
+    if (value && typeof value === "object") {
+      return Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== null && item !== undefined && item !== "" && (!Array.isArray(item) || item.length))
+        .map(([key, item]) => `${key.replaceAll("_", " ")}: ${display(item)}`).join("; ");
+    }
+    if (typeof value === "boolean") return value ? "Ja" : "Nee";
+    return value === null || value === undefined || value === "" ? "" : String(value);
+  };
+  const section = (title: string, rows: Array<[string, unknown]>) => {
+    const visibleRows = rows.filter(([, value]) => display(value));
+    if (!visibleRows.length) return "";
+    return `<h2 style="margin:24px 0 10px;color:#12346b;font-size:17px;">${escapeHtml(title)}</h2><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;">${visibleRows.map(([label, value]) => `<tr><td style="width:34%;padding:6px 8px 6px 0;vertical-align:top;color:#5b6472;font-weight:bold;">${escapeHtml(label)}</td><td style="padding:6px 0;vertical-align:top;word-break:break-word;">${escapeHtml(display(value))}</td></tr>`).join("")}</table>`;
+  };
+  const recurringText = output.commercial.recurringServices.map((service) => `${service.label}: ${money(service.amountMinor)} per maand excl. btw`).join(" · ");
+  const sections = [
+    section("Identiteit", [["Aanvraagnummer", output.applicationReference], ["Ontvangen", submittedAt], ["Naam", output.customer.name], ["Bedrijf", output.customer.company], ["E-mail", output.customer.email], ["Telefoon", output.customer.phone]]),
+    section("Commercieel", [["Pakket", output.commercial.packageLabel], ["Budget", output.commercial.budgetLabel], ["Indicatief projectminimum", `${money(output.commercial.knownMinimumMinor)} excl. btw`], ["Budget Guard", output.commercial.budgetStatus], ["Vervolgservice", recurringText]]),
+    section("Project", [["Type website", output.project.websiteType], ["Bedrijfsomschrijving", output.project.businessDescription], ["Doelgroep", output.project.targetAudience], ["Bestaande website", output.project.hasExistingWebsite], ["Huidige website", output.project.currentWebsite], ["Te behouden", output.project.elementsToKeep], ["Verbeterpunten", output.project.improvementAreas], ["Domein", output.project.domain], ["Hosting", output.project.hostingStatus], ["Doelen", output.project.goals], ["Primaire conversie", output.project.primaryConversionGoal]]),
+    section("Website", [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", output.website.features], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]),
+    section("Branding & content", [["Huisstijl", output.brandingContent.brandStatus], ["Logo", output.brandingContent.logoStatus], ["Kleuren", output.brandingContent.brandColors], ["Ontwerpstijl", output.brandingContent.designStyles], ["Inspiratie", output.brandingContent.inspirationSites], ["Wat niet aanspreekt", output.brandingContent.dislikedStyles], ["Content", output.brandingContent.contentStatus], ["Beelden", output.brandingContent.imageStatus], ["Beeldondersteuning", output.brandingContent.imageSupport], ["Content/media-details", output.brandingContent.contentMediaDetails]]),
+    section("Service & planning", [["Domeinstatus", output.servicePlanning.domainStatus], ["Onderhoud", output.servicePlanning.maintenanceInterest], ["Hostingondersteuning", output.servicePlanning.hostingSupport], ["Servicekeuzes", output.servicePlanning.hostingMaintenanceDetails], ["Timing", output.servicePlanning.timing], ["Deadline", output.servicePlanning.deadline], ["Reden deadline", output.servicePlanning.deadlineReason], ["Deadlinedetails", output.servicePlanning.deadlineDetails], ["Prioriteiten", output.servicePlanning.priorities], ["Budgetnotities", output.servicePlanning.budgetNotes], ["Opmerkingen", output.servicePlanning.notes]]),
+  ].join("");
 
   const html = `<!doctype html>
 <html lang="nl">
@@ -520,22 +539,13 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
           <tr>
             <td style="padding:28px 32px;border-top:4px solid #12346b;font-size:16px;line-height:1.6;">
-              <h1 style="margin:0 0 18px;color:#12346b;font-size:24px;line-height:1.3;">Nieuwe websitebriefing ontvangen</h1>
-              <p style="margin:0 0 20px;">Een klant heeft de websitebriefing definitief verzonden.</p>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
-                <tr>
-                  <td style="padding:16px 18px;">
-                    <strong>Klant:</strong> ${safeName}<br>
-                    ${safeCompany ? `<strong>Bedrijf:</strong> ${safeCompany}<br>` : ""}
-                    <strong>Aanvraag:</strong> ${safeReference}<br>
-                    <strong>Verzonden:</strong> ${safeSubmittedAt}
-                  </td>
-                </tr>
-              </table>
+              <h1 style="margin:0 0 18px;color:#12346b;font-size:24px;line-height:1.3;">Nieuwe websiteaanvraag</h1>
+              <p style="margin:0 0 20px;">De websitebriefing is definitief verzonden. Onderstaande prijs komt uit de opgeslagen, gezaghebbende pricing snapshot.</p>
+              ${sections}
               <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td style="border-radius:6px;background-color:#b75d3b;">
-                    <a href="${safeAdminUrl}" style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-weight:bold;">Briefing bekijken</a>
+                    <a href="${safeAdminUrl}" style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-weight:bold;">Beveiligde briefing bekijken</a>
                   </td>
                 </tr>
               </table>
@@ -549,15 +559,34 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
 </html>`;
 
   const text = [
-    "Nieuwe websitebriefing ontvangen",
+    "Nieuwe websiteaanvraag",
     "",
-    "Een klant heeft de websitebriefing definitief verzonden.",
-    `Klant: ${data.clientName}`,
-    ...(data.company ? [`Bedrijf: ${data.company}`] : []),
-    `Aanvraag: ${requestReference}`,
+    `Aanvraagnummer: ${output.applicationReference}`,
     `Verzonden: ${submittedAt}`,
+    `Naam: ${output.customer.name}`,
+    ...(output.customer.company ? [`Bedrijf: ${output.customer.company}`] : []),
+    `E-mail: ${output.customer.email}`,
+    ...(output.customer.phone ? [`Telefoon: ${output.customer.phone}`] : []),
     "",
-    `Briefing bekijken: ${data.adminUrl}`,
+    `Pakket: ${output.commercial.packageLabel}`,
+    `Budget: ${output.commercial.budgetLabel}`,
+    `Indicatief projectminimum: ${money(output.commercial.knownMinimumMinor)} excl. btw`,
+    `Budget Guard: ${output.commercial.budgetStatus}`,
+    ...(recurringText ? [`Vervolgservice: ${recurringText}`] : []),
+    "",
+    ...["Project", "Website", "Branding & content", "Service & planning"].flatMap((title, index) => {
+      const rows = index === 0
+        ? [["Type website", output.project.websiteType], ["Bedrijfsomschrijving", output.project.businessDescription], ["Doelgroep", output.project.targetAudience], ["Bestaande website", output.project.hasExistingWebsite], ["Huidige website", output.project.currentWebsite], ["Te behouden", output.project.elementsToKeep], ["Verbeterpunten", output.project.improvementAreas], ["Domein", output.project.domain], ["Hosting", output.project.hostingStatus], ["Doelen", output.project.goals], ["Primaire conversie", output.project.primaryConversionGoal]]
+        : index === 1
+        ? [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", output.website.features], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]
+        : index === 2
+        ? [["Huisstijl", output.brandingContent.brandStatus], ["Logo", output.brandingContent.logoStatus], ["Kleuren", output.brandingContent.brandColors], ["Ontwerpstijl", output.brandingContent.designStyles], ["Inspiratie", output.brandingContent.inspirationSites], ["Wat niet aanspreekt", output.brandingContent.dislikedStyles], ["Content", output.brandingContent.contentStatus], ["Beelden", output.brandingContent.imageStatus], ["Beeldondersteuning", output.brandingContent.imageSupport], ["Content/media-details", output.brandingContent.contentMediaDetails]]
+        : [["Domeinstatus", output.servicePlanning.domainStatus], ["Onderhoud", output.servicePlanning.maintenanceInterest], ["Hostingondersteuning", output.servicePlanning.hostingSupport], ["Servicekeuzes", output.servicePlanning.hostingMaintenanceDetails], ["Timing", output.servicePlanning.timing], ["Deadline", output.servicePlanning.deadline], ["Reden deadline", output.servicePlanning.deadlineReason], ["Deadlinedetails", output.servicePlanning.deadlineDetails], ["Prioriteiten", output.servicePlanning.priorities], ["Budgetnotities", output.servicePlanning.budgetNotes], ["Opmerkingen", output.servicePlanning.notes]];
+      const lines = rows.filter(([, value]) => display(value)).map(([label, value]) => `${label}: ${display(value)}`);
+      return lines.length ? [title.toUpperCase(), ...lines, ""] : [];
+    }),
+    "",
+    `Beveiligde briefing bekijken: ${data.adminUrl}`,
   ].join("\n");
 
   return { subject, html, text };

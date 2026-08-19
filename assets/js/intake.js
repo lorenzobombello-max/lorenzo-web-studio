@@ -1590,13 +1590,60 @@
       if (!response.ok) return handleApiError(response, body);
       if (body.state === "submitted" || body.state === "already_submitted") {
         dirty = false;
-        setReadOnly("submitted");
+        setReadOnly("submitted", body.application);
       }
     } catch { handleNetworkError(); }
     finally { setBusy(false); }
   }
 
-  function setReadOnly(status) {
+  function renderSuccessSummary(application) {
+    const valid = application && typeof application === "object" &&
+      /^LWS-AAN-[0-9]{4}-[0-9]{4}$/.test(application.applicationReference || "") &&
+      application.customer && application.commercial;
+    const summary = document.getElementById("intakeSuccessSummary");
+    const reference = document.querySelector(".intake-success__reference");
+    const customerNode = document.getElementById("intakeSuccessCustomer");
+    if (!valid) {
+      summary.hidden = true;
+      reference.hidden = true;
+      customerNode.hidden = true;
+      return;
+    }
+    reference.hidden = false;
+    customerNode.hidden = false;
+    const setRow = (key, value) => {
+      const row = document.querySelector(`[data-success-row="${key}"]`);
+      const target = row?.querySelector("dd");
+      const text = Array.isArray(value) ? value.filter(Boolean).join(", ") : value;
+      row.hidden = !text;
+      if (target) target.textContent = text || "";
+    };
+    const euro = (minor) => euroFormatter.format(minor / 100);
+    const customer = application.customer.company
+      ? `${application.customer.company} · ${application.customer.name}`
+      : application.customer.name;
+    const languages = [application.website?.primaryLanguage, ...(application.website?.additionalLanguages || [])];
+    const recurring = (application.commercial.recurringServices || []).map((service) =>
+      `${service.label}: ${euro(service.amountMinor)} per maand excl. btw`
+    );
+    document.getElementById("intakeSuccessReference").textContent = application.applicationReference;
+    customerNode.textContent = customer;
+    setRow("package", application.commercial.packageLabel);
+    setRow("budget", application.commercial.budgetLabel);
+    setRow("minimum", `${euro(application.commercial.knownMinimumMinor)} excl. btw`);
+    setRow("pages", application.website?.pages);
+    setRow("shop", application.website?.webshop ? "Ja" : "Nee");
+    setRow("booking", application.website?.booking ? "Ja" : "Nee");
+    setRow("languages", languages);
+    setRow("branding", [application.brandingContent?.brandStatus, application.brandingContent?.logoStatus]);
+    setRow("content", [application.brandingContent?.contentStatus, application.brandingContent?.imageStatus]);
+    setRow("recurring", recurring);
+    setRow("deadline", application.servicePlanning?.deadline || application.servicePlanning?.timing);
+    setRow("submitted", new Date(application.submittedAt).toLocaleString("nl-BE", { dateStyle: "long", timeStyle: "short", timeZone: "Europe/Brussels" }));
+    summary.hidden = false;
+  }
+
+  function setReadOnly(status, application) {
     stopPricingPreview();
     readOnly = true;
     dirty = false;
@@ -1606,7 +1653,8 @@
     form.classList.add("is-readonly");
     contextStatus.textContent = status === "reviewed" ? "Verwerkt" : "Verzonden";
     success.hidden = false;
-    success.querySelector("h2").textContent = status === "reviewed" ? "Je intake werd al verwerkt." : "Bedankt. Je websitebriefing is succesvol verzonden.";
+    success.querySelector("h2").textContent = status === "reviewed" ? "Je aanvraag werd al verwerkt" : "Aanvraag ontvangen";
+    renderSuccessSummary(application);
     success.focus();
     showStep(currentStep);
   }
@@ -1626,7 +1674,7 @@
       workspace.hidden = false;
       showStep(0);
       if (status === "in_progress") setMessage("Je eerder opgeslagen concept is hersteld.", "success");
-      if (status === "submitted" || status === "reviewed") setReadOnly(status);
+      if (status === "submitted" || status === "reviewed") setReadOnly(status, body.application);
       else schedulePricingPreview({ force: true, immediate: true });
     } catch { showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw."); }
   }

@@ -36,6 +36,17 @@
 .intake-state p { max-width: 570px; color: var(--color-text-soft); }
 .intake-state--error { border-color: #9e4f56; }
 .intake-state--success { border-color: #397458; }
+.intake-success__reference { display: grid; gap: 0.2rem; margin: 1.25rem 0; }
+.intake-success__reference span { color: var(--color-text-soft); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.intake-success__reference strong { color: var(--signal); font: 800 1.6rem/1.25 "Manrope", sans-serif; letter-spacing: 0; }
+.intake-success__summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 2rem; width: 100%; margin: 1.5rem 0; padding-block: 1.5rem; border-block: 1px solid var(--color-border); text-align: left; }
+.intake-success__summary section { min-width: 0; }
+.intake-success__summary h3 { margin: 0 0 0.65rem; color: var(--signal); font-size: 0.9rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.intake-success__summary dl, .intake-success__summary dl div { margin: 0; }
+.intake-success__summary dl div { display: grid; grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.2fr); gap: 0.75rem; padding: 0.3rem 0; }
+.intake-success__summary dt { color: var(--color-text-soft); }
+.intake-success__summary dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; }
+.intake-state .intake-success__disclaimer { max-width: none; padding: 0.85rem 1rem; color: var(--color-text); text-align: left; border-left: 3px solid var(--signal); background: rgba(14, 216, 230, 0.06); }
 .intake-spinner { width: 2rem; height: 2rem; border: 3px solid var(--color-border); border-top-color: var(--color-accent); border-radius: 50%; animation: intake-spin 0.8s linear infinite; }
 #intakeWorkspace { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: clamp(1.5rem, 4vw, 3.5rem); align-items: start; }
 #intakeWorkspace[hidden] { display: none; }
@@ -181,6 +192,8 @@ body.modal-open { overflow: hidden; }
   .intake-main { padding-top: 2.5rem; }
   .intake-secure-label { display: none; }
   .intake-context, .intake-step, .conditional-panel, .intake-review { grid-template-columns: 1fr; }
+  .intake-success__summary { grid-template-columns: 1fr; }
+  .intake-success__summary dl div { grid-template-columns: 1fr; gap: 0.1rem; }
   .budget-guard__heading { display: grid; }
   .budget-guard__state { justify-self: start; text-align: left; }
   .budget-guard__summary { grid-template-columns: 1fr; }

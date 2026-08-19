@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { buildApplicationOutput, type ApplicationOutput } from "../_shared/application-output.ts";
 import { buildAuthoritativeSubmitData } from "../_shared/authoritative-intake.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { deliverEmailJob } from "../_shared/email-delivery.ts";
@@ -129,9 +130,7 @@ function invalidIntakeToken(origin: string | null): Response {
 
 interface SubmittedIntakeNotificationContext {
   requestId: string;
-  clientName: string;
-  company: string | null;
-  submittedAt: string;
+  output: ApplicationOutput;
 }
 
 interface AuthoritativePricingContext {
@@ -227,7 +226,7 @@ async function loadSubmittedIntakeNotificationContext(
 
   const { data: quoteRequest, error: requestError } = await supabase
     .from("quote_requests")
-    .select("id, name, company")
+    .select("id, application_reference, name, company, email, phone, website_type, budget, timing")
     .eq("id", intake.quote_request_id)
     .maybeSingle();
 
@@ -235,16 +234,38 @@ async function loadSubmittedIntakeNotificationContext(
     requestError ||
     !quoteRequest ||
     quoteRequest.id !== intake.quote_request_id ||
-    typeof quoteRequest.name !== "string" ||
-    (quoteRequest.company !== null && typeof quoteRequest.company !== "string")
+    typeof quoteRequest.name !== "string" || typeof quoteRequest.email !== "string"
   ) return null;
 
-  return {
-    requestId: quoteRequest.id,
-    clientName: quoteRequest.name,
-    company: quoteRequest.company,
-    submittedAt: intake.submitted_at,
-  };
+  const [{ data: detailsData, error: detailsError }, { data: pricingData, error: pricingError }] = await Promise.all([
+    supabase.rpc("inspect_quote_request_intake_details_v4", { p_access_token_hash: intakeTokenHash }),
+    supabase.rpc("inspect_customer_pricing_read_v3", { p_access_token_hash: intakeTokenHash }),
+  ]);
+  const details = Array.isArray(detailsData) ? detailsData[0] : null;
+  const pricing = Array.isArray(pricingData) ? pricingData[0] : null;
+  if (detailsError || pricingError || !details || !pricing?.snapshot_present) return null;
+  const evidence = details.intake_data && typeof details.intake_data === "object" && !Array.isArray(details.intake_data)
+    ? details.intake_data as Record<string, unknown>
+    : {};
+  const authoritativeSnapshot = pricing.integrity_snapshot && typeof pricing.integrity_snapshot === "object" && !Array.isArray(pricing.integrity_snapshot)
+    ? pricing.integrity_snapshot as Record<string, unknown>
+    : null;
+  if (!authoritativeSnapshot) return null;
+
+  try {
+    return {
+      requestId: quoteRequest.id,
+      output: buildApplicationOutput({
+        applicationReference: quoteRequest.application_reference,
+        submittedAt: intake.submitted_at,
+        request: quoteRequest as Record<string, unknown>,
+        evidence,
+        authoritativeSnapshot,
+      }),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function processSubmittedIntakeNotification(
@@ -266,10 +287,7 @@ async function processSubmittedIntakeNotification(
     if (!context) return jobStatus;
 
     const emailPayload = buildSubmittedIntakeAdminEmail({
-      clientName: context.clientName,
-      company: context.company,
-      requestId: context.requestId,
-      submittedAt: context.submittedAt,
+      output: context.output,
       adminUrl: buildAdminIntakeUrl(rawAdminCapability),
     });
     const delivery = await deliverEmailJob({
@@ -399,7 +417,7 @@ Deno.serve(async (request) => {
 
     const { data: businessDetails, error: businessDetailsError } = await supabase
       .from("quote_requests")
-      .select("customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email")
+      .select("application_reference, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email")
       .eq("id", result.quote_request_id)
       .maybeSingle();
     if (businessDetailsError || !businessDetails) {
@@ -410,8 +428,45 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
+    const evidence = result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
+      ? result.intake_data as Record<string, unknown>
+      : {};
+    let applicationOutput: ApplicationOutput | null = null;
+    if (businessDetails.application_reference !== null) {
+      const { data: pricingData, error: pricingError } = await supabase.rpc("inspect_admin_pricing_read_v3", {
+        p_admin_access_token_hash: adminTokenHash,
+      });
+      const pricing = Array.isArray(pricingData) ? pricingData[0] : null;
+      const authoritativeSnapshot = pricing?.integrity_snapshot && typeof pricing.integrity_snapshot === "object" && !Array.isArray(pricing.integrity_snapshot)
+        ? pricing.integrity_snapshot as Record<string, unknown>
+        : null;
+      if (pricingError || !pricing?.snapshot_present || !authoritativeSnapshot) {
+        return jsonResponse(500, {
+          ok: false,
+          code: "ADMIN_PRICING_OUTPUT_UNAVAILABLE",
+          message: "Admin briefing could not be inspected.",
+        }, origin);
+      }
+      try {
+        applicationOutput = buildApplicationOutput({
+          applicationReference: businessDetails.application_reference,
+          submittedAt: result.submitted_at,
+          request: { ...result, ...businessDetails },
+          evidence,
+          authoritativeSnapshot,
+        });
+      } catch {
+        return jsonResponse(500, {
+          ok: false,
+          code: "ADMIN_APPLICATION_OUTPUT_INVALID",
+          message: "Admin briefing could not be inspected.",
+        }, origin);
+      }
+    }
+
     return jsonResponse(200, {
       ok: true,
+      ...(applicationOutput ? { application: applicationOutput } : {}),
       intake: {
         id: result.intake_id,
         status: result.intake_status,
@@ -421,6 +476,7 @@ Deno.serve(async (request) => {
       },
       request: {
         id: result.quote_request_id,
+        application_reference: businessDetails.application_reference,
         created_at: result.quote_request_created_at,
         name: result.name,
         customer_type: businessDetails.customer_type,
@@ -442,9 +498,7 @@ Deno.serve(async (request) => {
         timing: result.timing,
         description: result.description,
       },
-      data: result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
-        ? result.intake_data
-        : {},
+      data: evidence,
     }, origin);
   }
 
@@ -538,8 +592,13 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
+    const submittedOutput = result.intake_status === "submitted" || result.intake_status === "reviewed"
+      ? await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash)
+      : null;
+
     return jsonResponse(200, {
       ok: true,
+      ...(submittedOutput ? { application: submittedOutput.output } : {}),
       intake: {
         id: result.intake_id,
         status: result.intake_status,
@@ -711,10 +770,17 @@ Deno.serve(async (request) => {
       );
     }
 
+    const submittedOutput = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
+    if (!submittedOutput) return jsonResponse(500, {
+      ok: false,
+      code: "APPLICATION_OUTPUT_UNAVAILABLE",
+      message: "Submitted intake output is unavailable.",
+    }, origin);
     return jsonResponse(200, {
       ok: true,
       state: "already_submitted",
       notification_status: notificationStatus,
+      application: submittedOutput.output,
       intake: {
         status: result.intake_status,
         submitted_at: result.submitted_at,
@@ -757,11 +823,18 @@ Deno.serve(async (request) => {
       intakeTokenHash,
       rawAdminCapability,
     );
+    const submittedOutput = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
+    if (!submittedOutput) return jsonResponse(500, {
+      ok: false,
+      code: "APPLICATION_OUTPUT_UNAVAILABLE",
+      message: "Submitted intake output is unavailable.",
+    }, origin);
 
     return jsonResponse(200, {
       ok: true,
       state: "submitted",
       notification_status: notificationStatus,
+      application: submittedOutput.output,
       intake: {
         status: result.intake_status,
         submitted_at: result.submitted_at,

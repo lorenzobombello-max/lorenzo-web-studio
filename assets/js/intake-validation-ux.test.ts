@@ -20,11 +20,12 @@ function sourceFunction(name: string) {
 
 const collectValidationIssues = Function(
   "requiredSubmitFields",
+  "validateInspirationSites",
   `"use strict"; return (${sourceFunction("collectValidationIssues")});`,
 )([
   "business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status",
   "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority",
-]) as (data: Record<string, unknown>) => Array<{ name: string; message: string }>;
+], Function(`"use strict"; return (${sourceFunction("validateInspirationSites")});`)()) as (data: Record<string, unknown>) => Array<{ name: string; message: string }>;
 const orderValidationIssues = Function(
   `"use strict"; return (${sourceFunction("orderValidationIssues")});`,
 )() as (
@@ -155,9 +156,11 @@ Deno.test("live correction clears only revalidated fields and refreshes conditio
 
 Deno.test("failed validation opens and reveals the first invalid control", () => {
   const validator = sourceFunction("validateSubmit");
-  assertStringIncludes(validator, "showStep(steps.indexOf(step))");
-  assertStringIncludes(validator, "scrollIntoView");
-  assertStringIncludes(validator, "focus");
+  const reveal = sourceFunction("revealFirstValidationIssue");
+  assertStringIncludes(validator, "revealFirstValidationIssue(issues[0].name)");
+  assertStringIncludes(reveal, "showStep(steps.indexOf(step))");
+  assertStringIncludes(reveal, "scrollIntoView");
+  assertStringIncludes(reveal, "focus");
   assertFalse(validator.includes("firstInvalid ||="));
 });
 

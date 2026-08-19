@@ -1,5 +1,6 @@
 import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildAdminNotificationEmail, buildQuotationEmail } from "./email-templates.ts";
+import { buildAdminNotificationEmail, buildQuotationEmail, buildSubmittedIntakeAdminEmail } from "./email-templates.ts";
+import { buildApplicationOutput } from "./application-output.ts";
 
 const base = {
   requestId: "22222222-2222-4222-8222-222222222222",
@@ -114,4 +115,39 @@ Deno.test("acceptance confirmations record acceptance without invoice side effec
     assertStringIncludes(result.text, "geen factuur of betalingsbewijs");
     assertFalse(/betaald|betaling ontvangen|factuur aangemaakt/i.test(`${result.subject} ${result.html} ${result.text}`));
   }
+});
+
+Deno.test("submitted intake email uses application reference and authoritative complete output", () => {
+  const output = buildApplicationOutput({
+    applicationReference: "LWS-AAN-2026-0042",
+    submittedAt: "2026-08-19T18:00:00Z",
+    request: { name: "Klant <script>alert(1)</script>", company: "Bedrijf & Co", email: "klant@example.test", phone: "+32 9 000 00 00", website_type: "business", timing: "december" },
+    evidence: {
+      website_goals: ["generate_leads"], primary_conversion_goal: "quote_requests", existing_website_url: "https://example.test",
+      domain_name: "example.test", hosting_status: "has_hosting", requested_pages: ["home", "services"], requested_features: ["contact_form"],
+      shop_required: true, shop_details: { approx_product_count: "20" }, booking_required: true, booking_details: { type: "consultations" },
+      primary_language: "nl", additional_languages: ["fr"], integrations: ["crm"], seo_priority: "high", seo_details: { scope: "launch" },
+      brand_status: "none", logo_status: "needed", design_styles: ["modern"], content_status: "partial", image_status: "needed",
+      image_support: ["ai_images"], content_media_details: { copywriting_scope: "light" }, maintenance_interest: "yes",
+      hosting_support: "advice", hosting_maintenance_details: { maintenance_plan: "care_plus" }, deadline_date: "2026-12-01",
+      deadline_reason: "Launch <img src=x onerror=alert(2)>", additional_notes: "Volledige notitie",
+    },
+    authoritativeSnapshot: {
+      calculation: { knownMinimumMinor: 350000, currency: "EUR", vatBasis: "exclusive" },
+      packageDefinition: { id: "professional_v2" },
+      budgetEvaluation: { status: "known_minimum_above_budget", originalLabel: "Minder dan EUR 1.800" },
+      recurringServices: [{ productId: "care_plus", amountMinor: 9900, unit: "month" }],
+    },
+  });
+  const result = buildSubmittedIntakeAdminEmail({ output, adminUrl: "https://example.test/admin#token=secure" });
+  assertEquals(result.subject, "Nieuwe aanvraag LWS-AAN-2026-0042 — Bedrijf & Co");
+  for (const expected of ["Identiteit", "Commercieel", "Project", "Website", "Branding &amp; content", "Service &amp; planning", "Professional", "€ 3.500,00 excl. btw", "LWS Care+: € 99,00 per maand excl. btw", "Beveiligde briefing bekijken"]) {
+    assertStringIncludes(result.html, expected);
+  }
+  assertStringIncludes(result.text, "Aanvraagnummer: LWS-AAN-2026-0042");
+  assertStringIncludes(result.text, "Webshopdetails: approx product count: 20");
+  assertStringIncludes(result.html, "Klant &lt;script&gt;alert(1)&lt;/script&gt;");
+  assertStringIncludes(result.html, "Launch &lt;img src=x onerror=alert(2)&gt;");
+  assertFalse(result.html.includes("22222222-2222"));
+  assertFalse(/hmac|pricingConfigHash|admin_access_token/i.test(result.html));
 });
