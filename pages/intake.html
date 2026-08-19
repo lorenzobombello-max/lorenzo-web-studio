@@ -12,10 +12,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/intake.css?v=20260816-1" />
+  <link rel="stylesheet" href="../assets/css/intake.css?v=20260819-ux2" />
     <script defer src="../assets/js/cookie-consent.js"></script>
 <script defer src="../assets/js/pages.js"></script>
-  <script defer src="../assets/js/intake.js?v=20260819-2"></script>
+  <script defer src="../assets/js/intake.js?v=20260819-ux2"></script>
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
 </head>
 <body class="intake-page">
@@ -54,19 +54,14 @@
 
       <div id="intakeWorkspace" hidden>
         <aside class="intake-progress" aria-label="Voortgang">
-          <div class="intake-progress__meta"><span id="stepCounter">Stap 1 van 10</span><span id="completionValue">10%</span></div>
+          <div class="intake-progress__meta"><span id="stepCounter">Budget</span><span id="completionValue">Fase 1 van 5</span></div>
           <div class="intake-progress__track" aria-hidden="true"><span id="progressBar"></span></div>
-          <ol id="stepList">
-            <li><button type="button" data-step-target="0" aria-current="step"><span>1</span>Over jouw bedrijf</button></li>
-            <li><button type="button" data-step-target="1"><span>2</span>Budget &amp; pakket</button></li>
-            <li><button type="button" data-step-target="2"><span>3</span>Pagina's en functies</button></li>
-            <li><button type="button" data-step-target="3"><span>4</span>Webshop en reservaties</button></li>
-            <li><button type="button" data-step-target="4"><span>5</span>Stijl en huisstijl</button></li>
-            <li><button type="button" data-step-target="5"><span>6</span>Teksten en beelden</button></li>
-            <li><button type="button" data-step-target="6"><span>7</span>Domein en hosting</button></li>
-            <li><button type="button" data-step-target="7"><span>8</span>SEO en koppelingen</button></li>
-            <li><button type="button" data-step-target="8"><span>9</span>Planning</button></li>
-            <li><button type="button" data-step-target="9"><span>10</span>Prioriteiten en bevestiging</button></li>
+          <ol id="phaseList">
+            <li><button type="button" data-phase-target="0" aria-current="step"><span>1</span><span>Uw project</span></button></li>
+            <li><button type="button" data-phase-target="1"><span>2</span><span>Uw oplossing</span></button></li>
+            <li><button type="button" data-phase-target="2"><span>3</span><span>Uw website</span></button></li>
+            <li><button type="button" data-phase-target="3"><span>4</span><span>Uw uitstraling</span></button></li>
+            <li><button type="button" data-phase-target="4"><span>5</span><span>Afronding</span></button></li>
           </ol>
         </aside>
 
@@ -123,7 +118,7 @@
               </div><p class="field-error" id="website_goals-error"></p></div>
               <div class="field field--full"><label for="primary_conversion_goal">Wat is de belangrijkste actie voor een bezoeker?</label><input id="primary_conversion_goal" name="primary_conversion_goal" type="text" maxlength="500" required aria-describedby="primary_conversion_goal-error" /><p class="field-error" id="primary_conversion_goal-error"></p></div>
               <div class="field field--full"><span class="field-label">Is het eerder opgegeven budget nog correct?</span><div class="choice-row"><label><input type="radio" name="budget_confirmed" value="true" /> Ja</label><label><input type="radio" name="budget_confirmed" value="false" /> Nee</label></div></div>
-              <div class="field"><label for="budget_update_category">Bijgewerkt budget</label><select id="budget_update_category" name="budget_update_category"><option value="" disabled>Selecteer</option><option>Minder dan EUR 1.800</option><option>EUR 1.800 tot minder dan EUR 3.500</option><option>EUR 3.500 t/m EUR 6.000</option><option>Meer dan EUR 6.000</option></select></div>
+              <div class="field"><label for="budget_update_category">Verwacht budget</label><select id="budget_update_category" name="budget_update_category" required aria-describedby="budget_update_category-help budget_update_category-error"><option value="" disabled selected>Selecteer</option><option value="Minder dan EUR 1.800">Minder dan € 1.800 — persoonlijke beoordeling</option><option value="EUR 1.800 tot minder dan EUR 3.500">€ 1.800 tot minder dan € 3.500</option><option value="EUR 3.500 t/m EUR 6.000">€ 3.500 t/m € 6.000</option><option value="Meer dan EUR 6.000">Meer dan € 6.000</option></select><p class="field-help" id="budget_update_category-help">Starter begint vanaf € 1.800 excl. btw. Een lager budget kan u wel indienen en wordt persoonlijk beoordeeld.</p><p class="field-error" id="budget_update_category-error"></p></div>
               <div class="field"><label for="budget_notes">Budgettoelichting</label><textarea id="budget_notes" name="budget_notes" rows="3" maxlength="1000"></textarea></div>
               <div class="package-selection field field--full">
                 <div class="package-selection__heading">

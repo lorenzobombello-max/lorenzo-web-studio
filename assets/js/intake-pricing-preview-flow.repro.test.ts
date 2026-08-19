@@ -132,7 +132,7 @@ function buildFrontendHarness() {
       const option = [...input.querySelectorAll("option")].find((entry) => entry.value === nextValue);
       assertExists(option, `${id}=${nextValue}`);
       for (const entry of input.querySelectorAll("option")) entry.selected = entry === option;
-      input.value = nextValue;
+      Object.defineProperty(input, "value", { configurable: true, writable: true, value: nextValue });
     } else input.value = nextValue;
   }
 

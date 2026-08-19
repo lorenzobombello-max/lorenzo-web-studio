@@ -4,6 +4,87 @@
   const form = document.getElementById("intakeForm");
   if (!form) return;
 
+  const screenDefinitions = [
+    { phase: 0, title: "Budget", intro: "Geef uw budgetverwachting mee. Zo vergelijken we uw keuzes meteen met een realistische projectbasis.", nodes: [
+      ['input[name="budget_confirmed"]'], ["#budget_update_category"], ["#budget_notes"],
+    ] },
+    { phase: 0, title: "Huidige situatie", intro: "We brengen eerst uw bestaande website, domeinnaam en hosting in kaart.", nodes: [
+      ['input[name="has_existing_website"]'], ["#existingWebsiteFields", ".conditional-panel"], ["#domain_status"], ["#domain_name"], ["#hosting_status"], ["#hosting_support"],
+    ] },
+    { phase: 0, title: "Webshop en reservaties", intro: "Bepaal vroeg of verkoop, reservaties of afspraken deel uitmaken van de technische oplossing.", nodes: [
+      ['input[name="shop_required"]'], ["#shopFields", ".conditional-panel"], ['input[name="booking_required"]'], ["#bookingFields", ".conditional-panel"],
+    ] },
+    { phase: 1, title: "Kies uw pakket", intro: "Kies de bestaande pakketbasis die het best aansluit bij de omvang van uw website.", nodes: [
+      [".package-selection", ".package-selection"],
+    ] },
+    { phase: 1, title: "Bedrijf en doelen", intro: "Vertel wat uw organisatie doet, wie u wilt bereiken en welke actie uw website moet stimuleren.", nodes: [
+      ["#business_description"], ["#target_audience"], ['[data-group="website_goals"]'], ["#primary_conversion_goal"],
+    ] },
+    { phase: 2, title: "Pagina's", intro: "Selecteer de pagina's die u nodig hebt. Elke geselecteerde standaardpagina telt binnen de bestaande pakketlimiet.", nodes: [
+      ['[data-name="requested_pages"]'], ["#other_pages"], ["#pageScopeFields", ".conditional-panel"],
+    ] },
+    { phase: 2, title: "Functies en formulieren", intro: "Kies de functionaliteit die bezoekers nodig hebben en verfijn alleen de relevante onderdelen.", nodes: [
+      ['[data-name="requested_features"]'], ["#quoteFormFields", ".conditional-panel"], ["#downloadFields", ".conditional-panel"], ["#newsletterFields", ".conditional-panel"],
+    ] },
+    { phase: 2, title: "Talen, SEO en integraties", intro: "Bepaal talen, vindbaarheid, metingen en koppelingen in één samenhangend overzicht.", nodes: [
+      ["#primary_language"], ["#additionalLanguageChoices"], ["#multilingualFields", ".conditional-panel"], ["#seo_priority"], ["#seo_keywords"], ["#social_channels"], ["#integrations"], ["#seo_scope"], ["#seo_extra_language", ".choice-grid"], ["#analytics_scope"],
+    ] },
+    { phase: 3, title: "Merk en stijl", intro: "Leg de huidige merkbasis en de gewenste visuele richting vast.", nodes: [
+      ['[data-name="design_styles"]'], ["#brand_status"], ["#logo_status"], ["#branding_tier"], ["#brand_colors"], ["#inspiration_sites"], ["#disliked_styles"],
+    ] },
+    { phase: 3, title: "Content en media", intro: "Geef aan wat beschikbaar is en waar tekst- of beeldondersteuning nodig is.", nodes: [
+      ["#content_status"], ["#image_status"], ['[data-name="image_support"]'], ["#copywriting_scope", ".conditional-panel"],
+    ] },
+    { phase: 4, title: "Service en planning", intro: "Kies eventuele vervolgservice en geef een realistische gewenste planning mee.", nodes: [
+      ["#maintenance_interest"], ["#domain_service"], ["#maintenance_plan"], ["#deadline_date"], ["#deadline_reason"], ["#deadlineFields", ".conditional-panel"],
+    ] },
+    { phase: 4, title: "Controle en verzenden", intro: "Controleer uw keuzes en de actuele niet-bindende prijsindicatie voordat u verzendt.", review: true, nodes: [
+      ['[data-name="priorities"]'], ["#additional_notes"], ["#confirmation", ".confirmation-field"],
+    ] },
+  ];
+  const phaseStartScreens = [0, 3, 5, 8, 10];
+  const phaseLabels = ["Uw project", "Uw oplossing", "Uw website", "Uw uitstraling", "Afronding"];
+
+  function initializeIntakeScreens() {
+    const controlsBefore = new Set(form.querySelectorAll("input, select, textarea"));
+    const originalSteps = Array.from(form.querySelectorAll(".intake-step"));
+    const actions = document.getElementById("intakeActions");
+
+    screenDefinitions.forEach((definition, index) => {
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "intake-step";
+      fieldset.dataset.step = String(index);
+      fieldset.dataset.phase = String(definition.phase);
+      fieldset.hidden = true;
+      const legend = document.createElement("legend");
+      legend.textContent = definition.title;
+      const intro = document.createElement("p");
+      intro.className = "intake-step__intro";
+      intro.textContent = definition.intro;
+      fieldset.append(legend, intro);
+      if (definition.review) {
+        const review = document.createElement("div");
+        review.id = "intakeReviewSummary";
+        review.className = "intake-review field--full";
+        review.setAttribute("aria-live", "polite");
+        fieldset.append(review);
+      }
+      definition.nodes.forEach(([selector, closestSelector]) => {
+        const control = form.querySelector(selector);
+        const node = closestSelector ? control?.closest(closestSelector) : control?.closest(".field") || control;
+        if (!node) throw new TypeError(`Missing intake screen node: ${selector}`);
+        if (!fieldset.contains(node)) fieldset.append(node);
+      });
+      form.insertBefore(fieldset, actions);
+    });
+    originalSteps.forEach((step) => step.remove());
+
+    const controlsAfter = new Set(form.querySelectorAll("input, select, textarea"));
+    if (controlsBefore.size !== controlsAfter.size || [...controlsBefore].some((control) => !controlsAfter.has(control))) {
+      throw new TypeError("INTAKE_SCREEN_CONTROL_MISMATCH");
+    }
+  }
+
   function intakeTokenCandidate(search, state) {
     const queryToken = new URLSearchParams(search).get("token") || "";
     const historyToken = state && typeof state === "object" && typeof state.intakeToken === "string"
@@ -42,8 +123,8 @@
   const modal = document.getElementById("submitModal");
   const modalPanel = modal?.querySelector(".intake-modal__panel");
   const confirmSubmit = document.getElementById("confirmSubmit");
-  const steps = Array.from(form.querySelectorAll(".intake-step"));
-  const stepButtons = Array.from(document.querySelectorAll("[data-step-target]"));
+  let steps = [];
+  const phaseButtons = Array.from(document.querySelectorAll("[data-phase-target]"));
   const stepCounter = document.getElementById("stepCounter");
   const completionValue = document.getElementById("completionValue");
   const progressBar = document.getElementById("progressBar");
@@ -65,6 +146,7 @@
   const budgetGuardWarningActions = document.getElementById("budgetGuardWarningActions");
   const packageSelectionGroup = form.querySelector(".package-grid");
   let currentStep = 0;
+  let furthestStep = 0;
   let dirty = false;
   let busy = false;
   let readOnly = false;
@@ -91,7 +173,7 @@
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
-  const requiredSubmitFields = ["business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status", "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority"];
+  const requiredSubmitFields = ["budget_update_category", "business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status", "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority"];
   const scopedPages = ["portfolio", "reviews", "blog", "jobs", "gallery"];
   const budgetCodes = {
     "Minder dan EUR 1.800": "below_1800",
@@ -206,6 +288,9 @@
     });
   });
 
+  initializeIntakeScreens();
+  steps = Array.from(form.querySelectorAll(".intake-step"));
+
   function setMessage(text, type) {
     message.textContent = text;
     message.classList.toggle("is-error", type === "error");
@@ -231,18 +316,24 @@
 
   function showStep(index, focusHeading) {
     currentStep = Math.max(0, Math.min(steps.length - 1, index));
+    furthestStep = Math.max(furthestStep, currentStep);
     steps.forEach((step, stepIndex) => { step.hidden = stepIndex !== currentStep; });
-    stepButtons.forEach((button, stepIndex) => {
-      if (stepIndex === currentStep) button.setAttribute("aria-current", "step");
+    const activePhase = Number(steps[currentStep].dataset.phase);
+    phaseButtons.forEach((button, phaseIndex) => {
+      const nextPhaseStart = phaseStartScreens[phaseIndex + 1];
+      button.classList.toggle("is-complete", Number.isInteger(nextPhaseStart) && furthestStep >= nextPhaseStart);
+      button.disabled = phaseStartScreens[phaseIndex] > furthestStep;
+      if (phaseIndex === activePhase) button.setAttribute("aria-current", "step");
       else button.removeAttribute("aria-current");
     });
     const percent = Math.round(((currentStep + 1) / steps.length) * 100);
-    stepCounter.textContent = `Stap ${currentStep + 1} van ${steps.length}`;
-    completionValue.textContent = `${percent}%`;
+    stepCounter.textContent = steps[currentStep].querySelector("legend")?.textContent || "Intake";
+    completionValue.textContent = `Fase ${activePhase + 1} van 5`;
     progressBar.style.width = `${percent}%`;
     previousButton.hidden = currentStep === 0;
     nextButton.hidden = currentStep === steps.length - 1 || readOnly;
     submitButton.hidden = currentStep !== steps.length - 1 || readOnly;
+    if (currentStep === steps.length - 1) renderReviewSummary();
     if (focusHeading) steps[currentStep].querySelector("input, textarea, select")?.focus();
   }
 
@@ -398,6 +489,83 @@
       data.budget_update_category_code = budgetCode;
     }
     return data;
+  }
+
+  function selectedControlText(id) {
+    const control = document.getElementById(id);
+    if (!control) return "Niet ingevuld";
+    if (control instanceof HTMLSelectElement) {
+      return control.selectedOptions[0]?.textContent?.trim() || "Niet ingevuld";
+    }
+    return control.value?.trim() || "Niet ingevuld";
+  }
+
+  function selectedChoiceLabels(name) {
+    return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
+      .map((input) => input.closest("label")?.textContent?.trim() || input.value);
+  }
+
+  function appendReviewSection(container, title, rows) {
+    const section = document.createElement("section");
+    section.className = "intake-review__section";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const list = document.createElement("dl");
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      const term = document.createElement("dt");
+      const description = document.createElement("dd");
+      term.textContent = label;
+      description.textContent = Array.isArray(value) ? value.join(", ") || "Geen" : String(value || "Niet ingevuld");
+      row.append(term, description);
+      list.append(row);
+    });
+    section.append(heading, list);
+    container.append(section);
+  }
+
+  function renderReviewSummary() {
+    const container = document.getElementById("intakeReviewSummary");
+    if (!container) return;
+    const packageName = form.querySelector('input[name="selected_package_definition_id"]:checked')
+      ?.closest(".package-card")?.querySelector(".package-card__name")?.textContent?.trim() || "Niet gekozen";
+    const hasShop = selectedBoolean("shop_required") === true ? "Ja" : "Nee";
+    const hasBooking = selectedBoolean("booking_required") === true ? "Ja" : "Nee";
+    const additionalLanguages = Array.from(form.querySelectorAll("[data-additional-language]:checked"))
+      .map((input) => input.closest("label")?.textContent?.trim() || input.value);
+    container.replaceChildren();
+    appendReviewSection(container, "Project", [
+      ["Budget", selectedControlText("budget_update_category")],
+      ["Pakket", packageName],
+      ["Prijsindicatie", budgetGuardMinimumRow.hidden ? "Wordt berekend" : budgetGuardMinimum.textContent],
+      ["Bedrijf", selectedControlText("business_description")],
+      ["Doelgroep", selectedControlText("target_audience")],
+    ]);
+    appendReviewSection(container, "Oplossing", [
+      ["Webshop", hasShop],
+      ["Reservaties of afspraken", hasBooking],
+      ["Domein", selectedControlText("domain_status")],
+      ["Hosting", selectedControlText("hosting_status")],
+    ]);
+    appendReviewSection(container, "Website", [
+      ["Pagina's", selectedChoiceLabels("requested_pages")],
+      ["Functies", selectedChoiceLabels("requested_features")],
+      ["Hoofdtaal", selectedControlText("primary_language")],
+      ["Extra talen", additionalLanguages],
+      ["SEO", selectedControlText("seo_scope")],
+    ]);
+    appendReviewSection(container, "Uitstraling", [
+      ["Huisstijl", selectedControlText("brand_status")],
+      ["Logo", selectedControlText("logo_status")],
+      ["Stijl", selectedChoiceLabels("design_styles")],
+      ["Teksten", selectedControlText("content_status")],
+      ["Beelden", selectedControlText("image_status")],
+    ]);
+    appendReviewSection(container, "Afronding", [
+      ["Onderhoud", selectedControlText("maintenance_interest")],
+      ["Deadline", selectedControlText("deadline_date")],
+      ["Prioriteiten", selectedChoiceLabels("priorities")],
+    ]);
   }
 
   function collectPricingEvidence() {
@@ -1221,13 +1389,12 @@
   }
 
   function updateStepErrorIndicators() {
-    steps.forEach((step, index) => {
-      const hasError = Boolean(step.querySelector('[aria-invalid="true"]'));
-      const button = stepButtons[index];
-      button?.classList.toggle("has-error", hasError);
-      const stepLabel = button?.textContent.trim().replace(/^(\d+)\s*/, "$1 ");
-      if (hasError) button?.setAttribute("aria-label", `${stepLabel}, bevat fouten`);
-      else button?.removeAttribute("aria-label");
+    phaseButtons.forEach((button, phaseIndex) => {
+      const hasError = steps.some((step) =>
+        Number(step.dataset.phase) === phaseIndex && Boolean(step.querySelector('[aria-invalid="true"]')));
+      button.classList.toggle("has-error", hasError);
+      if (hasError) button.setAttribute("aria-label", `${phaseLabels[phaseIndex]}, bevat fouten`);
+      else button.removeAttribute("aria-label");
     });
   }
 
@@ -1284,6 +1451,33 @@
     firstInvalid?.focus?.();
     setMessage("Kies eerst een pakket. Je budgetkeuze blijft onafhankelijk.", "error");
     return false;
+  }
+
+  function validateBudgetSelection() {
+    if (document.getElementById("budget_update_category").value) {
+      clearFieldError("budget_update_category");
+      updateStepErrorIndicators();
+      return true;
+    }
+    const firstInvalid = markError("budget_update_category", "Kies een budgetverwachting om verder te gaan.");
+    validationMessageActive = true;
+    updateStepErrorIndicators();
+    firstInvalid?.focus?.();
+    setMessage("Kies eerst uw verwachte budget.", "error");
+    return false;
+  }
+
+  function validateNavigationTo(targetStep) {
+    if (targetStep > 0 && !validateBudgetSelection()) {
+      showStep(0);
+      return false;
+    }
+    if (targetStep > 3 && !form.querySelector('input[name="selected_package_definition_id"]:checked')) {
+      showStep(3);
+      validatePackageSelection();
+      return false;
+    }
+    return true;
   }
 
   function validateSubmit() {
@@ -1453,28 +1647,30 @@
       event.target.matches("[data-additional-language], #deadline_date, #deadline_reason")
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();
+    if (currentStep === steps.length - 1) renderReviewSummary();
   });
   form.addEventListener("input", handleValidationInput);
   form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(); });
   saveButton.addEventListener("click", saveDraft);
   nextButton.addEventListener("click", () => {
-    if (currentStep === 1 && !validatePackageSelection()) return;
-    showStep(currentStep + 1, true);
+    const targetStep = currentStep + 1;
+    if (!validateNavigationTo(targetStep)) return;
+    showStep(targetStep, true);
   });
   previousButton.addEventListener("click", () => showStep(currentStep - 1, true));
-  stepButtons.forEach((button) => button.addEventListener("click", () => {
-    const targetStep = Number(button.dataset.stepTarget);
-    if (currentStep === 1 && targetStep > currentStep && !validatePackageSelection()) return;
+  phaseButtons.forEach((button) => button.addEventListener("click", () => {
+    const targetStep = phaseStartScreens[Number(button.dataset.phaseTarget)];
+    if (!validateNavigationTo(targetStep)) return;
     showStep(targetStep, true);
   }));
   modal?.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModal));
   confirmSubmit?.addEventListener("click", submitFinal);
   document.getElementById("adjustBudget").addEventListener("click", () => {
-    showStep(1);
+    showStep(0);
     document.getElementById("budget_update_category")?.focus?.();
   });
   document.getElementById("changePackage").addEventListener("click", () => {
-    showStep(1);
+    showStep(3);
     (form.querySelector('input[name="selected_package_definition_id"]:checked') ||
       form.querySelector('input[name="selected_package_definition_id"]'))?.focus?.();
   });
