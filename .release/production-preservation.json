@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "productionAuthority": {
+    "remote": "origin",
+    "branch": "main",
+    "pagesEnvironment": "github-pages"
+  },
+  "forwardOnlyRules": {
+    "requireFetchedRemoteMain": true,
+    "requireRemoteMainAsMergeBase": true,
+    "forbidForcePush": true,
+    "forbidHistoryRewrite": true,
+    "forbidProductionReset": true,
+    "historicalSourcesAreReadOnly": true,
+    "requireForwardPortProofForHistoricalSources": true
+  },
+  "protectedSurfaces": [
+    {
+      "id": "global-layout",
+      "paths": ["index.html", "404.html", "pages/*.html", "assets/css/style.css", "assets/css/pages.css", "assets/js/pages.js", "assets/js/homepage-studio.js"]
+    },
+    {
+      "id": "fonts-typography",
+      "paths": ["assets/css/*.css", "assets/fonts/**", "assets/js/*typography*"]
+    },
+    {
+      "id": "header-footer",
+      "paths": ["index.html", "404.html", "pages/*.html", "assets/css/style.css", "assets/css/pages.css", "assets/js/pages.js"]
+    },
+    {
+      "id": "responsive-mobile-basis",
+      "paths": ["index.html", "404.html", "pages/*.html", "assets/css/*.css", "assets/js/pages.js", "assets/js/homepage-studio.js"]
+    },
+    {
+      "id": "intake-pricing-budget-guard",
+      "paths": ["pages/intake.html", "assets/css/intake.css", "assets/js/intake.js", "assets/js/intake-*.test.ts", "supabase/functions/intake-quote-request/**", "supabase/functions/_shared/pricing-*"]
+    },
+    {
+      "id": "operator-auth",
+      "paths": ["operator/**", "assets/css/operator-*.css", "assets/js/operator-*", "scripts/operator-*.test.mjs", "supabase/functions/operator-*/**"]
+    },
+    {
+      "id": "document-flow",
+      "paths": ["assets/docs/quotation/**", "assets/js/quotation-*", "pages/quotation-acceptance.html", "scripts/quotation-docx/**", "supabase/functions/quotation-acceptance/**", "supabase/functions/_shared/quotation-*", "supabase/migrations/*quotation*", "supabase/tests/quotation_*"]
+    },
+    {
+      "id": "production-build-deployment",
+      "paths": [".github/workflows/deploy-pages.yml", "scripts/prepare-pages-dist.ps1", "scripts/verify-pages-dist.ps1", "CNAME", "robots.txt", "sitemap.xml", "site.webmanifest"]
+    }
+  ],
+  "generatedArtifactPatterns": [
+    "dist/**",
+    "dist-verification-report.json",
+    "**/*.zip",
+    "**/*.bak",
+    "backup/**",
+    ".tmp/**",
+    ".tmp-visual-diff/**"
+  ],
+  "visualBaselineManifest": ".release/visual-baselines/manifest.json"
+}

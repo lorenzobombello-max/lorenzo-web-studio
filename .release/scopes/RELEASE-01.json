@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "RELEASE-01-PRODUCTION-FORWARD-ONLY-PROTECTION",
+  "baseRemoteMainSha": "5592804b7c3c6b5e347ec0946bcf3ef552e92c2c",
+  "allowedPaths": [
+    ".release/production-preservation.json",
+    ".release/scopes/RELEASE-01.json",
+    ".release/visual-baselines/README.md",
+    ".release/visual-baselines/manifest.json",
+    "docs/RELEASE-01-PRODUCTION-FORWARD-ONLY-CHECKPOINT-20260819.md",
+    "scripts/test-production-release.ps1"
+  ],
+  "protectedChanges": [],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": false,
+    "source": null,
+    "forwardPortProof": null
+  }
+}
