@@ -50,40 +50,17 @@ declare
   v_signature constant text :=
     'public.is_strict_pricing_snapshot_v3(smallint,text,text,jsonb,jsonb,jsonb,jsonb,jsonb)';
   v_definition text;
-  v_updated text;
+  v_definition_hash text;
 begin
   select pg_get_functiondef(v_signature::regprocedure) into v_definition;
-
-  v_updated := replace(
-    v_definition,
-    'p_config_version not in (''2.0.0'', ''2026-08-12-v1'', ''2026-08-13-v2'')',
-    'p_config_version not in (''2.0.0'', ''2026-08-12-v1'', ''2026-08-13-v2'', ''2026-08-16-v3'')'
+  v_definition_hash := encode(
+    extensions.digest(convert_to(v_definition, 'UTF8'), 'sha256'),
+    'hex'
   );
-  if v_updated = v_definition then
-    raise exception 'STRICT_V3_VERSION_ALLOWLIST_FRAGMENT_NOT_FOUND';
+  if v_definition_hash <>
+    '7f24bf90b5ed7617b8fd0a425af82768e9570f60e69b831f9ee78038d24fe8c0' then
+    raise exception 'STRICT_V3_APPROVED_PREDECESSOR_NOT_FOUND';
   end if;
-  v_definition := v_updated;
-
-  v_updated := replace(
-    v_definition,
-    'p_config_version not in (''2026-08-12-v1'', ''2026-08-13-v2'')',
-    'p_config_version not in (''2026-08-12-v1'', ''2026-08-13-v2'', ''2026-08-16-v3'')'
-  );
-  if v_updated = v_definition then
-    raise exception 'STRICT_V3_PROFESSIONAL_VERSION_FRAGMENT_NOT_FOUND';
-  end if;
-  v_definition := v_updated;
-
-  v_updated := replace(
-    v_definition,
-    'p_config_version in (''2026-08-12-v1'', ''2026-08-13-v2'')',
-    'p_config_version in (''2026-08-12-v1'', ''2026-08-13-v2'', ''2026-08-16-v3'')'
-  );
-  if v_updated = v_definition then
-    raise exception 'STRICT_V3_EXTRA_PAGE_VERSION_FRAGMENT_NOT_FOUND';
-  end if;
-
-  execute v_updated;
 end;
 $$;
 

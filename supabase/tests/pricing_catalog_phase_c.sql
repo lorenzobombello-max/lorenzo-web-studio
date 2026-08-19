@@ -42,13 +42,13 @@ select
   }'::jsonb as package_definition;
 
 select ok(public.is_strict_pricing_snapshot_v3(
-  3::smallint, '2026-08-12-v1', repeat('a', 64), normalized_scope,
+  3::smallint, '2026-08-16-v3', repeat('a', 64), normalized_scope,
   calculation, package_advice, budget_evaluation, package_definition
 ), 'Professional v2 with fixed EUR 225 page overage is valid')
 from phase_c_professional_v2;
 
 select ok(not public.is_strict_pricing_snapshot_v3(
-  3::smallint, '2026-08-12-v1', repeat('a', 64), normalized_scope,
+  3::smallint, '2026-08-16-v3', repeat('a', 64), normalized_scope,
   jsonb_set(calculation, '{appliedRules,0,amountMinor}', '320000'::jsonb),
   package_advice, budget_evaluation, package_definition
 ), 'Professional v2 cannot use the historical EUR 3.200 floor')

@@ -1,0 +1,1 @@
+ALTER FUNCTION public.set_quote_requests_updated_at() SET search_path = '';

@@ -73,7 +73,7 @@ select throws_ok(
 select ok(
   pg_get_functiondef(
     'public.is_strict_pricing_snapshot_v3(smallint,text,text,jsonb,jsonb,jsonb,jsonb,jsonb)'::regprocedure
-  ) like '%2026-08-12-v1%2026-08-13-v2%',
+  ) like '%2.0.0%2026-08-16-v3%',
   'strict v3 accepts historical and current catalog config versions'
 );
 
