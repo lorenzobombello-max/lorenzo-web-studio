@@ -1260,6 +1260,7 @@ body.no-scroll {
 
 @media (max-width: 1020px) {
   .restaurant-demo #over .restaurant-story-grid,
+  .restaurant-demo #reservatie .restaurant-reservation-grid,
   .restaurant-demo .restaurant-story-grid,
   .restaurant-demo .restaurant-contact-grid,
   .restaurant-demo .restaurant-hours-grid,
@@ -1308,6 +1309,26 @@ body.no-scroll {
   .restaurant-demo .restaurant-reservation-form,
   .restaurant-demo .restaurant-story-media {
     grid-template-columns: 1fr;
+  }
+
+  .restaurant-demo .restaurant-reservation-form,
+  .restaurant-demo .restaurant-reservation-form .field,
+  .restaurant-demo .restaurant-reservation-form input,
+  .restaurant-demo .restaurant-reservation-form select,
+  .restaurant-demo .restaurant-reservation-form textarea,
+  .restaurant-demo .restaurant-reservation-form button {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .restaurant-demo .restaurant-story-media img:nth-child(2) {
+    height: auto;
+    aspect-ratio: 4 / 5;
+    object-position: center top;
+  }
+
+  .restaurant-demo .restaurant-mobile-action {
+    display: none;
   }
 
   .restaurant-demo .restaurant-gallery-grid {

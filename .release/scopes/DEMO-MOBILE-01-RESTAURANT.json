@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "DEMO-MOBILE-01-RESTAURANT",
+  "baseRemoteMainSha": "1bc8a72c48871e402613da748be36341399a26fb",
+  "allowedPaths": [
+    ".release/scopes/DEMO-MOBILE-01-RESTAURANT.json",
+    "assets/css/demos/restaurant.css",
+    "docs/DEMO-MOBILE-01-RESTAURANT-CHECKPOINT-20260819.md"
+  ],
+  "protectedChanges": [
+    "assets/css/demos/restaurant.css"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": false,
+    "source": null,
+    "forwardPortProof": null
+  }
+}
