@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "RESTAURANT-FINAL-MOBILE",
+  "baseRemoteMainSha": "6b18d8477dbb4c7abf9959a03fbc486f523fd5c8",
+  "allowedPaths": [
+    ".release/scopes/RESTAURANT-FINAL-MOBILE.json",
+    "assets/css/demos/restaurant.css"
+  ],
+  "protectedChanges": [
+    "assets/css/demos/restaurant.css"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": false,
+    "source": null,
+    "forwardPortProof": null
+  }
+}

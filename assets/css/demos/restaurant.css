@@ -1321,9 +1321,21 @@ body.no-scroll {
     max-width: 100%;
   }
 
+  .restaurant-demo .restaurant-reservation-form input[type="date"],
+  .restaurant-demo .restaurant-reservation-form input[type="time"] {
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
   .restaurant-demo .restaurant-story-media img:nth-child(2) {
     height: auto;
     aspect-ratio: 4 / 5;
+    object-position: center top;
+  }
+
+  .restaurant-demo .restaurant-gallery-grid article:nth-child(3) img {
     object-position: center top;
   }
 
