@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "DEMO-MOBILE-02-CAFE-DATETIME",
+  "baseRemoteMainSha": "0873fc5431a85e440068d2b7257262c518939e89",
+  "allowedPaths": [
+    ".release/scopes/DEMO-MOBILE-02-CAFE-DATETIME.json",
+    "assets/css/demos/cafe.css",
+    "docs/DEMO-MOBILE-02-CAFE-DATETIME-CHECKPOINT-20260819.md"
+  ],
+  "protectedChanges": [
+    "assets/css/demos/cafe.css"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": false,
+    "source": null,
+    "forwardPortProof": null
+  }
+}

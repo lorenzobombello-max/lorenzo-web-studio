@@ -1439,6 +1439,14 @@ body.cafe-demo.no-scroll {
 	.cafe-demo .cafe-agenda,
 	.cafe-demo .cafe-reservation-form { grid-template-columns: 1fr; }
 
+	.cafe-demo .cafe-reservation-form input[type="date"],
+	.cafe-demo .cafe-reservation-form input[type="time"] {
+		display: block;
+		inline-size: 100%;
+		min-inline-size: 0;
+		max-inline-size: 100%;
+	}
+
 	.cafe-demo .cafe-drinks__tabs,
 	.cafe-demo .cafe-hero__actions,
 	.cafe-demo .cafe-live__actions,
