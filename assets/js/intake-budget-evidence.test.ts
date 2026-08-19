@@ -150,3 +150,12 @@ Deno.test("brand and logo status preview evidence matches submit pricing", () =>
     );
   });
 });
+
+Deno.test("brand and logo status directly trigger pricing previews", () => {
+  const fieldsMatch = source.match(/const directPricingNames = new Set\(\[([\s\S]*?)\]\);/);
+  assertExists(fieldsMatch);
+  const directPricingNames = Array.from(fieldsMatch[1].matchAll(/"([^"]+)"/g), (match) => match[1]);
+
+  assertEquals(directPricingNames.includes("brand_status"), true);
+  assertEquals(directPricingNames.includes("logo_status"), true);
+});

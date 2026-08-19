@@ -125,7 +125,7 @@
   ];
   const directPricingNames = new Set([
     "website_goals", "requested_pages", "requested_features", "shop_required", "booking_required",
-    "primary_language", "content_status", "image_status", "image_support", "hosting_status",
+    "primary_language", "brand_status", "logo_status", "content_status", "image_status", "image_support", "hosting_status",
     "hosting_support", "maintenance_interest", "seo_priority", "integrations", "budget_update_category",
     "selected_package_definition_id",
   ]);
