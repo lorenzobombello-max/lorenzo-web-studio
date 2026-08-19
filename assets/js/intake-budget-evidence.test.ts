@@ -1,4 +1,6 @@
 import { assertEquals, assertExists } from "jsr:@std/assert@1";
+import { calculateBudgetGuard } from "../../supabase/functions/_shared/pricing-engine.ts";
+import { sanitizeAndValidatePricingPreviewInput } from "../../supabase/functions/_shared/validation.ts";
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
 const contactHtml = await Deno.readTextFile(new URL("../../pages/contact.html", import.meta.url));
@@ -116,4 +118,35 @@ Deno.test("public contact budget options follow current Budget Guard labels", ()
 
   assertEquals(options, Array.from(expectedMappings.keys()));
   assertEquals(options.some((label) => /(?:1\.500|3\.000|3\.200)/.test(label)), false);
+});
+
+Deno.test("brand and logo status preview evidence matches submit pricing", () => {
+  const fieldsMatch = source.match(/const pricingEvidenceFields = \[([\s\S]*?)\];/);
+  assertExists(fieldsMatch);
+  const pricingEvidenceFields = Array.from(fieldsMatch[1].matchAll(/"([^"]+)"/g), (match) => match[1]);
+  const states = [
+    { brand_status: "complete", logo_status: "available" },
+    { brand_status: "none", logo_status: "available" },
+    { brand_status: "complete", logo_status: "needed" },
+    { brand_status: "none", logo_status: "needed" },
+  ];
+
+  states.forEach((state) => {
+    const submitEvidence = {
+      selected_package_definition_id: "starter_v1",
+      requested_pages: ["home"],
+      ...state,
+    };
+    const previewEvidence = Object.fromEntries(
+      pricingEvidenceFields
+        .filter((field) => field in submitEvidence)
+        .map((field) => [field, submitEvidence[field as keyof typeof submitEvidence]]),
+    );
+    const validatedPreviewEvidence = sanitizeAndValidatePricingPreviewInput(previewEvidence);
+
+    assertEquals(
+      calculateBudgetGuard(validatedPreviewEvidence).calculation,
+      calculateBudgetGuard(submitEvidence).calculation,
+    );
+  });
 });

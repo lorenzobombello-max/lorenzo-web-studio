@@ -672,5 +672,5 @@ Deno.test("429, 401 and generic unavailable flows remain distinct", () => {
 
 Deno.test("intake uses a fresh stable frontend cache key", () => {
   assertStringIncludes(html, '../assets/css/intake.css?v=20260816-1');
-  assertStringIncludes(html, '../assets/js/intake.js?v=20260816-2');
+  assertStringIncludes(html, '../assets/js/intake.js?v=20260819-1');
 });

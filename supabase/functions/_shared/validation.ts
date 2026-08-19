@@ -97,7 +97,7 @@ const PRICING_PREVIEW_FIELDS = new Set([
   "content_status", "image_status", "image_support", "content_media_details",
   "download_details", "newsletter_details", "hosting_status", "hosting_support",
   "maintenance_interest", "hosting_maintenance_details", "seo_priority",
-  "seo_details", "integrations", "deadline_details", "budget_update_category",
+  "seo_details", "brand_status", "logo_status", "integrations", "deadline_details", "budget_update_category",
   "budget_update_category_scheme", "budget_update_category_code",
   "selected_package_definition_id",
 ]);

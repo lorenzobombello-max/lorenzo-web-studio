@@ -118,7 +118,7 @@
     "requested_pages", "requested_features", "website_goals", "shop_required", "shop_details",
     "booking_required", "booking_details", "page_scope_details", "quote_form_details", "primary_language",
     "additional_languages", "languages", "multilingual_details", "content_status", "image_status",
-    "image_support", "content_media_details", "download_details", "newsletter_details", "hosting_status",
+    "image_support", "content_media_details", "brand_status", "logo_status", "download_details", "newsletter_details", "hosting_status",
     "hosting_support", "maintenance_interest", "hosting_maintenance_details", "seo_priority", "seo_details",
     "integrations", "deadline_details", "budget_update_category", "budget_update_category_scheme",
     "budget_update_category_code", "selected_package_definition_id",
