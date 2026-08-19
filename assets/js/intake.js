@@ -156,7 +156,7 @@
     CONTENT_MEDIA: "#content_status",
     HOSTING_MAINTENANCE: "#hosting_support",
     SEO_BASE: "#seo_priority",
-    EXTENSIVE_SEO: "#seo_extensive_services",
+    EXTENSIVE_SEO: "#seo_scope",
     CUSTOMER_LOGIN: 'input[name="requested_features"][value="customer_login"]',
     EXTERNAL_INTEGRATION: "#integrations",
     SECURED_DOWNLOADS: "#downloadFields",

@@ -10,6 +10,13 @@ function sourceFunction(name: string) {
   return match[0];
 }
 
+Deno.test("SEO pricing presentation anchor resolves to intake markup", () => {
+  const selector = source.match(/EXTENSIVE_SEO: "([^"]+)"/)?.[1];
+  assertExists(selector);
+  assertEquals(selector, "#seo_scope");
+  assertStringIncludes(html, `id="${selector.slice(1)}"`);
+});
+
 const preview = {
   previewContractVersion: 3,
   previewVersion: 2,
