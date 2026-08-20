@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(54);
+select plan(64);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -30,28 +30,19 @@ insert into public.commercial_operators (auth_user_id, display_name, role, statu
   ('a1000000-0000-4000-8000-000000000004','Disabled Operator','admin','DISABLED');
 
 insert into public.quote_requests (
-  id, application_reference, request_kind, name, company, email, website_type, budget, timing,
+  id, application_reference, request_kind, created_at, name, company, email, website_type, budget, timing,
   description, privacy_consent, status
 ) values
-  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved');
+  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
   started_at, submitted_at, confirmation
 ) values
-  ('a1200000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000001',repeat('1',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true),
-  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true);
-
-alter table public.quote_request_intakes disable trigger trg_quote_request_intake_kind_guard;
-insert into public.quote_request_intakes (
-  id, quote_request_id, access_token_hash, access_token_expires_at, status,
-  started_at, submitted_at, confirmation
-) values (
-  'a1200000-0000-4000-8000-000000000003','a1100000-0000-4000-8000-000000000003',repeat('3',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true
-);
-alter table public.quote_request_intakes enable trigger trg_quote_request_intake_kind_guard;
+  ('a1200000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000001',repeat('1',64),'2099-01-03T00:00:00Z','submitted','2099-01-01T12:00:00Z','2099-01-01T12:00:00Z',true),
+  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),'2099-01-03T00:00:00Z','submitted','2099-01-01T10:00:00Z','2099-01-01T10:00:00Z',true);
 
 create temporary table handoff_approval_payload as
 select jsonb_build_object(
@@ -151,6 +142,11 @@ select throws_ok($$select public.list_operator_applications_v1()$$,'42501','APPL
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
 select is(jsonb_array_length(public.list_operator_applications_v1()),3,'owner sees current and legacy submitted applications');
+select is((select count(*)::integer from public.quote_request_intakes where quote_request_id='a1100000-0000-4000-8000-000000000003'),0,'Documentenflow fixture has no fabricated Website intake');
+select is((select count(distinct value->>'quote_request_id')::integer from jsonb_array_elements(public.list_operator_applications_v1())),3,'product-aware application list contains no duplicate dossiers');
+select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1()) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1100000-0000-4000-8000-000000000003,a1100000-0000-4000-8000-000000000002','mixed product list remains newest first');
+select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1(2,0)) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1100000-0000-4000-8000-000000000003','mixed product list applies limit after product-aware ordering');
+select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id','a1100000-0000-4000-8000-000000000003','mixed product list applies offset after product-aware ordering');
 select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000001'),'website','application list exposes the stored website request kind');
 select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000003'),'slimme_documentenflow','application list exposes the stored Documentenflow request kind');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
@@ -161,6 +157,11 @@ select is(jsonb_build_array(
   public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'budget',
   public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'timing'
 ),'[null, null, null]'::jsonb,'Documentenflow detail does not fabricate website fields');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'intake_status','null'::jsonb,'Documentenflow detail does not fabricate Website intake status');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'pricing','null'::jsonb,'Documentenflow detail does not expose Website pricing');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'quotation','null'::jsonb,'Documentenflow detail does not expose a Website quotation');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'acceptance','null'::jsonb,'Documentenflow detail does not expose Website acceptance');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project','null'::jsonb,'Documentenflow detail does not expose a Website project');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'acceptance','null'::jsonb,'unaccepted detail has no fabricated acceptance');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'project','null'::jsonb,'accepted but unpromoted dossier has no fabricated project');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'pricing'->>'known_minimum_minor','180000','application dossier uses the persisted pricing minimum');
