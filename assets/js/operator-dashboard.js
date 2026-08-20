@@ -46,6 +46,28 @@ export function selectionFallsOutsideFilter(application, filter) {
   return Boolean(application && applicationsForFilter([application], filter).length === 0);
 }
 
+export function applyDetailVisibility(requestKind, nodes) {
+  if (requestKind === null) {
+    nodes.detail.hidden = true;
+    nodes.detailEmpty.hidden = false;
+    nodes.promote.hidden = true;
+    nodes.promote.disabled = false;
+    for (const section of nodes.dossierSections) section.hidden = true;
+    for (const row of nodes.websiteDetailRows) row.hidden = true;
+    nodes.sdfDetailNotice.hidden = true;
+    return;
+  }
+  if (!REQUEST_KINDS.has(requestKind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
+  const isWebsite = requestKind === "website";
+  nodes.detailEmpty.hidden = true;
+  nodes.detail.hidden = false;
+  nodes.promote.hidden = true;
+  for (const section of nodes.dossierSections) section.hidden = false;
+  for (const section of nodes.websiteDossierSections) section.hidden = !isWebsite;
+  for (const row of nodes.websiteDetailRows) row.hidden = !isWebsite;
+  nodes.sdfDetailNotice.hidden = isWebsite;
+}
+
 function setText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value ?? "-";
@@ -86,7 +108,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let activeFilter = "all";
   let selectedLocator = applicationLocatorFromUrl(window.location.href);
   let selectedDetail = null;
-  let selectedRequestKind = null;
   let detailRequestId = 0;
 
   async function invoke(input) {
@@ -108,10 +129,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     detailRequestId += 1;
     selectedLocator = null;
     selectedDetail = null;
-    selectedRequestKind = null;
-    promote.hidden = true;
-    detail.hidden = true;
-    detailEmpty.hidden = false;
+    applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
     updateLocation(null);
   }
@@ -219,13 +237,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
-    selectedRequestKind = application.request_kind;
-    detailEmpty.hidden = true;
-    detail.hidden = false;
-    for (const section of dossierSections) section.hidden = false;
-    for (const section of websiteDossierSections) section.hidden = !isWebsite;
-    for (const row of websiteDetailRows) row.hidden = !isWebsite;
-    sdfDetailNotice.hidden = isWebsite;
+    applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailNotice });
     setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
@@ -312,7 +324,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         ? { application_reference: application.application_reference }
         : { quote_request_id: application.quote_request_id };
       button.addEventListener("click", ()=>{
-        selectedRequestKind = application.request_kind;
         loadDetail(locator);
       });
       item.append(button);
@@ -330,7 +341,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       if (selectedLocator) {
         const selectedApplication = applications.find((application) => locatorMatchesApplication(selectedLocator, application));
         if (selectedApplication && !selectionFallsOutsideFilter(selectedApplication, activeFilter)) {
-          selectedRequestKind = selectedApplication.request_kind;
           await loadDetail(selectedLocator);
         } else clearDetail();
       }
@@ -345,7 +355,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       if (!PRODUCT_FILTERS.has(nextFilter) || nextFilter === activeFilter) return;
       activeFilter = nextFilter;
       for (const candidate of filterButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
-      if (selectedRequestKind && selectionFallsOutsideFilter({ request_kind: selectedRequestKind }, activeFilter)) clearDetail();
+      clearDetail();
       renderList(applicationsForFilter(applications, activeFilter));
       empty.textContent = emptyStateForFilter(activeFilter);
     });

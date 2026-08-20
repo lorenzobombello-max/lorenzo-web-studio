@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, canPromoteApplication, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -108,6 +108,63 @@ test("filter changes invalidate stale or unsupported detail state", () => {
   assert.equal(selectionFallsOutsideFilter({ request_kind: null }, "all"), true);
 });
 
+function detailVisibilityHarness() {
+  const customer = { hidden: false };
+  const websiteSections = Array.from({ length: 7 }, () => ({ hidden: false }));
+  return {
+    customer,
+    websiteSections,
+    nodes: {
+      detail: { hidden: false },
+      detailEmpty: { hidden: true },
+      promote: { hidden: false, disabled: true },
+      dossierSections: [customer, ...websiteSections],
+      websiteDossierSections: websiteSections,
+      websiteDetailRows: Array.from({ length: 3 }, () => ({ hidden: false })),
+      sdfDetailNotice: { hidden: false },
+    },
+  };
+}
+
+test("product switch fully clears Website and SDF dossier presentation", () => {
+  for (const selectedKind of ["website", "slimme_documentenflow"]) {
+    const harness = detailVisibilityHarness();
+    applyDetailVisibility(selectedKind, harness.nodes);
+    applyDetailVisibility(null, harness.nodes);
+    assert.equal(harness.nodes.detail.hidden, true);
+    assert.equal(harness.nodes.detailEmpty.hidden, false);
+    assert.equal(harness.nodes.promote.hidden, true);
+    assert.equal(harness.nodes.promote.disabled, false);
+    assert.equal(harness.nodes.dossierSections.every((section) => section.hidden), true);
+    assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
+    assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
+  }
+});
+
+test("Website detail is restored only after Website reselection", () => {
+  const harness = detailVisibilityHarness();
+  applyDetailVisibility(null, harness.nodes);
+  applyDetailVisibility("website", harness.nodes);
+  assert.equal(harness.nodes.detail.hidden, false);
+  assert.equal(harness.nodes.detailEmpty.hidden, true);
+  assert.equal(harness.customer.hidden, false);
+  assert.equal(harness.websiteSections.every((section) => !section.hidden), true);
+  assert.equal(harness.nodes.websiteDetailRows.every((row) => !row.hidden), true);
+  assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
+});
+
+test("SDF detail restores shared data without Website-only presentation", () => {
+  const harness = detailVisibilityHarness();
+  applyDetailVisibility(null, harness.nodes);
+  applyDetailVisibility("slimme_documentenflow", harness.nodes);
+  assert.equal(harness.nodes.detail.hidden, false);
+  assert.equal(harness.nodes.detailEmpty.hidden, true);
+  assert.equal(harness.customer.hidden, false);
+  assert.equal(harness.websiteSections.every((section) => section.hidden), true);
+  assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
+  assert.equal(harness.nodes.sdfDetailNotice.hidden, false);
+});
+
 test("SDF detail hides every Website-only field and dossier section", async () => {
   const [html, script] = await Promise.all([
     read("operator/dashboard/index.html"),
@@ -124,6 +181,7 @@ test("SDF detail hides every Website-only field and dossier section", async () =
 
 test("filter navigation reuses loaded data and preserves out-of-order protection", async () => {
   const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /activeFilter = nextFilter;[\s\S]{0,250}clearDetail\(\);[\s\S]{0,150}renderList/);
   assert.match(script, /renderList\(applicationsForFilter\(applications, activeFilter\)\)/);
   assert.match(script, /requestId !== detailRequestId/);
   assert.match(script, /detailRequestId \+= 1/);
