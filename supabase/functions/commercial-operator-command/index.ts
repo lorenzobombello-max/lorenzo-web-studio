@@ -47,6 +47,10 @@ Deno.serve((request)=>{
           p_limit: input.limit,
           p_offset: input.offset
         })
+        : input.action === "get_project_dossier"
+        ? client.rpc("get_commercial_project_view_v2", {
+          p_project_id: input.project_id
+        })
         : input.action === "get_application_detail"
         ? client.rpc("get_operator_application_v1", {
           p_quote_request_id: input.quote_request_id,

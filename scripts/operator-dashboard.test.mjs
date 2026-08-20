@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationReferenceFromUrl, canPromoteApplication } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, canPromoteApplication, nextWorkflowStage } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -44,13 +44,22 @@ test("production dashboard uses real application data and no synthetic state", a
   assert.match(html, /id="applicationList"/);
   assert.match(html, /id="applicationDetail"/);
   assert.match(html, /id="promoteApplication"/);
+  assert.match(html, /id="pricingDossier"/);
+  assert.match(html, /id="documentsDossier"/);
+  assert.match(html, /id="paymentDossier"/);
+  assert.match(html, /id="auditTimeline"/);
+  assert.doesNotMatch(html, /href=[^>]*(download|document)/i);
   assert.doesNotMatch(html, /Synthetic Project|TEST-LWS-OFF/);
   assert.match(contract, /LWS_DASHBOARD_CONTRACT/);
   assert.match(contract, /createScenario/);
   assert.match(script, /list_applications/);
   assert.match(script, /get_application_detail/);
   assert.match(script, /promote_accepted_application/);
+  assert.match(script, /get_project_dossier/);
+  assert.match(script, /requestId !== detailRequestId/);
+  assert.match(script, /gereconcilieerd.*laatste:/);
   assert.doesNotMatch(script, /localStorage|lws-phase5d-synthetic-state-v1|LWS_DASHBOARD_CONTRACT/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
   assert.match(css, /\.dashboard-grid/);
   assert.match(css, /\.application-list/);
 });
@@ -64,4 +73,16 @@ test("promotion is visible only for accepted applications without a project", ()
   assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: null }), true);
   assert.equal(canPromoteApplication({ acceptance: null, project: null }), false);
   assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: { project_id: "project" } }), false);
+});
+
+test("legacy applications use the internal UUID locator without fabricating a reference", () => {
+  assert.deepEqual(applicationLocatorFromUrl("https://example.test/operator/dashboard/?request=a1100000-0000-4000-8000-000000000003"), { quote_request_id: "a1100000-0000-4000-8000-000000000003" });
+  assert.equal(applicationLocatorFromUrl("https://example.test/operator/dashboard/?request=bad"), null);
+});
+
+test("workflow display distinguishes available, locked, completed, and unimplemented states", () => {
+  assert.equal(nextWorkflowStage("QUOTE_ACCEPTED").availability, "AVAILABLE NOW");
+  assert.equal(nextWorkflowStage("M1_PAYMENT_PENDING").availability, "LOCKED");
+  assert.equal(nextWorkflowStage("ARCHIVED").availability, "COMPLETED");
+  assert.equal(nextWorkflowStage("UNKNOWN").availability, "NOT YET IMPLEMENTED");
 });

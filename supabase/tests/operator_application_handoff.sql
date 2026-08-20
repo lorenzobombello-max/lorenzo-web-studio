@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(25);
+select plan(45);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -30,14 +30,16 @@ insert into public.quote_requests (
   description, privacy_consent, status
 ) values
   ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved');
+  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000003',null,'Legacy Application','Legacy BV','legacy@example.test','business','EUR 3.200 t/m EUR 6.000','flexible','Legacy application without a human reference',true,'approved');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
   started_at, submitted_at, confirmation
 ) values
   ('a1200000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000001',repeat('1',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true),
-  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true);
+  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true),
+  ('a1200000-0000-4000-8000-000000000003','a1100000-0000-4000-8000-000000000003',repeat('3',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true);
 
 create temporary table handoff_approval_payload as
 select jsonb_build_object(
@@ -136,16 +138,23 @@ select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000003'
 select throws_ok($$select public.list_operator_applications_v1()$$,'42501','APPLICATION_SCOPE_DENIED','project-scoped operator cannot inspect pre-project applications');
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
-select is(jsonb_array_length(public.list_operator_applications_v1()),2,'owner sees submitted accepted and unaccepted applications');
+select is(jsonb_array_length(public.list_operator_applications_v1()),3,'owner sees current and legacy submitted applications');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'acceptance','null'::jsonb,'unaccepted detail has no fabricated acceptance');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'project','null'::jsonb,'accepted but unpromoted dossier has no fabricated project');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'pricing'->>'known_minimum_minor','180000','application dossier uses the persisted pricing minimum');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'quotation'->>'issuance_status','ISSUED','application dossier exposes authoritative quotation issuance state');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'quotation'->>'binary_archive_available','false','quotation metadata does not pretend a binary archive exists');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'pricing','null'::jsonb,'application without pricing has an explicit empty pricing state');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'quotation','null'::jsonb,'application without quotation evidence has an explicit empty quotation state');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'application_reference','null'::jsonb,'legacy UUID lookup does not fabricate an application reference');
 select throws_ok($$select public.get_operator_application_v1(null,'bad')$$,'22023','INVALID_APPLICATION_REFERENCE','malformed human locator is rejected');
 select throws_ok($$select public.get_operator_application_v1(null,null)$$,'22023','EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED','missing locator is rejected');
 select throws_ok($$select public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001')$$,'22023','EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED','ambiguous locator is rejected');
 select throws_ok($$select public.promote_operator_application_v1('a1800000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000002',null)$$,'P0001','APPLICATION_NOT_ACCEPTED','unaccepted application cannot be promoted');
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000002',true);
-select is(jsonb_array_length(public.list_operator_applications_v1()),2,'admin has the same global application visibility');
+select is(jsonb_array_length(public.list_operator_applications_v1()),3,'admin has the same global application visibility');
 
 create temporary table first_promotion as
 select public.promote_operator_application_v1(
@@ -161,6 +170,30 @@ select is(
   'repeated promotion with another idempotency key returns the same project'
 );
 select is((select count(*)::integer from public.commercial_projects),1,'repeated promotion creates no duplicate project');
+select ok(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'project'->>'created_at' is not null,'promoted application dossier exposes project creation time');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'current_state','QUOTE_ACCEPTED','project dossier exposes the authoritative commercial state');
+select is(jsonb_array_length(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'obligations'),0,'project dossier does not fabricate obligations before milestone preparation');
+select is(((public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m1_minor')::bigint+(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m2_minor')::bigint+(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m3_minor')::bigint)::text,'350000','encoded milestone summary reconciles to the accepted project total');
+select is(concat_ws('/',public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m1_minor',public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m2_minor',public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'m3_minor'),'140000/140000/70000','project contract exposes the authoritative 40/40/20 split without payment evidence');
+select is(jsonb_array_length(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'documents'),0,'project dossier has an honest empty commercial-document state');
+select is(jsonb_array_length(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'recurring_services'),0,'project dossier has an honest empty recurring-service state');
+select is(jsonb_array_length(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'timeline'),2,'project dossier combines workflow and audit creation events');
+select ok((select bool_and(previous_time >= occurred_at) from (select occurred_at,lag(occurred_at) over (order by ordinal) as previous_time from jsonb_array_elements(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'timeline') with ordinality as event(value,ordinal) cross join lateral (select (event.value->>'occurred_at')::timestamptz as occurred_at) parsed) ordered where previous_time is not null),'project timeline is newest first');
+
+select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000003',true);
+select throws_ok(format('select public.get_commercial_project_view_v2(%L)',(select result->>'project_id' from first_promotion)),'42501','PROJECT_SCOPE_DENIED','project-scoped operator cannot enumerate an ungranted project');
+insert into public.commercial_operator_project_grants(operator_id,project_id,access_level,granted_by)
+select scoped.operator_id,(first.result->>'project_id')::uuid,'read_only',admin.operator_id
+from public.commercial_operators as scoped
+cross join first_promotion as first
+cross join public.commercial_operators as admin
+where scoped.auth_user_id='a1000000-0000-4000-8000-000000000003'
+  and admin.auth_user_id='a1000000-0000-4000-8000-000000000002';
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'project_id',(select result->>'project_id' from first_promotion),'active project grant authorizes only the granted dossier');
+update public.commercial_operator_project_grants set revoked_at=clock_timestamp();
+select throws_ok(format('select public.get_commercial_project_view_v2(%L)',(select result->>'project_id' from first_promotion)),'42501','PROJECT_SCOPE_DENIED','revoked project grant denies dossier access');
+select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
+select throws_ok($$select public.get_commercial_project_view_v2('a1900000-0000-4000-8000-000000000001')$$,'23503','PROJECT_NOT_FOUND','arbitrary project UUID enumeration fails closed');
 select is(
   (select row(acceptance_payload_sha256::text,(select payload_sha256 from public.quote_request_quotation_approvals where id='a1500000-0000-4000-8000-000000000001'))::text from public.quote_request_quotation_acceptances where id='a1700000-0000-4000-8000-000000000001'),
   (select row(acceptance_hash,approval_hash)::text from immutable_evidence_before),

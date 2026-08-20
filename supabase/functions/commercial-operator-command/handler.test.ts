@@ -45,6 +45,16 @@ Deno.test("application detail requires exactly one valid locator", async ()=>{
   assertEquals(ambiguous.status, 400);
 });
 
+Deno.test("project dossier accepts only one server-authorized project UUID", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({ action: "get_project_dossier", project_id: userId }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls[0], { jwt, input: { action: "get_project_dossier", project_id: userId } });
+  const invalid = await handleCommercialOperator(request({ action: "get_project_dossier", project_id: "not-a-project" }), harness.deps);
+  assertEquals(invalid.status, 400);
+  assertEquals(harness.calls.length, 1);
+});
+
 Deno.test("promotion requires server-shaped locator and idempotency UUID", async ()=>{
   const harness = dependencies();
   const invalid = await handleCommercialOperator(request({ action: "promote_accepted_application", quote_request_id: userId, idempotency_key: "bad" }), harness.deps);

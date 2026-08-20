@@ -21,6 +21,7 @@ const COMMANDS = new Set([
 const APPLICATION_ACTIONS = new Set([
   "list_applications",
   "get_application_detail",
+  "get_project_dossier",
   "promote_accepted_application"
 ]);
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
@@ -99,6 +100,8 @@ function validateApplicationAction(value) {
   if (!APPLICATION_ACTIONS.has(action)) throw new RequestError(400, "INVALID_REQUEST");
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
+    : action === "get_project_dossier"
+    ? new Set(["action", "project_id"])
     : action === "get_application_detail"
     ? new Set(["action", "quote_request_id", "application_reference"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
@@ -107,6 +110,11 @@ function validateApplicationAction(value) {
     const limit = value.limit ?? 100, offset = value.offset ?? 0;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) throw new RequestError(400, "INVALID_REQUEST");
     return { action, limit, offset };
+  }
+  if (action === "get_project_dossier") {
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, project_id: projectId };
   }
   const quoteRequestId = value.quote_request_id == null ? null : String(value.quote_request_id);
   const applicationReference = value.application_reference == null ? null : String(value.application_reference);
@@ -138,6 +146,7 @@ function mapDatabaseError(error) {
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
   if ([
     "INVALID_APPLICATION_REFERENCE",
