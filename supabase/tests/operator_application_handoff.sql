@@ -3,13 +3,17 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(45);
+select plan(54);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
 select has_function('public','promote_operator_application_v1',array['uuid','uuid','text'],'application promotion RPC exists');
 select ok(has_function_privilege('authenticated','public.list_operator_applications_v1(integer,integer)','execute'),'authenticated role can enter the guarded list RPC');
 select ok(not has_function_privilege('anon','public.list_operator_applications_v1(integer,integer)','execute'),'anonymous role cannot list applications');
+select ok(not has_function_privilege('service_role','public.list_operator_applications_v1(integer,integer)','execute'),'service role cannot list applications directly');
+select ok(has_function_privilege('authenticated','public.get_operator_application_v1(uuid,text)','execute'),'authenticated role can enter the guarded detail RPC');
+select ok(not has_function_privilege('anon','public.get_operator_application_v1(uuid,text)','execute'),'anonymous role cannot inspect application details');
+select ok(not has_function_privilege('service_role','public.get_operator_application_v1(uuid,text)','execute'),'service role cannot inspect application details directly');
 select ok(not has_function_privilege('service_role','public.promote_operator_application_v1(uuid,uuid,text)','execute'),'service role cannot impersonate a human promotion caller');
 
 insert into auth.users (id, email) values
@@ -26,20 +30,28 @@ insert into public.commercial_operators (auth_user_id, display_name, role, statu
   ('a1000000-0000-4000-8000-000000000004','Disabled Operator','admin','DISABLED');
 
 insert into public.quote_requests (
-  id, application_reference, name, company, email, website_type, budget, timing,
+  id, application_reference, request_kind, name, company, email, website_type, budget, timing,
   description, privacy_consent, status
 ) values
-  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000003',null,'Legacy Application','Legacy BV','legacy@example.test','business','EUR 3.200 t/m EUR 6.000','flexible','Legacy application without a human reference',true,'approved');
+  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
   started_at, submitted_at, confirmation
 ) values
   ('a1200000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000001',repeat('1',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true),
-  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true),
-  ('a1200000-0000-4000-8000-000000000003','a1100000-0000-4000-8000-000000000003',repeat('3',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true);
+  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true);
+
+alter table public.quote_request_intakes disable trigger trg_quote_request_intake_kind_guard;
+insert into public.quote_request_intakes (
+  id, quote_request_id, access_token_hash, access_token_expires_at, status,
+  started_at, submitted_at, confirmation
+) values (
+  'a1200000-0000-4000-8000-000000000003','a1100000-0000-4000-8000-000000000003',repeat('3',64),clock_timestamp()+interval '1 day','submitted',clock_timestamp(),clock_timestamp(),true
+);
+alter table public.quote_request_intakes enable trigger trg_quote_request_intake_kind_guard;
 
 create temporary table handoff_approval_payload as
 select jsonb_build_object(
@@ -139,7 +151,16 @@ select throws_ok($$select public.list_operator_applications_v1()$$,'42501','APPL
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
 select is(jsonb_array_length(public.list_operator_applications_v1()),3,'owner sees current and legacy submitted applications');
+select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000001'),'website','application list exposes the stored website request kind');
+select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000003'),'slimme_documentenflow','application list exposes the stored Documentenflow request kind');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'request_kind','website','application detail exposes the same stored website request kind');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'website_type',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'budget',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'timing'
+),'[null, null, null]'::jsonb,'Documentenflow detail does not fabricate website fields');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'acceptance','null'::jsonb,'unaccepted detail has no fabricated acceptance');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'project','null'::jsonb,'accepted but unpromoted dossier has no fabricated project');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'pricing'->>'known_minimum_minor','180000','application dossier uses the persisted pricing minimum');
