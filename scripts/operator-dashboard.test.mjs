@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, canPromoteApplication, nextWorkflowStage } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, canPromoteApplication, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -15,6 +15,14 @@ test("dashboard remains hidden until the authorization guard succeeds", async ()
   const source = await read("operator/dashboard/index.html");
   assert.match(source, /id="operatorDashboard" hidden/);
   assert.match(source, /operator-dashboard-guard\.mjs/);
+});
+
+test("dashboard preserves the locked Lorenzo Web Solutions branding", async () => {
+  const source = await read("operator/dashboard/index.html");
+  assert.match(source, /lorenzo-web-solution-logo-transparent\.png/);
+  assert.match(source, /class="identity__mark"/);
+  assert.match(source, /<strong>Lorenzo Web Solutions<\/strong>/);
+  assert.doesNotMatch(source, />LW<\/|lw-badge/i);
 });
 
 test("dashboard guard requires database-backed operator authorization", async () => {
@@ -70,9 +78,56 @@ test("application reference query is the only accepted human locator", () => {
 });
 
 test("promotion is visible only for accepted applications without a project", () => {
-  assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: null }), true);
-  assert.equal(canPromoteApplication({ acceptance: null, project: null }), false);
-  assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: { project_id: "project" } }), false);
+  assert.equal(canPromoteApplication({ request_kind: "website", acceptance: { acceptance_id: "accepted" }, project: null }), true);
+  assert.equal(canPromoteApplication({ request_kind: "website", acceptance: null, project: null }), false);
+  assert.equal(canPromoteApplication({ request_kind: "website", acceptance: { acceptance_id: "accepted" }, project: { project_id: "project" } }), false);
+  assert.equal(canPromoteApplication({ request_kind: "slimme_documentenflow", acceptance: { acceptance_id: "unexpected" }, project: null }), false);
+});
+
+test("product filters use only authoritative request_kind and fail closed", () => {
+  const website = { quote_request_id: "website", request_kind: "website", website_type: "business" };
+  const sdf = { quote_request_id: "sdf", request_kind: "slimme_documentenflow" };
+  const unknown = { quote_request_id: "unknown", request_kind: "unknown", website_type: "business" };
+  const missing = { quote_request_id: "missing", website_type: "business" };
+  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "all"), [website, sdf]);
+  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "website"), [website]);
+  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "slimme_documentenflow"), [sdf]);
+  assert.deepEqual(applicationsForFilter([website, sdf], "invalid"), []);
+});
+
+test("product filter empty states are specific and neutral", () => {
+  assert.equal(emptyStateForFilter("all"), "Geen ingediende aanvragen.");
+  assert.equal(emptyStateForFilter("website"), "Geen Website-aanvragen.");
+  assert.equal(emptyStateForFilter("slimme_documentenflow"), "Geen Slimme Documentenflow-aanvragen.");
+});
+
+test("filter changes invalidate stale or unsupported detail state", () => {
+  assert.equal(selectionFallsOutsideFilter({ request_kind: "website" }, "website"), false);
+  assert.equal(selectionFallsOutsideFilter({ request_kind: "website" }, "slimme_documentenflow"), true);
+  assert.equal(selectionFallsOutsideFilter({ request_kind: "slimme_documentenflow" }, "website"), true);
+  assert.equal(selectionFallsOutsideFilter({ request_kind: null }, "all"), true);
+});
+
+test("SDF detail hides every Website-only field and dossier section", async () => {
+  const [html, script] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard.js"),
+  ]);
+  assert.match(html, /data-website-detail/);
+  assert.match(html, /id="sdfDetailNotice"[^>]* hidden/);
+  assert.match(script, /WEBSITE_DOSSIER_IDS/);
+  assert.match(script, /section\.hidden = !isWebsite/);
+  assert.match(script, /row\.hidden = !isWebsite/);
+  assert.match(script, /if \(!isWebsite\) return/);
+  assert.match(script, /application\.request_kind === "website" && application\.project/);
+});
+
+test("filter navigation reuses loaded data and preserves out-of-order protection", async () => {
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /renderList\(applicationsForFilter\(applications, activeFilter\)\)/);
+  assert.match(script, /requestId !== detailRequestId/);
+  assert.match(script, /detailRequestId \+= 1/);
+  assert.equal(script.match(/action: "list_applications"/g)?.length, 1);
 });
 
 test("legacy applications use the internal UUID locator without fabricating a reference", () => {

@@ -2,6 +2,12 @@ import { callCommercialOperator } from "./operator-auth-core.mjs";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REQUEST_KINDS = new Set(["website", "slimme_documentenflow"]);
+const PRODUCT_FILTERS = new Set(["all", ...REQUEST_KINDS]);
+const WEBSITE_DOSSIER_IDS = Object.freeze([
+  "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
+  "paymentDossier", "workflowDossier", "historyDossier"
+]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
@@ -21,7 +27,23 @@ export function applicationReferenceFromUrl(url) {
 }
 
 export function canPromoteApplication(detail) {
-  return Boolean(detail?.acceptance && !detail?.project);
+  return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
+}
+
+export function applicationsForFilter(applications, filter) {
+  if (!Array.isArray(applications) || !PRODUCT_FILTERS.has(filter)) return [];
+  return applications.filter((application) => REQUEST_KINDS.has(application?.request_kind)
+    && (filter === "all" || application.request_kind === filter));
+}
+
+export function emptyStateForFilter(filter) {
+  if (filter === "website") return "Geen Website-aanvragen.";
+  if (filter === "slimme_documentenflow") return "Geen Slimme Documentenflow-aanvragen.";
+  return "Geen ingediende aanvragen.";
+}
+
+export function selectionFallsOutsideFilter(application, filter) {
+  return Boolean(application && applicationsForFilter([application], filter).length === 0);
 }
 
 function setText(id, value) {
@@ -56,8 +78,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const promote = document.getElementById("promoteApplication");
   const confirmation = document.getElementById("promotionDialog");
   const dossierSections = Array.from(document.querySelectorAll(".dossier-section"));
+  const websiteDossierSections = WEBSITE_DOSSIER_IDS.map((id) => document.getElementById(id));
+  const websiteDetailRows = Array.from(document.querySelectorAll("[data-website-detail]"));
+  const filterButtons = Array.from(document.querySelectorAll("[data-product-filter]"));
+  const sdfDetailNotice = document.getElementById("sdfDetailNotice");
+  let applications = [];
+  let activeFilter = "all";
   let selectedLocator = applicationLocatorFromUrl(window.location.href);
   let selectedDetail = null;
+  let selectedRequestKind = null;
   let detailRequestId = 0;
 
   async function invoke(input) {
@@ -70,9 +99,21 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const url = new URL(window.location.href);
     url.searchParams.delete("application");
     url.searchParams.delete("request");
-    if (locator.application_reference) url.searchParams.set("application", locator.application_reference);
-    else url.searchParams.set("request", locator.quote_request_id);
+    if (locator?.application_reference) url.searchParams.set("application", locator.application_reference);
+    else if (locator?.quote_request_id) url.searchParams.set("request", locator.quote_request_id);
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }
+
+  function clearDetail() {
+    detailRequestId += 1;
+    selectedLocator = null;
+    selectedDetail = null;
+    selectedRequestKind = null;
+    promote.hidden = true;
+    detail.hidden = true;
+    detailEmpty.hidden = false;
+    detailMessage.textContent = "";
+    updateLocation(null);
   }
 
   function renderRecurringServices(pricing) {
@@ -175,12 +216,19 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   }
 
   function renderDetail(application) {
+    if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
+    const isWebsite = application.request_kind === "website";
     selectedDetail = application;
+    selectedRequestKind = application.request_kind;
     detailEmpty.hidden = true;
     detail.hidden = false;
     for (const section of dossierSections) section.hidden = false;
+    for (const section of websiteDossierSections) section.hidden = !isWebsite;
+    for (const row of websiteDetailRows) row.hidden = !isWebsite;
+    sdfDetailNotice.hidden = isWebsite;
     setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
     setText("detailName", application.name);
+    setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
     setText("detailCustomerName", application.name);
     setText("detailCompany", application.company || "Geen onderneming");
     setText("detailEmail", application.email);
@@ -191,6 +239,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailDescription", application.description);
     setText("detailIntakeStatus", application.intake_status || "Niet beschikbaar");
     setText("detailSubmittedAt", formatDate(application.submitted_at));
+    promote.hidden = true;
+    if (!isWebsite) return;
     setText("detailPackage", PACKAGE_LABELS[application.pricing?.selected_package] || application.pricing?.selected_package || "Niet vastgelegd");
     setText("detailIndicativeTotal", formatMoney(application.pricing?.known_minimum_minor));
     setText("detailBudgetGuard", application.pricing?.budget_guard_status || "Niet beschikbaar");
@@ -215,10 +265,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     try {
       const application = await invoke({ action: "get_application_detail", ...locator });
       if (requestId !== detailRequestId) return;
+      if (selectionFallsOutsideFilter(application, activeFilter)) throw new Error("FILTERED_REQUEST_KIND");
       renderDetail(application);
       selectedLocator = locator;
       updateLocation(locator);
-      if (application.project?.project_id) {
+      if (application.request_kind === "website" && application.project?.project_id) {
         detailMessage.textContent = "Projectdossier wordt geladen.";
         const project = await invoke({ action: "get_project_dossier", project_id: application.project.project_id });
         if (requestId !== detailRequestId) return;
@@ -249,7 +300,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const reference = document.createElement("small");
       reference.textContent = `${application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`} · ${formatDate(application.submitted_at)}`;
       identity.append(name, reference);
-      const state = application.project_state
+      const state = application.request_kind === "slimme_documentenflow"
+        ? badge("Documentenflow")
+        : application.project_state
         ? badge(application.project_state, "green")
         : application.acceptance_id
         ? badge("Geaccepteerd", "amber")
@@ -258,7 +311,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const locator = application.application_reference
         ? { application_reference: application.application_reference }
         : { quote_request_id: application.quote_request_id };
-      button.addEventListener("click", ()=>loadDetail(locator));
+      button.addEventListener("click", ()=>{
+        selectedRequestKind = application.request_kind;
+        loadDetail(locator);
+      });
       item.append(button);
       list.append(item);
     }
@@ -267,13 +323,32 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   async function loadList() {
     listMessage.textContent = "Aanvragen worden geladen.";
     try {
-      const applications = await invoke({ action: "list_applications", limit: 100, offset: 0 });
-      renderList(applications);
+      applications = applicationsForFilter(await invoke({ action: "list_applications", limit: 100, offset: 0 }), "all");
+      renderList(applicationsForFilter(applications, activeFilter));
+      empty.textContent = emptyStateForFilter(activeFilter);
       listMessage.textContent = "";
-      if (selectedLocator) await loadDetail(selectedLocator);
+      if (selectedLocator) {
+        const selectedApplication = applications.find((application) => locatorMatchesApplication(selectedLocator, application));
+        if (selectedApplication && !selectionFallsOutsideFilter(selectedApplication, activeFilter)) {
+          selectedRequestKind = selectedApplication.request_kind;
+          await loadDetail(selectedLocator);
+        } else clearDetail();
+      }
     } catch {
       listMessage.textContent = "De aanvragen konden niet worden geladen.";
     }
+  }
+
+  for (const button of filterButtons) {
+    button.addEventListener("click", ()=>{
+      const nextFilter = button.dataset.productFilter;
+      if (!PRODUCT_FILTERS.has(nextFilter) || nextFilter === activeFilter) return;
+      activeFilter = nextFilter;
+      for (const candidate of filterButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
+      if (selectedRequestKind && selectionFallsOutsideFilter({ request_kind: selectedRequestKind }, activeFilter)) clearDetail();
+      renderList(applicationsForFilter(applications, activeFilter));
+      empty.textContent = emptyStateForFilter(activeFilter);
+    });
   }
 
   promote.addEventListener("click", ()=>confirmation.showModal());
@@ -332,4 +407,10 @@ function appendStatusItem(list, title, detail, status, tone) {
   identity.append(heading, description);
   item.append(identity, badge(status, tone));
   list.append(item);
+}
+
+function locatorMatchesApplication(locator, application) {
+  return Boolean(locator?.application_reference
+    ? locator.application_reference === application?.application_reference
+    : locator?.quote_request_id === application?.quote_request_id);
 }
