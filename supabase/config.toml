@@ -30,3 +30,6 @@ verify_jwt = false
 
 [functions.quotation-acceptance]
 verify_jwt = false
+
+[functions.commercial-operator-command]
+verify_jwt = true

@@ -18,105 +18,21 @@
   <main id="operatorDashboardGate" class="operator-auth-main"><section class="operator-auth-panel operator-auth-panel--center" role="status"><span class="operator-auth-spinner" aria-hidden="true"></span><h1 id="operatorDashboardGateTitle">Autorisatie wordt gecontroleerd</h1><p id="operatorDashboardGateMessage" class="operator-auth-message">Even geduld.</p><button id="operatorDashboardLogout" class="button button--dark" type="button" hidden>Afmelden</button></section></main>
   <div id="operatorDashboard" hidden>
     <a class="skip-link" href="#workspace">Ga naar dashboard</a>
-    <header class="topbar">
-      <a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatorsessie">
-        <span class="identity__mark" aria-hidden="true">LW</span>
-        <span><strong>Lorenzo Web Solutions</strong><small>Operator dashboard</small></span>
-      </a>
-      <div class="topbar__status"><span class="badge badge--cyan">NON-PRODUCTION</span><span>Lorenzo · operator</span></div>
-    </header>
-
+    <header class="topbar"><a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatorsessie"><span class="identity__mark" aria-hidden="true">LW</span><span><strong>Lorenzo Web Solutions</strong><small>Operator dashboard</small></span></a><div class="topbar__status"><span class="badge badge--cyan">OPERATOR</span><button id="operatorDashboardLogoutActive" class="topbar__logout" type="button">Afmelden</button></div></header>
     <main id="workspace" class="workspace">
-      <section class="project-heading" aria-labelledby="project-title">
-        <div><p class="eyebrow">Synthetisch project</p><h1 id="project-title">Synthetic Project</h1><p>Synthetic Customer · <span id="quotationReference">TEST-LWS-OFF-2026-0001</span></p></div>
-        <div class="project-heading__controls">
-          <label for="scenarioSelect">Testscenario</label>
-          <select id="scenarioSelect"><option value="m1">M1-betaling open</option><option value="preview">Preview nog niet gereed</option><option value="final">Finale betaling open</option></select>
-          <span id="stateBadge" class="badge">M1_PAYMENT_PENDING</span>
-        </div>
-      </section>
-
-      <dl class="metrics" aria-label="Projectbedragen">
-        <div><dt>Projecttotaal</dt><dd>€ 3.500</dd><small>Geaccepteerde offerte</small></div>
-        <div><dt>M1 · 40%</dt><dd>€ 1.400</dd><small>Eerste milestone</small></div>
-        <div><dt>M2 · 40%</dt><dd>€ 1.400</dd><small>Na preview</small></div>
-        <div><dt>Exact restbedrag</dt><dd>€ 700</dd><small>Na finale goedkeuring</small></div>
-      </dl>
-
+      <section class="project-heading" aria-labelledby="pageTitle"><div><p class="eyebrow">Commerciële intake</p><h1 id="pageTitle">Aanvragen</h1><p>Ingediende aanvragen en hun projectstatus.</p></div></section>
       <div class="dashboard-grid">
-        <div class="primary-column">
-          <section class="next-action" aria-labelledby="next-action-title">
-            <p class="eyebrow eyebrow--cyan">Volgende actie</p>
-            <h2 id="next-action-title">Betaling controleren</h2>
-            <p id="nextActionDescription">Controleer de KBC-transactie handmatig. Alleen een exacte MATCHED-status maakt betalingsbevestiging beschikbaar.</p>
-            <button id="primaryAction" class="primary-action" type="button">Betaling controleren</button>
-            <p id="actionMessage" class="action-message" role="status" aria-live="polite"></p>
-          </section>
-
-          <section id="paymentPanel" class="panel" aria-labelledby="payment-title">
-            <div class="panel__heading"><div><p class="eyebrow">Handmatige betalingscontrole</p><h2 id="payment-title">KBC-transactie</h2></div><span id="matchBadge" class="badge badge--amber">UNVERIFIED</span></div>
-            <div class="bank-authority"><strong>KBC</strong><span>IBAN BE42 7380 5510 8954</span><span>BIC KREDBEBB</span></div>
-            <form id="paymentForm" class="payment-form" novalidate>
-              <label>Expected amount<input id="expectedAmount" type="text" value="€ 1.400" readonly></label>
-              <label>Received amount<input id="receivedAmount" type="number" min="0" step="0.01" value="1400" required></label>
-              <label>Transaction date<input id="transactionDate" type="date" value="2026-08-16" required></label>
-              <label>Transaction reference<input id="transactionReference" type="text" value="TEST-KBC-TXN-M1" required></label>
-              <label>Evidence reference<input id="evidenceReference" type="text" value="TEST-PAY-EVIDENCE-M1" required></label>
-              <label>Checked by<input id="checkedBy" type="text" value="Lorenzo" readonly></label>
-              <label class="payment-form__notes">Notes<textarea id="paymentNotes" rows="2" placeholder="Optionele operatornotitie"></textarea></label>
-            </form>
-            <div class="match-result"><span>Match result</span><strong id="matchResult">Nog niet gecontroleerd</strong></div>
-          </section>
-
-          <section class="panel" aria-labelledby="audit-title">
-            <div class="panel__heading"><div><p class="eyebrow">Read-only</p><h2 id="audit-title">Audit timeline</h2></div><span class="badge">APPEND-ONLY</span></div>
-            <ol id="auditTimeline" class="timeline"></ol>
-            <p id="auditEmpty" class="empty-state">Nog geen operatoractie in dit scenario.</p>
-          </section>
-        </div>
-
-        <aside class="context-column" aria-label="Projectcontext">
-          <section class="panel" aria-labelledby="status-title">
-            <div class="panel__heading"><h2 id="status-title">Projectstatus</h2></div>
-            <dl class="status-list">
-              <div><dt>Payment</dt><dd id="paymentStatus" class="badge">UNVERIFIED</dd></div>
-              <div><dt>Preview</dt><dd id="previewStatus" class="badge">NOT_AVAILABLE</dd></div>
-              <div><dt>Final approval</dt><dd id="approvalStatus" class="badge">NOT_RECORDED</dd></div>
-              <div><dt>Transfer</dt><dd id="transferStatus" class="badge badge--red">BLOCKED</dd></div>
-              <div><dt>Last evidence</dt><dd id="lastEvidence">TEST-ACCEPTANCE-EVIDENCE-0001</dd></div>
-            </dl>
-          </section>
-
-          <section class="panel blockers" aria-labelledby="blocker-title">
-            <div class="panel__heading"><h2 id="blocker-title">Blockers</h2></div>
-            <article><span id="blockerType" class="badge badge--amber">OPERATOR ACTION REQUIRED</span><p id="commercialBlocker">Handmatige betalingscontrole vereist.</p></article>
-            <article><span class="badge badge--red">EXTERNAL / FISCAL BLOCKER</span><p><strong>FISCAL PRODUCTION STATUS:</strong><br>PENDING OFFICIAL CONFIRMATION</p></article>
-            <ul class="blocked-list" aria-label="Geblokkeerde fiscale functies"><li>Echte invoice issuance</li><li>Fiscal numbering en VAT finalization</li><li>Peppol, credit notes en fiscal export</li></ul>
-          </section>
-
-          <section class="panel" aria-labelledby="documents-title">
-            <div class="panel__heading"><h2 id="documents-title">Documenten</h2></div>
-            <ul id="documentList" class="document-list"></ul>
-          </section>
-
-          <section class="panel branch-panel" aria-labelledby="branches-title">
-            <div class="panel__heading"><h2 id="branches-title">Aparte verplichtingen</h2></div>
-            <details open><summary>Change order <span>SEPARATE</span></summary><dl><div><dt>Requested change</dt><dd>Extra campagnepagina</dd></div><div><dt>Quoted change</dt><dd>€ 250 synthetic</dd></div><div><dt>Acceptance</dt><dd>Pending</dd></div><div><dt>Original total</dt><dd>Unchanged · € 3.500</dd></div></dl></details>
-            <details><summary>Recurring services <span>ISOLATED</span></summary><ul><li>Hosting — yearly in advance</li><li>Maintenance — monthly in advance</li><li>SEO Care/Growth — monthly in advance</li></ul></details>
-            <details><summary>External costs <span>NO MARKUP</span></summary><p>Direct customer payment. LWS purchase uitsluitend na prepayment evidence.</p></details>
-          </section>
+        <section class="panel" aria-labelledby="applicationsTitle"><div class="panel__heading"><div><p class="eyebrow">Overzicht</p><h2 id="applicationsTitle">Ingediende aanvragen</h2></div><span class="badge">OWNER / ADMIN</span></div><p id="applicationListMessage" class="empty-state" role="status" aria-live="polite"></p><ul id="applicationList" class="application-list"></ul><p id="applicationEmpty" class="empty-state" hidden>Geen ingediende aanvragen.</p></section>
+        <aside class="context-column" aria-label="Aanvraagdetail">
+          <p id="applicationDetailMessage" class="action-message action-message--dark" role="status" aria-live="polite"></p>
+          <section id="applicationDetailEmpty" class="panel"><h2>Selecteer een aanvraag</h2><p class="empty-state">Kies een aanvraag uit het overzicht.</p></section>
+          <section id="applicationDetail" class="panel" hidden aria-labelledby="detailName"><div class="panel__heading"><div><p id="detailReference" class="eyebrow"></p><h2 id="detailName"></h2></div><button id="promoteApplication" class="primary-action primary-action--compact" type="button" hidden>Project aanmaken</button></div><dl class="application-detail">
+            <div><dt>Onderneming</dt><dd id="detailCompany"></dd></div><div><dt>E-mail</dt><dd id="detailEmail"></dd></div><div><dt>Telefoon</dt><dd id="detailPhone"></dd></div><div><dt>Website</dt><dd id="detailWebsiteType"></dd></div><div><dt>Budget</dt><dd id="detailBudget"></dd></div><div><dt>Timing</dt><dd id="detailTiming"></dd></div><div><dt>Ingediend</dt><dd id="detailSubmittedAt"></dd></div><div><dt>Offerte</dt><dd id="detailQuotation"></dd></div><div><dt>Geaccepteerd</dt><dd id="detailAcceptedAt"></dd></div><div><dt>Project</dt><dd id="detailProject"></dd></div><div><dt>Projectstatus</dt><dd id="detailProjectState"></dd></div><div><dt>Geaccepteerd totaal</dt><dd id="detailTotal"></dd></div><div class="application-detail__wide"><dt>Omschrijving</dt><dd id="detailDescription"></dd></div>
+          </dl></section>
         </aside>
       </div>
     </main>
-
-    <dialog id="confirmationDialog" aria-labelledby="confirmationTitle" aria-describedby="confirmationText">
-      <form method="dialog" class="confirmation">
-        <p class="eyebrow eyebrow--red">Expliciete bevestiging vereist</p>
-        <h2 id="confirmationTitle">Actie bevestigen</h2>
-        <p id="confirmationText"></p>
-        <div class="confirmation__actions"><button value="cancel" class="secondary-action">Annuleren</button><button id="confirmAction" value="confirm" class="danger-action">Bevestigen</button></div>
-      </form>
-    </dialog>
+    <dialog id="promotionDialog" aria-labelledby="promotionTitle"><form method="dialog" class="confirmation"><p class="eyebrow eyebrow--red">Expliciete bevestiging vereist</p><h2 id="promotionTitle">Commercieel project aanmaken</h2><p>Maak alleen een project aan voor de getoonde, geaccepteerde offerte.</p><div class="confirmation__actions"><button value="cancel" class="secondary-action">Annuleren</button><button value="confirm" class="danger-action">Project aanmaken</button></div></form></dialog>
   </div>
 </body>
 </html>

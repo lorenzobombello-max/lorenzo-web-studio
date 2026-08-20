@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { applicationReferenceFromUrl, canPromoteApplication } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -21,8 +22,9 @@ test("dashboard guard requires database-backed operator authorization", async ()
   assert.match(source, /requireAuthorizedOperator/);
   assert.match(source, /access\.status === "unauthenticated"/);
   assert.match(source, /access\.status === "unauthorized"/);
-  assert.match(source, /await loadScript\("\/assets\/js\/operator-dashboard-contract\.js"\)/);
-  assert.match(source, /await loadScript\("\/assets\/js\/operator-dashboard\.js"\)/);
+  assert.match(source, /startOperatorDashboard/);
+  assert.match(source, /functionsBaseUrl/);
+  assert.doesNotMatch(source, /operator-dashboard-contract\.js/);
   assert.match(source, /dashboard\.hidden = false/);
 });
 
@@ -32,16 +34,34 @@ test("session shell uses the same database-backed authorization", async () => {
   assert.doesNotMatch(source, /requireOperatorSession/);
 });
 
-test("Phase-5D dashboard contract and presentation remain present", async () => {
+test("production dashboard uses real application data and no synthetic state", async () => {
   const [html, contract, script, css] = await Promise.all([
     read("operator/dashboard/index.html"),
     read("assets/js/operator-dashboard-contract.js"),
     read("assets/js/operator-dashboard.js"),
     read("assets/css/operator-dashboard.css"),
   ]);
-  assert.match(html, /Synthetic Project/);
-  assert.match(html, /FISCAL PRODUCTION STATUS:/);
+  assert.match(html, /id="applicationList"/);
+  assert.match(html, /id="applicationDetail"/);
+  assert.match(html, /id="promoteApplication"/);
+  assert.doesNotMatch(html, /Synthetic Project|TEST-LWS-OFF/);
   assert.match(contract, /LWS_DASHBOARD_CONTRACT/);
-  assert.match(script, /lws-phase5d-synthetic-state-v1/);
+  assert.match(contract, /createScenario/);
+  assert.match(script, /list_applications/);
+  assert.match(script, /get_application_detail/);
+  assert.match(script, /promote_accepted_application/);
+  assert.doesNotMatch(script, /localStorage|lws-phase5d-synthetic-state-v1|LWS_DASHBOARD_CONTRACT/);
   assert.match(css, /\.dashboard-grid/);
+  assert.match(css, /\.application-list/);
+});
+
+test("application reference query is the only accepted human locator", () => {
+  assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=LWS-AAN-2099-0001"), "LWS-AAN-2099-0001");
+  assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=bad"), null);
+});
+
+test("promotion is visible only for accepted applications without a project", () => {
+  assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: null }), true);
+  assert.equal(canPromoteApplication({ acceptance: null, project: null }), false);
+  assert.equal(canPromoteApplication({ acceptance: { acceptance_id: "accepted" }, project: { project_id: "project" } }), false);
 });
