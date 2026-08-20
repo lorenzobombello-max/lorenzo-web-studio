@@ -9,7 +9,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .skip-link:focus { transform:none; }
 .topbar { min-height:72px; padding:0 clamp(1rem,3vw,2rem); display:flex; align-items:center; justify-content:space-between; gap:1rem; color:var(--white); background:var(--ink); border-bottom:1px solid #34424c; }
 .identity { display:flex; align-items:center; gap:.75rem; color:inherit; text-decoration:none; }
-.identity__mark { width:42px; height:42px; flex:0 0 auto; object-fit:contain; }
+.identity__mark { width:42px; height:42px; flex:0 0 auto; object-fit:contain; border-radius:50%; background:rgba(255,255,255,.92); }
 .identity span:last-child { display:grid; }
 .identity small { color:#aab8bf; }
 .topbar__status { display:flex; align-items:center; gap:.75rem; color:#c5d0d5; font-size:.82rem; font-weight:700; }
