@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { handleCommercialOperator } from "./handler.ts";
-Deno.serve((request)=>{
+import { handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   const url = Deno.env.get("SUPABASE_URL"), anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) return new Response(JSON.stringify({
     ok: false,
@@ -78,4 +78,4 @@ Deno.serve((request)=>{
       return data;
     }
   });
-});
+}));

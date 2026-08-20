@@ -1,3 +1,5 @@
+import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
+
 const MAX_BODY_BYTES = 16 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COMMANDS = new Set([
@@ -188,6 +190,23 @@ export async function handleCommercialOperator(request, deps) {
     if (error instanceof RequestError) return response(error.status, error.code);
     return mapDatabaseError(error);
   }
+}
+
+export async function withCommercialOperatorCors(request: Request, next: ()=>Response | Promise<Response>): Promise<Response> {
+  const origin = request.headers.get("origin");
+  const blocked = rejectIfOriginNotAllowed(request);
+  if (blocked) return blocked;
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+  const response = await next();
+  const headers = new Headers(response.headers);
+  new Headers(corsHeaders(origin)).forEach((value, name)=>headers.set(name, value));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 export function createUnsignedTestJwt(payload) {
   const encode = (value)=>btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");

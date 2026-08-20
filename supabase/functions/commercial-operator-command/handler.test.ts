@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { createUnsignedTestJwt, handleCommercialOperator } from "./handler.ts";
+import { createUnsignedTestJwt, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -7,7 +7,7 @@ const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 410
 function request(body: Record<string, unknown>, token = jwt) {
   return new Request("https://example.test", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Origin: "https://lorenzowebsolutions.be" },
     body: JSON.stringify(body)
   });
 }
@@ -28,6 +28,55 @@ function dependencies() {
     }
   };
 }
+
+Deno.test("allowed production preflight returns the complete CORS contract without side effects", async ()=>{
+  let nextCalls = 0;
+  const response = await withCommercialOperatorCors(new Request("https://example.test", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://lorenzowebsolutions.be",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization,content-type"
+    }
+  }), async ()=>{
+    nextCalls += 1;
+    return new Response(null, { status: 500 });
+  });
+  assertEquals(response.status, 204);
+  assertEquals(response.headers.get("access-control-allow-origin"), "https://lorenzowebsolutions.be");
+  assertEquals(response.headers.get("access-control-allow-headers"), "authorization,content-type,idempotency-key,x-requested-with");
+  assertEquals(response.headers.get("access-control-allow-methods"), "GET,POST,OPTIONS");
+  assertEquals(nextCalls, 0);
+});
+
+Deno.test("allowed production success and error responses include CORS", async ()=>{
+  const successHarness = dependencies();
+  const success = await withCommercialOperatorCors(request({ action: "list_applications" }),
+    ()=>handleCommercialOperator(request({ action: "list_applications" }), successHarness.deps));
+  assertEquals(success.status, 200);
+  assertEquals(success.headers.get("access-control-allow-origin"), "https://lorenzowebsolutions.be");
+
+  const error = await withCommercialOperatorCors(new Request("https://example.test", {
+    method: "GET",
+    headers: { Origin: "https://lorenzowebsolutions.be" }
+  }), ()=>handleCommercialOperator(new Request("https://example.test", { method: "GET" }), dependencies().deps));
+  assertEquals(error.status, 405);
+  assertEquals(error.headers.get("access-control-allow-origin"), "https://lorenzowebsolutions.be");
+});
+
+Deno.test("disallowed origin is rejected before handler execution", async ()=>{
+  let nextCalls = 0;
+  const response = await withCommercialOperatorCors(new Request("https://example.test", {
+    method: "POST",
+    headers: { Origin: "https://attacker.example" }
+  }), async ()=>{
+    nextCalls += 1;
+    return new Response(null, { status: 200 });
+  });
+  assertEquals(response.status, 403);
+  assertEquals(response.headers.get("access-control-allow-origin"), "https://lorenzowebsolutions.be");
+  assertEquals(nextCalls, 0);
+});
 
 Deno.test("application list uses the verified human JWT and bounded pagination", async ()=>{
   const harness = dependencies();
