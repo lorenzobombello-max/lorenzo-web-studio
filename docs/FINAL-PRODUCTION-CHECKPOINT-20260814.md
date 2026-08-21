@@ -25,18 +25,18 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| HEAD | `6ddb23dd48b1818d9be219268a4dcb606bc8d180` |
-| Ahead/behind tegenover `origin/main` | `1/0` |
+| Laatste Operator implementation commit | `760f80663674e0938138ceff6d1e2f2da06e5fff` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `3/0` |
 | Preservation gate | **PASS** |
 
-Commit `6ddb23dd48b1818d9be219268a4dcb606bc8d180` (`style(operator): refine dashboard visual hierarchy`) is de actuele lokale technische basis voor het Operator Dashboard. Operator Phase A.1 blijft **COMPLETE**.
+Commit `760f80663674e0938138ceff6d1e2f2da06e5fff` (`feat(operator): expose customer core dossier fields`) is de actuele lokale technische basis voor het Operator Dashboard. Operator Phase A.1 blijft **COMPLETE**. De Customer Core-uitbreiding is lokaal gevalideerd met een volledige migration rebuild, `67/67` gerichte pgTAP-contracttests, de volledige Supabase-testset, `41/41` Operator auth/dashboard-tests en responsive DOM-controles op `1440px` en `375px`.
 
 ### Phase-B matrix
 
 | Phase-B onderdeel | WEBSITE | SDF |
 |---|---|---|
 | Application | DONE | DONE |
-| Customer | PARTIAL | PARTIAL |
+| Customer | DONE | DONE |
 | Project | DONE | MISSING |
 | Pricing | PARTIAL | MISSING |
 | Quotation Status | DONE | MISSING |
@@ -50,23 +50,23 @@ Commit `6ddb23dd48b1818d9be219268a4dcb606bc8d180` (`style(operator): refine dash
 2. Slimme Documentenflow / SDF is een bestaande afzonderlijke productfamilie. De commerciele SDF-authority bestaat en is niet open voor herbeslissing.
 3. Ontbrekende SDF pricing-, recurring- en projectfunctionaliteit is een **TECHNISCHE REPRESENTATIE/PERSISTENCE GAP**, geen ontbrekende businessbeslissing.
 4. SDF START, GROEI en MAATWERK en hun bestaande commerciele pricing- en recurring-authority mogen niet opnieuw als onbeslist worden behandeld.
-5. Customer Core-data bestaat reeds voor Website en SDF. De Operator application-RPC en Customer UI projecteren en renderen deze data momenteel slechts gedeeltelijk.
+5. De reeds persistente Customer Core-data wordt voor Website en SDF door de product-aware Operator application-RPC geprojecteerd en read-only in het Customer-dossier gerenderd. Ontbrekende optionele waarden blijven neutraal.
 6. `request_kind` blijft de productauthority met uitsluitend `website | slimme_documentenflow`.
 7. Een Website-naar-SDF fallback, coalesce of pricingovername is niet toegestaan. Onbekende productcontext moet fail-closed blijven.
 8. Golden Master / Customer Core C1-C4 blijven **COMPLETE / VERIFIED / FROZEN** en worden niet heropend.
 
-### Eerstvolgende toegestane atomic implementation
+### Voltooide atomic implementation
 
-Projecteer en render de reeds persistente Customer Core-velden in het product-aware Operator Customer-dossier voor Website en SDF.
+De Customer Core-uitbreiding is voltooid in commit `760f80663674e0938138ceff6d1e2f2da06e5fff`:
 
-De minimale verwachte technische scope van die afzonderlijke volgende taak is:
+- additive migration `20260821120000_expose_operator_customer_core.sql` voor de bestaande beveiligde detail-RPC;
+- gedeelde, read-only Customer Core-weergave voor Website en SDF;
+- neutrale afhandeling van ontbrekende optionele waarden;
+- gerichte productisolatie-, stale-data- en XSS-contracttests.
 
-- een additive uitbreiding van het Operator application read model / de RPC;
-- de Operator Customer UI;
-- de Operator Dashboard-rendering;
-- uitsluitend de noodzakelijke gerichte tests.
+### Resterende Phase-B scope
 
-Deze checkpointupdate voert die implementatie niet uit. Websiteflow, SDF-flow, C1-C4, pricing, Budget Guard, quotation/acceptance, backendruntime en database blijven in deze documentatietaak ongewijzigd.
+De resterende matrix is hierboven leidend. Voor SDF blijven Project, Pricing, Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`. Een volgende atomic implementation moet afzonderlijk worden begrensd en mag uitsluitend de bestaande SDF-authority product-aware representeren. Websitefallback, coalesce of hergebruik van Website pricing/projectbewijs voor SDF blijft verboden.
 
 ## Executive status
 
