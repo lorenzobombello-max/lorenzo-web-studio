@@ -8,6 +8,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const STATE_LABELS = Object.freeze({
@@ -66,6 +67,7 @@ export function applyDetailVisibility(requestKind, nodes) {
   nodes.promote.hidden = true;
   for (const section of nodes.dossierSections) section.hidden = false;
   for (const section of nodes.websiteDossierSections) section.hidden = !isWebsite;
+  for (const section of nodes.sdfDossierSections) section.hidden = isWebsite;
   for (const row of nodes.websiteDetailRows) row.hidden = !isWebsite;
   for (const row of nodes.sdfDetailRows) row.hidden = isWebsite;
   nodes.sdfDetailNotice.hidden = isWebsite;
@@ -121,6 +123,44 @@ export function sdfPackageLabel(value) {
   return SDF_PACKAGE_LABELS[value] || "Niet geregistreerd";
 }
 
+function formatSdfPrice(entry, recurring = false) {
+  const amount = new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 2 }).format(entry.amount_minor / 100);
+  const prefix = entry.price_mode === "starting_at" ? "vanaf " : "";
+  return `${prefix}€ ${amount} excl. btw${recurring ? " / maand" : ""}`;
+}
+
+export function sdfPricingPresentation(application) {
+  if (application?.request_kind !== "slimme_documentenflow") return null;
+  const unavailable = {
+    package: sdfPackageLabel(application?.sdf_package),
+    implementation: "Niet beschikbaar",
+    recurring: "Niet beschikbaar",
+  };
+  const pricing = application?.sdf_pricing;
+  const implementation = pricing?.implementation;
+  const recurring = pricing?.recurring;
+  const validMode = (entry) => entry?.price_mode === "fixed" || entry?.price_mode === "starting_at";
+  if (!Object.hasOwn(SDF_PACKAGE_LABELS, application?.sdf_package)
+      || pricing?.authority_version !== 1
+      || pricing?.package !== application.sdf_package
+      || pricing?.currency !== "EUR"
+      || pricing?.vat_basis !== "exclusive"
+      || !Number.isSafeInteger(implementation?.amount_minor)
+      || implementation.amount_minor < 0
+      || !validMode(implementation)
+      || !Number.isSafeInteger(recurring?.amount_minor)
+      || recurring.amount_minor < 0
+      || !validMode(recurring)
+      || recurring?.billing_period !== "month"
+      || recurring?.commercial_package_price !== true
+      || recurring?.active_recurring_obligation !== false) return unavailable;
+  return {
+    package: sdfPackageLabel(application.sdf_package),
+    implementation: formatSdfPrice(implementation),
+    recurring: formatSdfPrice(recurring, true),
+  };
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -132,6 +172,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const confirmation = document.getElementById("promotionDialog");
   const dossierSections = Array.from(document.querySelectorAll(".dossier-section"));
   const websiteDossierSections = WEBSITE_DOSSIER_IDS.map((id) => document.getElementById(id));
+  const sdfDossierSections = SDF_DOSSIER_IDS.map((id) => document.getElementById(id));
   const websiteDetailRows = Array.from(document.querySelectorAll("[data-website-detail]"));
   const sdfDetailRows = Array.from(document.querySelectorAll("[data-sdf-detail]"));
   const filterButtons = Array.from(document.querySelectorAll("[data-product-filter]"));
@@ -161,7 +202,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     detailRequestId += 1;
     selectedLocator = null;
     selectedDetail = null;
-    applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
+    applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
     updateLocation(null);
   }
@@ -269,11 +310,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
-    applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
+    applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
     setText("detailSdfPackage", sdfPackageLabel(application.sdf_package));
+    const sdfPricing = sdfPricingPresentation(application);
+    setText("detailSdfPricingPackage", sdfPricing?.package || "Niet beschikbaar");
+    setText("detailSdfImplementationPrice", sdfPricing?.implementation || "Niet beschikbaar");
+    setText("detailSdfRecurringPrice", sdfPricing?.recurring || "Niet beschikbaar");
     for (const [id, value] of Object.entries(customerCorePresentation(application))) setText(id, value);
     setText("detailWebsiteType", application.website_type);
     setText("detailBudget", application.budget);

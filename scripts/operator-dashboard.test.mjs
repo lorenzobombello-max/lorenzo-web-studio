@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -111,15 +111,18 @@ test("filter changes invalidate stale or unsupported detail state", () => {
 function detailVisibilityHarness() {
   const customer = { hidden: false };
   const websiteSections = Array.from({ length: 7 }, () => ({ hidden: false }));
+  const sdfSections = Array.from({ length: 1 }, () => ({ hidden: false }));
   return {
     customer,
     websiteSections,
+    sdfSections,
     nodes: {
       detail: { hidden: false },
       detailEmpty: { hidden: true },
       promote: { hidden: false, disabled: true },
-      dossierSections: [customer, ...websiteSections],
+      dossierSections: [customer, ...websiteSections, ...sdfSections],
       websiteDossierSections: websiteSections,
+      sdfDossierSections: sdfSections,
       websiteDetailRows: Array.from({ length: 3 }, () => ({ hidden: false })),
       sdfDetailRows: Array.from({ length: 1 }, () => ({ hidden: false })),
       sdfDetailNotice: { hidden: false },
@@ -151,6 +154,7 @@ test("Website detail is restored only after Website reselection", () => {
   assert.equal(harness.nodes.detailEmpty.hidden, true);
   assert.equal(harness.customer.hidden, false);
   assert.equal(harness.websiteSections.every((section) => !section.hidden), true);
+  assert.equal(harness.sdfSections.every((section) => section.hidden), true);
   assert.equal(harness.nodes.websiteDetailRows.every((row) => !row.hidden), true);
   assert.equal(harness.nodes.sdfDetailRows.every((row) => row.hidden), true);
   assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
@@ -164,6 +168,7 @@ test("SDF detail restores shared data without Website-only presentation", () => 
   assert.equal(harness.nodes.detailEmpty.hidden, true);
   assert.equal(harness.customer.hidden, false);
   assert.equal(harness.websiteSections.every((section) => section.hidden), true);
+  assert.equal(harness.sdfSections.every((section) => !section.hidden), true);
   assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
   assert.equal(harness.nodes.sdfDetailRows.every((row) => !row.hidden), true);
   assert.equal(harness.nodes.sdfDetailNotice.hidden, false);
@@ -244,4 +249,62 @@ test("workflow display distinguishes available, locked, completed, and unimpleme
   assert.equal(nextWorkflowStage("M1_PAYMENT_PENDING").availability, "LOCKED");
   assert.equal(nextWorkflowStage("ARCHIVED").availability, "COMPLETED");
   assert.equal(nextWorkflowStage("UNKNOWN").availability, "NOT YET IMPLEMENTED");
+});
+
+function sdfPricing(packageName, implementationMinor, recurringMinor, priceMode = "fixed") {
+  return {
+    authority_version: 1,
+    package: packageName,
+    currency: "EUR",
+    vat_basis: "exclusive",
+    implementation: { amount_minor: implementationMinor, price_mode: priceMode },
+    recurring: {
+      amount_minor: recurringMinor,
+      price_mode: priceMode,
+      billing_period: "month",
+      commercial_package_price: true,
+      active_recurring_obligation: false,
+    },
+  };
+}
+
+test("SDF pricing renders exact START and GROEI commercial package prices", () => {
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "start", sdf_pricing: sdfPricing("start", 285000, 17500) }), {
+    package: "START", implementation: "€ 2.850 excl. btw", recurring: "€ 175 excl. btw / maand",
+  });
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "groei", sdf_pricing: sdfPricing("groei", 570000, 29900) }), {
+    package: "GROEI", implementation: "€ 5.700 excl. btw", recurring: "€ 299 excl. btw / maand",
+  });
+});
+
+test("SDF MAATWERK pricing preserves starting-at semantics", () => {
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "maatwerk", sdf_pricing: sdfPricing("maatwerk", 750000, 44900, "starting_at") }), {
+    package: "MAATWERK", implementation: "vanaf € 7.500 excl. btw", recurring: "vanaf € 449 excl. btw / maand",
+  });
+});
+
+test("SDF pricing fails closed for legacy, mismatched, and non-commercial contexts", () => {
+  const unavailable = { package: "GROEI", implementation: "Niet beschikbaar", recurring: "Niet beschikbaar" };
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: null, sdf_pricing: null }), {
+    package: "Niet geregistreerd", implementation: "Niet beschikbaar", recurring: "Niet beschikbaar",
+  });
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "groei", sdf_pricing: sdfPricing("start", 285000, 17500) }), unavailable);
+  const obligation = sdfPricing("groei", 570000, 29900);
+  obligation.recurring.active_recurring_obligation = true;
+  assert.deepEqual(sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "groei", sdf_pricing: obligation }), unavailable);
+  assert.equal(sdfPricingPresentation({ request_kind: "website", sdf_package: "start", sdf_pricing: sdfPricing("start", 285000, 17500) }), null);
+});
+
+test("SDF pricing clears stale values and remains textContent-only", async () => {
+  const previous = sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: "start", sdf_pricing: sdfPricing("start", 285000, 17500) });
+  const next = sdfPricingPresentation({ request_kind: "slimme_documentenflow", sdf_package: null, sdf_pricing: null });
+  assert.equal(previous.implementation, "€ 2.850 excl. btw");
+  assert.equal(next.implementation, "Niet beschikbaar");
+  assert.equal(next.recurring, "Niet beschikbaar");
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="sdfPricingDossier"[^>]* hidden/);
+  assert.match(html, /commerciële pakketprijs en geen actieve terugkerende dienst of financiële verplichting/);
+  assert.match(script, /setText\("detailSdfImplementationPrice", sdfPricing\?\.implementation \|\| "Niet beschikbaar"\)/);
+  assert.match(script, /element\.textContent = value/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(72);
+select plan(77);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -160,6 +160,26 @@ select is(public.get_operator_application_v1('a1100000-0000-4000-8000-0000000000
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'sdf_package','null'::jsonb,'Operator detail preserves missing legacy SDF package as null');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_package','null'::jsonb,'Website Operator detail exposes no SDF package identity');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'price_mode'
+),'["285000", "fixed", "17500", "fixed"]'::jsonb,'Operator detail exposes exact fixed START pricing');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'price_mode'
+),'["570000", "fixed", "29900", "fixed"]'::jsonb,'Operator detail exposes exact fixed GROEI pricing');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'price_mode'
+),'["750000", "starting_at", "44900", "starting_at"]'::jsonb,'Operator detail preserves MAATWERK starting-at pricing');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'sdf_pricing','null'::jsonb,'legacy SDF detail does not fabricate package pricing');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_pricing','null'::jsonb,'Website detail does not expose SDF package pricing');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'request_kind','website','application detail exposes the same stored website request kind');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
