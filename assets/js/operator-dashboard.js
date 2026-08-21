@@ -90,6 +90,30 @@ function formatMoney(value) {
     : "-";
 }
 
+function optionalDisplay(value) {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+export function customerCorePresentation(application) {
+  return {
+    detailCustomerType: optionalDisplay(application?.customer_type),
+    detailCustomerName: optionalDisplay(application?.name),
+    detailCompany: optionalDisplay(application?.company),
+    detailEmail: optionalDisplay(application?.email),
+    detailPhone: optionalDisplay(application?.phone),
+    detailEnterpriseNumber: optionalDisplay(application?.enterprise_number),
+    detailEnterpriseValidation: optionalDisplay(application?.enterprise_validation_status),
+    detailVatNumber: optionalDisplay(application?.vat_number),
+    detailVatValidation: optionalDisplay(application?.vat_validation_status),
+    detailVatValidatedAt: application?.vat_validated_at ? formatDate(application.vat_validated_at) : "-",
+    detailBillingAddress: optionalDisplay(application?.billing_address),
+    detailBillingPostalCode: optionalDisplay(application?.billing_postal_code),
+    detailBillingCity: optionalDisplay(application?.billing_city),
+    detailBillingCountry: optionalDisplay(application?.billing_country),
+    detailBillingEmail: optionalDisplay(application?.billing_email),
+  };
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -241,10 +265,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
-    setText("detailCustomerName", application.name);
-    setText("detailCompany", application.company || "Geen onderneming");
-    setText("detailEmail", application.email);
-    setText("detailPhone", application.phone || "-");
+    for (const [id, value] of Object.entries(customerCorePresentation(application))) setText(id, value);
     setText("detailWebsiteType", application.website_type);
     setText("detailBudget", application.budget);
     setText("detailTiming", application.timing);

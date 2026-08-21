@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -177,6 +177,37 @@ test("SDF detail hides every Website-only field and dossier section", async () =
   assert.match(script, /row\.hidden = !isWebsite/);
   assert.match(script, /if \(!isWebsite\) return/);
   assert.match(script, /application\.request_kind === "website" && application\.project/);
+});
+
+test("Website and SDF use the same persisted Customer Core presentation", () => {
+  const customer = {
+    customer_type: "business", name: "Test Klant", company: "Test BV", email: "klant@example.test", phone: "+32 470 00 00 00",
+    enterprise_number: "0123456789", enterprise_validation_status: "format_valid_not_externally_verified",
+    vat_number: "BE0123456789", vat_validation_status: "valid", vat_validated_at: "2026-08-21T10:00:00Z",
+    billing_address: "Teststraat 1", billing_postal_code: "9000", billing_city: "Gent", billing_country: "BE", billing_email: "billing@example.test",
+  };
+  const website = customerCorePresentation({ ...customer, request_kind: "website" });
+  const sdf = customerCorePresentation({ ...customer, request_kind: "slimme_documentenflow" });
+  assert.deepEqual(sdf, website);
+  assert.equal(website.detailEnterpriseNumber, "0123456789");
+  assert.equal(website.detailBillingEmail, "billing@example.test");
+});
+
+test("missing optional Customer Core values clear stale dossier content", () => {
+  const previous = customerCorePresentation({ company: "Vorige BV", vat_number: "BE0123456789", billing_city: "Gent" });
+  const next = customerCorePresentation({ name: "Nieuwe klant", email: "nieuw@example.test" });
+  assert.equal(previous.detailCompany, "Vorige BV");
+  assert.equal(next.detailCompany, "-");
+  assert.equal(next.detailVatNumber, "-");
+  assert.equal(next.detailBillingCity, "-");
+});
+
+test("Customer Core presentation preserves untrusted text for textContent rendering", async () => {
+  const payload = '<img src=x onerror="alert(1)">';
+  assert.equal(customerCorePresentation({ company: payload }).detailCompany, payload);
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /element\.textContent = value/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });
 
 test("filter navigation reuses loaded data and preserves out-of-order protection", async () => {

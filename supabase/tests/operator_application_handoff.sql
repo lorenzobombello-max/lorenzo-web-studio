@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(64);
+select plan(67);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -31,11 +31,13 @@ insert into public.commercial_operators (auth_user_id, display_name, role, statu
 
 insert into public.quote_requests (
   id, application_reference, request_kind, created_at, name, company, email, website_type, budget, timing,
-  description, privacy_consent, status
+  description, privacy_consent, status, customer_type, phone, enterprise_number, enterprise_validation_status,
+  vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city,
+  billing_country, billing_email
 ) values
-  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved');
+  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved','business','+32 470 00 00 01','0123456789','format_valid_not_externally_verified','BE0123456789','valid','2099-01-01T07:00:00Z','Webstraat 1','9000','Gent','BE','billing-website@example.test'),
+  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved',null,null,null,'not_checked',null,'not_checked',null,null,null,null,null,null),
+  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved','business','+32 470 00 00 03','0987654321','format_valid_not_externally_verified','BE0987654321','unavailable','2099-01-01T10:00:00Z','Flowstraat 3','1000','Brussel','BE','billing-sdf@example.test');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
@@ -152,6 +154,29 @@ select is((select value->>'request_kind' from jsonb_array_elements(public.list_o
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'request_kind','website','application detail exposes the same stored website request kind');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
+select is(jsonb_build_array(
+  public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'customer_type',
+  public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'enterprise_number',
+  public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'vat_validation_status',
+  public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'billing_address',
+  public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'billing_email'
+),'["business", "0123456789", "valid", "Webstraat 1", "billing-website@example.test"]'::jsonb,'Website detail exposes persisted Customer Core fields');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'customer_type',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'enterprise_number',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'vat_validation_status',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'billing_address',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'billing_email'
+),'["business", "0987654321", "unavailable", "Flowstraat 3", "billing-sdf@example.test"]'::jsonb,'Documentenflow detail exposes its own persisted Customer Core fields');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'customer_type',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'enterprise_number',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'enterprise_validation_status',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'vat_number',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'vat_validation_status',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'billing_address',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'billing_email'
+),'[null, null, "not_checked", null, "not_checked", null, null]'::jsonb,'missing optional Customer Core fields remain neutral without fabricated values');
 select is(jsonb_build_array(
   public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'website_type',
   public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'budget',
