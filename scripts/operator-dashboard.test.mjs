@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -111,7 +111,7 @@ test("filter changes invalidate stale or unsupported detail state", () => {
 function detailVisibilityHarness() {
   const customer = { hidden: false };
   const websiteSections = Array.from({ length: 7 }, () => ({ hidden: false }));
-  const sdfSections = Array.from({ length: 1 }, () => ({ hidden: false }));
+  const sdfSections = Array.from({ length: 2 }, () => ({ hidden: false }));
   return {
     customer,
     websiteSections,
@@ -305,6 +305,81 @@ test("SDF pricing clears stale values and remains textContent-only", async () =>
   assert.match(html, /id="sdfPricingDossier"[^>]* hidden/);
   assert.match(html, /commerciële pakketprijs en geen actieve terugkerende dienst of financiële verplichting/);
   assert.match(script, /setText\("detailSdfImplementationPrice", sdfPricing\?\.implementation \|\| "Niet beschikbaar"\)/);
+  assert.match(script, /element\.textContent = value/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
+});
+
+function sdfApplication(project = null) {
+  return {
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+    application_reference: null,
+    request_kind: "slimme_documentenflow",
+    sdf_package: "groei",
+    name: "Documentenflow Application",
+    project,
+  };
+}
+
+function sdfProject(overrides = {}) {
+  return {
+    project_id: "a1900000-0000-4000-8000-000000000001",
+    request_kind: "slimme_documentenflow",
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+    application_reference: null,
+    customer_name: "Documentenflow Application",
+    sdf_package: "groei",
+    current_state: null,
+    operational_status: null,
+    created_at: "2099-01-02T10:00:00Z",
+    ...overrides,
+  };
+}
+
+test("SDF application without project authority shows no fabricated project", () => {
+  assert.deepEqual(sdfProjectPresentation(sdfApplication()), {
+    projectId: "Nog geen project",
+    product: "Slimme Documentenflow",
+    application: "a1100000-0000-4000-8000-000000000003",
+    customer: "Documentenflow Application",
+    package: "GROEI",
+    status: "Niet beschikbaar",
+    operationalStatus: "Niet beschikbaar",
+    createdAt: "Niet beschikbaar",
+  });
+});
+
+test("SDF project authority renders exact linkage without inventing status", () => {
+  const presentation = sdfProjectPresentation(sdfApplication(sdfProject()));
+  assert.equal(presentation.projectId, "a1900000-0000-4000-8000-000000000001");
+  assert.equal(presentation.product, "Slimme Documentenflow");
+  assert.equal(presentation.application, "a1100000-0000-4000-8000-000000000003");
+  assert.equal(presentation.customer, "Documentenflow Application");
+  assert.equal(presentation.package, "GROEI");
+  assert.equal(presentation.status, "Niet beschikbaar");
+  assert.equal(presentation.operationalStatus, "Niet beschikbaar");
+  assert.notEqual(presentation.createdAt, "Niet beschikbaar");
+});
+
+test("SDF project presentation fails closed for cross-product, mismatched, and legacy contexts", () => {
+  assert.equal(sdfProjectPresentation({ request_kind: "website", project: sdfProject() }), null);
+  assert.equal(sdfProjectPresentation(sdfApplication(sdfProject({ quote_request_id: "b1100000-0000-4000-8000-000000000003" }))).projectId, "Nog geen project");
+  assert.equal(sdfProjectPresentation(sdfApplication(sdfProject({ current_state: "PROJECT_IN_PROGRESS" }))).projectId, "Nog geen project");
+  const legacy = sdfProjectPresentation({ quote_request_id: "legacy", request_kind: "slimme_documentenflow", sdf_package: null, name: "Legacy", project: null });
+  assert.equal(legacy.projectId, "Nog geen project");
+  assert.equal(legacy.package, "Niet geregistreerd");
+});
+
+test("SDF project values clear on dossier switch and remain textContent-only", async () => {
+  const previous = sdfProjectPresentation(sdfApplication(sdfProject()));
+  const next = sdfProjectPresentation(sdfApplication());
+  assert.notEqual(previous.projectId, "Nog geen project");
+  assert.equal(next.projectId, "Nog geen project");
+  assert.equal(next.createdAt, "Niet beschikbaar");
+  const payload = '<img src=x onerror="alert(1)">';
+  assert.equal(sdfProjectPresentation({ ...sdfApplication(), name: payload }).customer, payload);
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="sdfProjectDossier"[^>]* hidden/);
+  assert.match(script, /setText\("detailSdfProjectId", sdfProject\?\.projectId \|\| "Nog geen project"\)/);
   assert.match(script, /element\.textContent = value/);
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });

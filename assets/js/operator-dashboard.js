@@ -8,7 +8,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
-const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier"]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfProjectDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const STATE_LABELS = Object.freeze({
@@ -158,6 +158,37 @@ export function sdfPricingPresentation(application) {
     package: sdfPackageLabel(application.sdf_package),
     implementation: formatSdfPrice(implementation),
     recurring: formatSdfPrice(recurring, true),
+  };
+}
+
+export function sdfProjectPresentation(application) {
+  if (application?.request_kind !== "slimme_documentenflow") return null;
+  const unavailable = {
+    projectId: "Nog geen project",
+    product: "Slimme Documentenflow",
+    application: optionalDisplay(application?.application_reference || application?.quote_request_id),
+    customer: optionalDisplay(application?.name),
+    package: sdfPackageLabel(application?.sdf_package),
+    status: "Niet beschikbaar",
+    operationalStatus: "Niet beschikbaar",
+    createdAt: "Niet beschikbaar",
+  };
+  const project = application?.project;
+  if (!project) return unavailable;
+  if (!UUID.test(project.project_id || "")
+      || project.request_kind !== "slimme_documentenflow"
+      || project.quote_request_id !== application.quote_request_id
+      || project.application_reference !== (application.application_reference ?? null)
+      || project.customer_name !== application.name
+      || project.sdf_package !== (application.sdf_package ?? null)
+      || project.current_state != null
+      || project.operational_status != null
+      || !project.created_at
+      || Number.isNaN(Date.parse(project.created_at))) return unavailable;
+  return {
+    ...unavailable,
+    projectId: project.project_id,
+    createdAt: formatDate(project.created_at),
   };
 }
 
@@ -319,6 +350,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailSdfPricingPackage", sdfPricing?.package || "Niet beschikbaar");
     setText("detailSdfImplementationPrice", sdfPricing?.implementation || "Niet beschikbaar");
     setText("detailSdfRecurringPrice", sdfPricing?.recurring || "Niet beschikbaar");
+    const sdfProject = sdfProjectPresentation(application);
+    setText("detailSdfProjectId", sdfProject?.projectId || "Nog geen project");
+    setText("detailSdfProjectProduct", sdfProject?.product || "Niet beschikbaar");
+    setText("detailSdfProjectApplication", sdfProject?.application || "Niet beschikbaar");
+    setText("detailSdfProjectCustomer", sdfProject?.customer || "Niet beschikbaar");
+    setText("detailSdfProjectPackage", sdfProject?.package || "Niet geregistreerd");
+    setText("detailSdfProjectStatus", sdfProject?.status || "Niet beschikbaar");
+    setText("detailSdfOperationalStatus", sdfProject?.operationalStatus || "Niet beschikbaar");
+    setText("detailSdfProjectCreatedAt", sdfProject?.createdAt || "Niet beschikbaar");
     for (const [id, value] of Object.entries(customerCorePresentation(application))) setText(id, value);
     setText("detailWebsiteType", application.website_type);
     setText("detailBudget", application.budget);
