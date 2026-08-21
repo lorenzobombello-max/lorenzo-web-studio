@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(82);
+select plan(86);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -157,6 +157,17 @@ insert into public.quote_requests (id,request_kind,sdf_package,created_at,name,e
   ('a1100000-0000-4000-8000-000000000006','slimme_documentenflow',null,'2099-01-01T14:00:00Z','Legacy SDF','legacy-sdf@example.test','Legacy SDF Operator read fixture.',true,'approved');
 insert into public.sdf_projects(project_id,quote_request_id,created_at) values
   ('a1900000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000003','2099-01-02T10:00:00Z');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_quotation','null'::jsonb,'SDF application without quotation identity exposes no fabricated quotation');
+insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
+  ('a1a00000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000003','2099-01-03T10:00:00Z');
+select is(jsonb_build_array(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quotation_id',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quote_request_id',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'application_reference',
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'created_at'
+),'["a1a00000-0000-4000-8000-000000000001", "a1100000-0000-4000-8000-000000000003", null, "2099-01-03T10:00:00+00:00"]'::jsonb,'SDF quotation read model preserves exact identity, application linkage, reference, and creation time');
+select ok(not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation' ? 'status'),'SDF quotation read model does not fabricate status');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_quotation','null'::jsonb,'Website detail does not expose SDF quotation identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->>'sdf_package','start','Operator detail exposes persisted START package identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'sdf_package','groei','Operator detail exposes persisted GROEI package identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');

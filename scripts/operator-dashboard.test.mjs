@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -305,6 +305,53 @@ test("SDF pricing clears stale values and remains textContent-only", async () =>
   assert.match(html, /id="sdfPricingDossier"[^>]* hidden/);
   assert.match(html, /commerciële pakketprijs en geen actieve terugkerende dienst of financiële verplichting/);
   assert.match(script, /setText\("detailSdfImplementationPrice", sdfPricing\?\.implementation \|\| "Niet beschikbaar"\)/);
+  assert.match(script, /element\.textContent = value/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
+});
+
+function sdfQuotation(overrides = {}) {
+  return {
+    quotation_id: "a1a00000-0000-4000-8000-000000000001",
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+    application_reference: null,
+    created_at: "2099-01-03T10:00:00Z",
+    ...overrides,
+  };
+}
+
+test("SDF quotation presenter renders exact identity without inventing status", () => {
+  const presentation = sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation() });
+  assert.equal(presentation.quotationId, "a1a00000-0000-4000-8000-000000000001");
+  assert.equal(presentation.application, "a1100000-0000-4000-8000-000000000003");
+  assert.notEqual(presentation.createdAt, "Niet beschikbaar");
+  assert.equal(presentation.status, "Niet beschikbaar");
+});
+
+test("SDF quotation presenter handles absent, mismatched, Website, and legacy identities", () => {
+  assert.deepEqual(sdfQuotationPresentation(sdfApplication()), {
+    quotationId: "Nog geen offerte",
+    application: "a1100000-0000-4000-8000-000000000003",
+    createdAt: "Niet beschikbaar",
+    status: "Niet beschikbaar",
+  });
+  assert.equal(sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ quote_request_id: "b1100000-0000-4000-8000-000000000003" }) }).quotationId, "Nog geen offerte");
+  assert.equal(sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ status: "DRAFT" }) }).quotationId, "Nog geen offerte");
+  assert.equal(sdfQuotationPresentation({ request_kind: "website", sdf_quotation: sdfQuotation() }), null);
+  assert.equal(sdfQuotationPresentation({ quote_request_id: "legacy", request_kind: "slimme_documentenflow", sdf_quotation: null }).application, "legacy");
+});
+
+test("SDF quotation values clear on dossier switch and remain textContent-only", async () => {
+  const previous = sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation() });
+  const next = sdfQuotationPresentation(sdfApplication());
+  assert.notEqual(previous.quotationId, "Nog geen offerte");
+  assert.equal(next.quotationId, "Nog geen offerte");
+  assert.equal(next.createdAt, "Niet beschikbaar");
+  const payload = '<img src=x onerror="alert(1)">';
+  assert.equal(sdfQuotationPresentation({ ...sdfApplication(), application_reference: payload }).application, payload);
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="sdfQuotationDossier"[^>]* hidden/);
+  assert.match(html, /id="detailSdfQuotationStatus"><\/dd>/);
+  assert.match(script, /setText\("detailSdfQuotationId", sdfQuotation\?\.quotationId \|\| "Nog geen offerte"\)/);
   assert.match(script, /element\.textContent = value/);
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });

@@ -8,7 +8,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
-const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfProjectDossier"]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfProjectDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const STATE_LABELS = Object.freeze({
@@ -158,6 +158,29 @@ export function sdfPricingPresentation(application) {
     package: sdfPackageLabel(application.sdf_package),
     implementation: formatSdfPrice(implementation),
     recurring: formatSdfPrice(recurring, true),
+  };
+}
+
+export function sdfQuotationPresentation(application) {
+  if (application?.request_kind !== "slimme_documentenflow") return null;
+  const unavailable = {
+    quotationId: "Nog geen offerte",
+    application: optionalDisplay(application?.application_reference || application?.quote_request_id),
+    createdAt: "Niet beschikbaar",
+    status: "Niet beschikbaar",
+  };
+  const quotation = application?.sdf_quotation;
+  if (!quotation) return unavailable;
+  if (!UUID.test(quotation.quotation_id || "")
+      || quotation.quote_request_id !== application.quote_request_id
+      || quotation.application_reference !== (application.application_reference ?? null)
+      || Object.hasOwn(quotation, "status")
+      || !quotation.created_at
+      || Number.isNaN(Date.parse(quotation.created_at))) return unavailable;
+  return {
+    ...unavailable,
+    quotationId: quotation.quotation_id,
+    createdAt: formatDate(quotation.created_at),
   };
 }
 
@@ -350,6 +373,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailSdfPricingPackage", sdfPricing?.package || "Niet beschikbaar");
     setText("detailSdfImplementationPrice", sdfPricing?.implementation || "Niet beschikbaar");
     setText("detailSdfRecurringPrice", sdfPricing?.recurring || "Niet beschikbaar");
+    const sdfQuotation = sdfQuotationPresentation(application);
+    setText("detailSdfQuotationId", sdfQuotation?.quotationId || "Nog geen offerte");
+    setText("detailSdfQuotationApplication", sdfQuotation?.application || "Niet beschikbaar");
+    setText("detailSdfQuotationCreatedAt", sdfQuotation?.createdAt || "Niet beschikbaar");
+    setText("detailSdfQuotationStatus", sdfQuotation?.status || "Niet beschikbaar");
     const sdfProject = sdfProjectPresentation(application);
     setText("detailSdfProjectId", sdfProject?.projectId || "Nog geen project");
     setText("detailSdfProjectProduct", sdfProject?.product || "Niet beschikbaar");
