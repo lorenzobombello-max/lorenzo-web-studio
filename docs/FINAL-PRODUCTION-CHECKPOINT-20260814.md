@@ -25,11 +25,11 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| Laatste Operator implementation commit | `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` |
-| Ahead/behind tegenover `origin/main` na implementation commit | `9/0` |
+| Laatste Operator implementation commit | `27abff0b4074c46e8313108cce6c1a8d8549baaa` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `11/0` |
 | Preservation gate | **PASS** |
 
-Commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` (`feat(sdf): expose project foundation in operator dossier`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity en SDF pricing blijven **COMPLETE**.
+Commit `27abff0b4074c46e8313108cce6c1a8d8549baaa` (`feat(sdf): add quotation identity foundation`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity, SDF pricing en SDF project identity blijven **COMPLETE**.
 
 ### Phase-B matrix
 
@@ -40,6 +40,7 @@ Commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` (`feat(sdf): expose project fo
 | Customer | DONE | DONE |
 | Project | DONE | DONE |
 | Pricing | PARTIAL | DONE |
+| Quotation Identity | DONE | DONE |
 | Quotation Status | DONE | MISSING |
 | Document Status | PARTIAL | MISSING |
 | Workflow Status | DONE | MISSING |
@@ -61,6 +62,8 @@ Commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` (`feat(sdf): expose project fo
 12. SDF-maandbedragen zijn uitsluitend read-only commerciele pakketprijzen. Zij activeren geen recurring service, betalingsverplichting, snapshot of financiele lifecycle.
 13. SDF-projectauthority is identity-only: project-ID, een-op-een aanvraaglink en creatietijd. Projectstatus en operationele status bestaan nog niet als persistente SDF-authority en blijven `Niet beschikbaar`.
 14. Application en Project blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_projects`-rij blijft `Nog geen project`; er bestaat geen automatische projectcreatie.
+15. SDF-quotationauthority is identity-only: offerte-ID, een-op-een aanvraaglink en creatietijd. Quotationstatus bestaat nog niet als persistente SDF-authority en blijft `Niet beschikbaar`.
+16. Application en Quotation blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_quotations`-rij blijft `Nog geen offerte`; er bestaat geen automatische quotationcreatie.
 
 ### Voltooide atomic implementations
 
@@ -118,6 +121,27 @@ Exacte implementation-files:
 - `assets/js/operator-dashboard.js`
 - `scripts/operator-dashboard.test.mjs`
 
+De SDF Quotation Identity Foundation is voltooid in commit `27abff0b4074c46e8313108cce6c1a8d8549baaa`:
+
+- recovery bevestigde dat de Website quotationauthority productvreemde intake-, pricing-, approval-, issuance-, numbering- en acceptance-semantiek draagt en niet voor SDF mag worden hergebruikt;
+- additive private tabel `sdf_quotations` bevat uitsluitend `quotation_id`, unieke `quote_request_id` en `created_at`;
+- inserts accepteren uitsluitend een echte `slimme_documentenflow`-aanvraag; quotationidentity en linkage zijn immutable;
+- forced RLS en ingetrokken runtimeprivileges houden de tabel achter de bestaande owner/admin Operator detail-RPC;
+- geen create-, status-, issuance-, send-, document- of acceptance-RPC toegevoegd en geen automatische quotationcreatie ingevoerd;
+- de afzonderlijke guarded `sdf_quotation`-projectie bevat alleen offerte-ID, aanvraaglink, application reference en creatietijd; status blijft afwezig en rendert als `Niet beschikbaar`;
+- SDF zonder quotation toont `Nog geen offerte`; legacy, cross-product en mismatched linkage falen gesloten en stale UI-waarden worden gewist via `textContent`;
+- Website `quotation` en SDF pricing/projectprojecties bleven ongewijzigd;
+- lokaal gevalideerd met volledige migration rebuild, gerichte pgTAP-regressies `150/150`, Operator Node-regressies `53/53`, diagnostics zonder fouten en `git diff --check`.
+
+Exacte implementation-files:
+
+- `supabase/migrations/20260821160000_add_sdf_quotation_identity_foundation.sql`
+- `supabase/tests/sdf_quotation_identity_foundation.sql`
+- `supabase/tests/operator_application_handoff.sql`
+- `operator/dashboard/index.html`
+- `assets/js/operator-dashboard.js`
+- `scripts/operator-dashboard.test.mjs`
+
 De SDF pricing/recurring read-only foundation is voltooid in commit `00f3f582be74d4f52a56d884da63d52c090783f9`:
 
 - private immutable SQL-authority voor `start | groei | maatwerk`, integer minor units en expliciete `fixed | starting_at` semantics;
@@ -142,7 +166,7 @@ Exacte implementation-files:
 
 De resterende matrix is hierboven leidend. Voor SDF blijven Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
 
-De **exacte volgende atomic Phase-B stap** is: voer read-only contractrecovery uit voor SDF Quotation Status en projecteer uitsluitend reeds persistente product-eigen quotationstatus als die authority bestaat. Als technische representatie ontbreekt, bepaal afzonderlijk de minimale additive statusrepresentatie zonder quotation creation, send, acceptance mutation, document generation of Websitequotationhergebruik.
+De **exacte volgende atomic Phase-B stap** is: `SDF QUOTATION STATUS AUTHORITY RECOVERY`.
 
 ## Executive status
 
