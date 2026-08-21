@@ -25,11 +25,12 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| Laatste Operator implementation commit | `a6adef6668ffc269f1f404ab280b11d0c8a2c362` |
-| Ahead/behind tegenover `origin/main` na implementation commit | `13/0` |
+| Start-HEAD van deze atomic implementation | `a8b215e0017a0f9a0c1173689cf2d747644f9045` |
+| Laatste Operator implementation commit | `3d2a844d2d40584c2ab7302d7fadb769f2fafdd9` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `15/0` |
 | Preservation gate | **PASS** |
 
-Commit `a6adef6668ffc269f1f404ab280b11d0c8a2c362` (`feat(sdf): add quotation acceptance evidence`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity, SDF pricing, SDF project identity en SDF quotation identity blijven **COMPLETE**.
+Commit `3d2a844d2d40584c2ab7302d7fadb769f2fafdd9` (`feat(sdf): bind accepted terms to milestone one`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity, SDF pricing, SDF project identity en SDF quotation identity/document/acceptance blijven **COMPLETE**.
 
 ### Phase-B matrix
 
@@ -44,6 +45,8 @@ Commit `a6adef6668ffc269f1f404ab280b11d0c8a2c362` (`feat(sdf): add quotation acc
 | Quotation Status | DONE | NOT USED / NOT REQUIRED |
 | Quotation Document Evidence | N/A | DONE |
 | Quotation Acceptance Evidence | N/A | DONE |
+| Accepted Commercial Terms | DONE | DONE |
+| Milestone 1 Expected Obligation | DONE | DONE |
 | Document Status | PARTIAL | NOT USED / NOT REQUIRED |
 | Workflow Status | DONE | MISSING |
 | Audit Summary | DONE | MISSING |
@@ -68,8 +71,28 @@ Commit `a6adef6668ffc269f1f404ab280b11d0c8a2c362` (`feat(sdf): add quotation acc
 16. Application en Quotation blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_quotations`-rij blijft `Nog geen offerte`; document- of acceptance-evidence creëert geen quotation, project, mijlpaal, betalingsverplichting, activatie of recurring service.
 17. Document- en acceptance-evidence zijn SDF-only, een-op-een aan quotation identity gekoppeld, append-once, force-RLS private en zonder publieke/browser-write-RPC.
 18. Prijzen worden niet in quotation evidence gedupliceerd. Website quotation/acceptance en bestaande SDF pricing/projectauthority blijven geïsoleerd en ongewijzigd.
+19. Geaccepteerde SDF-commercial terms zijn een afzonderlijke immutable snapshot van package, exact implementatiebedrag, `EUR`, exclusief-btw-basis en pricing-authority version 1; de mutable aanvraagrij is niet de financiele auditbron.
+20. START en GROEI moeten exact overeenkomen met pricing authority v1. MAATWERK vereist altijd een expliciet exact geaccepteerd bedrag van minimaal de `starting_at`-authority en gebruikt dat minimum nooit als fallback.
+21. Per accepted quotation bestaat exact een immutable `M1`-obligation van `4000` basispunten in state `EXPECTED`, zonder invoice-, payment-, reconciliation-, project-, activation- of recurring-semantiek.
+22. `EXPECTED` / factureerbaar is niet gefactureerd; gefactureerd is niet ontvangen. Deze grenzen mogen in volgende stappen niet worden samengevoegd.
 
 ### Voltooide atomic implementations
+
+De SDF Accepted Commercial Terms + Milestone-1 Obligation Foundation is voltooid in commit `3d2a844d2d40584c2ab7302d7fadb769f2fafdd9`:
+
+- preservation start-HEAD `a8b215e0017a0f9a0c1173689cf2d747644f9045`; implementationcommit `3d2a844d2d40584c2ab7302d7fadb769f2fafdd9`;
+- additive private tabellen `sdf_accepted_commercial_terms` en `sdf_milestone_one_obligations` bewaren respectievelijk de immutable accepted snapshot en exact een immutable `EXPECTED` M1 van 40%;
+- owner/admin-only RPC `create_sdf_milestone_one_foundation_v1(uuid,bigint,uuid)` vereist actieve acceptance-evidence, valideert START/GROEI tegen pricing authority v1 en vereist voor MAATWERK een expliciet exact bedrag zonder fallback;
+- de RPC schrijft beide records transactioneel, serialiseert op idempotency key en quotation, retourneert dezelfde authority bij een identieke retry en faalt gesloten bij idempotency- of accepted-termsconflict;
+- integer minor-unitcoherentie wordt afgedwongen; package mutation is na de financiele binding geblokkeerd;
+- beide tabellen zijn force-RLS private, direct runtime-table-write is ingetrokken en uitsluitend `authenticated` kan de guarded RPC aanroepen;
+- Website financial tables bleven ongewijzigd; de foundation maakt geen invoice, payment evidence, reconciliation, project, activation of recurring service;
+- TDD-evidence: eerste RED op de vijf ontbrekende contractobjecten, daarna focused pgTAP `39/39`, gerichte SDF/Website-regressies `170/170`, volledige pgTAP-suite `1172/1172` over `40` bestanden, volledige lokale migration rebuild, diagnostics zonder fouten en staged `git diff --check`.
+
+Exacte implementation-files:
+
+- `supabase/migrations/20260821180000_bind_sdf_accepted_terms_to_milestone_one.sql`
+- `supabase/tests/sdf_milestone_one_foundation.sql`
 
 De Customer Core-uitbreiding is voltooid in commit `760f80663674e0938138ceff6d1e2f2da06e5fff`:
 
@@ -189,9 +212,9 @@ Exacte implementation-files:
 
 ### Resterende Phase-B scope
 
-De resterende matrix is hierboven leidend. Voor SDF zijn quotation business authority en immutable document/acceptance evidence gesloten; een algemene Quotation Status of Document Status is niet nodig. Workflow Status en Audit Summary blijven technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
+De resterende matrix is hierboven leidend. Voor SDF zijn quotation business authority, immutable document/acceptance evidence, accepted commercial terms en de verwachte M1-obligation gesloten. Invoice-authority, payment receipt/reconciliation en project-start eligibility zijn nog niet technisch gerepresenteerd en blijven afzonderlijke toekomstige lagen. Workflow Status en Audit Summary blijven technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
 
-De **exacte volgende atomic Phase-B stap** is: `SDF MILESTONE 1 / PAYMENT OBLIGATION AUTHORITY RECOVERY`.
+De **exacte volgende atomic Phase-B stap** is: `SDF MILESTONE 1 INVOICE AUTHORITY RECOVERY`.
 
 ## Executive status
 
