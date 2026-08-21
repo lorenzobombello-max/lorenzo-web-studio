@@ -25,11 +25,11 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| Laatste Operator implementation commit | `27abff0b4074c46e8313108cce6c1a8d8549baaa` |
-| Ahead/behind tegenover `origin/main` na implementation commit | `11/0` |
+| Laatste Operator implementation commit | `a6adef6668ffc269f1f404ab280b11d0c8a2c362` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `13/0` |
 | Preservation gate | **PASS** |
 
-Commit `27abff0b4074c46e8313108cce6c1a8d8549baaa` (`feat(sdf): add quotation identity foundation`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity, SDF pricing en SDF project identity blijven **COMPLETE**.
+Commit `a6adef6668ffc269f1f404ab280b11d0c8a2c362` (`feat(sdf): add quotation acceptance evidence`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity, SDF pricing, SDF project identity en SDF quotation identity blijven **COMPLETE**.
 
 ### Phase-B matrix
 
@@ -41,8 +41,10 @@ Commit `27abff0b4074c46e8313108cce6c1a8d8549baaa` (`feat(sdf): add quotation ide
 | Project | DONE | DONE |
 | Pricing | PARTIAL | DONE |
 | Quotation Identity | DONE | DONE |
-| Quotation Status | DONE | MISSING |
-| Document Status | PARTIAL | MISSING |
+| Quotation Status | DONE | NOT USED / NOT REQUIRED |
+| Quotation Document Evidence | N/A | DONE |
+| Quotation Acceptance Evidence | N/A | DONE |
+| Document Status | PARTIAL | NOT USED / NOT REQUIRED |
 | Workflow Status | DONE | MISSING |
 | Audit Summary | DONE | MISSING |
 
@@ -62,8 +64,10 @@ Commit `27abff0b4074c46e8313108cce6c1a8d8549baaa` (`feat(sdf): add quotation ide
 12. SDF-maandbedragen zijn uitsluitend read-only commerciele pakketprijzen. Zij activeren geen recurring service, betalingsverplichting, snapshot of financiele lifecycle.
 13. SDF-projectauthority is identity-only: project-ID, een-op-een aanvraaglink en creatietijd. Projectstatus en operationele status bestaan nog niet als persistente SDF-authority en blijven `Niet beschikbaar`.
 14. Application en Project blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_projects`-rij blijft `Nog geen project`; er bestaat geen automatische projectcreatie.
-15. SDF-quotationauthority is identity-only: offerte-ID, een-op-een aanvraaglink en creatietijd. Quotationstatus bestaat nog niet als persistente SDF-authority en blijft `Niet beschikbaar`.
-16. Application en Quotation blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_quotations`-rij blijft `Nog geen offerte`; er bestaat geen automatische quotationcreatie.
+15. SDF-quotationauthority bestaat uit afzonderlijke immutable identity-, document- en actieve acceptance-evidence. Een algemene mutable quotationstatus is **NOT USED / NOT REQUIRED**.
+16. Application en Quotation blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_quotations`-rij blijft `Nog geen offerte`; document- of acceptance-evidence creëert geen quotation, project, mijlpaal, betalingsverplichting, activatie of recurring service.
+17. Document- en acceptance-evidence zijn SDF-only, een-op-een aan quotation identity gekoppeld, append-once, force-RLS private en zonder publieke/browser-write-RPC.
+18. Prijzen worden niet in quotation evidence gedupliceerd. Website quotation/acceptance en bestaande SDF pricing/projectauthority blijven geïsoleerd en ongewijzigd.
 
 ### Voltooide atomic implementations
 
@@ -97,6 +101,27 @@ Exacte implementation-files:
 - `operator/dashboard/index.html`
 - `assets/js/operator-dashboard.js`
 - `scripts/documentenflow-commercial-entry.test.mjs`
+- `scripts/operator-dashboard.test.mjs`
+
+De SDF Quotation Document + Acceptance Evidence Foundation is voltooid in commit `a6adef6668ffc269f1f404ab280b11d0c8a2c362`:
+
+- **SDF Quotation Document Evidence = DONE** en **SDF Quotation Acceptance Evidence = DONE**;
+- de business authority is **CLOSED** en de evidence foundation is **DONE**; een algemene Quotation Status enum is **NOT USED / NOT REQUIRED**;
+- private tabel `sdf_quotation_documents` bevat uitsluitend quotationlink, offertedatum, werkelijke geldigheid, voorbereidingstijd, stabiele documentreferentie en lowercase SHA-256;
+- private tabel `sdf_quotation_acceptances` bevat uitsluitend quotationlink, acceptatietijd, referentie van het geaccepteerde document en lowercase SHA-256;
+- acceptance vereist bestaande document-evidence; beide tabellen zijn SDF-only, een-op-een, immutable, force-RLS en zonder runtimeprivileges of write-RPC;
+- de guarded Operator-detailprojectie toont alleen datums en presence flags; volledige hashes en interne documentreferenties verlaten de private authority niet;
+- er is geen statusenum, prijsduplicatie of automatische quotation-, project-, mijlpaal-, payment-, activation- of recurring-mutatie toegevoegd;
+- Website quotation/acceptance en bestaande SDF identity-, pricing- en projectauthority bleven geïsoleerd en ongewijzigd;
+- lokaal gevalideerd met volledige migration rebuild, pgTAP `234/234` (`25` evidence, `13` identity, `31` request-kind, `92` Operator handoff, `9` SDF pricing, `11` SDF project, `53` Website acceptance), Operator Node `56/56`, diagnostics zonder fouten en `git diff --check`.
+
+Exacte implementation-files:
+
+- `supabase/migrations/20260821170000_add_sdf_quotation_acceptance_evidence.sql`
+- `supabase/tests/sdf_quotation_acceptance_evidence.sql`
+- `supabase/tests/operator_application_handoff.sql`
+- `operator/dashboard/index.html`
+- `assets/js/operator-dashboard.js`
 - `scripts/operator-dashboard.test.mjs`
 
 De SDF Project read-only foundation is voltooid in commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa`:
@@ -164,9 +189,9 @@ Exacte implementation-files:
 
 ### Resterende Phase-B scope
 
-De resterende matrix is hierboven leidend. Voor SDF blijven Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
+De resterende matrix is hierboven leidend. Voor SDF zijn quotation business authority en immutable document/acceptance evidence gesloten; een algemene Quotation Status of Document Status is niet nodig. Workflow Status en Audit Summary blijven technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
 
-De **exacte volgende atomic Phase-B stap** is: `SDF QUOTATION STATUS AUTHORITY RECOVERY`.
+De **exacte volgende atomic Phase-B stap** is: `SDF MILESTONE 1 / PAYMENT OBLIGATION AUTHORITY RECOVERY`.
 
 ## Executive status
 
