@@ -1,4 +1,4 @@
-import type { CustomerType, EnterpriseValidationStatus, RequestKind, ReviewAction, SanitizedQuotePayload, SubmitQuotePayload } from "./types.ts";
+import type { CustomerType, EnterpriseValidationStatus, RequestKind, ReviewAction, SanitizedQuotePayload, SdfPackage, SubmitQuotePayload } from "./types.ts";
 import { REQUEST_KINDS } from "./request-kind.ts";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -6,6 +6,7 @@ const PHONE_CHARACTERS_REGEX = /^[+0-9().\s-]+$/;
 const BUSINESS_IDENTIFIER_REGEX = /^[\p{L}\p{N} .\-_/]+$/u;
 const SAFE_BUSINESS_TEXT_REGEX = /^[^<>]*$/u;
 const CUSTOMER_TYPES = new Set(["individual", "business"]);
+const SDF_PACKAGES = new Set(["start", "groei", "maatwerk"]);
 const VIES_COUNTRY_CODES = new Set([
   "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE", "IT",
   "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK", "XI",
@@ -776,6 +777,14 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   const requestKindInput = input.request_kind === undefined ? "website" : normalizeText(input.request_kind);
   assertAllowed("request_kind", requestKindInput, REQUEST_KINDS);
   const requestKind = requestKindInput as RequestKind;
+  if (input.sdf_package !== undefined && input.sdf_package !== null && typeof input.sdf_package !== "string") {
+    throw new InputValidationError("INVALID_TYPE", "sdf_package");
+  }
+  const sdfPackageInput = input.sdf_package === undefined || input.sdf_package === null
+    ? null
+    : normalizeText(input.sdf_package);
+  if (sdfPackageInput !== null) assertAllowed("sdf_package", sdfPackageInput, SDF_PACKAGES);
+  const sdfPackage = sdfPackageInput as SdfPackage | null;
   const name = normalizeText(input.name);
   const customerTypeInput = input.customer_type === undefined
     ? null
@@ -877,14 +886,18 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   }
   assertLength("description", description, 10, 3000);
   if (requestKind === "website") {
+    if (sdfPackage !== null) throw new InputValidationError("INVALID_CONDITION", "sdf_package");
     if (!websiteType) throw new InputValidationError("REQUIRED_FIELD", "website_type");
     if (!budget) throw new InputValidationError("REQUIRED_FIELD", "budget");
     if (!timing) throw new InputValidationError("REQUIRED_FIELD", "timing");
     assertAllowed("website_type", websiteType, WEBSITE_TYPES);
     assertAllowed("budget", budget, BUDGETS);
     assertAllowed("timing", timing, TIMINGS);
-  } else if (websiteType !== null || budget !== null || timing !== null) {
-    throw new InputValidationError("INVALID_CONDITION", "request_kind");
+  } else {
+    if (sdfPackage === null) throw new InputValidationError("REQUIRED_FIELD", "sdf_package");
+    if (websiteType !== null || budget !== null || timing !== null) {
+      throw new InputValidationError("INVALID_CONDITION", "request_kind");
+    }
   }
 
   if (!EMAIL_REGEX.test(email)) {
@@ -897,6 +910,7 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
 
   return {
     request_kind: requestKind,
+    sdf_package: sdfPackage,
     name,
     customer_type: customerType,
     company: company || null,

@@ -9,6 +9,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
+const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
   M1_PAYMENT_PENDING: "Mijlpaal 1 betaling verwacht",
@@ -54,6 +55,7 @@ export function applyDetailVisibility(requestKind, nodes) {
     nodes.promote.disabled = false;
     for (const section of nodes.dossierSections) section.hidden = true;
     for (const row of nodes.websiteDetailRows) row.hidden = true;
+    for (const row of nodes.sdfDetailRows) row.hidden = true;
     nodes.sdfDetailNotice.hidden = true;
     return;
   }
@@ -65,6 +67,7 @@ export function applyDetailVisibility(requestKind, nodes) {
   for (const section of nodes.dossierSections) section.hidden = false;
   for (const section of nodes.websiteDossierSections) section.hidden = !isWebsite;
   for (const row of nodes.websiteDetailRows) row.hidden = !isWebsite;
+  for (const row of nodes.sdfDetailRows) row.hidden = isWebsite;
   nodes.sdfDetailNotice.hidden = isWebsite;
 }
 
@@ -114,6 +117,10 @@ export function customerCorePresentation(application) {
   };
 }
 
+export function sdfPackageLabel(value) {
+  return SDF_PACKAGE_LABELS[value] || "Niet geregistreerd";
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -126,6 +133,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const dossierSections = Array.from(document.querySelectorAll(".dossier-section"));
   const websiteDossierSections = WEBSITE_DOSSIER_IDS.map((id) => document.getElementById(id));
   const websiteDetailRows = Array.from(document.querySelectorAll("[data-website-detail]"));
+  const sdfDetailRows = Array.from(document.querySelectorAll("[data-sdf-detail]"));
   const filterButtons = Array.from(document.querySelectorAll("[data-product-filter]"));
   const sdfDetailNotice = document.getElementById("sdfDetailNotice");
   let applications = [];
@@ -153,7 +161,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     detailRequestId += 1;
     selectedLocator = null;
     selectedDetail = null;
-    applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailNotice });
+    applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
     updateLocation(null);
   }
@@ -261,10 +269,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
-    applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailNotice });
+    applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
+    setText("detailSdfPackage", sdfPackageLabel(application.sdf_package));
     for (const [id, value] of Object.entries(customerCorePresentation(application))) setText(id, value);
     setText("detailWebsiteType", application.website_type);
     setText("detailBudget", application.budget);

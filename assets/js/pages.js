@@ -244,6 +244,8 @@
     const successDescription = document.getElementById("successDescription");
     const commercialFields = [...form.querySelectorAll("[data-commercial-field]")];
     const websiteFields = [...form.querySelectorAll("[data-website-field]")];
+    const sdfFields = [...form.querySelectorAll("[data-sdf-field]")];
+    const sdfPackage = document.getElementById("sdf-package");
     const customerTypeControls = [...form.querySelectorAll('input[name="customer-type"]')];
     const businessFields = document.getElementById("businessFields");
     const businessControls = [...businessFields.querySelectorAll("input, select, textarea")];
@@ -349,6 +351,13 @@
           control.disabled = isPrivacyRequest || isDocumentenflowRequest;
         });
       });
+      sdfFields.forEach((field) => {
+        field.hidden = !isDocumentenflowRequest;
+        field.querySelectorAll("select").forEach((control) => {
+          control.required = isDocumentenflowRequest;
+          control.disabled = !isDocumentenflowRequest;
+        });
+      });
       customerTypeControls.forEach((control) => { control.required = !isPrivacyRequest; });
       applyCustomerType();
       email.required = !isPrivacyRequest;
@@ -401,6 +410,7 @@
           }
         : {
           request_kind: isDocumentenflowRequest ? "slimme_documentenflow" : "website",
+            ...(isDocumentenflowRequest ? { sdf_package: text("sdf-package") } : {}),
             name: text("name"), customer_type: text("customer-type"),
             ...(isBusinessCustomer ? {
               company: text("company"), enterprise_number: text("enterprise-number"), vat_number: text("vat-number"),
@@ -479,8 +489,10 @@
     else if (requestedKind === "website") requestKind.value = "quote";
     else if (requestedKind === "privacy") requestKind.value = "privacy";
     const packageLabels = new Map([["start", "Start"], ["groei", "Groei"], ["maatwerk", "Maatwerk"]]);
-    const packageLabel = packageLabels.get(params.get("package-interest"));
+    const requestedPackage = params.get("package-interest");
+    const packageLabel = packageLabels.get(requestedPackage);
     if (packageInterest && requestedKind === "slimme_documentenflow" && packageLabel) {
+      sdfPackage.value = requestedPackage;
       packageInterest.textContent = `Interesse in pakket ${packageLabel} (niet-bindende voorkeur).`;
       packageInterest.hidden = false;
     }

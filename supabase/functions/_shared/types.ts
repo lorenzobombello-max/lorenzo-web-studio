@@ -1,6 +1,7 @@
 export type QuoteRequestStatus = "pending" | "approved" | "rejected";
 export type CustomerType = "individual" | "business";
 export type RequestKind = "website" | "slimme_documentenflow";
+export type SdfPackage = "start" | "groei" | "maatwerk";
 export type EnterpriseValidationStatus = "format_valid_not_externally_verified" | "not_checked";
 export type ReviewAction = QuoteRequestStatus | "retry_confirmation" | "send_intake_invitation" | "retry_intake_invitation";
 export type EmailJobKind = "admin_notification" | "customer_confirmation" | "intake_invitation" | "intake_submitted_notification";
@@ -18,6 +19,7 @@ export type IntakeStatus = "invited" | "in_progress" | "submitted" | "reviewed";
 
 export interface SubmitQuotePayload {
   request_kind?: RequestKind;
+  sdf_package?: SdfPackage;
   name: string;
   customer_type?: CustomerType;
   company?: string;
@@ -40,6 +42,7 @@ export interface SubmitQuotePayload {
 
 export interface SanitizedQuotePayload {
   request_kind: RequestKind;
+  sdf_package: SdfPackage | null;
   name: string;
   customer_type: CustomerType | null;
   company: string | null;

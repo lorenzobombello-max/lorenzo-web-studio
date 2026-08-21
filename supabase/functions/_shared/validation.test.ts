@@ -55,22 +55,45 @@ Deno.test("legacy quote payload remains compatible", () => {
   assertEquals(result.company, "Legacy BV");
 });
 
-Deno.test("documentenflow request accepts common commercial fields without website fields", () => {
+Deno.test("documentenflow request accepts each canonical package without website fields", () => {
   const { website_type: _websiteType, budget: _budget, timing: _timing, ...common } = basePayload;
-  const result = sanitizeAndValidateSubmitPayload({
-    ...common,
-    request_kind: "slimme_documentenflow",
-    description: "Een veilige testaanvraag voor een slimme documentenflow.",
-  });
-  assertEquals(result.request_kind, "slimme_documentenflow");
-  assertEquals(result.website_type, null);
-  assertEquals(result.budget, null);
-  assertEquals(result.timing, null);
+  for (const sdfPackage of ["start", "groei", "maatwerk"] as const) {
+    const result = sanitizeAndValidateSubmitPayload({
+      ...common,
+      request_kind: "slimme_documentenflow",
+      sdf_package: sdfPackage,
+      description: "Een veilige testaanvraag voor een slimme documentenflow.",
+    });
+    assertEquals(result.request_kind, "slimme_documentenflow");
+    assertEquals(result.sdf_package, sdfPackage);
+    assertEquals(result.website_type, null);
+    assertEquals(result.budget, null);
+    assertEquals(result.timing, null);
+  }
 });
 
 Deno.test("documentenflow request rejects fabricated website fields", () => {
   assertThrows(
-    () => sanitizeAndValidateSubmitPayload({ ...basePayload, request_kind: "slimme_documentenflow" }),
+    () => sanitizeAndValidateSubmitPayload({ ...basePayload, request_kind: "slimme_documentenflow", sdf_package: "start" }),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+});
+
+Deno.test("documentenflow package identity fails closed", () => {
+  const { website_type: _websiteType, budget: _budget, timing: _timing, ...common } = basePayload;
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...common, request_kind: "slimme_documentenflow", sdf_package: "onbekend" as never }),
+    InputValidationError,
+    "INVALID_OPTION",
+  );
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...common, request_kind: "slimme_documentenflow" }),
+    InputValidationError,
+    "REQUIRED_FIELD",
+  );
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...basePayload, sdf_package: "start" }),
     InputValidationError,
     "INVALID_CONDITION",
   );

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -121,6 +121,7 @@ function detailVisibilityHarness() {
       dossierSections: [customer, ...websiteSections],
       websiteDossierSections: websiteSections,
       websiteDetailRows: Array.from({ length: 3 }, () => ({ hidden: false })),
+      sdfDetailRows: Array.from({ length: 1 }, () => ({ hidden: false })),
       sdfDetailNotice: { hidden: false },
     },
   };
@@ -137,6 +138,7 @@ test("product switch fully clears Website and SDF dossier presentation", () => {
     assert.equal(harness.nodes.promote.disabled, false);
     assert.equal(harness.nodes.dossierSections.every((section) => section.hidden), true);
     assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
+    assert.equal(harness.nodes.sdfDetailRows.every((row) => row.hidden), true);
     assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
   }
 });
@@ -150,6 +152,7 @@ test("Website detail is restored only after Website reselection", () => {
   assert.equal(harness.customer.hidden, false);
   assert.equal(harness.websiteSections.every((section) => !section.hidden), true);
   assert.equal(harness.nodes.websiteDetailRows.every((row) => !row.hidden), true);
+  assert.equal(harness.nodes.sdfDetailRows.every((row) => row.hidden), true);
   assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
 });
 
@@ -162,6 +165,7 @@ test("SDF detail restores shared data without Website-only presentation", () => 
   assert.equal(harness.customer.hidden, false);
   assert.equal(harness.websiteSections.every((section) => section.hidden), true);
   assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
+  assert.equal(harness.nodes.sdfDetailRows.every((row) => !row.hidden), true);
   assert.equal(harness.nodes.sdfDetailNotice.hidden, false);
 });
 
@@ -177,6 +181,17 @@ test("SDF detail hides every Website-only field and dossier section", async () =
   assert.match(script, /row\.hidden = !isWebsite/);
   assert.match(script, /if \(!isWebsite\) return/);
   assert.match(script, /application\.request_kind === "website" && application\.project/);
+});
+
+test("SDF package rendering uses canonical labels and a neutral legacy state", async () => {
+  assert.equal(sdfPackageLabel("start"), "START");
+  assert.equal(sdfPackageLabel("groei"), "GROEI");
+  assert.equal(sdfPackageLabel("maatwerk"), "MAATWERK");
+  assert.equal(sdfPackageLabel(null), "Niet geregistreerd");
+  assert.equal(sdfPackageLabel('<img src=x onerror="alert(1)">'), "Niet geregistreerd");
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /element\.textContent = value/);
+  assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });
 
 test("Website and SDF use the same persisted Customer Core presentation", () => {

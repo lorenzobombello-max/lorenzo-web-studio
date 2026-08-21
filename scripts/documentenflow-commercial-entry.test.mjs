@@ -4,6 +4,7 @@ import test from "node:test";
 
 const contact = fs.readFileSync(new URL("../pages/contact.html", import.meta.url), "utf8");
 const contactClient = fs.readFileSync(new URL("../assets/js/pages.js", import.meta.url), "utf8");
+const submitFunction = fs.readFileSync(new URL("../supabase/functions/submit-quote-request/index.ts", import.meta.url), "utf8");
 const documentenflow = fs.readFileSync(new URL("../pages/slimme-documentenflow.html", import.meta.url), "utf8");
 const websitePricing = fs.readFileSync(new URL("../pages/pricing.html", import.meta.url), "utf8");
 
@@ -19,9 +20,16 @@ test("client maps website and Documentenflow to the durable request_kind contrac
   assert.match(contactClient, /requestedKind === "slimme_documentenflow"/);
 });
 
-test("package interest is display-only and excluded from payload", () => {
+test("package interest selects and submits canonical SDF package identity", () => {
   assert.match(contactClient, /Interesse in pakket \$\{packageLabel\} \(niet-bindende voorkeur\)/);
-  assert.doesNotMatch(contactClient, /package_interest\s*:/);
+  assert.match(contactClient, /sdfPackage\.value = requestedPackage/);
+  assert.match(contactClient, /sdf_package: text\("sdf-package"\)/);
+  assert.match(contact, /data-sdf-field hidden/);
+  for (const sdfPackage of ["start", "groei", "maatwerk"]) {
+    assert.match(contact, new RegExp(`<option value="${sdfPackage}">${sdfPackage.toUpperCase()}<\/option>`));
+  }
+  assert.match(submitFunction, /sanitized\.request_kind === "slimme_documentenflow" \? \{ sdf_package: sanitized\.sdf_package \} : \{\}/);
+  assert.match(submitFunction, /p_sdf_package: sanitized\.sdf_package/);
 });
 
 test("Documentenflow packages contain the exact approved prices", () => {

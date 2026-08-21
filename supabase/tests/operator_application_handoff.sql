@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(67);
+select plan(72);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -30,14 +30,14 @@ insert into public.commercial_operators (auth_user_id, display_name, role, statu
   ('a1000000-0000-4000-8000-000000000004','Disabled Operator','admin','DISABLED');
 
 insert into public.quote_requests (
-  id, application_reference, request_kind, created_at, name, company, email, website_type, budget, timing,
+  id, application_reference, request_kind, sdf_package, created_at, name, company, email, website_type, budget, timing,
   description, privacy_consent, status, customer_type, phone, enterprise_number, enterprise_validation_status,
   vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city,
   billing_country, billing_email
 ) values
-  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website','2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved','business','+32 470 00 00 01','0123456789','format_valid_not_externally_verified','BE0123456789','valid','2099-01-01T07:00:00Z','Webstraat 1','9000','Gent','BE','billing-website@example.test'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website','2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved',null,null,null,'not_checked',null,'not_checked',null,null,null,null,null,null),
-  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved','business','+32 470 00 00 03','0987654321','format_valid_not_externally_verified','BE0987654321','unavailable','2099-01-01T10:00:00Z','Flowstraat 3','1000','Brussel','BE','billing-sdf@example.test');
+  ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website',null,'2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved','business','+32 470 00 00 01','0123456789','format_valid_not_externally_verified','BE0123456789','valid','2099-01-01T07:00:00Z','Webstraat 1','9000','Gent','BE','billing-website@example.test'),
+  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website',null,'2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved',null,null,null,'not_checked',null,'not_checked',null,null,null,null,null,null),
+  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','groei','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved','business','+32 470 00 00 03','0987654321','format_valid_not_externally_verified','BE0987654321','unavailable','2099-01-01T10:00:00Z','Flowstraat 3','1000','Brussel','BE','billing-sdf@example.test');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
@@ -151,6 +151,15 @@ select is((select string_agg(value->>'quote_request_id',',' order by ordinal) fr
 select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id','a1100000-0000-4000-8000-000000000003','mixed product list applies offset after product-aware ordering');
 select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000001'),'website','application list exposes the stored website request kind');
 select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000003'),'slimme_documentenflow','application list exposes the stored Documentenflow request kind');
+insert into public.quote_requests (id,request_kind,sdf_package,created_at,name,email,description,privacy_consent,status) values
+  ('a1100000-0000-4000-8000-000000000004','slimme_documentenflow','start','2099-01-01T12:00:00Z','SDF START','start@example.test','START Operator read fixture.',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000005','slimme_documentenflow','maatwerk','2099-01-01T13:00:00Z','SDF MAATWERK','maatwerk@example.test','MAATWERK Operator read fixture.',true,'approved'),
+  ('a1100000-0000-4000-8000-000000000006','slimme_documentenflow',null,'2099-01-01T14:00:00Z','Legacy SDF','legacy-sdf@example.test','Legacy SDF Operator read fixture.',true,'approved');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->>'sdf_package','start','Operator detail exposes persisted START package identity');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'sdf_package','groei','Operator detail exposes persisted GROEI package identity');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'sdf_package','null'::jsonb,'Operator detail preserves missing legacy SDF package as null');
+select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_package','null'::jsonb,'Website Operator detail exposes no SDF package identity');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'request_kind','website','application detail exposes the same stored website request kind');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
@@ -201,7 +210,7 @@ select throws_ok($$select public.get_operator_application_v1('a1100000-0000-4000
 select throws_ok($$select public.promote_operator_application_v1('a1800000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000002',null)$$,'P0001','APPLICATION_NOT_ACCEPTED','unaccepted application cannot be promoted');
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000002',true);
-select is(jsonb_array_length(public.list_operator_applications_v1()),3,'admin has the same global application visibility');
+select is(jsonb_array_length(public.list_operator_applications_v1()),6,'admin has the same global application visibility');
 
 create temporary table first_promotion as
 select public.promote_operator_application_v1(

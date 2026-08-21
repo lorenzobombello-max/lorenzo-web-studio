@@ -155,6 +155,7 @@ Deno.serve(async (request) => {
 
   const requestFingerprint = await fingerprintPayload({
     request_kind: sanitized.request_kind,
+    ...(sanitized.request_kind === "slimme_documentenflow" ? { sdf_package: sanitized.sdf_package } : {}),
     name: sanitized.name,
     customer_type: sanitized.customer_type,
     company: sanitized.company,
@@ -248,6 +249,7 @@ Deno.serve(async (request) => {
     p_idempotency_key: idempotencyKey,
     p_request_fingerprint: requestFingerprint,
     p_request_kind: sanitized.request_kind,
+    p_sdf_package: sanitized.sdf_package,
     p_name: sanitized.name,
     p_customer_type: sanitized.customer_type,
     p_company: sanitized.company,
