@@ -25,11 +25,11 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| Laatste Operator implementation commit | `26d2f132ae2d24435cc75573177bf00ac13359ca` |
-| Ahead/behind tegenover `origin/main` na implementation commit | `5/0` |
+| Laatste Operator implementation commit | `00f3f582be74d4f52a56d884da63d52c090783f9` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `7/0` |
 | Preservation gate | **PASS** |
 
-Commit `26d2f132ae2d24435cc75573177bf00ac13359ca` (`feat(sdf): persist package identity for operator dossier`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1 en de Customer Core-uitbreiding uit commit `760f80663674e0938138ceff6d1e2f2da06e5fff` blijven **COMPLETE**.
+Commit `00f3f582be74d4f52a56d884da63d52c090783f9` (`feat(sdf): expose package pricing in operator dossier`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core en de SDF package identity foundation blijven **COMPLETE**.
 
 ### Phase-B matrix
 
@@ -39,7 +39,7 @@ Commit `26d2f132ae2d24435cc75573177bf00ac13359ca` (`feat(sdf): persist package i
 | Package identity | N/A | DONE |
 | Customer | DONE | DONE |
 | Project | DONE | MISSING |
-| Pricing | PARTIAL | MISSING |
+| Pricing | PARTIAL | DONE |
 | Quotation Status | DONE | MISSING |
 | Document Status | PARTIAL | MISSING |
 | Workflow Status | DONE | MISSING |
@@ -58,6 +58,7 @@ Commit `26d2f132ae2d24435cc75573177bf00ac13359ca` (`feat(sdf): persist package i
 9. `request_kind` blijft de productauthority met uitsluitend `website | slimme_documentenflow` en blijft immutable.
 10. Een Website-naar-SDF fallback, coalesce of pricingovername is niet toegestaan. Onbekende product- of packagecontext moet fail-closed blijven.
 11. Golden Master / Customer Core C1-C4, Website pricing, Budget Guard en Website quotation/acceptance blijven **COMPLETE / VERIFIED / FROZEN** en worden niet heropend.
+12. SDF-maandbedragen zijn uitsluitend read-only commerciele pakketprijzen. Zij activeren geen recurring service, betalingsverplichting, snapshot of financiele lifecycle.
 
 ### Voltooide atomic implementations
 
@@ -93,11 +94,31 @@ Exacte implementation-files:
 - `scripts/documentenflow-commercial-entry.test.mjs`
 - `scripts/operator-dashboard.test.mjs`
 
+De SDF pricing/recurring read-only foundation is voltooid in commit `00f3f582be74d4f52a56d884da63d52c090783f9`:
+
+- private immutable SQL-authority voor `start | groei | maatwerk`, integer minor units en expliciete `fixed | starting_at` semantics;
+- exacte implementatie/maandbedragen: START `285000/17500`, GROEI `570000/29900`, MAATWERK `750000/44900`, exclusief btw;
+- afzonderlijke guarded `sdf_pricing` projectie; Website `pricing` blijft ongewijzigd en Website ontvangt altijd `sdf_pricing = null`;
+- legacy SDF zonder package toont `Niet geregistreerd` en `Niet beschikbaar`, zonder gefabriceerde bedragen;
+- SDF-only read-only dossier met expliciete melding dat het maandbedrag geen actieve terugkerende dienst of financiele verplichting is;
+- fail-closed presentatie bij product-, package-, authority- of semantic mismatch en stale clearing via `textContent`;
+- geen snapshotkolom, `recurring_services`-write, verplichting, betaling, project, offerte of andere lifecyclemutatie toegevoegd;
+- lokaal gevalideerd met volledige migration rebuild, gerichte pgTAP-regressies `117/117`, Operator Node-regressies `46/46`, diagnostics zonder fouten en `git diff --check`.
+
+Exacte implementation-files:
+
+- `supabase/migrations/20260821140000_expose_sdf_pricing_authority.sql`
+- `supabase/tests/sdf_pricing_authority.sql`
+- `supabase/tests/operator_application_handoff.sql`
+- `operator/dashboard/index.html`
+- `assets/js/operator-dashboard.js`
+- `scripts/operator-dashboard.test.mjs`
+
 ### Resterende Phase-B scope
 
-De resterende matrix is hierboven leidend. Voor SDF blijven Project, Pricing, Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
+De resterende matrix is hierboven leidend. Voor SDF blijven Project, Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
 
-De **exacte volgende atomic Phase-B stap** is: implementeer een read-only SDF pricing/recurring dossier foundation die de persistente `sdf_package` server-side koppelt aan de reeds goedgekeurde START/GROEI/MAATWERK implementatie- en maandauthority. Die afzonderlijke taak moet product-aware pricingbewijs projecteren zonder SDF-projectcreatie, quotation, betaling of muterende recurring obligation persistence. Websitefallback, coalesce of hergebruik van Website pricing/projectbewijs voor SDF blijft verboden.
+De **exacte volgende atomic Phase-B stap** is: implementeer een read-only SDF Project-foundation die uitsluitend product-eigen projectstatus kan representeren en projectvelden in het Operator-dossier kan projecteren. Die afzonderlijke taak mag geen SDF-projectcreatie, quotation, betaling, documentworkflow of muterende lifecycle activeren. Websitefallback, coalesce of hergebruik van Website projectbewijs voor SDF blijft verboden.
 
 ## Executive status
 
