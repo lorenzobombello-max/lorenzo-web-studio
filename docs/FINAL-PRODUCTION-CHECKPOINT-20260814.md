@@ -25,11 +25,11 @@ Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. 
 | Datum | 21-08-2026 |
 | Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
 | Branch | `feature/intake-output-implementation-02-20260819` |
-| Laatste Operator implementation commit | `00f3f582be74d4f52a56d884da63d52c090783f9` |
-| Ahead/behind tegenover `origin/main` na implementation commit | `7/0` |
+| Laatste Operator implementation commit | `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` |
+| Ahead/behind tegenover `origin/main` na implementation commit | `9/0` |
 | Preservation gate | **PASS** |
 
-Commit `00f3f582be74d4f52a56d884da63d52c090783f9` (`feat(sdf): expose package pricing in operator dossier`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core en de SDF package identity foundation blijven **COMPLETE**.
+Commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa` (`feat(sdf): expose project foundation in operator dossier`) is de actuele lokale technische basis voor Operator Phase B. Operator Phase A.1, Customer Core, SDF package identity en SDF pricing blijven **COMPLETE**.
 
 ### Phase-B matrix
 
@@ -38,7 +38,7 @@ Commit `00f3f582be74d4f52a56d884da63d52c090783f9` (`feat(sdf): expose package pr
 | Application | DONE | DONE |
 | Package identity | N/A | DONE |
 | Customer | DONE | DONE |
-| Project | DONE | MISSING |
+| Project | DONE | DONE |
 | Pricing | PARTIAL | DONE |
 | Quotation Status | DONE | MISSING |
 | Document Status | PARTIAL | MISSING |
@@ -59,6 +59,8 @@ Commit `00f3f582be74d4f52a56d884da63d52c090783f9` (`feat(sdf): expose package pr
 10. Een Website-naar-SDF fallback, coalesce of pricingovername is niet toegestaan. Onbekende product- of packagecontext moet fail-closed blijven.
 11. Golden Master / Customer Core C1-C4, Website pricing, Budget Guard en Website quotation/acceptance blijven **COMPLETE / VERIFIED / FROZEN** en worden niet heropend.
 12. SDF-maandbedragen zijn uitsluitend read-only commerciele pakketprijzen. Zij activeren geen recurring service, betalingsverplichting, snapshot of financiele lifecycle.
+13. SDF-projectauthority is identity-only: project-ID, een-op-een aanvraaglink en creatietijd. Projectstatus en operationele status bestaan nog niet als persistente SDF-authority en blijven `Niet beschikbaar`.
+14. Application en Project blijven afzonderlijke entiteiten. Een SDF-aanvraag zonder expliciete `sdf_projects`-rij blijft `Nog geen project`; er bestaat geen automatische projectcreatie.
 
 ### Voltooide atomic implementations
 
@@ -94,6 +96,28 @@ Exacte implementation-files:
 - `scripts/documentenflow-commercial-entry.test.mjs`
 - `scripts/operator-dashboard.test.mjs`
 
+De SDF Project read-only foundation is voltooid in commit `0cf9162f2062d133d3e6db6f806ec4d4f2d136aa`:
+
+- recovery bevestigde dat `commercial_projects` uitsluitend via Website quotation issuance/acceptance ontstaat en Website money-, 40/40/20-, workflow- en lifecycleauthority draagt;
+- additive private tabel `sdf_projects` bevat uitsluitend `project_id`, unieke `quote_request_id` en `created_at`;
+- inserts accepteren uitsluitend een echte `slimme_documentenflow`-aanvraag; projectidentity en linkage zijn immutable;
+- forced RLS en ingetrokken runtimeprivileges houden de tabel achter de bestaande owner/admin Operator detail-RPC;
+- geen create-, promote- of mutation-RPC toegevoegd: alleen expliciet reeds persistente SDF-projectrijen worden gelezen;
+- de guarded projectie bevat project-ID, product, gekoppelde aanvraag, klant, package en creatietijd; niet-bestaande project- en operationele status blijven `null`/`Niet beschikbaar`;
+- SDF zonder project toont `Nog geen project`; legacy en mismatched linkage falen gesloten en stale UI-waarden worden gewist via `textContent`;
+- Website `commercial_projects`, promotion, project-view, pricing, quotation, milestones en workflow bleven ongewijzigd;
+- SDF pricingbedragen en commerciele recurring package price bleven ongewijzigd; geen recurring service, obligation, payment of lifecycle toegevoegd;
+- lokaal gevalideerd met volledige migration rebuild, pgTAP-regressies `133/133`, Operator Node-regressies `50/50`, diagnostics zonder fouten, `git diff --check` en layoutmetingen zonder overflow op `1440x900` en `375x812`.
+
+Exacte implementation-files:
+
+- `supabase/migrations/20260821150000_expose_sdf_project_foundation.sql`
+- `supabase/tests/sdf_project_foundation.sql`
+- `supabase/tests/operator_application_handoff.sql`
+- `operator/dashboard/index.html`
+- `assets/js/operator-dashboard.js`
+- `scripts/operator-dashboard.test.mjs`
+
 De SDF pricing/recurring read-only foundation is voltooid in commit `00f3f582be74d4f52a56d884da63d52c090783f9`:
 
 - private immutable SQL-authority voor `start | groei | maatwerk`, integer minor units en expliciete `fixed | starting_at` semantics;
@@ -116,9 +140,9 @@ Exacte implementation-files:
 
 ### Resterende Phase-B scope
 
-De resterende matrix is hierboven leidend. Voor SDF blijven Project, Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
+De resterende matrix is hierboven leidend. Voor SDF blijven Quotation Status, Document Status, Workflow Status en Audit Summary technisch `MISSING`; voor Website blijven Pricing en Document Status `PARTIAL`.
 
-De **exacte volgende atomic Phase-B stap** is: implementeer een read-only SDF Project-foundation die uitsluitend product-eigen projectstatus kan representeren en projectvelden in het Operator-dossier kan projecteren. Die afzonderlijke taak mag geen SDF-projectcreatie, quotation, betaling, documentworkflow of muterende lifecycle activeren. Websitefallback, coalesce of hergebruik van Website projectbewijs voor SDF blijft verboden.
+De **exacte volgende atomic Phase-B stap** is: voer read-only contractrecovery uit voor SDF Quotation Status en projecteer uitsluitend reeds persistente product-eigen quotationstatus als die authority bestaat. Als technische representatie ontbreekt, bepaal afzonderlijk de minimale additive statusrepresentatie zonder quotation creation, send, acceptance mutation, document generation of Websitequotationhergebruik.
 
 ## Executive status
 
