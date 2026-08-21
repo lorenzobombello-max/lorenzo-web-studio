@@ -323,7 +323,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const locator = application.application_reference
         ? { application_reference: application.application_reference }
         : { quote_request_id: application.quote_request_id };
+      if (locatorMatchesApplication(selectedLocator, application)) button.setAttribute("aria-current", "true");
       button.addEventListener("click", ()=>{
+        for (const candidate of list.querySelectorAll("[aria-current]")) candidate.removeAttribute("aria-current");
+        button.setAttribute("aria-current", "true");
         loadDetail(locator);
       });
       item.append(button);
