@@ -315,6 +315,8 @@ function sdfQuotation(overrides = {}) {
     quote_request_id: "a1100000-0000-4000-8000-000000000003",
     application_reference: null,
     created_at: "2099-01-03T10:00:00Z",
+    document: null,
+    acceptance: null,
     ...overrides,
   };
 }
@@ -324,7 +326,35 @@ test("SDF quotation presenter renders exact identity without inventing status", 
   assert.equal(presentation.quotationId, "a1a00000-0000-4000-8000-000000000001");
   assert.equal(presentation.application, "a1100000-0000-4000-8000-000000000003");
   assert.notEqual(presentation.createdAt, "Niet beschikbaar");
-  assert.equal(presentation.status, "Niet beschikbaar");
+  assert.equal(presentation.documentState, "Niet geregistreerd");
+  assert.equal(presentation.acceptanceState, "Niet geregistreerd");
+});
+
+test("SDF quotation presenter renders document evidence without acceptance", () => {
+  const document = {
+    quotation_date: "2099-01-03",
+    valid_until: "2099-02-02",
+    prepared_at: "2099-01-03T11:00:00Z",
+    document_reference_present: true,
+    document_sha256_present: true,
+  };
+  const presentation = sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ document }) });
+  assert.equal(presentation.documentState, "Geregistreerd");
+  assert.notEqual(presentation.quotationDate, "Niet beschikbaar");
+  assert.notEqual(presentation.validUntil, "Niet beschikbaar");
+  assert.equal(presentation.documentReference, "Aanwezig");
+  assert.equal(presentation.documentHash, "Aanwezig");
+  assert.equal(presentation.acceptanceState, "Niet geregistreerd");
+});
+
+test("SDF quotation presenter renders active acceptance evidence", () => {
+  const document = { quotation_date: "2099-01-03", valid_until: "2099-02-02", prepared_at: "2099-01-03T11:00:00Z", document_reference_present: true, document_sha256_present: true };
+  const acceptance = { accepted_at: "2099-01-04T12:00:00Z", accepted_document_reference_present: true, accepted_document_sha256_present: true };
+  const presentation = sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ document, acceptance }) });
+  assert.equal(presentation.acceptanceState, "Geaccepteerd");
+  assert.notEqual(presentation.acceptedAt, "Niet beschikbaar");
+  assert.equal(presentation.acceptedDocument, "Aanwezig");
+  assert.equal(presentation.acceptedHash, "Aanwezig");
 });
 
 test("SDF quotation presenter handles absent, mismatched, Website, and legacy identities", () => {
@@ -332,12 +362,37 @@ test("SDF quotation presenter handles absent, mismatched, Website, and legacy id
     quotationId: "Nog geen offerte",
     application: "a1100000-0000-4000-8000-000000000003",
     createdAt: "Niet beschikbaar",
-    status: "Niet beschikbaar",
+    documentState: "Niet geregistreerd",
+    quotationDate: "Niet beschikbaar",
+    validUntil: "Niet beschikbaar",
+    preparedAt: "Niet beschikbaar",
+    documentReference: "Niet beschikbaar",
+    documentHash: "Niet beschikbaar",
+    acceptanceState: "Niet geregistreerd",
+    acceptedAt: "Niet beschikbaar",
+    acceptedDocument: "Niet beschikbaar",
+    acceptedHash: "Niet beschikbaar",
   });
   assert.equal(sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ quote_request_id: "b1100000-0000-4000-8000-000000000003" }) }).quotationId, "Nog geen offerte");
   assert.equal(sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: sdfQuotation({ status: "DRAFT" }) }).quotationId, "Nog geen offerte");
   assert.equal(sdfQuotationPresentation({ request_kind: "website", sdf_quotation: sdfQuotation() }), null);
   assert.equal(sdfQuotationPresentation({ quote_request_id: "legacy", request_kind: "slimme_documentenflow", sdf_quotation: null }).application, "legacy");
+});
+
+test("SDF quotation presenter fails closed on malformed or mismatched evidence", () => {
+  const validDocument = { quotation_date: "2099-01-03", valid_until: "2099-02-02", prepared_at: "2099-01-03T11:00:00Z", document_reference_present: true, document_sha256_present: true };
+  const invalidCases = [
+    sdfQuotation({ document: { ...validDocument, valid_until: "2099-01-02" } }),
+    sdfQuotation({ document: { ...validDocument, document_sha256: "a".repeat(64) } }),
+    sdfQuotation({ document: null, acceptance: { accepted_at: "2099-01-04T12:00:00Z", accepted_document_reference_present: true, accepted_document_sha256_present: true } }),
+    sdfQuotation({ document: validDocument, acceptance: { accepted_at: "invalid", accepted_document_reference_present: true, accepted_document_sha256_present: true } }),
+  ];
+  for (const quotation of invalidCases) {
+    const presentation = sdfQuotationPresentation({ ...sdfApplication(), sdf_quotation: quotation });
+    assert.equal(presentation.quotationId, "Nog geen offerte");
+    assert.equal(presentation.documentState, "Niet geregistreerd");
+    assert.equal(presentation.acceptanceState, "Niet geregistreerd");
+  }
 });
 
 test("SDF quotation values clear on dossier switch and remain textContent-only", async () => {
@@ -346,12 +401,16 @@ test("SDF quotation values clear on dossier switch and remain textContent-only",
   assert.notEqual(previous.quotationId, "Nog geen offerte");
   assert.equal(next.quotationId, "Nog geen offerte");
   assert.equal(next.createdAt, "Niet beschikbaar");
+  assert.equal(next.documentReference, "Niet beschikbaar");
+  assert.equal(next.acceptedDocument, "Niet beschikbaar");
   const payload = '<img src=x onerror="alert(1)">';
   assert.equal(sdfQuotationPresentation({ ...sdfApplication(), application_reference: payload }).application, payload);
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   assert.match(html, /id="sdfQuotationDossier"[^>]* hidden/);
-  assert.match(html, /id="detailSdfQuotationStatus"><\/dd>/);
+  assert.match(html, /id="detailSdfQuotationAcceptanceState"><\/dd>/);
+  assert.doesNotMatch(html, /detailSdfQuotationStatus/);
   assert.match(script, /setText\("detailSdfQuotationId", sdfQuotation\?\.quotationId \|\| "Nog geen offerte"\)/);
+  assert.doesNotMatch(script, /detailSdfQuotationStatus/);
   assert.match(script, /element\.textContent = value/);
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });

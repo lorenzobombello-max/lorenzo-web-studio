@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(86);
+select plan(92);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -168,6 +168,30 @@ select is(jsonb_build_array(
 ),'["a1a00000-0000-4000-8000-000000000001", "a1100000-0000-4000-8000-000000000003", null, "2099-01-03T10:00:00+00:00"]'::jsonb,'SDF quotation read model preserves exact identity, application linkage, reference, and creation time');
 select ok(not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation' ? 'status'),'SDF quotation read model does not fabricate status');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_quotation','null'::jsonb,'Website detail does not expose SDF quotation identity');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document','null'::jsonb,'identity-only SDF quotation exposes no fabricated document evidence');
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'identity-only SDF quotation exposes no fabricated acceptance evidence');
+insert into public.sdf_quotation_documents(quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256) values
+  ('a1a00000-0000-4000-8000-000000000001','2099-01-03','2099-02-02','2099-01-03T11:00:00Z','sdf/quotations/a1a00000-0000-4000-8000-000000000001/document.docx',repeat('7',64));
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document',
+  '{"quotation_date":"2099-01-03","valid_until":"2099-02-02","prepared_at":"2099-01-03T11:00:00+00:00","document_reference_present":true,"document_sha256_present":true}'::jsonb,
+  'Operator detail exposes exact document dates and presence flags without document material'
+);
+select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'document evidence alone does not fabricate acceptance');
+insert into public.sdf_quotation_acceptances(quotation_id,accepted_at,document_reference,document_sha256) values
+  ('a1a00000-0000-4000-8000-000000000001','2099-01-04T12:00:00Z','sdf/quotations/a1a00000-0000-4000-8000-000000000001/accepted.docx',repeat('8',64));
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance',
+  '{"accepted_at":"2099-01-04T12:00:00+00:00","accepted_document_reference_present":true,"accepted_document_sha256_present":true}'::jsonb,
+  'Operator detail exposes active acceptance time and presence flags without accepted document material'
+);
+select ok(
+  not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_sha256')
+  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_reference')
+  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_sha256')
+  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_reference'),
+  'Operator detail never exposes complete hashes or internal document references'
+);
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->>'sdf_package','start','Operator detail exposes persisted START package identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'sdf_package','groei','Operator detail exposes persisted GROEI package identity');
 select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');

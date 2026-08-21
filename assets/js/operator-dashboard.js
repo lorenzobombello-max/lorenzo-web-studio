@@ -167,20 +167,66 @@ export function sdfQuotationPresentation(application) {
     quotationId: "Nog geen offerte",
     application: optionalDisplay(application?.application_reference || application?.quote_request_id),
     createdAt: "Niet beschikbaar",
-    status: "Niet beschikbaar",
+    documentState: "Niet geregistreerd",
+    quotationDate: "Niet beschikbaar",
+    validUntil: "Niet beschikbaar",
+    preparedAt: "Niet beschikbaar",
+    documentReference: "Niet beschikbaar",
+    documentHash: "Niet beschikbaar",
+    acceptanceState: "Niet geregistreerd",
+    acceptedAt: "Niet beschikbaar",
+    acceptedDocument: "Niet beschikbaar",
+    acceptedHash: "Niet beschikbaar",
   };
   const quotation = application?.sdf_quotation;
   if (!quotation) return unavailable;
+  const document = quotation.document;
+  const acceptance = quotation.acceptance;
+  const validTimestamp = (value) => typeof value === "string" && !Number.isNaN(Date.parse(value));
+  const validDate = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+  const validDocument = document === null || (
+    document && validDate(document.quotation_date) && validDate(document.valid_until)
+    && document.valid_until >= document.quotation_date
+    && validTimestamp(document.prepared_at)
+    && document.document_reference_present === true
+    && document.document_sha256_present === true
+    && !Object.hasOwn(document, "document_reference")
+    && !Object.hasOwn(document, "document_sha256")
+    && !Object.hasOwn(document, "status")
+  );
+  const validAcceptance = acceptance === null || (
+    document !== null && acceptance && validTimestamp(acceptance.accepted_at)
+    && acceptance.accepted_document_reference_present === true
+    && acceptance.accepted_document_sha256_present === true
+    && !Object.hasOwn(acceptance, "document_reference")
+    && !Object.hasOwn(acceptance, "document_sha256")
+    && !Object.hasOwn(acceptance, "status")
+  );
   if (!UUID.test(quotation.quotation_id || "")
       || quotation.quote_request_id !== application.quote_request_id
       || quotation.application_reference !== (application.application_reference ?? null)
       || Object.hasOwn(quotation, "status")
       || !quotation.created_at
-      || Number.isNaN(Date.parse(quotation.created_at))) return unavailable;
+      || Number.isNaN(Date.parse(quotation.created_at))
+      || !Object.hasOwn(quotation, "document")
+      || !Object.hasOwn(quotation, "acceptance")
+      || !validDocument
+      || !validAcceptance) return unavailable;
   return {
     ...unavailable,
     quotationId: quotation.quotation_id,
     createdAt: formatDate(quotation.created_at),
+    documentState: document ? "Geregistreerd" : "Niet geregistreerd",
+    quotationDate: document ? formatDate(document.quotation_date) : "Niet beschikbaar",
+    validUntil: document ? formatDate(document.valid_until) : "Niet beschikbaar",
+    preparedAt: document ? formatDate(document.prepared_at) : "Niet beschikbaar",
+    documentReference: document ? "Aanwezig" : "Niet beschikbaar",
+    documentHash: document ? "Aanwezig" : "Niet beschikbaar",
+    acceptanceState: acceptance ? "Geaccepteerd" : "Niet geregistreerd",
+    acceptedAt: acceptance ? formatDate(acceptance.accepted_at) : "Niet beschikbaar",
+    acceptedDocument: acceptance ? "Aanwezig" : "Niet beschikbaar",
+    acceptedHash: acceptance ? "Aanwezig" : "Niet beschikbaar",
   };
 }
 
@@ -377,7 +423,16 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailSdfQuotationId", sdfQuotation?.quotationId || "Nog geen offerte");
     setText("detailSdfQuotationApplication", sdfQuotation?.application || "Niet beschikbaar");
     setText("detailSdfQuotationCreatedAt", sdfQuotation?.createdAt || "Niet beschikbaar");
-    setText("detailSdfQuotationStatus", sdfQuotation?.status || "Niet beschikbaar");
+    setText("detailSdfQuotationDocumentState", sdfQuotation?.documentState || "Niet geregistreerd");
+    setText("detailSdfQuotationDate", sdfQuotation?.quotationDate || "Niet beschikbaar");
+    setText("detailSdfQuotationValidUntil", sdfQuotation?.validUntil || "Niet beschikbaar");
+    setText("detailSdfQuotationPreparedAt", sdfQuotation?.preparedAt || "Niet beschikbaar");
+    setText("detailSdfQuotationDocumentReference", sdfQuotation?.documentReference || "Niet beschikbaar");
+    setText("detailSdfQuotationDocumentHash", sdfQuotation?.documentHash || "Niet beschikbaar");
+    setText("detailSdfQuotationAcceptanceState", sdfQuotation?.acceptanceState || "Niet geregistreerd");
+    setText("detailSdfQuotationAcceptedAt", sdfQuotation?.acceptedAt || "Niet beschikbaar");
+    setText("detailSdfQuotationAcceptedDocument", sdfQuotation?.acceptedDocument || "Niet beschikbaar");
+    setText("detailSdfQuotationAcceptedHash", sdfQuotation?.acceptedHash || "Niet beschikbaar");
     const sdfProject = sdfProjectPresentation(application);
     setText("detailSdfProjectId", sdfProject?.projectId || "Nog geen project");
     setText("detailSdfProjectProduct", sdfProject?.product || "Niet beschikbaar");
