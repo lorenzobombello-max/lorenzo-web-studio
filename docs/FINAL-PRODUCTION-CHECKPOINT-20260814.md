@@ -14,6 +14,60 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
+## Operator Phase B continuity - 21-08-2026
+
+Deze sectie actualiseert uitsluitend de hervattingsstatus van Operator Phase B. De productionhistoriek en overige evidence in dit document blijven ongewijzigd. Bij hervatting van Operatorwerk geldt deze sectie als CURRENT technische resume. Zij vervangt niet de bredere bedrijfscontinuiteitsbron `LWS_MASTER_CONTINUITY_CONTROL_2026-08-18.md`.
+
+### Actuele technische basis
+
+| Eigenschap | Waarde |
+|---|---|
+| Datum | 21-08-2026 |
+| Worktree | `C:\Users\info\Project-Worktrees\lorenzo-web-studio-intake-output-02-20260819` |
+| Branch | `feature/intake-output-implementation-02-20260819` |
+| HEAD | `6ddb23dd48b1818d9be219268a4dcb606bc8d180` |
+| Ahead/behind tegenover `origin/main` | `1/0` |
+| Preservation gate | **PASS** |
+
+Commit `6ddb23dd48b1818d9be219268a4dcb606bc8d180` (`style(operator): refine dashboard visual hierarchy`) is de actuele lokale technische basis voor het Operator Dashboard. Operator Phase A.1 blijft **COMPLETE**.
+
+### Phase-B matrix
+
+| Phase-B onderdeel | WEBSITE | SDF |
+|---|---|---|
+| Application | DONE | DONE |
+| Customer | PARTIAL | PARTIAL |
+| Project | DONE | MISSING |
+| Pricing | PARTIAL | MISSING |
+| Quotation Status | DONE | MISSING |
+| Document Status | PARTIAL | MISSING |
+| Workflow Status | DONE | MISSING |
+| Audit Summary | DONE | MISSING |
+
+### Product- en authoritygrenzen
+
+1. De Websiteflow blijft een protected regression boundary.
+2. Slimme Documentenflow / SDF is een bestaande afzonderlijke productfamilie. De commerciele SDF-authority bestaat en is niet open voor herbeslissing.
+3. Ontbrekende SDF pricing-, recurring- en projectfunctionaliteit is een **TECHNISCHE REPRESENTATIE/PERSISTENCE GAP**, geen ontbrekende businessbeslissing.
+4. SDF START, GROEI en MAATWERK en hun bestaande commerciele pricing- en recurring-authority mogen niet opnieuw als onbeslist worden behandeld.
+5. Customer Core-data bestaat reeds voor Website en SDF. De Operator application-RPC en Customer UI projecteren en renderen deze data momenteel slechts gedeeltelijk.
+6. `request_kind` blijft de productauthority met uitsluitend `website | slimme_documentenflow`.
+7. Een Website-naar-SDF fallback, coalesce of pricingovername is niet toegestaan. Onbekende productcontext moet fail-closed blijven.
+8. Golden Master / Customer Core C1-C4 blijven **COMPLETE / VERIFIED / FROZEN** en worden niet heropend.
+
+### Eerstvolgende toegestane atomic implementation
+
+Projecteer en render de reeds persistente Customer Core-velden in het product-aware Operator Customer-dossier voor Website en SDF.
+
+De minimale verwachte technische scope van die afzonderlijke volgende taak is:
+
+- een additive uitbreiding van het Operator application read model / de RPC;
+- de Operator Customer UI;
+- de Operator Dashboard-rendering;
+- uitsluitend de noodzakelijke gerichte tests.
+
+Deze checkpointupdate voert die implementatie niet uit. Websiteflow, SDF-flow, C1-C4, pricing, Budget Guard, quotation/acceptance, backendruntime en database blijven in deze documentatietaak ongewijzigd.
+
 ## Executive status
 
 De huidige websitevormgeving en functionaliteit zijn goedgekeurd. De finale hero-reeks op `origin/main` is via gecontroleerde fast-forwards opgebouwd en luidt:
