@@ -20,6 +20,11 @@
 .intake-page .preview-header.is-scrolled { color: var(--white); background: rgba(11, 17, 24, 0.96); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
 .intake-page .preview-header.is-scrolled .brand__name strong { color: var(--signal); }
 .intake-page .container { width: min(calc(100% - 48px), var(--shell)); margin-inline: auto; }
+.intake-header__status { display: flex; align-items: center; justify-content: flex-end; gap: clamp(1rem, 3vw, 2rem); min-width: 0; }
+.intake-header__price { display: grid; justify-items: end; min-width: 11rem; color: var(--color-text-soft); font: 700 0.66rem/1.25 "Manrope", sans-serif; text-align: right; text-transform: uppercase; }
+.intake-header__price[hidden] { display: none; }
+.intake-header__price strong { color: var(--white); font-size: 0.94rem; line-height: 1.35; text-transform: none; }
+.intake-header__price--pending strong, .intake-header__price--unavailable strong { color: var(--color-text-soft); font-size: 0.78rem; }
 .intake-secure-label { color: var(--signal); font: 800 0.72rem/1.4 "Manrope", sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
 .intake-main { min-height: 75vh; padding: clamp(8.5rem, 13vw, 11rem) 0 6rem; }
 .intake-intro { max-width: 900px; margin-bottom: 2rem; }
@@ -204,6 +209,8 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 640px) {
   .intake-main { padding-top: 2.5rem; }
   .intake-secure-label { display: none; }
+  .intake-header__price { min-width: 0; }
+  .intake-header__price strong { font-size: 0.82rem; }
   .intake-context, .intake-step, .conditional-panel, .intake-review { grid-template-columns: 1fr; }
   .intake-success__summary { grid-template-columns: 1fr; }
   .intake-success__summary dl div { grid-template-columns: 1fr; gap: 0.1rem; }

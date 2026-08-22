@@ -128,7 +128,8 @@ function renderSequence(renderedPreviews: Array<typeof preview>, activeReview = 
   const ui = {
     preview: element(), budget: element(), packageRow: element(), minimum: element(),
     packageName: element(), packagePages: element(), packageRounds: element(),
-    minimumRow: element(), state: element(), status: element(), warning: element(), advice: element(),
+    minimumRow: element(), headerPrice: element(), headerPriceValue: element(),
+    state: element(), status: element(), warning: element(), advice: element(),
     reviewValues: [] as string[],
   };
   const renderReviewSummary = () => {
@@ -147,6 +148,8 @@ function renderSequence(renderedPreviews: Array<typeof preview>, activeReview = 
     "euroFormatter",
     "budgetGuardMinimum",
     "budgetGuardMinimumRow",
+    "headerPriceValue",
+    "headerPrice",
     "budgetGuardState",
     "budgetGuardStatus",
     "budgetGuardWarningActions",
@@ -185,6 +188,8 @@ function renderSequence(renderedPreviews: Array<typeof preview>, activeReview = 
     }),
     ui.minimum,
     ui.minimumRow,
+    ui.headerPriceValue,
+    ui.headerPrice,
     ui.state,
     ui.status,
     ui.warning,
@@ -239,6 +244,32 @@ Deno.test("active review follows successive async pricing previews without reque
   const renderSource = sourceFunction("renderPricingPreview");
   assertStringIncludes(renderSource, 'currentStep === steps.length - 1) renderReviewSummary()');
   assertFalse(/schedulePricingPreview|requestBudgetGuardPreview|fetch\(/.test(renderSource));
+});
+
+Deno.test("header and Budget Guard render the same authoritative minimum", () => {
+  assertStringIncludes(html, 'id="headerPrice"');
+  assertStringIncludes(html, 'id="headerPriceValue"');
+  assertStringIncludes(css, ".intake-header__price {");
+
+  const ui = render(preview);
+  assertEquals(ui.minimum.textContent, "€ 3.500 excl. btw");
+  assertEquals(ui.headerPriceValue.textContent, ui.minimum.textContent);
+  assertFalse(ui.headerPrice.hidden);
+
+  const renderSource = sourceFunction("renderPricingPreview");
+  assertStringIncludes(renderSource, "const formattedMinimum =");
+  assertFalse(/schedulePricingPreview|requestBudgetGuardPreview|fetch\(/.test(renderSource));
+});
+
+Deno.test("loading and unavailable states cannot present a stale header amount", () => {
+  const clearSource = sourceFunction("clearPricingPresentation");
+  const loadingSource = sourceFunction("setPreviewLoading");
+  const unavailableSource = sourceFunction("showPreviewUnavailable");
+
+  assertStringIncludes(clearSource, "headerPriceValue.textContent = \"\"");
+  assertStringIncludes(clearSource, "headerPrice.hidden = true");
+  assertStringIncludes(loadingSource, "headerPriceValue.textContent = \"Wordt berekend\"");
+  assertStringIncludes(unavailableSource, "headerPriceValue.textContent = \"Niet beschikbaar\"");
 });
 
 Deno.test("package summary renders structured lines for Starter and Professional", () => {

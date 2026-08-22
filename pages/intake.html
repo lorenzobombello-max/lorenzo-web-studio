@@ -23,7 +23,13 @@
   <header class="preview-header" id="previewHeader">
     <div class="shell preview-header__inner">
       <a class="brand" href="../index.html" aria-label="Lorenzo Web Solutions home"><img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></a>
-      <nav class="intake-secure-label" aria-label="Paginastatus">Beveiligde intake</nav>
+      <div class="intake-header__status">
+        <div id="headerPrice" class="intake-header__price" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <span>Indicatieve prijs</span>
+          <strong id="headerPriceValue"></strong>
+        </div>
+        <span class="intake-secure-label">Beveiligde intake</span>
+      </div>
     </div>
   </header>
 

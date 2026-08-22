@@ -132,6 +132,8 @@
   const progressBar = document.getElementById("progressBar");
   const contextStatus = document.getElementById("contextStatus");
   const priorityCount = document.getElementById("priorityCount");
+  const headerPrice = document.getElementById("headerPrice");
+  const headerPriceValue = document.getElementById("headerPriceValue");
   const budgetGuardPreview = document.getElementById("budgetGuardPreview");
   const budgetGuardState = document.getElementById("budgetGuardState");
   const budgetGuardStatus = document.getElementById("budgetGuardStatus");
@@ -830,6 +832,9 @@
     });
     budgetGuardMinimumRow.hidden = true;
     budgetGuardMinimum.textContent = "";
+    headerPrice.hidden = true;
+    headerPrice.classList.remove("intake-header__price--pending", "intake-header__price--unavailable");
+    headerPriceValue.textContent = "";
     budgetGuardRecurringRow.hidden = true;
     budgetGuardRecurring.textContent = "";
     budgetGuardPackageRow.hidden = true;
@@ -844,6 +849,9 @@
 
   function setPreviewLoading() {
     clearPricingPresentation();
+    headerPrice.hidden = false;
+    headerPrice.classList.add("intake-header__price--pending");
+    headerPriceValue.textContent = "Wordt berekend";
     budgetGuardPreview.hidden = false;
     budgetGuardPreview.setAttribute("aria-busy", "true");
     budgetGuardState.textContent = "Bijwerken";
@@ -853,6 +861,9 @@
   function showPreviewUnavailable(text) {
     invalidateCurrentBudgetGuardPreview();
     clearPricingPresentation();
+    headerPrice.hidden = false;
+    headerPrice.classList.add("intake-header__price--unavailable");
+    headerPriceValue.textContent = "Niet beschikbaar";
     budgetGuardPreview.hidden = false;
     budgetGuardPreview.setAttribute("aria-busy", "false");
     budgetGuardPreview.classList.add("budget-guard--unavailable");
@@ -1003,8 +1014,11 @@
       budgetGuardPackageRow.hidden = false;
     }
     if (Number.isSafeInteger(preview.summary.knownMinimumMinor)) {
-      budgetGuardMinimum.textContent = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
+      const formattedMinimum = `${euroFormatter.format(preview.summary.knownMinimumMinor / 100)} excl. btw`;
+      budgetGuardMinimum.textContent = formattedMinimum;
       budgetGuardMinimumRow.hidden = false;
+      headerPriceValue.textContent = formattedMinimum;
+      headerPrice.hidden = false;
     }
     if (Array.isArray(preview.recurringServices) && preview.recurringServices.length) {
       budgetGuardRecurring.textContent = preview.recurringServices.map((service) => {
