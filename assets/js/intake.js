@@ -30,10 +30,10 @@
       ["#primary_language"], ["#additionalLanguageChoices"], ["#multilingualFields", ".conditional-panel"], ["#seo_priority"], ["#seo_keywords"], ["#social_channels"], ["#integrations"], ["#seo_scope"], ["#seo_extra_language", ".choice-grid"], ["#analytics_scope"],
     ] },
     { phase: 3, title: "Merk en stijl", intro: "Leg de huidige merkbasis en de gewenste visuele richting vast.", nodes: [
-      ['[data-name="design_styles"]'], ["#brand_status"], ["#logo_status"], ["#branding_tier"], ["#brand_colors"], ["#inspiration_sites"], ["#disliked_styles"],
+      ['[data-name="design_styles"]'], ["#brand_status"], ["#logo_status"], ["#logoDeliveryFields"], ["#branding_tier"], ["#brand_colors"], ["#inspiration_sites"], ["#disliked_styles"],
     ] },
     { phase: 3, title: "Content en media", intro: "Geef aan wat beschikbaar is en waar tekst- of beeldondersteuning nodig is.", nodes: [
-      ["#content_status"], ["#image_status"], ['[data-name="image_support"]'], ["#copywriting_scope", ".conditional-panel"],
+      ["#content_status"], ["#image_status"], ['[data-name="image_support"]'], ["#imageDeliveryFields"], ["#copywriting_scope", ".conditional-panel"],
     ] },
     { phase: 4, title: "Service en planning", intro: "Kies eventuele vervolgservice en geef een realistische gewenste planning mee.", nodes: [
       ["#maintenance_interest"], ["#domain_service"], ["#maintenance_plan"], ["#deadline_date"], ["#deadline_reason"], ["#deadlineFields", ".conditional-panel"],
@@ -349,6 +349,73 @@
     return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`)).map((input) => input.value);
   }
 
+  function selectedLocalDelivery(name) {
+    return form.querySelector(`input[name="${name}"]:checked`)?.value || "";
+  }
+
+  function formatLocalFileSize(bytes) {
+    return bytes < 1024 * 1024
+      ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function clearLocalFileSelection(inputId, summaryId, errorId) {
+    document.getElementById(inputId).value = "";
+    document.getElementById(summaryId).replaceChildren();
+    document.getElementById(errorId).textContent = "";
+  }
+
+  function renderLocalFileSelection(input, summaryId, errorId, maxFiles, maxBytes) {
+    const summary = document.getElementById(summaryId);
+    const error = document.getElementById(errorId);
+    const files = Array.from(input.files || []);
+    summary.replaceChildren();
+    error.textContent = "";
+    if (files.length > maxFiles) {
+      input.value = "";
+      error.textContent = `Selecteer maximaal ${maxFiles} bestand${maxFiles === 1 ? "" : "en"}.`;
+      return;
+    }
+    const invalid = files.find((file) => !["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > maxBytes);
+    if (invalid) {
+      input.value = "";
+      error.textContent = `${invalid.name}: kies PNG, JPEG of WebP binnen de toegestane bestandsgrootte.`;
+      return;
+    }
+    files.forEach((file, fileIndex) => {
+      const row = document.createElement("div");
+      row.className = "local-file";
+      const details = document.createElement("span");
+      details.textContent = `${file.name} · ${file.type} · ${formatLocalFileSize(file.size)} · lokaal geselecteerd, niet verzonden`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "local-file__remove";
+      remove.textContent = "Verwijderen";
+      remove.addEventListener("click", () => {
+        const transfer = new DataTransfer();
+        files.filter((_, index) => index !== fileIndex).forEach((remainingFile) => transfer.items.add(remainingFile));
+        input.files = transfer.files;
+        renderLocalFileSelection(input, summaryId, errorId, maxFiles, maxBytes);
+        dirty = true;
+      });
+      row.append(details, remove);
+      summary.append(row);
+    });
+  }
+
+  function bindLocalFilePreview(inputId, summaryId, errorId, maxFiles, maxBytes) {
+    const input = document.getElementById(inputId);
+    input.addEventListener("change", () => renderLocalFileSelection(input, summaryId, errorId, maxFiles, maxBytes));
+  }
+
+  function localDeliveryReview(method, inputId) {
+    if (method === "later") return "Later aanleveren";
+    if (method !== "now") return "";
+    return document.getElementById(inputId).files?.length
+      ? "Lokaal geselecteerd; nog niet verzonden"
+      : "Nu aanleveren gekozen; nog geen bestand verzonden";
+  }
+
   function splitList(value, separator) {
     return value.split(separator).map((item) => item.trim()).filter(Boolean);
   }
@@ -548,8 +615,19 @@
     const hasShop = shopRequired ? "Ja" : "Nee";
     const hasBooking = bookingRequired ? "Ja" : "Nee";
     const hasOnlinePayment = selectedBoolean("online_payment_required") === true ? "Ja" : "Nee";
+    const logoDelivery = selectedLocalDelivery("logo_delivery_method");
+    const imageDelivery = selectedLocalDelivery("image_delivery_method");
     const additionalLanguages = Array.from(form.querySelectorAll("[data-additional-language]:checked"))
       .map((input) => input.closest("label")?.textContent?.trim() || input.value);
+    const appearanceRows = [
+      ["Huisstijl", selectedControlText("brand_status")],
+      ["Logo", selectedControlText("logo_status")],
+      ["Stijl", selectedChoiceLabels("design_styles")],
+      ["Teksten", selectedControlText("content_status")],
+      ["Beelden", selectedControlText("image_status")],
+    ];
+    if (logoDelivery) appearanceRows.splice(2, 0, ["Logo-aanlevering", localDeliveryReview(logoDelivery, "logoFilePreview")]);
+    if (imageDelivery) appearanceRows.push(["Beeldaanlevering", localDeliveryReview(imageDelivery, "imageFilePreview")]);
     const solutionRows = [["Webshop", hasShop]];
     if (shopRequired) solutionRows.push(["Verzending", selectedControlText("shop_shipping_scope")]);
     solutionRows.push(["Reservaties of afspraken", hasBooking]);
@@ -586,13 +664,7 @@
       ["Extra talen", additionalLanguages],
       ["SEO", selectedControlText("seo_scope")],
     ]);
-    appendReviewSection(container, "Uitstraling", [
-      ["Huisstijl", selectedControlText("brand_status")],
-      ["Logo", selectedControlText("logo_status")],
-      ["Stijl", selectedChoiceLabels("design_styles")],
-      ["Teksten", selectedControlText("content_status")],
-      ["Beelden", selectedControlText("image_status")],
-    ]);
+    appendReviewSection(container, "Uitstraling", appearanceRows);
     appendReviewSection(container, "Afronding", [
       ["Onderhoud", selectedControlText("maintenance_interest")],
       ["Deadline", selectedControlText("deadline_date")],
@@ -1339,6 +1411,24 @@
     document.getElementById("newsletterFields").hidden = !requestedFeatures.has("newsletter");
     document.getElementById("copyPageCountField").hidden =
       !["substantial", "new"].includes(document.getElementById("copywriting_scope").value);
+    const logoAvailable = ["available", "needs_update"].includes(document.getElementById("logo_status").value);
+    document.getElementById("logoDeliveryFields").hidden = !logoAvailable;
+    if (!logoAvailable) {
+      form.querySelectorAll('input[name="logo_delivery_method"]').forEach((input) => { input.checked = false; });
+      clearLocalFileSelection("logoFilePreview", "logoFileSummary", "logoFileError");
+    }
+    const logoDelivery = selectedLocalDelivery("logo_delivery_method");
+    document.getElementById("logoUploadField").hidden = !logoAvailable || logoDelivery !== "now";
+    if (logoDelivery !== "now") clearLocalFileSelection("logoFilePreview", "logoFileSummary", "logoFileError");
+    const imagesAvailable = ["sufficient", "partial"].includes(document.getElementById("image_status").value);
+    document.getElementById("imageDeliveryFields").hidden = !imagesAvailable;
+    if (!imagesAvailable) {
+      form.querySelectorAll('input[name="image_delivery_method"]').forEach((input) => { input.checked = false; });
+      clearLocalFileSelection("imageFilePreview", "imageFileSummary", "imageFileError");
+    }
+    const imageDelivery = selectedLocalDelivery("image_delivery_method");
+    document.getElementById("imageUploadField").hidden = !imagesAvailable || imageDelivery !== "now";
+    if (imageDelivery !== "now") clearLocalFileSelection("imageFilePreview", "imageFileSummary", "imageFileError");
     document.getElementById("deadlineFields").hidden = !(document.getElementById("deadline_date").value || document.getElementById("deadline_reason").value.trim());
     const primaryLanguage = document.getElementById("primary_language").value;
     form.querySelectorAll("[data-additional-language]").forEach((input) => {
@@ -1743,13 +1833,16 @@
     }
     if (event.target.name === "priorities") updatePriorities(event.target);
     if (
-      ["has_existing_website", "shop_required", "booking_required", "online_payment_required", "online_payment_purposes", "requested_pages", "requested_features", "website_goals", "primary_language"].includes(event.target.name) ||
+      ["has_existing_website", "shop_required", "booking_required", "online_payment_required", "online_payment_purposes", "requested_pages", "requested_features", "website_goals", "primary_language", "logo_delivery_method", "image_delivery_method"].includes(event.target.name) ||
+      ["logo_status", "image_status"].includes(event.target.id) ||
       event.target.matches("[data-additional-language], #booking_existing, #shop_shipping_scope, #deadline_date, #deadline_reason")
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();
     if (currentStep === steps.length - 1) renderReviewSummary();
   });
   form.addEventListener("input", handleValidationInput);
+  bindLocalFilePreview("logoFilePreview", "logoFileSummary", "logoFileError", 1, 5 * 1024 * 1024);
+  bindLocalFilePreview("imageFilePreview", "imageFileSummary", "imageFileError", 10, 10 * 1024 * 1024);
   form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(); });
   saveButton.addEventListener("click", saveDraft);
   nextButton.addEventListener("click", () => {

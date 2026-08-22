@@ -280,9 +280,49 @@ Deno.test("customer review conditionally shows existing shop and booking details
   assertMatch(review, /Kalenderkoppeling[\s\S]*booking_calendar/);
 });
 
+Deno.test("customer material delivery remains conditional, local-only and non-persistent", () => {
+  for (const id of ["logoDeliveryFields", "logoUploadField", "imageDeliveryFields", "imageUploadField"]) {
+    assert(document.getElementById(id)?.hasAttribute("hidden"), `${id} must start hidden`);
+  }
+  assertEquals(
+    [...document.querySelectorAll('input[name="logo_delivery_method"]')].map((input) => input.value),
+    ["now", "later"],
+  );
+  assertEquals(
+    [...document.querySelectorAll('input[name="image_delivery_method"]')].map((input) => input.value),
+    ["now", "later"],
+  );
+  const logoFile = document.getElementById("logoFilePreview");
+  const imageFile = document.getElementById("imageFilePreview");
+  assertEquals(logoFile?.getAttribute("accept"), "image/png,image/jpeg,image/webp");
+  assertEquals(logoFile?.hasAttribute("name"), false);
+  assert(imageFile?.hasAttribute("multiple"));
+  assertEquals(imageFile?.hasAttribute("name"), false);
+
+  const conditionals = sourceFunction("updateConditionals");
+  assertMatch(conditionals, /logoAvailable[\s\S]*available[\s\S]*needs_update/);
+  assertMatch(conditionals, /logoDeliveryFields[\s\S]*logoUploadField[\s\S]*logoDelivery !== "now"/);
+  assertMatch(conditionals, /imagesAvailable[\s\S]*sufficient[\s\S]*partial/);
+  assertMatch(conditionals, /imageDeliveryFields[\s\S]*imageUploadField[\s\S]*imageDelivery !== "now"/);
+  const collect = sourceFunction("collectData");
+  for (const localOnly of ["logo_delivery_method", "image_delivery_method", "logoFilePreview", "imageFilePreview"]) {
+    assertEquals(collect.includes(localOnly), false);
+  }
+  assertEquals(source.includes("new FormData"), false);
+  assertEquals(source.includes("localStorage"), false);
+  assertEquals(source.includes("sessionStorage"), false);
+  assertEquals(source.includes("supabase.storage"), false);
+  assertMatch(sourceFunction("renderLocalFileSelection"), /lokaal geselecteerd, niet verzonden/);
+  assertMatch(sourceFunction("localDeliveryReview"), /files\?\.length[\s\S]*nog niet verzonden[\s\S]*nog geen bestand verzonden/);
+  assertMatch(css, /\.conditional-panel\[hidden\] \{ display: none; \}/);
+  assertMatch(css, /\.intake-step \.field\[hidden\] \{ display: none; \}/);
+});
+
 Deno.test("intake navigation preserves five phases and twelve screens", () => {
   const definitions = source.slice(source.indexOf("const screenDefinitions"), source.indexOf("const phaseStartScreens"));
   assertEquals([...definitions.matchAll(/\{ phase: \d/g)].length, 12);
+  assert(definitions.includes('["#logoDeliveryFields"]'));
+  assert(definitions.includes('["#imageDeliveryFields"]'));
   assertMatch(source, /const phaseStartScreens = \[0, 3, 5, 8, 10\]/);
   assertMatch(source, /const phaseLabels = \[[^\]]*"Uw project"[^\]]*"Afronding"/);
 });
