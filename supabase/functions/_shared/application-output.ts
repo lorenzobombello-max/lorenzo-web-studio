@@ -6,7 +6,7 @@ export interface ApplicationRecurringService {
 }
 
 export interface ApplicationOutput {
-  applicationReference: string;
+  applicationReference: string | null;
   submittedAt: string;
   customer: {
     name: string;
@@ -85,6 +85,7 @@ export interface ApplicationOutput {
 }
 
 interface ApplicationOutputInput {
+  recordClassification?: unknown;
   applicationReference: unknown;
   submittedAt: unknown;
   request: Record<string, unknown>;
@@ -131,6 +132,9 @@ function recurringServices(value: unknown): ApplicationRecurringService[] {
 }
 
 export function buildApplicationOutput(input: ApplicationOutputInput): ApplicationOutput {
+  const recordClassification = input.recordClassification === undefined
+    ? "production"
+    : input.recordClassification;
   const applicationReference = stringValue(input.applicationReference);
   const submittedAt = stringValue(input.submittedAt);
   const name = stringValue(input.request.name);
@@ -142,7 +146,10 @@ export function buildApplicationOutput(input: ApplicationOutputInput): Applicati
   const packageId = packageDefinition?.id;
   const knownMinimumMinor = calculation?.knownMinimumMinor;
   if (
-    !applicationReference || !/^LWS-AAN-[0-9]{4}-[0-9]{4}$/.test(applicationReference) ||
+    (recordClassification !== "production" && recordClassification !== "internal_e2e") ||
+    (recordClassification === "production" &&
+      (!applicationReference || !/^LWS-AAN-[0-9]{4}-[0-9]{4}$/.test(applicationReference))) ||
+    (recordClassification === "internal_e2e" && applicationReference !== null) ||
     !submittedAt || Number.isNaN(Date.parse(submittedAt)) || !name || !email ||
     (packageId !== "starter_v1" && packageId !== "professional_v2") ||
     typeof knownMinimumMinor !== "number" || !Number.isSafeInteger(knownMinimumMinor) ||

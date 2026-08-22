@@ -234,7 +234,7 @@ async function loadSubmittedIntakeNotificationContext(
 
   const { data: quoteRequest, error: requestError } = await supabase
     .from("quote_requests")
-    .select("id, application_reference, name, company, email, phone, website_type, budget, timing")
+    .select("id, record_classification, application_reference, name, company, email, phone, website_type, budget, timing")
     .eq("id", intake.quote_request_id)
     .maybeSingle();
 
@@ -242,6 +242,7 @@ async function loadSubmittedIntakeNotificationContext(
     requestError ||
     !quoteRequest ||
     quoteRequest.id !== intake.quote_request_id ||
+    !["production", "internal_e2e"].includes(String(quoteRequest.record_classification)) ||
     typeof quoteRequest.name !== "string" || typeof quoteRequest.email !== "string"
   ) return null;
 
@@ -264,6 +265,7 @@ async function loadSubmittedIntakeNotificationContext(
     return {
       requestId: quoteRequest.id,
       output: buildApplicationOutput({
+        recordClassification: quoteRequest.record_classification,
         applicationReference: quoteRequest.application_reference,
         submittedAt: intake.submitted_at,
         request: quoteRequest as Record<string, unknown>,

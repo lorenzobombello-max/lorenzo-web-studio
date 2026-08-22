@@ -163,3 +163,22 @@ Deno.test("submitted intake email uses application reference and authoritative c
   assertFalse(result.html.includes("22222222-2222"));
   assertFalse(/hmac|pricingConfigHash|admin_access_token/i.test(result.html));
 });
+
+Deno.test("internal E2E submitted intake email is explicit without a production reference", () => {
+  const output = buildApplicationOutput({
+    recordClassification: "internal_e2e",
+    applicationReference: null,
+    submittedAt: "2026-08-19T18:00:00Z",
+    request: { name: "Internal E2E fixture", email: "internal-e2e@invalid.local" },
+    evidence: {},
+    authoritativeSnapshot: {
+      calculation: { knownMinimumMinor: 180000, currency: "EUR", vatBasis: "exclusive" },
+      packageDefinition: { id: "starter_v1" },
+      budgetEvaluation: { status: "within_known_budget", originalLabel: "EUR 3.500 t/m EUR 6.000" },
+    },
+  });
+  const result = buildSubmittedIntakeAdminEmail({ output, adminUrl: "https://example.test/admin#token=secure" });
+  assertStringIncludes(result.subject, "Nieuwe aanvraag Interne E2E-test");
+  assertStringIncludes(result.text, "Classificatie: Interne E2E-test");
+  assertFalse(result.text.includes("LWS-AAN-"));
+});

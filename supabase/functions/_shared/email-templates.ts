@@ -520,7 +520,8 @@ const INTAKE_FEATURE_LABELS: Readonly<Record<string, string>> = Object.freeze({
 export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailData) {
   const output = data.output;
   const subjectLabel = replaceAsciiControlRunsWithSpace(output.customer.company || output.customer.name).trim();
-  const subject = `Nieuwe aanvraag ${output.applicationReference} — ${subjectLabel}`;
+  const referenceLabel = output.applicationReference || "Interne E2E-test";
+  const subject = `Nieuwe aanvraag ${referenceLabel} — ${subjectLabel}`;
   const submittedAt = new Date(output.submittedAt).toLocaleString("nl-BE", {
     dateStyle: "long",
     timeStyle: "short",
@@ -546,7 +547,7 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
   const recurringText = output.commercial.recurringServices.map((service) => `${service.label}: ${money(service.amountMinor)} per maand excl. btw`).join(" · ");
   const websiteFeatures = output.website.features.map((feature) => INTAKE_FEATURE_LABELS[feature] || feature);
   const sections = [
-    section("Identiteit", [["Aanvraagnummer", output.applicationReference], ["Ontvangen", submittedAt], ["Naam", output.customer.name], ["Bedrijf", output.customer.company], ["E-mail", output.customer.email], ["Telefoon", output.customer.phone]]),
+    section("Identiteit", [[output.applicationReference ? "Aanvraagnummer" : "Classificatie", referenceLabel], ["Ontvangen", submittedAt], ["Naam", output.customer.name], ["Bedrijf", output.customer.company], ["E-mail", output.customer.email], ["Telefoon", output.customer.phone]]),
     section("Commercieel", [["Pakket", output.commercial.packageLabel], ["Budget", output.commercial.budgetLabel], ["Indicatief projectminimum", `${money(output.commercial.knownMinimumMinor)} excl. btw`], ["Budget Guard", output.commercial.budgetStatus], ["Vervolgservice", recurringText]]),
     section("Project", [["Type website", output.project.websiteType], ["Bedrijfsomschrijving", output.project.businessDescription], ["Doelgroep", output.project.targetAudience], ["Bestaande website", output.project.hasExistingWebsite], ["Huidige website", output.project.currentWebsite], ["Te behouden", output.project.elementsToKeep], ["Verbeterpunten", output.project.improvementAreas], ["Domein", output.project.domain], ["Hosting", output.project.hostingStatus], ["Doelen", output.project.goals], ["Primaire conversie", output.project.primaryConversionGoal]]),
     section("Website", [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", websiteFeatures], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]),
@@ -590,7 +591,7 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
   const text = [
     "Nieuwe websiteaanvraag",
     "",
-    `Aanvraagnummer: ${output.applicationReference}`,
+    `${output.applicationReference ? "Aanvraagnummer" : "Classificatie"}: ${referenceLabel}`,
     `Verzonden: ${submittedAt}`,
     `Naam: ${output.customer.name}`,
     ...(output.customer.company ? [`Bedrijf: ${output.customer.company}`] : []),

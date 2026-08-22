@@ -63,3 +63,34 @@ Deno.test("application output rejects non-authoritative pricing input", () => {
     authoritativeSnapshot: { calculation: { knownMinimumMinor: 1, currency: "EUR", vatBasis: "exclusive" } },
   }), TypeError, "INVALID_APPLICATION_OUTPUT_SOURCE");
 });
+
+Deno.test("internal E2E output requires no production application reference", () => {
+  const output = buildApplicationOutput({
+    recordClassification: "internal_e2e",
+    applicationReference: null,
+    submittedAt: "2026-08-19T18:00:00.000Z",
+    request: { name: "Internal E2E fixture", email: "internal-e2e@invalid.local" },
+    evidence: {},
+    authoritativeSnapshot: {
+      calculation: { knownMinimumMinor: 180000, currency: "EUR", vatBasis: "exclusive" },
+      packageDefinition: { id: "starter_v1" },
+      budgetEvaluation: { status: "within_known_budget", originalLabel: "EUR 3.500 t/m EUR 6.000" },
+    },
+  });
+  assertEquals(output.applicationReference, null);
+});
+
+Deno.test("production output still requires an authoritative application reference", () => {
+  assertThrows(() => buildApplicationOutput({
+    recordClassification: "production",
+    applicationReference: null,
+    submittedAt: "2026-08-19T18:00:00.000Z",
+    request: { name: "Production", email: "production@example.test" },
+    evidence: {},
+    authoritativeSnapshot: {
+      calculation: { knownMinimumMinor: 180000, currency: "EUR", vatBasis: "exclusive" },
+      packageDefinition: { id: "starter_v1" },
+      budgetEvaluation: { status: "within_known_budget", originalLabel: "EUR 3.500 t/m EUR 6.000" },
+    },
+  }), TypeError, "INVALID_APPLICATION_OUTPUT_SOURCE");
+});

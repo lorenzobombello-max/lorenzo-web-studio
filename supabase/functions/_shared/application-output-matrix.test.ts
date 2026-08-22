@@ -40,7 +40,7 @@ for (const [index, testCase] of cases.entries()) {
     });
     const email = buildSubmittedIntakeAdminEmail({ output, adminUrl: "https://example.test/secure-briefing" });
     const formattedMinimum = new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" }).format(testCase.minimum / 100);
-    assertMatch(output.applicationReference, /^LWS-AAN-2026-[0-9]{4}$/);
+    assertMatch(output.applicationReference || "", /^LWS-AAN-2026-[0-9]{4}$/);
     assertEquals(output.commercial.knownMinimumMinor, testCase.minimum);
     assertStringIncludes(email.text, `Aanvraagnummer: ${reference}`);
     assertStringIncludes(email.text, `Indicatief projectminimum: ${formattedMinimum} excl. btw`);
