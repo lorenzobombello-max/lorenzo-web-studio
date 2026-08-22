@@ -193,6 +193,12 @@ export async function createApprovalTokenForIdempotencyKey(idempotencyKey: strin
   return toBase64Url(signature);
 }
 
+export async function createInternalE2EIntakeTokenForIdempotencyKey(idempotencyKey: string): Promise<string> {
+  const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
+  return toBase64Url(await hmacSha256Bytes(secret, `internal-e2e-intake:v1:${idempotencyKey}`));
+}
+
 export function computeTokenExpiry(): string {
   const ttlMinutes = Number(Deno.env.get("TOKEN_TTL_MINUTES") || "1440");
   const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);

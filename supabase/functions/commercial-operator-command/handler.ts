@@ -24,7 +24,9 @@ const APPLICATION_ACTIONS = new Set([
   "list_applications",
   "get_application_detail",
   "get_project_dossier",
-  "promote_accepted_application"
+  "promote_accepted_application",
+  "create_internal_e2e_run",
+  "finalize_internal_e2e_run"
 ]);
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const FORBIDDEN_IDENTITY_FIELDS = new Set([
@@ -102,6 +104,10 @@ function validateApplicationAction(value) {
   if (!APPLICATION_ACTIONS.has(action)) throw new RequestError(400, "INVALID_REQUEST");
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
+    : action === "create_internal_e2e_run"
+    ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
+    : action === "finalize_internal_e2e_run"
+    ? new Set(["action", "run_id", "terminal_status", "expected_revision", "idempotency_key"])
     : action === "get_project_dossier"
     ? new Set(["action", "project_id"])
     : action === "get_application_detail"
@@ -112,6 +118,28 @@ function validateApplicationAction(value) {
     const limit = value.limit ?? 100, offset = value.offset ?? 0;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) throw new RequestError(400, "INVALID_REQUEST");
     return { action, limit, offset };
+  }
+  if (action === "create_internal_e2e_run") {
+    const idempotencyKey = String(value.idempotency_key || "");
+    const runLabel = typeof value.run_label === "string" ? value.run_label.trim() : "";
+    const ttlMinutes = value.ttl_minutes;
+    if (!UUID.test(idempotencyKey) || runLabel.length < 1 || runLabel.length > 120
+      || !Number.isSafeInteger(ttlMinutes) || Number(ttlMinutes) < 5 || Number(ttlMinutes) > 240) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, idempotency_key: idempotencyKey, run_label: runLabel, ttl_minutes: ttlMinutes };
+  }
+  if (action === "finalize_internal_e2e_run") {
+    const runId = String(value.run_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const terminalStatus = String(value.terminal_status || "");
+    const expectedRevision = value.expected_revision;
+    if (!UUID.test(runId) || !UUID.test(idempotencyKey)
+      || !new Set(["PASSED", "FAILED", "ABORTED", "EXPIRED"]).has(terminalStatus)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, run_id: runId, terminal_status: terminalStatus, expected_revision: expectedRevision, idempotency_key: idempotencyKey };
   }
   if (action === "get_project_dossier") {
     const projectId = String(value.project_id || "");
@@ -140,6 +168,7 @@ function mapDatabaseError(error) {
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
     "APPLICATION_SCOPE_DENIED"
+    ,"INTERNAL_E2E_OWNER_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if ([
     "PROJECT_SCOPE_DENIED",
@@ -148,13 +177,16 @@ function mapDatabaseError(error) {
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "INTERNAL_E2E_RUN_NOT_FOUND") return response(404, code);
   if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
+  if (["INTERNAL_E2E_RUN_FINALIZED", "INTERNAL_E2E_PROMOTION_DENIED", "INTERNAL_E2E_QUOTATION_DENIED"].includes(code)) return response(409, code);
   if ([
     "INVALID_APPLICATION_REFERENCE",
     "EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED",
     "INVALID_PAGINATION",
     "IDEMPOTENCY_KEY_REQUIRED"
+    ,"INVALID_INTERNAL_E2E_REQUEST"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if ([
     "INVALID_STATE",

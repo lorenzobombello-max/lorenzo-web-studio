@@ -140,3 +140,56 @@ Deno.test("existing commercial command path remains rate limited and unchanged",
   assertEquals(rateLimitCalls, 1);
   assertEquals(harness.calls.length, 0);
 });
+
+Deno.test("internal E2E creation accepts only the fixed owner-command shape", async ()=>{
+  const harness = dependencies();
+  const valid = await handleCommercialOperator(request({
+    action: "create_internal_e2e_run",
+    idempotency_key: "a1800000-0000-4000-8000-000000000010",
+    run_label: "production smoke",
+    ttl_minutes: 30
+  }), harness.deps);
+  assertEquals(valid.status, 200);
+  assertEquals(harness.calls[0].input, {
+    action: "create_internal_e2e_run",
+    idempotency_key: "a1800000-0000-4000-8000-000000000010",
+    run_label: "production smoke",
+    ttl_minutes: 30
+  });
+  for (const forbidden of [
+    { classification: "internal_e2e" },
+    { email: "attacker@example.test" },
+    { mailbox: "attacker@example.test" }
+  ]) {
+    const blocked = await handleCommercialOperator(request({
+      action: "create_internal_e2e_run",
+      idempotency_key: "a1800000-0000-4000-8000-000000000011",
+      run_label: "blocked",
+      ttl_minutes: 30,
+      ...forbidden
+    }), harness.deps);
+    assertEquals(blocked.status, 400);
+  }
+  assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("internal E2E finalization requires a terminal state and revision", async ()=>{
+  const harness = dependencies();
+  const valid = await handleCommercialOperator(request({
+    action: "finalize_internal_e2e_run",
+    run_id: "a1800000-0000-4000-8000-000000000020",
+    terminal_status: "PASSED",
+    expected_revision: 0,
+    idempotency_key: "a1800000-0000-4000-8000-000000000021"
+  }), harness.deps);
+  assertEquals(valid.status, 200);
+  const active = await handleCommercialOperator(request({
+    action: "finalize_internal_e2e_run",
+    run_id: "a1800000-0000-4000-8000-000000000020",
+    terminal_status: "ACTIVE",
+    expected_revision: 0,
+    idempotency_key: "a1800000-0000-4000-8000-000000000022"
+  }), harness.deps);
+  assertEquals(active.status, 400);
+  assertEquals(harness.calls.length, 1);
+});

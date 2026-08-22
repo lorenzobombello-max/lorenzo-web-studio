@@ -105,11 +105,25 @@ export async function deliverEmailJob(options: DeliverEmailJobOptions): Promise<
   }
   if (!claim) return await currentJobState(supabase, jobId);
 
+  const { data: classification, error: classificationError } = await supabase.rpc(
+    "get_quote_request_email_classification_v1",
+    { p_job_id: jobId },
+  );
+  if (classificationError || !["production", "internal_e2e"].includes(String(classification))) {
+    return await completeJob(supabase, jobId, false, false, "EMAIL_CLASSIFICATION_UNAVAILABLE");
+  }
+
   const resendApiKey = sanitizeHeaderValue(options.resendApiKey);
   const from = sanitizeHeaderValue(options.email.from);
-  const to = sanitizeHeaderValue(options.email.to);
+  const internalMailbox = sanitizeHeaderValue(Deno.env.get("INTERNAL_E2E_MAILBOX") || "");
+  const to = classification === "internal_e2e"
+    ? internalMailbox
+    : sanitizeHeaderValue(options.email.to);
   if (!resendApiKey || !from || !to) {
-    return await completeJob(supabase, jobId, false, false, "EMAIL_CONFIGURATION_INVALID");
+    const errorCode = classification === "internal_e2e"
+      ? "INTERNAL_E2E_MAILBOX_REQUIRED"
+      : "EMAIL_CONFIGURATION_INVALID";
+    return await completeJob(supabase, jobId, false, false, errorCode);
   }
 
   const controller = new AbortController();

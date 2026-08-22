@@ -1,5 +1,18 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import {
+  createApprovalTokenForIdempotencyKey,
+  createInternalE2EIntakeTokenForIdempotencyKey,
+  deriveAdminIntakeCapability,
+  hashAdminIntakeToken,
+  hashApprovalToken,
+  hashIntakeToken,
+} from "../_shared/security.ts";
+
+async function sha256(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].map((byte)=>byte.toString(16).padStart(2, "0")).join("");
+}
 Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   const url = Deno.env.get("SUPABASE_URL"), anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) return new Response(JSON.stringify({
@@ -42,6 +55,38 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
     },
     executeApplicationAction: async (jwt, input)=>{
       const client = clientFor(jwt);
+      if (input.action === "create_internal_e2e_run") {
+        const approvalToken = await createApprovalTokenForIdempotencyKey(input.idempotency_key);
+        const intakeToken = await createInternalE2EIntakeTokenForIdempotencyKey(input.idempotency_key);
+        const intakeTokenHash = await hashIntakeToken(intakeToken);
+        const adminToken = await deriveAdminIntakeCapability(intakeTokenHash);
+        const requestFingerprint = await sha256(JSON.stringify({
+          contract_version: 1,
+          run_label: input.run_label,
+          ttl_minutes: input.ttl_minutes,
+        }));
+        const { data, error } = await client.rpc("create_internal_e2e_run_v1", {
+          p_idempotency_key: input.idempotency_key,
+          p_request_fingerprint: requestFingerprint,
+          p_run_label: input.run_label,
+          p_ttl_minutes: input.ttl_minutes,
+          p_approval_token_hash: await hashApprovalToken(approvalToken),
+          p_intake_access_token_hash: intakeTokenHash,
+          p_admin_access_token_hash: await hashAdminIntakeToken(adminToken),
+        });
+        if (error) throw new Error(error.message);
+        return { ...data, intake_token: intakeToken, admin_intake_token: adminToken };
+      }
+      if (input.action === "finalize_internal_e2e_run") {
+        const { data, error } = await client.rpc("finalize_internal_e2e_run_v1", {
+          p_run_id: input.run_id,
+          p_terminal_status: input.terminal_status,
+          p_expected_revision: input.expected_revision,
+          p_idempotency_key: input.idempotency_key,
+        });
+        if (error) throw new Error(error.message);
+        return data;
+      }
       const request = input.action === "list_applications"
         ? client.rpc("list_operator_applications_v1", {
           p_limit: input.limit,
