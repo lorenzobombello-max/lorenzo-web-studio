@@ -543,11 +543,33 @@
     if (!container) return;
     const packageName = form.querySelector('input[name="selected_package_definition_id"]:checked')
       ?.closest(".package-card")?.querySelector(".package-card__name")?.textContent?.trim() || "Niet gekozen";
-    const hasShop = selectedBoolean("shop_required") === true ? "Ja" : "Nee";
-    const hasBooking = selectedBoolean("booking_required") === true ? "Ja" : "Nee";
+    const shopRequired = selectedBoolean("shop_required") === true;
+    const bookingRequired = selectedBoolean("booking_required") === true;
+    const hasShop = shopRequired ? "Ja" : "Nee";
+    const hasBooking = bookingRequired ? "Ja" : "Nee";
     const hasOnlinePayment = selectedBoolean("online_payment_required") === true ? "Ja" : "Nee";
     const additionalLanguages = Array.from(form.querySelectorAll("[data-additional-language]:checked"))
       .map((input) => input.closest("label")?.textContent?.trim() || input.value);
+    const solutionRows = [["Webshop", hasShop]];
+    if (shopRequired) solutionRows.push(["Verzending", selectedControlText("shop_shipping_scope")]);
+    solutionRows.push(["Reservaties of afspraken", hasBooking]);
+    if (bookingRequired) {
+      const existingSystem = document.getElementById("booking_existing").checked;
+      solutionRows.push(
+        ["Reservatieoplossing", selectedControlText("booking_tier")],
+        ["Type reservatie of afspraak", selectedControlText("booking_type")],
+        ["Bestaand systeem", existingSystem ? "Ja" : "Nee"],
+      );
+      const existingSystemName = document.getElementById("booking_system_name").value.trim();
+      if (existingSystem && existingSystemName) solutionRows.push(["Naam bestaand systeem", existingSystemName]);
+      solutionRows.push(["Kalenderkoppeling", document.getElementById("booking_calendar").checked ? "Ja" : "Nee"]);
+    }
+    solutionRows.push(
+      ["Online betalingen", hasOnlinePayment],
+      ["Betalingsdoel", selectedChoiceLabels("online_payment_purposes")],
+      ["Domein", selectedControlText("domain_status")],
+      ["Hosting", selectedControlText("hosting_status")],
+    );
     container.replaceChildren();
     appendReviewSection(container, "Project", [
       ["Budget", selectedControlText("budget_update_category")],
@@ -556,14 +578,7 @@
       ["Bedrijf", selectedControlText("business_description")],
       ["Doelgroep", selectedControlText("target_audience")],
     ]);
-    appendReviewSection(container, "Oplossing", [
-      ["Webshop", hasShop],
-      ["Reservaties of afspraken", hasBooking],
-      ["Online betalingen", hasOnlinePayment],
-      ["Betalingsdoel", selectedChoiceLabels("online_payment_purposes")],
-      ["Domein", selectedControlText("domain_status")],
-      ["Hosting", selectedControlText("hosting_status")],
-    ]);
+    appendReviewSection(container, "Oplossing", solutionRows);
     appendReviewSection(container, "Website", [
       ["Pagina's", selectedChoiceLabels("requested_pages")],
       ["Functies", selectedChoiceLabels("requested_features")],

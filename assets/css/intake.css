@@ -113,6 +113,7 @@ label > .pricing-status { margin: 0 0 0 auto; }
 .intake-form textarea { resize: vertical; }
 .intake-form input:focus-visible, .intake-form textarea:focus-visible, .intake-form select:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; border-color: var(--color-accent); }
 .intake-form [aria-invalid="true"] { border-color: #c9686e !important; }
+.intake-step .field[hidden] { display: none; }
 .field-label { font-weight: 700; }
 .choice-row, .choice-grid { display: flex; flex-wrap: wrap; gap: 0.65rem; }
 .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -3,6 +3,7 @@ import { parseHTML } from "npm:linkedom@0.18.12";
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
 const adminSource = await Deno.readTextFile(new URL("./admin-intake.js", import.meta.url));
+const css = await Deno.readTextFile(new URL("../css/intake.css", import.meta.url));
 const html = await Deno.readTextFile(
   new URL("../../pages/intake.html", import.meta.url),
 );
@@ -240,6 +241,7 @@ Deno.test("targeted shop and booking details only expose relevant customer contr
   assertMatch(conditionals, /shop_shipping[\s\S]*shop_shipping_scope/);
   assertMatch(conditionals, /bookingSystemNameField[\s\S]*existingBookingSystem/);
   assertMatch(conditionals, /booking_system_name[\s\S]*value = ""/);
+  assertMatch(css, /\.intake-step \.field\[hidden\] \{ display: none; \}/);
 });
 
 Deno.test("legacy shipping and booking drafts restore without duplicate requirements", () => {
@@ -266,6 +268,16 @@ Deno.test("admin output omits legacy payment duplication and shows stored scope 
     "pickup_scope", "customer_accounts", "existing_catalog", "catalog_import", "erp_api",
     "tier", "type", "existing_system", "existing_system_name", "calendar_integration",
   ]) assert(adminSource.includes(`"${key}"`), `admin output missing ${key}`);
+});
+
+Deno.test("customer review conditionally shows existing shop and booking details", () => {
+  const review = sourceFunction("renderReviewSummary");
+  assertMatch(review, /shopRequired[\s\S]*Verzending[\s\S]*shop_shipping_scope/);
+  assertMatch(review, /bookingRequired[\s\S]*Reservatieoplossing[\s\S]*booking_tier/);
+  assertMatch(review, /Type reservatie of afspraak[\s\S]*booking_type/);
+  assertMatch(review, /Bestaand systeem[\s\S]*existingSystem \? "Ja" : "Nee"/);
+  assertMatch(review, /existingSystem && existingSystemName[\s\S]*Naam bestaand systeem/);
+  assertMatch(review, /Kalenderkoppeling[\s\S]*booking_calendar/);
 });
 
 Deno.test("intake navigation preserves five phases and twelve screens", () => {
