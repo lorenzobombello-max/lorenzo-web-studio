@@ -86,6 +86,20 @@ Deno.test("stale revision has explicit non-destructive conflict UX", () => {
   assertStringIncludes(typesSource, '| "reset_draft"');
 });
 
+Deno.test("legacy save compatibility cannot downgrade explicit revisions or reset", () => {
+  assertStringIncludes(edgeSource, 'Object.hasOwn(body, "expected_revision")');
+  assertStringIncludes(edgeSource, 'mutationRpc = "save_quote_request_intake_draft_v2"');
+  assertStringIncludes(edgeSource, '? "update_quote_request_intake_with_evidence"');
+  assertStringIncludes(edgeSource, ': "update_quote_request_intake"');
+
+  const resetStart = edgeSource.indexOf('if (action === "reset_draft")');
+  const resetEnd = edgeSource.indexOf("let intakeData:", resetStart);
+  const resetSource = edgeSource.slice(resetStart, resetEnd);
+  assertStringIncludes(resetSource, "validateExpectedRevision(body.expected_revision)");
+  assertStringIncludes(resetSource, 'supabase.rpc("reset_quote_request_intake_draft_v1"');
+  assertFalse(resetSource.includes("update_quote_request_intake"));
+});
+
 Deno.test("final submit remains on the authoritative v5 pricing snapshot path", () => {
   assertStringIncludes(edgeSource, 'if (action === "submit")');
   assertStringIncludes(edgeSource, 'mutationRpc = "update_quote_request_intake_v5"');

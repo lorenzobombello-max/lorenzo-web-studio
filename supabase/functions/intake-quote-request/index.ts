@@ -714,6 +714,7 @@ Deno.serve(async (request) => {
   }
 
   const { legacyData, evidenceData } = partitionIntakeData(intakeData);
+  const hasEvidence = Object.keys(evidenceData).length > 0;
   let mutationRpc: string;
   let mutationParameters: Record<string, unknown>;
   let rawAdminCapability: string | null = null;
@@ -777,7 +778,7 @@ Deno.serve(async (request) => {
         message: "Server configuration is incomplete.",
       }, origin);
     }
-  } else {
+  } else if (Object.hasOwn(body, "expected_revision")) {
     let expectedRevision: number;
     try {
       expectedRevision = validateExpectedRevision(body.expected_revision);
@@ -798,6 +799,20 @@ Deno.serve(async (request) => {
       p_evidence_data: evidenceData,
     };
     mutationRpc = "save_quote_request_intake_draft_v2";
+  } else {
+    mutationParameters = hasEvidence ? {
+      p_access_token_hash: intakeTokenHash,
+      p_action: action,
+      p_legacy_data: legacyData,
+      p_evidence_data: evidenceData,
+    } : {
+      p_access_token_hash: intakeTokenHash,
+      p_action: action,
+      p_data: intakeData,
+    };
+    mutationRpc = hasEvidence
+      ? "update_quote_request_intake_with_evidence"
+      : "update_quote_request_intake";
   }
 
   const { data, error } = await supabase.rpc(mutationRpc, mutationParameters);
