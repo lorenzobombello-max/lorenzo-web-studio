@@ -75,7 +75,7 @@
 .intake-context span { color: var(--color-text-soft); font-size: 0.74rem; }
 .intake-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
 .budget-guard { --budget-guard-strip-color: var(--color-accent); position: relative; overflow: hidden; margin-bottom: 1rem; padding: 1.1rem 1.2rem; border: 1px solid var(--color-border); border-left: 4px solid var(--budget-guard-strip-color); border-radius: 0.65rem; background: var(--color-surface); }
-.budget-guard::before { position: absolute; inset: 0 auto 0 -1px; width: 4px; content: ""; pointer-events: none; background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.24) 38%, rgba(255, 255, 255, 0.9) 50%, rgba(255, 255, 255, 0.24) 62%, transparent 100%) 0 -3rem / 100% 3rem no-repeat, var(--budget-guard-strip-color); animation: budget-guard-strip-scan 4.8s ease-in-out infinite; }
+.budget-guard::before { position: absolute; inset: 0 auto 0 -1px; width: 4px; content: ""; pointer-events: none; background: linear-gradient(180deg, oklch(from var(--budget-guard-strip-color) l c h / 0) 0%, oklch(from var(--budget-guard-strip-color) calc(l + 0.1) c h / 0.55) 25%, oklch(from var(--budget-guard-strip-color) calc(l + 0.22) c h) 50%, oklch(from var(--budget-guard-strip-color) calc(l + 0.1) c h / 0.55) 75%, oklch(from var(--budget-guard-strip-color) l c h / 0) 100%) 0 -2rem / 100% 2rem no-repeat, var(--budget-guard-strip-color); animation: budget-guard-strip-scan 4.8s ease-in-out infinite; }
 .budget-guard[hidden] { display: none; }
 .budget-guard__heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
 .budget-guard__heading .eyebrow { margin: 0 0 0.2rem; }
@@ -200,7 +200,7 @@ label > .pricing-status { margin: 0 0 0 auto; }
 .intake-modal__destructive:hover, .intake-modal__destructive:focus-visible { border-color: #c9686e; background: color-mix(in srgb, #a94750 15%, transparent); }
 body.modal-open { overflow: hidden; }
 @keyframes intake-spin { to { transform: rotate(360deg); } }
-@keyframes budget-guard-strip-scan { from { background-position: 0 -3rem, 0 0; } to { background-position: 0 calc(100% + 3rem), 0 0; } }
+@keyframes budget-guard-strip-scan { from { background-position: 0 -2rem, 0 0; } to { background-position: 0 calc(100% + 2rem), 0 0; } }
 @media (max-width: 900px) {
   #intakeWorkspace { grid-template-columns: 1fr; }
   .intake-progress { position: static; }
