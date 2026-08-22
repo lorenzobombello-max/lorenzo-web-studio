@@ -124,11 +124,15 @@ function element() {
   };
 }
 
-function renderSequence(renderedPreviews: Array<typeof preview>) {
+function renderSequence(renderedPreviews: Array<typeof preview>, activeReview = false) {
   const ui = {
     preview: element(), budget: element(), packageRow: element(), minimum: element(),
     packageName: element(), packagePages: element(), packageRounds: element(),
     minimumRow: element(), state: element(), status: element(), warning: element(), advice: element(),
+    reviewValues: [] as string[],
+  };
+  const renderReviewSummary = () => {
+    ui.reviewValues.push(ui.minimumRow.hidden ? "Wordt berekend" : ui.minimum.textContent);
   };
   const renderPricingPreview = Function(
     "clearPricingPresentation",
@@ -156,6 +160,9 @@ function renderSequence(renderedPreviews: Array<typeof preview>) {
     "currentBudgetGuardEvidenceFingerprint",
     "acknowledgedBudgetGuardKey",
     "pricingEvidenceFingerprint",
+    "currentStep",
+    "steps",
+    "renderReviewSummary",
     `"use strict"; return (${sourceFunction("renderPricingPreview")});`,
   )(
     () => {
@@ -191,9 +198,16 @@ function renderSequence(renderedPreviews: Array<typeof preview>) {
     pricingFingerprint({ budget: "below_1800", package: "professional_v2" }),
     "",
     pricingFingerprint({ budget: "below_1800", package: "professional_v1" }),
+    activeReview ? 1 : 0,
+    [{}, {}],
+    renderReviewSummary,
   ) as (renderedPreview: typeof preview, evidenceFingerprint: string) => void;
 
-  renderedPreviews.forEach((renderedPreview) => {
+  renderedPreviews.forEach((renderedPreview, index) => {
+    if (activeReview && index > 0) {
+      ui.minimumRow.hidden = true;
+      renderReviewSummary();
+    }
     renderPricingPreview(renderedPreview, pricingFingerprint({
       budget: "below_1800",
       package: renderedPreview.selectedPackage.selectedPackageDefinitionId,
@@ -205,6 +219,27 @@ function renderSequence(renderedPreviews: Array<typeof preview>) {
 function render(renderedPreview: typeof preview) {
   return renderSequence([renderedPreview]);
 }
+
+Deno.test("active review follows successive async pricing previews without requesting again", () => {
+  const secondPreview = structuredClone(preview);
+  secondPreview.summary.knownMinimumMinor = 365_000;
+  const thirdPreview = structuredClone(preview);
+  thirdPreview.summary.knownMinimumMinor = 380_000;
+
+  const ui = renderSequence([preview, secondPreview, thirdPreview], true);
+  assertEquals(ui.reviewValues, [
+    "€ 3.500 excl. btw",
+    "Wordt berekend",
+    "€ 3.650 excl. btw",
+    "Wordt berekend",
+    "€ 3.800 excl. btw",
+  ]);
+  assertFalse(ui.reviewValues.at(-1)?.includes("Wordt berekend"));
+
+  const renderSource = sourceFunction("renderPricingPreview");
+  assertStringIncludes(renderSource, 'currentStep === steps.length - 1) renderReviewSummary()');
+  assertFalse(/schedulePricingPreview|requestBudgetGuardPreview|fetch\(/.test(renderSource));
+});
 
 Deno.test("package summary renders structured lines for Starter and Professional", () => {
   assertStringIncludes(html, 'class="budget-guard__package"><strong id="budgetGuardPackageName"></strong><span id="budgetGuardPackagePages"></span><span id="budgetGuardPackageRounds"></span>');

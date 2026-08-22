@@ -1066,6 +1066,7 @@
       budgetGuardPackageAdvice.textContent = "Je wensen vragen een persoonlijke beoordeling. Er is geen pakket automatisch geselecteerd.";
       budgetGuardPackageAdvice.hidden = false;
     }
+    if (typeof currentStep === "number" && currentStep === steps.length - 1) renderReviewSummary();
   }
 
   async function handlePreviewError(response, revision) {
