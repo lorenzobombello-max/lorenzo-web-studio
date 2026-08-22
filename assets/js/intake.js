@@ -12,7 +12,7 @@
       ['input[name="has_existing_website"]'], ["#existingWebsiteFields", ".conditional-panel"], ["#domain_status"], ["#domain_name"], ["#hosting_status"], ["#hosting_support"],
     ] },
     { phase: 0, title: "Webshop en reservaties", intro: "Bepaal vroeg of verkoop, reservaties of afspraken deel uitmaken van de technische oplossing.", nodes: [
-      ['input[name="shop_required"]'], ["#shopFields", ".conditional-panel"], ['input[name="booking_required"]'], ["#bookingFields", ".conditional-panel"],
+      ['input[name="shop_required"]'], ["#shopFields", ".conditional-panel"], ['input[name="booking_required"]'], ["#bookingFields", ".conditional-panel"], ['input[name="online_payment_required"]'], ["#onlinePaymentFields", ".conditional-panel"],
     ] },
     { phase: 1, title: "Kies uw pakket", intro: "Kies de bestaande pakketbasis die het best aansluit bij de omvang van uw website.", nodes: [
       [".package-selection", ".package-selection"],
@@ -175,6 +175,8 @@
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
   const requiredSubmitFields = ["budget_update_category", "business_description", "target_audience", "primary_conversion_goal", "brand_status", "logo_status", "content_status", "image_status", "domain_status", "hosting_status", "maintenance_interest", "seo_priority"];
   const scopedPages = ["portfolio", "reviews", "blog", "jobs", "gallery"];
+  const onlinePaymentPurposeValues = ["products", "reservations", "appointments", "services", "registrations", "deposit", "other"];
+  const onlinePaymentPurposeFeatures = onlinePaymentPurposeValues.map((purpose) => `online_payment_${purpose}`);
   const budgetCodes = {
     "Minder dan EUR 1.800": "below_1800",
     "EUR 1.800 tot minder dan EUR 3.500": "1800_to_below_3500",
@@ -207,6 +209,7 @@
   ];
   const directPricingNames = new Set([
     "website_goals", "requested_pages", "requested_features", "shop_required", "booking_required",
+    "online_payment_required", "online_payment_purposes",
     "primary_language", "brand_status", "logo_status", "content_status", "image_status", "image_support", "hosting_status",
     "hosting_support", "maintenance_interest", "seo_priority", "integrations", "budget_update_category",
     "selected_package_definition_id",
@@ -358,6 +361,14 @@
       else data[field.name] = field.value.trim() || null;
     });
     arrayFields.forEach((name) => { data[name] = selectedValues(name); });
+    data.requested_features = data.requested_features.filter((feature) =>
+      feature !== "online_payment" && !onlinePaymentPurposeFeatures.includes(feature));
+    if (selectedBoolean("online_payment_required") === true) {
+      data.requested_features.push("online_payment");
+      selectedValues("online_payment_purposes").forEach((purpose) => {
+        if (onlinePaymentPurposeValues.includes(purpose)) data.requested_features.push(`online_payment_${purpose}`);
+      });
+    }
     booleanFields.forEach((name) => {
       const value = selectedBoolean(name);
       if (value !== null) data[name] = value;
@@ -502,6 +513,7 @@
 
   function selectedChoiceLabels(name) {
     return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
+      .filter((input) => !input.hidden)
       .map((input) => input.closest("label")?.textContent?.trim() || input.value);
   }
 
@@ -531,6 +543,7 @@
       ?.closest(".package-card")?.querySelector(".package-card__name")?.textContent?.trim() || "Niet gekozen";
     const hasShop = selectedBoolean("shop_required") === true ? "Ja" : "Nee";
     const hasBooking = selectedBoolean("booking_required") === true ? "Ja" : "Nee";
+    const hasOnlinePayment = selectedBoolean("online_payment_required") === true ? "Ja" : "Nee";
     const additionalLanguages = Array.from(form.querySelectorAll("[data-additional-language]:checked"))
       .map((input) => input.closest("label")?.textContent?.trim() || input.value);
     container.replaceChildren();
@@ -544,6 +557,8 @@
     appendReviewSection(container, "Oplossing", [
       ["Webshop", hasShop],
       ["Reservaties of afspraken", hasBooking],
+      ["Online betalingen", hasOnlinePayment],
+      ["Betalingsdoel", selectedChoiceLabels("online_payment_purposes")],
       ["Domein", selectedControlText("domain_status")],
       ["Hosting", selectedControlText("hosting_status")],
     ]);
@@ -1138,6 +1153,15 @@
       else if (name === "inspiration_sites" && Array.isArray(value)) field.value = value.join("\n");
       else if (typeof value === "string") field.value = value;
     });
+    const restoredFeatures = Array.isArray(data.requested_features) ? data.requested_features : [];
+    const hasOnlinePayment = restoredFeatures.includes("online_payment") || data.shop_details?.online_payments === true;
+    setChoice("online_payment_required", hasOnlinePayment);
+    onlinePaymentPurposeValues.forEach((purpose) => {
+      if (restoredFeatures.includes(`online_payment_${purpose}`)) setChoice("online_payment_purposes", purpose);
+    });
+    if (hasOnlinePayment && !onlinePaymentPurposeValues.some((purpose) => restoredFeatures.includes(`online_payment_${purpose}`)) && data.shop_details?.online_payments === true) {
+      setChoice("online_payment_purposes", "products");
+    }
     if (data.confirmation === true) document.getElementById("confirmation").checked = true;
     if (data.shop_details) {
       document.getElementById("shop_product_count").value = data.shop_details.approx_product_count || 1;
@@ -1247,25 +1271,16 @@
     if (target === seoExtraLanguage && !seoExtraLanguage.checked) seoAdvancedLanguage.checked = false;
     else if (seoAdvancedLanguage.checked) seoExtraLanguage.checked = true;
 
-    const shopIntents = [
-      'input[name="requested_pages"][value="shop"]',
-      'input[name="requested_features"][value="shop"]',
-      'input[name="requested_features"][value="online_payment"]',
-      'input[name="website_goals"][value="sell_products"]',
-    ];
-    const bookingIntents = [
-      'input[name="requested_pages"][value="reservations"]',
-      'input[name="requested_features"][value="appointments"]',
-      'input[name="requested_features"][value="reservations"]',
-      'input[name="website_goals"][value="appointments"]',
-      'input[name="website_goals"][value="reservations"]',
-    ];
     const shopNo = form.querySelector('input[name="shop_required"][value="false"]');
     const bookingNo = form.querySelector('input[name="booking_required"][value="false"]');
-    if (target === shopNo && shopNo.checked) shopIntents.forEach((selector) => { form.querySelector(selector).checked = false; });
-    else if (shopIntents.some((selector) => form.querySelector(selector)?.checked)) setChoice("shop_required", true);
-    if (target === bookingNo && bookingNo.checked) bookingIntents.forEach((selector) => { form.querySelector(selector).checked = false; });
-    else if (bookingIntents.some((selector) => form.querySelector(selector)?.checked)) setChoice("booking_required", true);
+    if (target === shopNo && shopNo.checked) {
+      ['input[name="requested_pages"][value="shop"]', 'input[name="requested_features"][value="shop"]']
+        .forEach((selector) => { form.querySelector(selector).checked = false; });
+    }
+    if (target === bookingNo && bookingNo.checked) {
+      ['input[name="requested_pages"][value="reservations"]', 'input[name="requested_features"][value="appointments"]', 'input[name="requested_features"][value="reservations"]']
+        .forEach((selector) => { form.querySelector(selector).checked = false; });
+    }
   }
 
   function updateConditionals() {
@@ -1276,6 +1291,10 @@
     document.getElementById("shopFields").hidden = !shop;
     const booking = selectedBoolean("booking_required") === true;
     document.getElementById("bookingFields").hidden = !booking;
+    const onlinePayment = selectedBoolean("online_payment_required") === true;
+    document.getElementById("onlinePaymentFields").hidden = !onlinePayment;
+    if (!onlinePayment) form.querySelectorAll('input[name="online_payment_purposes"]').forEach((input) => { input.checked = false; });
+    document.getElementById("shop_payments").checked = shop && onlinePayment && selectedValues("online_payment_purposes").includes("products");
     const requestedPages = new Set(selectedValues("requested_pages"));
     const requestedFeatures = new Set(selectedValues("requested_features"));
     document.getElementById("pageScopeFields").hidden =
@@ -1371,6 +1390,9 @@
     if (data.domain_status === "has_domain" && !data.domain_name) {
       issues.push({ name: "domain_name", message: "Vul je domeinnaam in." });
     }
+    if (data.requested_features?.includes("online_payment") && !onlinePaymentPurposeFeatures.some((purpose) => data.requested_features.includes(purpose))) {
+      issues.push({ name: "online_payment_purposes", message: "Kies minstens één doel voor online betalingen." });
+    }
     const inspirationSitesMessage = validateInspirationSites(data.inspiration_sites);
     if (inspirationSitesMessage) issues.push({ name: "inspiration_sites", message: inspirationSitesMessage });
     if (!data.confirmation) issues.push({ name: "confirmation", message: "Bevestig je briefing voor verzending." });
@@ -1436,6 +1458,7 @@
     const validationNames = [event.target.name].filter(Boolean);
     if (event.target.name === "has_existing_website") validationNames.push("existing_website_url");
     if (event.target.name === "domain_status") validationNames.push("domain_name");
+    if (event.target.name === "online_payment_required" || event.target.name === "online_payment_purposes") validationNames.push("online_payment_purposes");
     revalidateFields(validationNames);
   }
 
@@ -1691,7 +1714,7 @@
     }
     if (event.target.name === "priorities") updatePriorities(event.target);
     if (
-      ["has_existing_website", "shop_required", "booking_required", "requested_pages", "requested_features", "website_goals", "primary_language"].includes(event.target.name) ||
+      ["has_existing_website", "shop_required", "booking_required", "online_payment_required", "online_payment_purposes", "requested_pages", "requested_features", "website_goals", "primary_language"].includes(event.target.name) ||
       event.target.matches("[data-additional-language], #deadline_date, #deadline_reason")
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();

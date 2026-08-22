@@ -468,6 +468,24 @@ Deno.test("content, hosting and SEO normalize to one canonical module each", () 
   assertEquals(result.calculation.knownMinimumMinor, 180_000);
 });
 
+Deno.test("online payment and business goals do not infer shop or booking scope", () => {
+  const scope = normalizePricingScope({
+    shop_required: false,
+    booking_required: false,
+    website_goals: ["sell_products", "appointments", "reservations"],
+    requested_pages: ["shop", "reservations"],
+    requested_features: [
+      "shop",
+      "appointments",
+      "reservations",
+      "online_payment",
+      "online_payment_services",
+    ],
+  });
+  assertEquals(scope.modules.some((entry) => entry.id === "shop"), false);
+  assertEquals(scope.modules.some((entry) => entry.id === "booking"), false);
+});
+
 Deno.test("package advice follows page thresholds and never changes calculation basis", () => {
   const five = calculateBudgetGuard({
     requested_pages: ["home", "about", "services", "portfolio", "contact"],

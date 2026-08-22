@@ -188,18 +188,6 @@ export function normalizePricingScope(
   };
 
   const shopEvidence = new Set<string>();
-  addEvidence(shopEvidence, pages.includes("shop"), "requested_pages.shop");
-  addEvidence(shopEvidence, features.has("shop"), "requested_features.shop");
-  addEvidence(
-    shopEvidence,
-    features.has("online_payment"),
-    "requested_features.online_payment",
-  );
-  addEvidence(
-    shopEvidence,
-    goals.has("sell_products"),
-    "website_goals.sell_products",
-  );
   addEvidence(shopEvidence, input.shop_required === true, "shop_required");
   addEvidence(shopEvidence, hasObjectData(input.shop_details), "shop_details");
   if (shopEvidence.size) {
@@ -242,19 +230,6 @@ export function normalizePricingScope(
   }
 
   const bookingEvidence = new Set<string>();
-  addEvidence(
-    bookingEvidence,
-    pages.includes("reservations"),
-    "requested_pages.reservations",
-  );
-  for (const value of ["appointments", "reservations"]) {
-    addEvidence(
-      bookingEvidence,
-      features.has(value),
-      `requested_features.${value}`,
-    );
-    addEvidence(bookingEvidence, goals.has(value), `website_goals.${value}`);
-  }
   addEvidence(
     bookingEvidence,
     input.booking_required === true,

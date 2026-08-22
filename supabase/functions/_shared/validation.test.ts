@@ -767,17 +767,45 @@ Deno.test("pricing preview rejects contradictory translation evidence", () => {
   );
 });
 
-Deno.test("pricing preview rejects cross-step shop and booking contradictions", () => {
+Deno.test("pricing preview keeps goals and legacy labels independent from technical scope", () => {
   for (const input of [
     { requested_features: ["shop"], shop_required: false },
     { website_goals: ["sell_products"], shop_required: false },
     { requested_features: ["appointments"], booking_required: false },
     { requested_pages: ["reservations"], booking_required: false },
   ]) {
-    assertThrows(
-      () => sanitizeAndValidatePricingPreviewInput(input),
-      InputValidationError,
-      "INVALID_CONDITION",
-    );
+    const result = sanitizeAndValidatePricingPreviewInput(input);
+    assertEquals(result.shop_required, input.shop_required);
+    assertEquals(result.booking_required, input.booking_required);
   }
+});
+
+Deno.test("online payment purposes are valid without webshop scope", () => {
+  const result = sanitizeAndValidateIntakeData({
+    shop_required: false,
+    booking_required: false,
+    website_goals: ["sell_products", "appointments", "reservations"],
+    requested_features: [
+      "online_payment",
+      "online_payment_products",
+      "online_payment_reservations",
+      "online_payment_appointments",
+      "online_payment_services",
+      "online_payment_registrations",
+      "online_payment_deposit",
+      "online_payment_other",
+    ],
+  }, "draft");
+  assertEquals(result.shop_required, false);
+  assertEquals(result.booking_required, false);
+  assertEquals(result.requested_features, [
+    "online_payment",
+    "online_payment_products",
+    "online_payment_reservations",
+    "online_payment_appointments",
+    "online_payment_services",
+    "online_payment_registrations",
+    "online_payment_deposit",
+    "online_payment_other",
+  ]);
 });

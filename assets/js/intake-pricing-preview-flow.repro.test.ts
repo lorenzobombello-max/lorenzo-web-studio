@@ -74,16 +74,20 @@ function buildFrontendHarness() {
   const pricingEvidenceFields = sourceValue<string[]>("pricingEvidenceFields");
   const packageDefinitionIds = sourceValue<Set<string>>("packageDefinitionIds");
   const scopedPages = sourceValue<string[]>("scopedPages");
+  const onlinePaymentPurposeValues = sourceValue<string[]>("onlinePaymentPurposeValues");
+  const onlinePaymentPurposeFeatures = onlinePaymentPurposeValues.map((purpose) => `online_payment_${purpose}`);
   const budgetCodes = sourceValue<Record<string, string>>("budgetCodes");
   const splitList = Function(`"use strict"; return (${sourceFunction("splitList")});`)();
   const selectedBoolean = Function("form", `"use strict"; return (${sourceFunction("selectedBoolean")});`)(form);
   const selectedValues = Function("form", `"use strict"; return (${sourceFunction("selectedValues")});`)(form);
   const collectData = Function(
     "form", "document", "commaFields", "arrayFields", "booleanFields", "packageDefinitionIds", "scopedPages",
+    "onlinePaymentPurposeValues", "onlinePaymentPurposeFeatures",
     "budgetChoiceChanged", "restoredLegacyBudget", "budgetCodes", "restoredBudgetEvidence", "splitList",
     "selectedBoolean", "selectedValues", `"use strict"; return (${sourceFunction("collectData")});`,
   )(
     form, document, commaFields, arrayFields, booleanFields, packageDefinitionIds, scopedPages,
+    onlinePaymentPurposeValues, onlinePaymentPurposeFeatures,
     false, null, budgetCodes, null, splitList, selectedBoolean, selectedValues,
   ) as () => Record<string, unknown>;
   const collectPricingEvidence = Function(
@@ -415,10 +419,15 @@ Deno.test("frontend and backend pricing preview schemas remain machine-readable 
   assertEquals(missingBackend, []);
   assertEquals(extraBackend, []);
 
+  const requestedFeatureValues = controlValues(frontend, 'input[name="requested_features"]');
+  requestedFeatureValues.add("online_payment");
+  for (const purpose of controlValues(frontend, 'input[name="online_payment_purposes"]')) {
+    requestedFeatureValues.add(`online_payment_${purpose}`);
+  }
   const valuePairs: Array<[string, Set<string>, Set<string>]> = [
     ["website_goals", controlValues(frontend, 'input[name="website_goals"]'), backendSet("WEBSITE_GOALS")],
     ["requested_pages", controlValues(frontend, 'input[name="requested_pages"]'), backendSet("REQUESTED_PAGES")],
-    ["requested_features", controlValues(frontend, 'input[name="requested_features"]'), backendSet("REQUESTED_FEATURES")],
+    ["requested_features", requestedFeatureValues, backendSet("REQUESTED_FEATURES")],
     ["image_support", controlValues(frontend, 'input[name="image_support"]'), backendSet("IMAGE_SUPPORT")],
     ["content_status", controlValues(frontend, '#content_status option:not([value=""])'), backendSet("CONTENT_STATUSES")],
     ["image_status", controlValues(frontend, '#image_status option:not([value=""])'), backendSet("IMAGE_STATUSES")],
@@ -554,7 +563,7 @@ Deno.test("every individual late-step pricing choice remains accepted", async ()
   const scenarios: Array<[string, Mutation]> = [
     ["six standard pages", (f) => selectPages(f, ["home", "about", "services", "portfolio", "faq", "contact"])],
     ["complex reviews page", (f) => { f.choose("requested_pages", "reviews"); f.value("page_scope_reviews", "complex"); }],
-    ["webshop and payments", (f) => { setShop(f); f.choose("requested_features", "online_payment"); }],
+    ["webshop and payments", (f) => { setShop(f); f.choose("online_payment_required", "true"); f.choose("online_payment_purposes", "products"); }],
     ["booking with calendar", setBooking],
     ["multilingual normal", setMultilingual],
     ["customer login", (f) => f.choose("requested_features", "customer_login")],
@@ -621,7 +630,7 @@ Deno.test("full realistic flow accepts every pricing transition", async () => {
     ["basic quote form", (f) => setQuoteForm(f)],
     ["custom quote logic", (f) => { f.choose("quote_structure_scope", "unsure_or_other"); f.check("#quote_custom_logic"); }],
     ["webshop", setShop],
-    ["online payment", (f) => f.choose("requested_features", "online_payment")],
+    ["online payment", (f) => { f.choose("online_payment_required", "true"); f.choose("online_payment_purposes", "services"); }],
     ["booking", setBooking],
     ["multilingual", setMultilingual],
     ["customer login", (f) => f.choose("requested_features", "customer_login")],

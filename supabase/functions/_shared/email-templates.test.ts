@@ -124,7 +124,11 @@ Deno.test("submitted intake email uses application reference and authoritative c
     request: { name: "Klant <script>alert(1)</script>", company: "Bedrijf & Co", email: "klant@example.test", phone: "+32 9 000 00 00", website_type: "business", timing: "december" },
     evidence: {
       website_goals: ["generate_leads"], primary_conversion_goal: "quote_requests", existing_website_url: "https://example.test",
-      domain_name: "example.test", hosting_status: "has_hosting", requested_pages: ["home", "services"], requested_features: ["contact_form"],
+      domain_name: "example.test", hosting_status: "has_hosting", requested_pages: ["home", "services"], requested_features: [
+        "contact_form", "online_payment", "online_payment_products", "online_payment_reservations",
+        "online_payment_appointments", "online_payment_services", "online_payment_registrations",
+        "online_payment_deposit", "online_payment_other",
+      ],
       shop_required: true, shop_details: { approx_product_count: "20" }, booking_required: true, booking_details: { type: "consultations" },
       primary_language: "nl", additional_languages: ["fr"], integrations: ["crm"], seo_priority: "high", seo_details: { scope: "launch" },
       brand_status: "none", logo_status: "needed", design_styles: ["modern"], content_status: "partial", image_status: "needed",
@@ -145,6 +149,14 @@ Deno.test("submitted intake email uses application reference and authoritative c
     assertStringIncludes(result.html, expected);
   }
   assertStringIncludes(result.text, "Aanvraagnummer: LWS-AAN-2026-0042");
+  for (const expected of [
+    "Contactformulier", "Online betaling", "Producten / webshop", "Reservaties", "Afspraken", "Diensten",
+    "Inschrijvingen / activiteiten", "Voorschot / reservatiebedrag", "Andere online betaling",
+  ]) {
+    assertStringIncludes(result.text, expected);
+    assertStringIncludes(result.html, expected);
+  }
+  assertFalse(/online_payment(?:_[a-z_]+)?/.test(`${result.text}\n${result.html}`));
   assertStringIncludes(result.text, "Webshopdetails: approx product count: 20");
   assertStringIncludes(result.html, "Klant &lt;script&gt;alert(1)&lt;/script&gt;");
   assertStringIncludes(result.html, "Launch &lt;img src=x onerror=alert(2)&gt;");

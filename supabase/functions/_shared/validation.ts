@@ -113,7 +113,9 @@ const REQUESTED_PAGES = new Set([
 const REQUESTED_FEATURES = new Set([
   "contact_form", "quote_form", "google_maps", "social_links", "reviews", "gallery", "newsletter",
   "whatsapp", "appointments", "reservations", "shop", "online_payment", "customer_login", "downloads",
-  "search", "multilingual", "other", "unsure",
+  "search", "multilingual", "other", "unsure", "online_payment_products", "online_payment_reservations",
+  "online_payment_appointments", "online_payment_services", "online_payment_registrations",
+  "online_payment_deposit", "online_payment_other",
 ]);
 const DESIGN_STYLES = new Set([
   "modern", "business", "minimal", "elegant", "luxury", "warm", "playful", "creative", "technical",
@@ -523,7 +525,7 @@ const OPTION_FIELDS: Record<string, Set<string>> = {
 const ARRAY_FIELDS: Record<string, [number, number, Set<string>?]> = {
   website_goals: [12, 40, WEBSITE_GOALS],
   requested_pages: [17, 40, REQUESTED_PAGES],
-  requested_features: [18, 40, REQUESTED_FEATURES],
+  requested_features: [22, 40, REQUESTED_FEATURES],
   languages: [8, 40],
   design_styles: [13, 40, DESIGN_STYLES],
   brand_colors: [12, 80],
@@ -651,24 +653,6 @@ export function sanitizeAndValidateIntakeData(payload: unknown, mode: "draft" | 
     output.booking_details = null;
   }
   if (output.booking_details && output.booking_required !== true) {
-    throw new InputValidationError("INVALID_CONDITION", "booking_required");
-  }
-  const requestedPages = new Set(Array.isArray(output.requested_pages) ? output.requested_pages : []);
-  const requestedFeatures = new Set(Array.isArray(output.requested_features) ? output.requested_features : []);
-  const websiteGoals = new Set(Array.isArray(output.website_goals) ? output.website_goals : []);
-  if (
-    output.shop_required === false &&
-    (requestedPages.has("shop") || requestedFeatures.has("shop") ||
-      requestedFeatures.has("online_payment") || websiteGoals.has("sell_products"))
-  ) {
-    throw new InputValidationError("INVALID_CONDITION", "shop_required");
-  }
-  if (
-    output.booking_required === false &&
-    (requestedPages.has("reservations") || requestedFeatures.has("appointments") ||
-      requestedFeatures.has("reservations") || websiteGoals.has("appointments") ||
-      websiteGoals.has("reservations"))
-  ) {
     throw new InputValidationError("INVALID_CONDITION", "booking_required");
   }
   const multilingualDetails = output.multilingual_details as Record<string, unknown> | null | undefined;

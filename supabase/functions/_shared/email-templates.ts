@@ -489,6 +489,34 @@ function replaceAsciiControlRunsWithSpace(value: string): string {
   return output;
 }
 
+const INTAKE_FEATURE_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  contact_form: "Contactformulier",
+  quote_form: "Offerteformulier",
+  google_maps: "Google Maps",
+  social_links: "Social links",
+  reviews: "Reviews",
+  gallery: "Galerij",
+  newsletter: "Nieuwsbrief",
+  whatsapp: "WhatsApp",
+  appointments: "Afspraken",
+  reservations: "Reservaties",
+  shop: "Webshop",
+  online_payment: "Online betaling",
+  online_payment_products: "Producten / webshop",
+  online_payment_reservations: "Reservaties",
+  online_payment_appointments: "Afspraken",
+  online_payment_services: "Diensten",
+  online_payment_registrations: "Inschrijvingen / activiteiten",
+  online_payment_deposit: "Voorschot / reservatiebedrag",
+  online_payment_other: "Andere online betaling",
+  customer_login: "Klantlogin",
+  downloads: "Downloads",
+  search: "Zoeken",
+  multilingual: "Meertalig",
+  other: "Andere",
+  unsure: "Nog niet zeker",
+});
+
 export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailData) {
   const output = data.output;
   const subjectLabel = replaceAsciiControlRunsWithSpace(output.customer.company || output.customer.name).trim();
@@ -516,11 +544,12 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
     return `<h2 style="margin:24px 0 10px;color:#12346b;font-size:17px;">${escapeHtml(title)}</h2><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;">${visibleRows.map(([label, value]) => `<tr><td style="width:34%;padding:6px 8px 6px 0;vertical-align:top;color:#5b6472;font-weight:bold;">${escapeHtml(label)}</td><td style="padding:6px 0;vertical-align:top;word-break:break-word;">${escapeHtml(display(value))}</td></tr>`).join("")}</table>`;
   };
   const recurringText = output.commercial.recurringServices.map((service) => `${service.label}: ${money(service.amountMinor)} per maand excl. btw`).join(" · ");
+  const websiteFeatures = output.website.features.map((feature) => INTAKE_FEATURE_LABELS[feature] || feature);
   const sections = [
     section("Identiteit", [["Aanvraagnummer", output.applicationReference], ["Ontvangen", submittedAt], ["Naam", output.customer.name], ["Bedrijf", output.customer.company], ["E-mail", output.customer.email], ["Telefoon", output.customer.phone]]),
     section("Commercieel", [["Pakket", output.commercial.packageLabel], ["Budget", output.commercial.budgetLabel], ["Indicatief projectminimum", `${money(output.commercial.knownMinimumMinor)} excl. btw`], ["Budget Guard", output.commercial.budgetStatus], ["Vervolgservice", recurringText]]),
     section("Project", [["Type website", output.project.websiteType], ["Bedrijfsomschrijving", output.project.businessDescription], ["Doelgroep", output.project.targetAudience], ["Bestaande website", output.project.hasExistingWebsite], ["Huidige website", output.project.currentWebsite], ["Te behouden", output.project.elementsToKeep], ["Verbeterpunten", output.project.improvementAreas], ["Domein", output.project.domain], ["Hosting", output.project.hostingStatus], ["Doelen", output.project.goals], ["Primaire conversie", output.project.primaryConversionGoal]]),
-    section("Website", [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", output.website.features], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]),
+    section("Website", [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", websiteFeatures], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]),
     section("Branding & content", [["Huisstijl", output.brandingContent.brandStatus], ["Logo", output.brandingContent.logoStatus], ["Kleuren", output.brandingContent.brandColors], ["Ontwerpstijl", output.brandingContent.designStyles], ["Inspiratie", output.brandingContent.inspirationSites], ["Wat niet aanspreekt", output.brandingContent.dislikedStyles], ["Content", output.brandingContent.contentStatus], ["Beelden", output.brandingContent.imageStatus], ["Beeldondersteuning", output.brandingContent.imageSupport], ["Content/media-details", output.brandingContent.contentMediaDetails]]),
     section("Service & planning", [["Domeinstatus", output.servicePlanning.domainStatus], ["Onderhoud", output.servicePlanning.maintenanceInterest], ["Hostingondersteuning", output.servicePlanning.hostingSupport], ["Servicekeuzes", output.servicePlanning.hostingMaintenanceDetails], ["Timing", output.servicePlanning.timing], ["Deadline", output.servicePlanning.deadline], ["Reden deadline", output.servicePlanning.deadlineReason], ["Deadlinedetails", output.servicePlanning.deadlineDetails], ["Prioriteiten", output.servicePlanning.priorities], ["Budgetnotities", output.servicePlanning.budgetNotes], ["Opmerkingen", output.servicePlanning.notes]]),
   ].join("");
@@ -578,7 +607,7 @@ export function buildSubmittedIntakeAdminEmail(data: SubmittedIntakeAdminEmailDa
       const rows = index === 0
         ? [["Type website", output.project.websiteType], ["Bedrijfsomschrijving", output.project.businessDescription], ["Doelgroep", output.project.targetAudience], ["Bestaande website", output.project.hasExistingWebsite], ["Huidige website", output.project.currentWebsite], ["Te behouden", output.project.elementsToKeep], ["Verbeterpunten", output.project.improvementAreas], ["Domein", output.project.domain], ["Hosting", output.project.hostingStatus], ["Doelen", output.project.goals], ["Primaire conversie", output.project.primaryConversionGoal]]
         : index === 1
-        ? [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", output.website.features], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]
+        ? [["Pagina's", output.website.pages], ["Andere pagina's", output.website.otherPages], ["Functies", websiteFeatures], ["Paginascope-details", output.website.pageScopeDetails], ["Formulierdetails", output.website.quoteFormDetails], ["Webshop", output.website.webshop], ["Webshopdetails", output.website.webshopDetails], ["Boeking/reservatie", output.website.booking], ["Boekingsdetails", output.website.bookingDetails], ["Hoofdtaal", output.website.primaryLanguage], ["Extra talen", output.website.additionalLanguages], ["Meertaligheidsdetails", output.website.multilingualDetails], ["Downloaddetails", output.website.downloadDetails], ["Nieuwsbriefdetails", output.website.newsletterDetails], ["SEO", output.website.seoPriority], ["SEO-details", output.website.seoDetails], ["Integraties", output.website.integrations], ["Sociale kanalen", output.website.socialChannels]]
         : index === 2
         ? [["Huisstijl", output.brandingContent.brandStatus], ["Logo", output.brandingContent.logoStatus], ["Kleuren", output.brandingContent.brandColors], ["Ontwerpstijl", output.brandingContent.designStyles], ["Inspiratie", output.brandingContent.inspirationSites], ["Wat niet aanspreekt", output.brandingContent.dislikedStyles], ["Content", output.brandingContent.contentStatus], ["Beelden", output.brandingContent.imageStatus], ["Beeldondersteuning", output.brandingContent.imageSupport], ["Content/media-details", output.brandingContent.contentMediaDetails]]
         : [["Domeinstatus", output.servicePlanning.domainStatus], ["Onderhoud", output.servicePlanning.maintenanceInterest], ["Hostingondersteuning", output.servicePlanning.hostingSupport], ["Servicekeuzes", output.servicePlanning.hostingMaintenanceDetails], ["Timing", output.servicePlanning.timing], ["Deadline", output.servicePlanning.deadline], ["Reden deadline", output.servicePlanning.deadlineReason], ["Deadlinedetails", output.servicePlanning.deadlineDetails], ["Prioriteiten", output.servicePlanning.priorities], ["Budgetnotities", output.servicePlanning.budgetNotes], ["Opmerkingen", output.servicePlanning.notes]];
