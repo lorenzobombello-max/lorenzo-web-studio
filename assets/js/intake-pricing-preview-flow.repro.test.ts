@@ -300,7 +300,7 @@ function setShop(frontend: FrontendHarness) {
   frontend.value("shop_product_count", "24");
   frontend.check("#shop_categories");
   frontend.check("#shop_payments");
-  frontend.check("#shop_shipping");
+  frontend.value("shop_shipping_scope", "standard");
 }
 
 function setBooking(frontend: FrontendHarness) {

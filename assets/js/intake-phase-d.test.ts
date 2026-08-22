@@ -217,8 +217,60 @@ Deno.test("online payment is independent, structured and backward compatible", (
   assertMatch(conditionals, /shop_payments[\s\S]*onlinePayment[\s\S]*products/);
 });
 
+Deno.test("targeted shop and booking details only expose relevant customer controls", () => {
+  const providerField = document.getElementById("shopPaymentProviderField");
+  const bookingSystemNameField = document.getElementById("bookingSystemNameField");
+  assert(providerField?.hasAttribute("hidden"));
+  assert(bookingSystemNameField?.hasAttribute("hidden"));
+  assert(document.getElementById("shop_shipping")?.hasAttribute("hidden"));
+  assertEquals(document.querySelectorAll('label[for="shop_shipping_scope"]').length, 1);
+  assertEquals(
+    [...document.querySelectorAll("#shop_shipping_scope option")].map((option) => option.getAttribute("value")),
+    ["none", "standard", "complex"],
+  );
+
+  const collect = sourceFunction("collectData");
+  const restore = sourceFunction("restoreData");
+  const conditionals = sourceFunction("updateConditionals");
+  assertMatch(collect, /onlinePayment[\s\S]*payment_provider_count/);
+  assertMatch(collect, /shippingScope !== "none"[\s\S]*shipping_scope/);
+  assertMatch(collect, /shipping: shippingScope !== "none"/);
+  assertMatch(restore, /restoredShippingScope\(data\.shop_details\)/);
+  assertMatch(conditionals, /shopPaymentProviderField[\s\S]*shop && onlinePayment/);
+  assertMatch(conditionals, /shop_shipping[\s\S]*shop_shipping_scope/);
+  assertMatch(conditionals, /bookingSystemNameField[\s\S]*existingBookingSystem/);
+  assertMatch(conditionals, /booking_system_name[\s\S]*value = ""/);
+});
+
+Deno.test("legacy shipping and booking drafts restore without duplicate requirements", () => {
+  const shippingRestore = sourceFunction("restoredShippingScope");
+  assertMatch(shippingRestore, /shipping === false[\s\S]*return "none"/);
+  assertMatch(shippingRestore, /"standard", "complex"/);
+  assertMatch(shippingRestore, /shipping === true[\s\S]*"standard"/);
+  const restore = sourceFunction("restoreData");
+  assertMatch(restore, /booking_existing[\s\S]*existing_system === true/);
+  assertMatch(restore, /booking_system_name[\s\S]*existing_system_name/);
+});
+
 Deno.test("admin output labels every structured online payment purpose", () => {
   for (const purpose of [
     "products", "reservations", "appointments", "services", "registrations", "deposit", "other",
   ]) assert(adminSource.includes(`online_payment_${purpose}:`));
+});
+
+Deno.test("admin output omits legacy payment duplication and shows stored scope details", () => {
+  assertEquals(adminSource.includes('["Online betalen", "online_payments"]'), false);
+  assertMatch(adminSource, /detailValueLabels[\s\S]*tier[\s\S]*shipping_scope[\s\S]*pickup_scope/);
+  for (const key of [
+    "approx_product_count", "complex_product_count", "payment_provider_count", "shipping_scope",
+    "pickup_scope", "customer_accounts", "existing_catalog", "catalog_import", "erp_api",
+    "tier", "type", "existing_system", "existing_system_name", "calendar_integration",
+  ]) assert(adminSource.includes(`"${key}"`), `admin output missing ${key}`);
+});
+
+Deno.test("intake navigation preserves five phases and twelve screens", () => {
+  const definitions = source.slice(source.indexOf("const screenDefinitions"), source.indexOf("const phaseStartScreens"));
+  assertEquals([...definitions.matchAll(/\{ phase: \d/g)].length, 12);
+  assertMatch(source, /const phaseStartScreens = \[0, 3, 5, 8, 10\]/);
+  assertMatch(source, /const phaseLabels = \[[^\]]*"Uw project"[^\]]*"Afronding"/);
 });

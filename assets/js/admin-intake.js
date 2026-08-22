@@ -56,6 +56,21 @@
     consultations: "Consultaties", classes: "Lessen"
   };
 
+  const detailValueLabels = {
+    tier: {
+      widget: "Bestaande reservatiedienst koppelen",
+      advanced: "Uitgebreide reservatiekoppeling",
+      custom: "Reservatiesysteem op maat"
+    },
+    shipping_scope: { standard: "Standaard verzending", complex: "Complexe verzendregels" },
+    pickup_scope: {
+      none: "Geen afhaling",
+      simple: "Eén vaste afhaallocatie",
+      scheduled: "Afhaling met planning of tijdsloten",
+      complex: "Complexe afhaallocaties of voorraadworkflow"
+    }
+  };
+
   function hideStates() {
     loading.hidden = true;
     unavailable.hidden = true;
@@ -169,7 +184,10 @@
 
   function addObjectDetails(list, object, fields) {
     if (!object || typeof object !== "object" || Array.isArray(object)) return;
-    fields.forEach(([label, key]) => addDetail(list, label, object[key]));
+    fields.forEach(([label, key]) => {
+      const value = object[key];
+      addDetail(list, label, detailValueLabels[key]?.[value] || value);
+    });
   }
 
   function createSection(title, details) {
@@ -288,14 +306,20 @@
       addDetail(list, "Andere pagina’s", data.other_pages);
       addDetail(list, "Functies", data.requested_features);
       addDetail(list, "Webshop", data.shop_required);
-      if (data.shop_required === true) addObjectDetails(list, data.shop_details, [
-        ["Aantal producten", "approx_product_count"], ["Categorieën", "categories"],
-        ["Online betalen", "online_payments"], ["Verzending", "shipping"],
-        ["Afhalen", "pickup"], ["Bestaande catalogus", "existing_catalog"]
-      ]);
+      if (data.shop_required === true) {
+        addObjectDetails(list, data.shop_details, [
+          ["Aantal producten", "approx_product_count"], ["Complexe producten of varianten", "complex_product_count"],
+          ["Aantal betaalproviders", "payment_provider_count"], ["Categorieën", "categories"],
+          ["Verzending", "shipping_scope"], ["Afhalen", "pickup_scope"],
+          ["Klantaccounts", "customer_accounts"], ["Bestaande catalogus", "existing_catalog"],
+          ["Catalogus importeren", "catalog_import"], ["Voorraad-, ERP- of API-koppeling", "erp_api"]
+        ]);
+        if (!hasValue(data.shop_details?.shipping_scope)) addDetail(list, "Verzending", data.shop_details?.shipping);
+        if (!hasValue(data.shop_details?.pickup_scope)) addDetail(list, "Afhalen", data.shop_details?.pickup);
+      }
       addDetail(list, "Reservaties of afspraken", data.booking_required);
       if (data.booking_required === true) addObjectDetails(list, data.booking_details, [
-        ["Type reservatie", "type"], ["Bestaand systeem", "existing_system"],
+        ["Reservatieoplossing", "tier"], ["Type reservatie", "type"], ["Bestaand systeem", "existing_system"],
         ["Naam bestaand systeem", "existing_system_name"], ["Kalenderkoppeling", "calendar_integration"]
       ]);
       addDetail(list, "Talen", data.languages);

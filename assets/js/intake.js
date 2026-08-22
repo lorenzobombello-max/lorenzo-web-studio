@@ -384,14 +384,16 @@
     }
     if (data.shop_required === true) {
       const pickupScope = document.getElementById("shop_pickup_scope").value;
+      const shippingScope = document.getElementById("shop_shipping_scope").value;
+      const onlinePayment = selectedBoolean("online_payment_required") === true;
       data.shop_details = {
         approx_product_count: Number(document.getElementById("shop_product_count").value),
         complex_product_count: Number(document.getElementById("shop_complex_product_count").value),
-        payment_provider_count: Number(document.getElementById("shop_payment_provider_count").value),
-        shipping_scope: document.getElementById("shop_shipping_scope").value,
+        ...(onlinePayment ? { payment_provider_count: Number(document.getElementById("shop_payment_provider_count").value) } : {}),
+        ...(shippingScope !== "none" ? { shipping_scope: shippingScope } : {}),
         categories: document.getElementById("shop_categories").checked,
         online_payments: document.getElementById("shop_payments").checked,
-        shipping: document.getElementById("shop_shipping").checked,
+        shipping: shippingScope !== "none",
         pickup: pickupScope !== "none",
         pickup_scope: pickupScope,
         existing_catalog: document.getElementById("shop_catalog").checked,
@@ -1167,7 +1169,7 @@
       document.getElementById("shop_product_count").value = data.shop_details.approx_product_count || 1;
       document.getElementById("shop_complex_product_count").value = data.shop_details.complex_product_count ?? 0;
       document.getElementById("shop_payment_provider_count").value = data.shop_details.payment_provider_count ?? 1;
-      document.getElementById("shop_shipping_scope").value = data.shop_details.shipping_scope || "standard";
+      document.getElementById("shop_shipping_scope").value = restoredShippingScope(data.shop_details);
       document.getElementById("shop_categories").checked = data.shop_details.categories === true;
       document.getElementById("shop_payments").checked = data.shop_details.online_payments === true;
       document.getElementById("shop_shipping").checked = data.shop_details.shipping === true;
@@ -1255,6 +1257,12 @@
     return shopDetails?.pickup === true ? "simple" : "none";
   }
 
+  function restoredShippingScope(shopDetails) {
+    if (shopDetails?.shipping === false) return "none";
+    if (["standard", "complex"].includes(shopDetails?.shipping_scope)) return shopDetails.shipping_scope;
+    return shopDetails?.shipping === true ? "standard" : "none";
+  }
+
   function synchronizePricingChoices(target) {
     const translationsSupplied = document.getElementById("translations_supplied");
     const translationRequired = document.getElementById("translation_required");
@@ -1294,7 +1302,13 @@
     const onlinePayment = selectedBoolean("online_payment_required") === true;
     document.getElementById("onlinePaymentFields").hidden = !onlinePayment;
     if (!onlinePayment) form.querySelectorAll('input[name="online_payment_purposes"]').forEach((input) => { input.checked = false; });
+    document.getElementById("shopPaymentProviderField").hidden = !(shop && onlinePayment);
+    if (!onlinePayment) document.getElementById("shop_payment_provider_count").value = 1;
     document.getElementById("shop_payments").checked = shop && onlinePayment && selectedValues("online_payment_purposes").includes("products");
+    document.getElementById("shop_shipping").checked = shop && document.getElementById("shop_shipping_scope").value !== "none";
+    const existingBookingSystem = booking && document.getElementById("booking_existing").checked;
+    document.getElementById("bookingSystemNameField").hidden = !existingBookingSystem;
+    if (!existingBookingSystem) document.getElementById("booking_system_name").value = "";
     const requestedPages = new Set(selectedValues("requested_pages"));
     const requestedFeatures = new Set(selectedValues("requested_features"));
     document.getElementById("pageScopeFields").hidden =
@@ -1715,7 +1729,7 @@
     if (event.target.name === "priorities") updatePriorities(event.target);
     if (
       ["has_existing_website", "shop_required", "booking_required", "online_payment_required", "online_payment_purposes", "requested_pages", "requested_features", "website_goals", "primary_language"].includes(event.target.name) ||
-      event.target.matches("[data-additional-language], #deadline_date, #deadline_reason")
+      event.target.matches("[data-additional-language], #booking_existing, #shop_shipping_scope, #deadline_date, #deadline_reason")
     ) updateConditionals();
     if (isPricingControl(event.target)) schedulePricingPreview();
     if (currentStep === steps.length - 1) renderReviewSummary();
