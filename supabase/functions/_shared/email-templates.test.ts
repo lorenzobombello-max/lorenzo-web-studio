@@ -150,7 +150,7 @@ Deno.test("submitted intake email uses application reference and authoritative c
   }
   assertStringIncludes(result.text, "Aanvraagnummer: LWS-AAN-2026-0042");
   for (const expected of [
-    "Contactformulier", "Online betaling", "Producten / webshop", "Reservaties", "Afspraken", "Diensten",
+    "Contactformulier", "Online betaling", "Producten", "Reservaties", "Afspraken", "Diensten",
     "Inschrijvingen / activiteiten", "Voorschot / reservatiebedrag", "Andere online betaling",
   ]) {
     assertStringIncludes(result.text, expected);

@@ -502,7 +502,7 @@ const INTAKE_FEATURE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   reservations: "Reservaties",
   shop: "Webshop",
   online_payment: "Online betaling",
-  online_payment_products: "Producten / webshop",
+  online_payment_products: "Producten",
   online_payment_reservations: "Reservaties",
   online_payment_appointments: "Afspraken",
   online_payment_services: "Diensten",
