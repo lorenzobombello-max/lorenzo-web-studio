@@ -78,7 +78,8 @@
 .budget-guard__status { margin: 0.8rem 0; font-weight: 700; }
 .budget-guard__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 0; border-block: 1px solid var(--color-border); background: var(--color-border); }
 .budget-guard__summary div { min-width: 0; padding: 0.7rem 0.8rem; background: var(--color-surface); }
-.budget-guard__summary div:only-child, .budget-guard__summary div:first-child:nth-last-child(2):has(+ [hidden]) { grid-column: 1 / -1; }
+.budget-guard__summary div[hidden] { display: none; }
+.budget-guard--unavailable .budget-guard__summary div:first-child { grid-column: 1 / -1; }
 .budget-guard__summary dt { color: var(--color-text-soft); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
 .budget-guard__summary dd { margin: 0.15rem 0 0; overflow-wrap: anywhere; font-weight: 800; }
 .budget-guard__package { display: grid; gap: 0.12rem; }

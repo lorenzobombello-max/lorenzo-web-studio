@@ -287,8 +287,26 @@ Deno.test("exact Professional above-budget response renders instead of unavailab
   assertEquals(ui.packageRounds.textContent, "2 correctierondes");
   assertEquals(ui.minimum.textContent.replaceAll(/\s/g, ""), "€3.500excl.btw");
   assertEquals(ui.minimumRow.hidden, false);
+  assertNotEquals(ui.state.textContent, "Niet beschikbaar");
   assertEquals(ui.warning.hidden, false);
   assertEquals(ui.preview.classList.contains("budget-guard--warning"), true);
+});
+
+Deno.test("Starter and Professional package floors remain unchanged", () => {
+  const starterPreview = structuredClone(preview);
+  starterPreview.selectedPackage.selectedPackageDefinitionId = "starter_v1";
+  starterPreview.selectedPackage.label = "Starter";
+  starterPreview.selectedPackage.floorMinor = 180_000;
+  starterPreview.selectedPackage.standardPageLimit = 5;
+  starterPreview.selectedPackage.includedCorrectionRounds = 1;
+  starterPreview.summary.knownMinimumMinor = 180_000;
+  const starterUi = render(starterPreview);
+  const professionalUi = render(preview);
+
+  assertEquals(starterUi.packageName.textContent, "Starter");
+  assertEquals(starterUi.minimum.textContent.replaceAll(/\s/g, ""), "€1.800excl.btw");
+  assertEquals(professionalUi.packageName.textContent, "Professional");
+  assertEquals(professionalUi.minimum.textContent.replaceAll(/\s/g, ""), "€3.500excl.btw");
 });
 
 Deno.test("combined manual review and package-floor mismatch renders both warnings", () => {
@@ -652,8 +670,13 @@ Deno.test("unknown and manual-only rendering do not invent a budget warning", ()
 });
 
 Deno.test("unavailable rendering remains distinct from mismatch", () => {
-  assertStringIncludes(sourceFunction("showPreviewUnavailable"), 'budgetGuardState.textContent = "Niet beschikbaar"');
-  assertStringIncludes(sourceFunction("showPreviewUnavailable"), "budget-guard--unavailable");
+  const unavailable = sourceFunction("showPreviewUnavailable");
+  assertStringIncludes(unavailable, 'budgetGuardState.textContent = "Niet beschikbaar"');
+  assertStringIncludes(unavailable, "budget-guard--unavailable");
+  assertStringIncludes(unavailable, "clearPricingPresentation()");
+  assertStringIncludes(unavailable, "budgetGuardBudget.textContent = selectedBudgetLabel(null)");
+  assertStringIncludes(css, '.budget-guard__summary div[hidden] { display: none; }');
+  assertStringIncludes(css, '.budget-guard--unavailable .budget-guard__summary div:first-child { grid-column: 1 / -1; }');
 });
 
 Deno.test("preview request explicitly negotiates the current contract", () => {
