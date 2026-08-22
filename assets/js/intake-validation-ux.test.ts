@@ -183,6 +183,6 @@ Deno.test("validation failure does not mutate answers or protected Budget Guard 
 Deno.test("ordinary form errors stop submission before the modal and Budget Guard gate", () => {
   const validator = sourceFunction("validateSubmit");
   assertStringIncludes(validator, "return false");
-  assertStringIncludes(source, 'if (validateSubmit()) openModal()');
+  assertStringIncludes(source, 'if (validateSubmit()) openModal(submitModal)');
   assertStringIncludes(source, 'if (isPricingControl(event.target)) schedulePricingPreview()');
 });

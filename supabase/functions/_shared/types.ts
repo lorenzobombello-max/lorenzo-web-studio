@@ -10,6 +10,7 @@ export type IntakeAction =
   | "create"
   | "inspect"
   | "save_draft"
+  | "reset_draft"
   | "submit"
   | "preview_budget_guard"
   | "inspect_submitted_intake_admin"

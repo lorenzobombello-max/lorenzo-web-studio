@@ -99,6 +99,7 @@ function validateAction(value: unknown): IntakeAction {
     value === "create" ||
     value === "inspect" ||
     value === "save_draft" ||
+    value === "reset_draft" ||
     value === "submit" ||
     value === "preview_budget_guard" ||
     value === "inspect_submitted_intake_admin" ||
@@ -118,6 +119,13 @@ function isEmailJobStatus(value: unknown): value is EmailJobStatus {
 
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function validateExpectedRevision(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new IntakeRequestError(400, "INVALID_EXPECTED_REVISION");
+  }
+  return value as number;
 }
 
 function invalidIntakeToken(origin: string | null): Response {
@@ -570,7 +578,7 @@ Deno.serve(async (request) => {
 
   const intakeTokenHash = await hashIntakeToken(intakeToken);
   if (action === "inspect") {
-    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v4", {
+    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v5", {
       p_access_token_hash: intakeTokenHash,
     });
     const result = Array.isArray(data) ? data[0] : null;
@@ -602,6 +610,7 @@ Deno.serve(async (request) => {
       intake: {
         id: result.intake_id,
         status: result.intake_status,
+        revision: result.draft_revision,
         started_at: result.started_at,
         submitted_at: result.submitted_at,
         reviewed_at: result.reviewed_at,
@@ -620,6 +629,68 @@ Deno.serve(async (request) => {
       data: result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
         ? result.intake_data
         : {},
+    }, origin);
+  }
+
+  if (action === "reset_draft") {
+    let expectedRevision: number;
+    try {
+      expectedRevision = validateExpectedRevision(body.expected_revision);
+    } catch (error) {
+      if (error instanceof IntakeRequestError) {
+        return jsonResponse(error.status, {
+          ok: false,
+          code: error.code,
+          message: "Invalid request.",
+        }, origin);
+      }
+      throw error;
+    }
+
+    const { data, error } = await supabase.rpc("reset_quote_request_intake_draft_v1", {
+      p_access_token_hash: intakeTokenHash,
+      p_expected_revision: expectedRevision,
+    });
+    const result = Array.isArray(data) ? data[0] : null;
+
+    if (error || !result) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INTAKE_RESET_FAILED",
+        message: "Intake could not be reset.",
+      }, origin);
+    }
+    if (result.outcome === "invalid_token") return invalidIntakeToken(origin);
+    if (result.outcome === "not_editable") {
+      return jsonResponse(409, {
+        ok: false,
+        code: "INTAKE_NOT_EDITABLE",
+        message: "Intake can no longer be changed.",
+      }, origin);
+    }
+    if (result.outcome === "stale_revision") {
+      return jsonResponse(409, {
+        ok: false,
+        code: "INTAKE_REVISION_CONFLICT",
+        message: "Intake was changed in another window.",
+      }, origin);
+    }
+    if (result.outcome !== "reset" || !isIntakeStatus(result.intake_status)) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "INVALID_INTAKE_STATE",
+        message: "Intake could not be reset.",
+      }, origin);
+    }
+
+    return jsonResponse(200, {
+      ok: true,
+      state: "reset",
+      intake: {
+        status: result.intake_status,
+        revision: result.draft_revision,
+        updated_at: result.updated_at,
+      },
     }, origin);
   }
 
@@ -643,7 +714,6 @@ Deno.serve(async (request) => {
   }
 
   const { legacyData, evidenceData } = partitionIntakeData(intakeData);
-  const hasEvidence = Object.keys(evidenceData).length > 0;
   let mutationRpc: string;
   let mutationParameters: Record<string, unknown>;
   let rawAdminCapability: string | null = null;
@@ -708,19 +778,26 @@ Deno.serve(async (request) => {
       }, origin);
     }
   } else {
-    mutationParameters = hasEvidence ? {
+    let expectedRevision: number;
+    try {
+      expectedRevision = validateExpectedRevision(body.expected_revision);
+    } catch (error) {
+      if (error instanceof IntakeRequestError) {
+        return jsonResponse(error.status, {
+          ok: false,
+          code: error.code,
+          message: "Invalid request.",
+        }, origin);
+      }
+      throw error;
+    }
+    mutationParameters = {
       p_access_token_hash: intakeTokenHash,
-      p_action: action,
+      p_expected_revision: expectedRevision,
       p_legacy_data: legacyData,
       p_evidence_data: evidenceData,
-    } : {
-      p_access_token_hash: intakeTokenHash,
-      p_action: action,
-      p_data: intakeData,
     };
-    mutationRpc = hasEvidence
-      ? "update_quote_request_intake_with_evidence"
-      : "update_quote_request_intake";
+    mutationRpc = "save_quote_request_intake_draft_v2";
   }
 
   const { data, error } = await supabase.rpc(mutationRpc, mutationParameters);
@@ -740,6 +817,13 @@ Deno.serve(async (request) => {
       ok: false,
       code: "INTAKE_NOT_EDITABLE",
       message: "Intake can no longer be changed.",
+    }, origin);
+  }
+  if (result.outcome === "stale_revision") {
+    return jsonResponse(409, {
+      ok: false,
+      code: "INTAKE_REVISION_CONFLICT",
+      message: "Intake was changed in another window.",
     }, origin);
   }
   if (!isIntakeStatus(result.intake_status)) {
@@ -794,6 +878,7 @@ Deno.serve(async (request) => {
       state: "saved",
       intake: {
         status: result.intake_status,
+        revision: result.draft_revision,
         updated_at: result.updated_at,
       },
     }, origin);

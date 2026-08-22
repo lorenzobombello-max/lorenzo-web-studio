@@ -120,9 +120,11 @@
   const submitButton = document.getElementById("submitIntake");
   const nextButton = document.getElementById("nextStep");
   const previousButton = document.getElementById("previousStep");
-  const modal = document.getElementById("submitModal");
-  const modalPanel = modal?.querySelector(".intake-modal__panel");
+  const submitModal = document.getElementById("submitModal");
+  const resetModal = document.getElementById("resetModal");
+  const resetButton = document.getElementById("resetDraft");
   const confirmSubmit = document.getElementById("confirmSubmit");
+  const confirmReset = document.getElementById("confirmReset");
   let steps = [];
   const phaseButtons = Array.from(document.querySelectorAll("[data-phase-target]"));
   const stepCounter = document.getElementById("stepCounter");
@@ -150,7 +152,9 @@
   let dirty = false;
   let busy = false;
   let readOnly = false;
+  let activeModal = null;
   let modalReturnFocus = null;
+  let draftRevision = null;
   let restoredLegacyBudget = null;
   let restoredBudgetEvidence = null;
   let budgetChoiceChanged = false;
@@ -302,7 +306,7 @@
 
   function setBusy(value, label) {
     busy = value;
-    [saveButton, submitButton, nextButton, previousButton, confirmSubmit].forEach((button) => {
+    [saveButton, submitButton, nextButton, previousButton, resetButton, confirmSubmit, confirmReset].forEach((button) => {
       if (button) button.disabled = value || readOnly;
     });
     if (label) setMessage(label, null);
@@ -1221,7 +1225,9 @@
     if (restoredScheme === "budget_guard_v1" && restoredBudgetLabel) {
       const budgetSelect = document.getElementById("budget_update_category");
       if (![...budgetSelect.options].some((option) => option.value === restoredBudgetLabel)) {
-        budgetSelect.add(new Option(`${restoredBudgetLabel} (historisch)`, restoredBudgetLabel));
+        const historicalOption = new Option(`${restoredBudgetLabel} (historisch)`, restoredBudgetLabel);
+        historicalOption.dataset.restoredHistorical = "true";
+        budgetSelect.add(historicalOption);
       }
     }
     budgetChoiceChanged = false;
@@ -1658,10 +1664,16 @@
   }
 
   async function request(action, data) {
+    const requiresRevision = action === "save_draft" || action === "reset_draft";
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, token, ...(data ? { data } : {}) }),
+      body: JSON.stringify({
+        action,
+        token,
+        ...(requiresRevision ? { expected_revision: draftRevision } : {}),
+        ...(data ? { data } : {}),
+      }),
     });
     let body = {};
     try { body = await response.json(); } catch { body = {}; }
@@ -1671,6 +1683,7 @@
   function apiErrorPresentation(status, code) {
     if (status === 400) return { kind: "validation", message: "Controleer de gemarkeerde velden." };
     if (status === 401) return { kind: "unavailable", message: "Deze intake-link is ongeldig of niet meer geldig." };
+    if (status === 409 && code === "INTAKE_REVISION_CONFLICT") return { kind: "conflict", message: "Deze intake werd ondertussen in een ander venster gewijzigd. Herlaad de pagina om de meest recente versie te gebruiken." };
     if (status === 409) return { kind: code === "INTAKE_ALREADY_SUBMITTED" ? "submitted" : "reviewed", message: "" };
     if (status === 429 || status >= 500) {
       return { kind: "temporary", message: "Verzenden lukt tijdelijk niet. Je antwoorden blijven staan. Probeer later opnieuw." };
@@ -1688,6 +1701,7 @@
       }
       setMessage(presentation.message, "error");
     } else if (presentation.kind === "unavailable") showUnavailable(presentation.message);
+    else if (presentation.kind === "conflict") setMessage(presentation.message, "error");
     else if (["submitted", "reviewed"].includes(presentation.kind)) setReadOnly(presentation.kind);
     else setMessage(presentation.message, "error");
   }
@@ -1702,6 +1716,7 @@
     try {
       const { response, body } = await request("save_draft", collectData());
       if (!response.ok) return handleApiError(response, body);
+      draftRevision = body.intake.revision;
       dirty = false;
       contextStatus.textContent = "In uitvoering";
       setMessage("Concept opgeslagen.", "success");
@@ -1710,22 +1725,26 @@
     finally { setBusy(false); }
   }
 
-  function openModal() {
+  function openModal(modal) {
+    if (!modal) return;
     modalReturnFocus = document.activeElement;
+    activeModal = modal;
     modal.hidden = false;
     document.body.classList.add("modal-open");
-    modalPanel.focus();
+    modal.querySelector(".intake-modal__panel")?.focus();
   }
 
-  function closeModal() {
+  function closeModal(modal = activeModal) {
+    if (!modal) return;
     modal.hidden = true;
     document.body.classList.remove("modal-open");
+    activeModal = null;
     modalReturnFocus?.focus?.();
   }
 
   async function submitFinal() {
     if (busy || readOnly) return;
-    closeModal();
+    closeModal(submitModal);
     if (!validateBudgetGuardAcknowledgement()) return;
     setBusy(true, "Intake wordt verzonden...");
     try {
@@ -1735,6 +1754,46 @@
         dirty = false;
         setReadOnly("submitted", body.application);
       }
+    } catch { handleNetworkError(); }
+    finally { setBusy(false); }
+  }
+
+  function restoreInitialFormState(status) {
+    stopPricingPreview();
+    form.reset();
+    document.querySelectorAll('#budget_update_category option[data-restored-historical="true"]').forEach((option) => option.remove());
+    clearLocalFileSelection("logoFilePreview", "logoFileSummary", "logoFileError");
+    clearLocalFileSelection("imageFilePreview", "imageFileSummary", "imageFileError");
+    clearErrors();
+    restoredLegacyBudget = null;
+    restoredBudgetEvidence = null;
+    budgetChoiceChanged = false;
+    acknowledgedBudgetGuardKey = "";
+    pricingEvidenceFingerprint = "";
+    scopeRevision += 1;
+    furthestStep = 0;
+    dirty = false;
+    lastSaved.textContent = "";
+    contextStatus.textContent = status === "invited" ? "Nog niet gestart" : "In uitvoering";
+    clearPricingPresentation();
+    updateConditionals();
+    updatePriorities();
+    renderReviewSummary();
+    showStep(0, true);
+    previewStopped = false;
+    schedulePricingPreview({ force: true, immediate: true });
+  }
+
+  async function resetDraft() {
+    if (busy || readOnly) return;
+    closeModal(resetModal);
+    setBusy(true, "Concept wordt gewist...");
+    try {
+      const { response, body } = await request("reset_draft");
+      if (!response.ok) return handleApiError(response, body);
+      draftRevision = body.intake.revision;
+      restoreInitialFormState(body.intake.status);
+      setMessage("Je kunt opnieuw beginnen.", "success");
     } catch { handleNetworkError(); }
     finally { setBusy(false); }
   }
@@ -1809,6 +1868,10 @@
       const { response, body } = await request("inspect");
       if (!response.ok) return handleApiError(response, body);
       restoreData(body.data);
+      if (!Number.isSafeInteger(body.intake?.revision) || body.intake.revision < 0) {
+        return showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw.");
+      }
+      draftRevision = body.intake.revision;
       document.getElementById("contextName").textContent = body.request?.company || body.request?.name || "Websiteproject";
       document.getElementById("contextType").textContent = body.request?.website_type || "Website";
       const status = body.intake?.status;
@@ -1844,8 +1907,9 @@
   form.addEventListener("input", handleValidationInput);
   bindLocalFilePreview("logoFilePreview", "logoFileSummary", "logoFileError", 1, 5 * 1024 * 1024);
   bindLocalFilePreview("imageFilePreview", "imageFileSummary", "imageFileError", 10, 10 * 1024 * 1024);
-  form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(); });
+  form.addEventListener("submit", (event) => { event.preventDefault(); if (validateSubmit()) openModal(submitModal); });
   saveButton.addEventListener("click", saveDraft);
+  resetButton?.addEventListener("click", () => openModal(resetModal));
   nextButton.addEventListener("click", () => {
     const targetStep = currentStep + 1;
     if (!validateNavigationTo(targetStep)) return;
@@ -1857,8 +1921,9 @@
     if (!validateNavigationTo(targetStep)) return;
     showStep(targetStep, true);
   }));
-  modal?.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", closeModal));
+  document.querySelectorAll(".intake-modal [data-close-modal]").forEach((button) => button.addEventListener("click", () => closeModal(button.closest(".intake-modal"))));
   confirmSubmit?.addEventListener("click", submitFinal);
+  confirmReset?.addEventListener("click", resetDraft);
   document.getElementById("adjustBudget").addEventListener("click", () => {
     showStep(0);
     document.getElementById("budget_update_category")?.focus?.();
@@ -1878,9 +1943,10 @@
     setMessage("Je aanvraag wordt ondanks de budgetafwijking persoonlijk beoordeeld.", "success");
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !modal.hidden) closeModal();
-    if (event.key === "Tab" && !modal.hidden) {
-      const focusable = Array.from(modal.querySelectorAll("button:not([disabled])"));
+    if (event.key === "Escape" && activeModal) closeModal();
+    if (event.key === "Tab" && activeModal) {
+      const modalPanel = activeModal.querySelector(".intake-modal__panel");
+      const focusable = Array.from(activeModal.querySelectorAll("button:not([disabled])"));
       const first = focusable[0]; const last = focusable[focusable.length - 1];
       if (event.shiftKey && (document.activeElement === modalPanel || document.activeElement === first)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }

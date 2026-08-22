@@ -336,6 +336,7 @@
             </div>
             <p class="intake-message" id="intakeMessage" aria-live="polite"></p>
             <p class="intake-saved" id="lastSaved"></p>
+            <div class="intake-reset-action"><button class="intake-reset-action__button" id="resetDraft" type="button">Opnieuw beginnen</button></div>
           </form>
         </div>
       </div>
@@ -350,6 +351,17 @@
       <h2 id="submitModalTitle">Ben je klaar om je intake te verzenden?</h2>
       <p id="submitModalDescription">Na verzending kan je de informatie niet meer wijzigen.</p>
       <div class="intake-modal__actions"><button class="btn btn--ghost" type="button" data-close-modal>Terug</button><button class="btn btn--primary" id="confirmSubmit" type="button">Ja, verzenden</button></div>
+    </div>
+  </div>
+
+  <div id="resetModal" class="intake-modal" role="dialog" aria-modal="true" aria-labelledby="resetModalTitle" aria-describedby="resetModalDescription" hidden>
+    <div class="intake-modal__overlay" data-close-modal></div>
+    <div class="intake-modal__panel" tabindex="-1">
+      <button class="intake-modal__close" type="button" data-close-modal aria-label="Sluit bevestiging">&times;</button>
+      <p class="eyebrow">Concept wissen</p>
+      <h2 id="resetModalTitle">Opnieuw beginnen?</h2>
+      <p id="resetModalDescription">Alle ingevulde gegevens van deze intake worden gewist. Deze actie kan niet ongedaan worden gemaakt.</p>
+      <div class="intake-modal__actions"><button class="btn btn--ghost" type="button" data-close-modal>Annuleren</button><button class="btn btn--ghost intake-modal__destructive" id="confirmReset" type="button">Ja, opnieuw beginnen</button></div>
     </div>
   </div>
 

@@ -668,11 +668,11 @@ Deno.test("final modal submit cannot bypass the pending-preview gate", async () 
   let requestCalls = 0;
   let closeCalls = 0;
   const submitFinal = Function(
-    "busy", "readOnly", "closeModal", "validateBudgetGuardAcknowledgement", "setBusy", "request", "collectData",
+    "busy", "readOnly", "closeModal", "submitModal", "validateBudgetGuardAcknowledgement", "setBusy", "request", "collectData",
     "handleApiError", "setReadOnly", "setMessage", "dirty",
     `"use strict"; return (${sourceFunction("submitFinal")});`,
   )(
-    false, false, () => { closeCalls += 1; }, () => false, () => {},
+    false, false, () => { closeCalls += 1; }, null, () => false, () => {},
     async () => { requestCalls += 1; return { response: { ok: true }, body: { state: "submitted" } }; },
     () => ({}), () => {}, () => {}, () => {}, false,
   ) as () => Promise<void>;
