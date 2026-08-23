@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applicationsForSearch, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, createApplicationSearchHandler, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, loadAllOperatorApplications, nextWorkflowStage, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applicationsForSearch, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, createApplicationSearchHandler, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, loadAllOperatorApplications, nextWorkflowStage, normalizeSupportReference, projectSitePresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -75,6 +75,24 @@ test("production dashboard uses real application data and no synthetic state", a
 test("application reference query is the only accepted human locator", () => {
   assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=LWS-AAN-2099-0001"), "LWS-AAN-2099-0001");
   assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=bad"), null);
+});
+
+test("support references normalize safely and route separately from application references", () => {
+  assert.equal(normalizeSupportReference(" f98b2f08 "), "#F98B2F08");
+  assert.equal(normalizeSupportReference("#f98b2f08"), "#F98B2F08");
+  assert.equal(normalizeSupportReference("F98B2F0"), null);
+  assert.deepEqual(applicationLocatorFromUrl("https://example.test/operator/dashboard/?support=f98b2f08"), { support_reference: "#F98B2F08" });
+});
+
+test("search preserves internal references and matches support references exactly", () => {
+  const applications = [
+    { application_reference: "LWS-AAN-2099-0001", support_reference: "#F98B2F08" },
+    { application_reference: "LWS-AAN-2099-0002", support_reference: "#A1100000" },
+  ];
+  assert.deepEqual(applicationsForSearch(applications, "LWS-AAN-2099-0001"), [applications[0]]);
+  assert.deepEqual(applicationsForSearch(applications, "f98b2f08"), [applications[0]]);
+  assert.deepEqual(applicationsForSearch(applications, "#F98B2F08"), [applications[0]]);
+  assert.deepEqual(applicationsForSearch(applications, "#F98B2F09"), []);
 });
 
 test("application identity presents the human reference and routes with the existing reference contract", () => {
@@ -772,4 +790,17 @@ test("search UI is reference-only and no-result state is announced without movin
   assert.match(html, /id="applicationSearch"[^>]+placeholder="Zoek op aanvraagnummer"/);
   assert.doesNotMatch(html, /Zoek op (UUID|factuurnummer)/i);
   assert.match(html, /id="applicationEmpty"[^>]+role="status"[^>]+aria-live="polite"[^>]+aria-atomic="true"[^>]+hidden/);
+});
+
+test("project site presentation accepts only the exact project-bound HTTPS origin", () => {
+  const projectId = "a1800000-0000-4000-8000-000000000001";
+  assert.deepEqual(projectSitePresentation(projectId, {
+    project_id: projectId,
+    canonical_domain: "project.example",
+    canonical_url: "https://project.example"
+  }), { domain: "project.example", canonicalUrl: "https://project.example" });
+  assert.equal(projectSitePresentation(projectId, { project_id: "a1800000-0000-4000-8000-000000000002", canonical_domain: "project.example", canonical_url: "https://project.example" }), null);
+  assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "http://project.example" }), null);
+  assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "https://project.example/path" }), null);
+  assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "https://attacker.example" }), null);
 });

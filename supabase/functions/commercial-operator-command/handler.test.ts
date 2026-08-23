@@ -89,9 +89,25 @@ Deno.test("application detail requires exactly one valid locator", async ()=>{
   const harness = dependencies();
   const response = await handleCommercialOperator(request({ action: "get_application_detail", application_reference: "LWS-AAN-2099-0001" }), harness.deps);
   assertEquals(response.status, 200);
-  assertEquals(harness.calls[0].input, { action: "get_application_detail", quote_request_id: null, application_reference: "LWS-AAN-2099-0001" });
+  assertEquals(harness.calls[0].input, { action: "get_application_detail", quote_request_id: null, application_reference: "LWS-AAN-2099-0001", support_reference: null });
   const ambiguous = await handleCommercialOperator(request({ action: "get_application_detail", quote_request_id: userId, application_reference: "LWS-AAN-2099-0001" }), harness.deps);
   assertEquals(ambiguous.status, 400);
+});
+
+Deno.test("application detail normalizes one support-reference locator", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({ action: "get_application_detail", support_reference: " f98b2f08 " }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls[0].input, { action: "get_application_detail", quote_request_id: null, application_reference: null, support_reference: "#F98B2F08" });
+
+  for (const body of [
+    { action: "get_application_detail", support_reference: "#F98B2F0" },
+    { action: "get_application_detail", support_reference: "#F98B2F08", quote_request_id: userId },
+    { action: "promote_accepted_application", support_reference: "#F98B2F08", idempotency_key: "a1800000-0000-4000-8000-000000000001" }
+  ]) {
+    assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 400);
+  }
+  assertEquals(harness.calls.length, 1);
 });
 
 Deno.test("project dossier accepts only one server-authorized project UUID", async ()=>{
@@ -102,6 +118,54 @@ Deno.test("project dossier accepts only one server-authorized project UUID", asy
   const invalid = await handleCommercialOperator(request({ action: "get_project_dossier", project_id: "not-a-project" }), harness.deps);
   assertEquals(invalid.status, 400);
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("project site actions use a fixed validated command shape", async ()=>{
+  for (const [action, operation, expectedRevision] of [
+    ["bind_project_site", "INITIAL_BIND", 0],
+    ["rotate_project_site", "ROTATION", 1]
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action,
+      project_id: userId,
+      expected_revision: expectedRevision,
+      idempotency_key: "a1800000-0000-4000-8000-000000000009",
+      canonical_domain: "project.example",
+      evidence: "Approved operator site command"
+    }), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls[0].input, {
+      action,
+      project_id: userId,
+      operation,
+      expected_revision: expectedRevision,
+      idempotency_key: "a1800000-0000-4000-8000-000000000009",
+      canonical_domain: "project.example",
+      evidence: "Approved operator site command"
+    });
+  }
+
+  for (const invalid of [
+    { canonical_domain: "https://project.example" },
+    { canonical_domain: "Project.example" },
+    { canonical_domain: "project.example/path" },
+    { evidence: "" },
+    { expected_revision: -1 }
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "rotate_project_site",
+      project_id: userId,
+      expected_revision: 1,
+      idempotency_key: "a1800000-0000-4000-8000-000000000009",
+      canonical_domain: "project.example",
+      evidence: "Approved operator site command",
+      ...invalid
+    }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
 });
 
 Deno.test("promotion requires server-shaped locator and idempotency UUID", async ()=>{

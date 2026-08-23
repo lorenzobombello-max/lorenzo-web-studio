@@ -30,7 +30,9 @@ const APPLICATION_ACTIONS = new Set([
   "interrupt_intake",
   "resume_intake",
   "cancel_intake",
-  "reactivate_intake"
+  "reactivate_intake",
+  "bind_project_site",
+  "rotate_project_site"
 ]);
 const INTAKE_LIFECYCLE_ACTIONS = new Map([
   ["interrupt_intake", "INTERRUPTED"],
@@ -38,7 +40,13 @@ const INTAKE_LIFECYCLE_ACTIONS = new Map([
   ["cancel_intake", "CANCELLED"],
   ["reactivate_intake", "REACTIVATED"]
 ]);
+const PROJECT_SITE_ACTIONS = new Map([
+  ["bind_project_site", "INITIAL_BIND"],
+  ["rotate_project_site", "ROTATION"]
+]);
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
+const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
+const CANONICAL_DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const FORBIDDEN_IDENTITY_FIELDS = new Set([
   "p_actor",
   "actor",
@@ -121,7 +129,9 @@ function validateApplicationAction(value) {
     : action === "get_project_dossier"
     ? new Set(["action", "project_id"])
     : action === "get_application_detail"
-    ? new Set(["action", "quote_request_id", "application_reference"])
+    ? new Set(["action", "quote_request_id", "application_reference", "support_reference"])
+    : PROJECT_SITE_ACTIONS.has(action)
+    ? new Set(["action", "project_id", "expected_revision", "idempotency_key", "canonical_domain", "evidence"])
     : INTAKE_LIFECYCLE_ACTIONS.has(action)
     ? new Set(["action", "intake_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
@@ -158,6 +168,28 @@ function validateApplicationAction(value) {
     if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, project_id: projectId };
   }
+  if (PROJECT_SITE_ACTIONS.has(action)) {
+    const projectId = String(value.project_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    const canonicalDomain = typeof value.canonical_domain === "string" ? value.canonical_domain.trim() : "";
+    const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
+    if (!UUID.test(projectId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0
+      || !CANONICAL_DOMAIN.test(canonicalDomain) || canonicalDomain !== canonicalDomain.toLowerCase()
+      || evidence.length < 1 || evidence.length > 500) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      project_id: projectId,
+      operation: PROJECT_SITE_ACTIONS.get(action),
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+      canonical_domain: canonicalDomain,
+      evidence
+    };
+  }
   if (INTAKE_LIFECYCLE_ACTIONS.has(action)) {
     const intakeId = String(value.intake_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
@@ -179,14 +211,21 @@ function validateApplicationAction(value) {
   }
   const quoteRequestId = value.quote_request_id == null ? null : String(value.quote_request_id);
   const applicationReference = value.application_reference == null ? null : String(value.application_reference);
-  if ((quoteRequestId === null) === (applicationReference === null)) throw new RequestError(400, "INVALID_REQUEST");
+  const rawSupportReference = value.support_reference == null ? null : String(value.support_reference).trim().toUpperCase();
+  const supportReference = rawSupportReference === null
+    ? null
+    : `#${rawSupportReference.replace(/^#/, "")}`;
+  const locatorCount = [quoteRequestId, applicationReference, supportReference].filter((locator)=>locator !== null).length;
+  if (locatorCount !== 1 || (supportReference !== null && action !== "get_application_detail")) throw new RequestError(400, "INVALID_REQUEST");
   if (quoteRequestId !== null && !UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
   if (applicationReference !== null && !APPLICATION_REFERENCE.test(applicationReference)) throw new RequestError(400, "INVALID_REQUEST");
+  if (rawSupportReference !== null && !SUPPORT_REFERENCE.test(rawSupportReference)) throw new RequestError(400, "INVALID_REQUEST");
   if (action === "promote_accepted_application" && !UUID.test(String(value.idempotency_key || ""))) throw new RequestError(400, "INVALID_REQUEST");
   return {
     action,
     quote_request_id: quoteRequestId,
     application_reference: applicationReference,
+    ...(action === "get_application_detail" ? { support_reference: supportReference } : {}),
     ...(action === "promote_accepted_application" ? { idempotency_key: String(value.idempotency_key) } : {})
   };
 }
@@ -199,6 +238,7 @@ function mapDatabaseError(error) {
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
     "APPLICATION_SCOPE_DENIED"
+    ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if ([
@@ -208,13 +248,17 @@ function mapDatabaseError(error) {
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
   if (code === "INTERNAL_E2E_RUN_NOT_FOUND") return response(404, code);
   if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
+  if (["PROJECT_SITE_ALREADY_BOUND", "PROJECT_SITE_NOT_BOUND"].includes(code)) return response(409, "COMMAND_REJECTED");
   if (["INTERNAL_E2E_RUN_FINALIZED", "INTERNAL_E2E_PROMOTION_DENIED", "INTERNAL_E2E_QUOTATION_DENIED"].includes(code)) return response(409, code);
   if ([
     "INVALID_APPLICATION_REFERENCE",
+    "INVALID_SUPPORT_REFERENCE",
+    "INVALID_PROJECT_SITE_COMMAND",
     "EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED",
     "INVALID_PAGINATION",
     "IDEMPOTENCY_KEY_REQUIRED",

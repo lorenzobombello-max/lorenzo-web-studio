@@ -1,6 +1,7 @@
 import { callCommercialOperator } from "./operator-auth-core.mjs";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
+const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_KINDS = new Set(["website", "slimme_documentenflow"]);
 const PRODUCT_FILTERS = new Set(["all", ...REQUEST_KINDS]);
@@ -40,6 +41,26 @@ export function applicationReferenceFromUrl(url) {
   return value && APPLICATION_REFERENCE.test(value) ? value : null;
 }
 
+export function normalizeSupportReference(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  return SUPPORT_REFERENCE.test(normalized) ? `#${normalized.replace(/^#/, "")}` : null;
+}
+
+export function projectSitePresentation(projectId, site) {
+  if (!UUID.test(String(projectId || "")) || site?.project_id !== projectId) return null;
+  const domain = String(site.canonical_domain || "");
+  const canonicalUrl = String(site.canonical_url || "");
+  if (!domain || domain !== domain.toLowerCase()) return null;
+  try {
+    const parsed = new URL(canonicalUrl);
+    if (parsed.protocol !== "https:" || parsed.hostname !== domain || parsed.origin !== canonicalUrl
+      || parsed.username || parsed.password || parsed.search || parsed.hash) return null;
+  } catch {
+    return null;
+  }
+  return { domain, canonicalUrl };
+}
+
 export function applicationIdentityPresentation(application) {
   const applicationReference = String(application?.application_reference || "");
   const quoteRequestId = String(application?.quote_request_id || "");
@@ -58,8 +79,10 @@ export function applicationIdentityPresentation(application) {
 export function applicationsForSearch(applications, query) {
   const normalizedQuery = String(query || "").trim().toUpperCase();
   if (!normalizedQuery) return applications;
+  const supportReference = normalizeSupportReference(normalizedQuery);
   return applications.filter((application) => {
     const reference = String(application?.application_reference || "").toUpperCase();
+    if (supportReference) return application?.support_reference === supportReference;
     return APPLICATION_REFERENCE.test(reference) && reference.includes(normalizedQuery);
   });
 }
@@ -474,7 +497,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const url = new URL(window.location.href);
     url.searchParams.delete("application");
     url.searchParams.delete("request");
+    url.searchParams.delete("support");
     if (locator?.application_reference) url.searchParams.set("application", locator.application_reference);
+    else if (locator?.support_reference) url.searchParams.set("support", locator.support_reference.slice(1));
     else if (locator?.quote_request_id) url.searchParams.set("request", locator.quote_request_id);
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
@@ -577,10 +602,25 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
 
   function renderProjectDossier(project) {
     const application = selectedDetail;
-    setText("detailProject", project?.project_id || application?.project?.project_id || "Nog niet aangemaakt");
+    const projectId = project?.project_id || application?.project?.project_id || null;
+    const site = projectSitePresentation(projectId, project?.site || application?.project_site);
+    setText("detailProject", projectId || "Nog niet aangemaakt");
     setText("detailProjectCreatedAt", formatDate(project?.created_at || application?.project?.created_at));
     setText("detailProjectRevision", project?.revision ?? application?.project?.revision ?? "-");
     setText("detailTotal", formatMoney(project?.accepted_total_minor ?? application?.project?.accepted_total_minor));
+    setText("detailProjectDomain", site?.domain || "Niet vastgelegd");
+    const website = document.getElementById("detailProjectWebsite");
+    website.replaceChildren();
+    if (site) {
+      const link = document.createElement("a");
+      link.href = site.canonicalUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Website openen";
+      website.append(link);
+    } else {
+      website.textContent = "Niet vastgelegd";
+    }
     setBadge("projectStateBadge", project ? stateLabel(project.current_state) : "GEEN PROJECT", project ? "green" : "amber");
     renderPayment(project);
     renderDocuments(application, project);
@@ -616,6 +656,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     selectedDetail = application;
     applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     setText("detailReference", applicationIdentityPresentation(application).visibleReference);
+    setText("detailInternalReference", application.application_reference || "Niet beschikbaar");
+    setText("detailSupportReference", application.support_reference || "Niet beschikbaar");
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
     setText("detailSdfPackage", sdfPackageLabel(application.sdf_package));
@@ -779,6 +821,13 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   }
 
   searchInput.addEventListener("input", createApplicationSearchHandler(clearDetail, renderVisibleApplications));
+  document.getElementById("applicationSearchForm").addEventListener("submit", async (event)=>{
+    event.preventDefault();
+    const supportReference = normalizeSupportReference(searchInput.value);
+    const applicationReference = String(searchInput.value || "").trim().toUpperCase();
+    if (supportReference) return await loadDetail({ support_reference: supportReference });
+    if (APPLICATION_REFERENCE.test(applicationReference)) return await loadDetail({ application_reference: applicationReference });
+  });
 
   promote.addEventListener("click", ()=>confirmation.showModal());
   confirmation.addEventListener("close", async ()=>{
@@ -877,6 +926,8 @@ export function applicationLocatorFromUrl(url) {
   const parsed = new URL(url);
   const reference = parsed.searchParams.get("application");
   if (reference && APPLICATION_REFERENCE.test(reference)) return { application_reference: reference };
+  const supportReference = normalizeSupportReference(parsed.searchParams.get("support"));
+  if (supportReference) return { support_reference: supportReference };
   const quoteRequestId = parsed.searchParams.get("request");
   return quoteRequestId && UUID.test(quoteRequestId) ? { quote_request_id: quoteRequestId } : null;
 }
@@ -915,5 +966,7 @@ function appendStatusItem(list, title, detail, status, tone) {
 function locatorMatchesApplication(locator, application) {
   return Boolean(locator?.application_reference
     ? locator.application_reference === application?.application_reference
+    : locator?.support_reference
+    ? locator.support_reference === application?.support_reference
     : locator?.quote_request_id === application?.quote_request_id);
 }

@@ -36,15 +36,15 @@ insert into public.quote_requests (
   billing_country, billing_email
 ) values
   ('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001','website',null,'2099-01-01T09:00:00Z','Accepted Application','Accepted BV','accepted@example.test','business','Meer dan EUR 6.000','flexible','Accepted operator handoff fixture',true,'approved','business','+32 470 00 00 01','0123456789','format_valid_not_externally_verified','BE0123456789','valid','2099-01-01T07:00:00Z','Webstraat 1','9000','Gent','BE','billing-website@example.test'),
-  ('a1100000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website',null,'2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved',null,null,null,'not_checked',null,'not_checked',null,null,null,null,null,null),
-  ('a1100000-0000-4000-8000-000000000003',null,'slimme_documentenflow','groei','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved','business','+32 470 00 00 03','0987654321','format_valid_not_externally_verified','BE0987654321','unavailable','2099-01-01T10:00:00Z','Flowstraat 3','1000','Brussel','BE','billing-sdf@example.test');
+  ('a1110000-0000-4000-8000-000000000002','LWS-AAN-2099-0002','website',null,'2099-01-01T08:00:00Z','Pending Application',null,'pending@example.test','business','Meer dan EUR 6.000','flexible','Unaccepted operator handoff fixture',true,'approved',null,null,null,'not_checked',null,'not_checked',null,null,null,null,null,null),
+  ('a1120000-0000-4000-8000-000000000003',null,'slimme_documentenflow','groei','2099-01-01T11:00:00Z','Documentenflow Application','Documentenflow BV','documentenflow@example.test',null,null,null,'Documentenflow application without website fields',true,'approved','business','+32 470 00 00 03','0987654321','format_valid_not_externally_verified','BE0987654321','unavailable','2099-01-01T10:00:00Z','Flowstraat 3','1000','Brussel','BE','billing-sdf@example.test');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
   started_at, submitted_at, confirmation
 ) values
   ('a1200000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000001',repeat('1',64),'2099-01-03T00:00:00Z','submitted','2099-01-01T12:00:00Z','2099-01-01T12:00:00Z',true),
-  ('a1200000-0000-4000-8000-000000000002','a1100000-0000-4000-8000-000000000002',repeat('2',64),'2099-01-03T00:00:00Z','submitted','2099-01-01T10:00:00Z','2099-01-01T10:00:00Z',true);
+  ('a1200000-0000-4000-8000-000000000002','a1110000-0000-4000-8000-000000000002',repeat('2',64),'2099-01-03T00:00:00Z','submitted','2099-01-01T10:00:00Z','2099-01-01T10:00:00Z',true);
 
 create temporary table handoff_approval_payload as
 select jsonb_build_object(
@@ -144,97 +144,97 @@ select throws_ok($$select public.list_operator_applications_v1()$$,'42501','APPL
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
 select is(jsonb_array_length(public.list_operator_applications_v1()),3,'owner sees current and legacy submitted applications');
-select is((select count(*)::integer from public.quote_request_intakes where quote_request_id='a1100000-0000-4000-8000-000000000003'),0,'Documentenflow fixture has no fabricated Website intake');
+select is((select count(*)::integer from public.quote_request_intakes where quote_request_id='a1120000-0000-4000-8000-000000000003'),0,'Documentenflow fixture has no fabricated Website intake');
 select is((select count(distinct value->>'quote_request_id')::integer from jsonb_array_elements(public.list_operator_applications_v1())),3,'product-aware application list contains no duplicate dossiers');
-select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1()) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1100000-0000-4000-8000-000000000003,a1100000-0000-4000-8000-000000000002','mixed product list remains newest first');
-select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1(2,0)) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1100000-0000-4000-8000-000000000003','mixed product list applies limit after product-aware ordering');
-select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id','a1100000-0000-4000-8000-000000000003','mixed product list applies offset after product-aware ordering');
+select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1()) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1120000-0000-4000-8000-000000000003,a1110000-0000-4000-8000-000000000002','mixed product list remains newest first');
+select is((select string_agg(value->>'quote_request_id',',' order by ordinal) from jsonb_array_elements(public.list_operator_applications_v1(2,0)) with ordinality as row(value,ordinal)),'a1100000-0000-4000-8000-000000000001,a1120000-0000-4000-8000-000000000003','mixed product list applies limit after product-aware ordering');
+select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id','a1120000-0000-4000-8000-000000000003','mixed product list applies offset after product-aware ordering');
 select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000001'),'website','application list exposes the stored website request kind');
-select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1100000-0000-4000-8000-000000000003'),'slimme_documentenflow','application list exposes the stored Documentenflow request kind');
+select is((select value->>'request_kind' from jsonb_array_elements(public.list_operator_applications_v1()) where value->>'quote_request_id'='a1120000-0000-4000-8000-000000000003'),'slimme_documentenflow','application list exposes the stored Documentenflow request kind');
 insert into public.quote_requests (id,request_kind,sdf_package,created_at,name,email,description,privacy_consent,status) values
-  ('a1100000-0000-4000-8000-000000000004','slimme_documentenflow','start','2099-01-01T12:00:00Z','SDF START','start@example.test','START Operator read fixture.',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000005','slimme_documentenflow','maatwerk','2099-01-01T13:00:00Z','SDF MAATWERK','maatwerk@example.test','MAATWERK Operator read fixture.',true,'approved'),
-  ('a1100000-0000-4000-8000-000000000006','slimme_documentenflow',null,'2099-01-01T14:00:00Z','Legacy SDF','legacy-sdf@example.test','Legacy SDF Operator read fixture.',true,'approved');
+  ('a1130000-0000-4000-8000-000000000004','slimme_documentenflow','start','2099-01-01T12:00:00Z','SDF START','start@example.test','START Operator read fixture.',true,'approved'),
+  ('a1140000-0000-4000-8000-000000000005','slimme_documentenflow','maatwerk','2099-01-01T13:00:00Z','SDF MAATWERK','maatwerk@example.test','MAATWERK Operator read fixture.',true,'approved'),
+  ('a1150000-0000-4000-8000-000000000006','slimme_documentenflow',null,'2099-01-01T14:00:00Z','Legacy SDF','legacy-sdf@example.test','Legacy SDF Operator read fixture.',true,'approved');
 insert into public.sdf_projects(project_id,quote_request_id,created_at) values
-  ('a1900000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000003','2099-01-02T10:00:00Z');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_quotation','null'::jsonb,'SDF application without quotation identity exposes no fabricated quotation');
+  ('a1900000-0000-4000-8000-000000000001','a1120000-0000-4000-8000-000000000003','2099-01-02T10:00:00Z');
+select is(public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'sdf_quotation','null'::jsonb,'SDF application without quotation identity exposes no fabricated quotation');
 insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
-  ('a1a00000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000003','2099-01-03T10:00:00Z');
+  ('a1a00000-0000-4000-8000-000000000001','a1120000-0000-4000-8000-000000000003','2099-01-03T10:00:00Z');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quotation_id',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quote_request_id',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'application_reference',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'created_at'
-),'["a1a00000-0000-4000-8000-000000000001", "a1100000-0000-4000-8000-000000000003", null, "2099-01-03T10:00:00+00:00"]'::jsonb,'SDF quotation read model preserves exact identity, application linkage, reference, and creation time');
-select ok(not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation' ? 'status'),'SDF quotation read model does not fabricate status');
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quotation_id',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'quote_request_id',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'application_reference',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->>'created_at'
+),'["a1a00000-0000-4000-8000-000000000001", "a1120000-0000-4000-8000-000000000003", null, "2099-01-03T10:00:00+00:00"]'::jsonb,'SDF quotation read model preserves exact identity, application linkage, reference, and creation time');
+select ok(not (public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation' ? 'status'),'SDF quotation read model does not fabricate status');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_quotation','null'::jsonb,'Website detail does not expose SDF quotation identity');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document','null'::jsonb,'identity-only SDF quotation exposes no fabricated document evidence');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'identity-only SDF quotation exposes no fabricated acceptance evidence');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document','null'::jsonb,'identity-only SDF quotation exposes no fabricated document evidence');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'identity-only SDF quotation exposes no fabricated acceptance evidence');
 insert into public.sdf_quotation_documents(quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256) values
   ('a1a00000-0000-4000-8000-000000000001','2099-01-03','2099-02-02','2099-01-03T11:00:00Z','sdf/quotations/a1a00000-0000-4000-8000-000000000001/document.docx',repeat('7',64));
 select is(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document',
   '{"quotation_date":"2099-01-03","valid_until":"2099-02-02","prepared_at":"2099-01-03T11:00:00+00:00","document_reference_present":true,"document_sha256_present":true}'::jsonb,
   'Operator detail exposes exact document dates and presence flags without document material'
 );
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'document evidence alone does not fabricate acceptance');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance','null'::jsonb,'document evidence alone does not fabricate acceptance');
 insert into public.sdf_quotation_acceptances(quotation_id,accepted_at,document_reference,document_sha256) values
   ('a1a00000-0000-4000-8000-000000000001','2099-01-04T12:00:00Z','sdf/quotations/a1a00000-0000-4000-8000-000000000001/accepted.docx',repeat('8',64));
 select is(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance',
   '{"accepted_at":"2099-01-04T12:00:00+00:00","accepted_document_reference_present":true,"accepted_document_sha256_present":true}'::jsonb,
   'Operator detail exposes active acceptance time and presence flags without accepted document material'
 );
 select ok(
-  not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_sha256')
-  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_reference')
-  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_sha256')
-  and not (public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_reference'),
+  not (public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_sha256')
+  and not (public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'document' ? 'document_reference')
+  and not (public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_sha256')
+  and not (public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_quotation'->'acceptance' ? 'document_reference'),
   'Operator detail never exposes complete hashes or internal document references'
 );
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->>'sdf_package','start','Operator detail exposes persisted START package identity');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'sdf_package','groei','Operator detail exposes persisted GROEI package identity');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'sdf_package','null'::jsonb,'Operator detail preserves missing legacy SDF package as null');
+select is(public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->>'sdf_package','start','Operator detail exposes persisted START package identity');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'sdf_package','groei','Operator detail exposes persisted GROEI package identity');
+select is(public.get_operator_application_v1('a1140000-0000-4000-8000-000000000005',null)->>'sdf_package','maatwerk','Operator detail exposes persisted MAATWERK package identity');
+select is(public.get_operator_application_v1('a1150000-0000-4000-8000-000000000006',null)->'sdf_package','null'::jsonb,'Operator detail preserves missing legacy SDF package as null');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_package','null'::jsonb,'Website Operator detail exposes no SDF package identity');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'price_mode',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'price_mode'
+  public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'sdf_pricing'->'recurring'->>'price_mode'
 ),'["285000", "fixed", "17500", "fixed"]'::jsonb,'Operator detail exposes exact fixed START pricing');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'price_mode',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'price_mode'
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'sdf_pricing'->'recurring'->>'price_mode'
 ),'["570000", "fixed", "29900", "fixed"]'::jsonb,'Operator detail exposes exact fixed GROEI pricing');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'price_mode',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'amount_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'price_mode'
+  public.get_operator_application_v1('a1140000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'amount_minor',
+  public.get_operator_application_v1('a1140000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'implementation'->>'price_mode',
+  public.get_operator_application_v1('a1140000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'amount_minor',
+  public.get_operator_application_v1('a1140000-0000-4000-8000-000000000005',null)->'sdf_pricing'->'recurring'->>'price_mode'
 ),'["750000", "starting_at", "44900", "starting_at"]'::jsonb,'Operator detail preserves MAATWERK starting-at pricing');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'sdf_pricing','null'::jsonb,'legacy SDF detail does not fabricate package pricing');
+select is(public.get_operator_application_v1('a1150000-0000-4000-8000-000000000006',null)->'sdf_pricing','null'::jsonb,'legacy SDF detail does not fabricate package pricing');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'sdf_pricing','null'::jsonb,'Website detail does not expose SDF package pricing');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000004',null)->'project','null'::jsonb,'SDF application without project authority exposes no fabricated project');
+select is(public.get_operator_application_v1('a1130000-0000-4000-8000-000000000004',null)->'project','null'::jsonb,'SDF application without project authority exposes no fabricated project');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'project_id',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'request_kind',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'quote_request_id',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'customer_name',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'sdf_package',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->>'created_at'
-),'["a1900000-0000-4000-8000-000000000001", "slimme_documentenflow", "a1100000-0000-4000-8000-000000000003", "Documentenflow Application", "groei", "2099-01-02T10:00:00+00:00"]'::jsonb,'SDF project read model preserves project, application, customer, package, and creation authority');
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'project_id',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'request_kind',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'quote_request_id',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'customer_name',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'sdf_package',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->>'created_at'
+),'["a1900000-0000-4000-8000-000000000001", "slimme_documentenflow", "a1120000-0000-4000-8000-000000000003", "Documentenflow Application", "groei", "2099-01-02T10:00:00+00:00"]'::jsonb,'SDF project read model preserves project, application, customer, package, and creation authority');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'current_state',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'operational_status'
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'current_state',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'operational_status'
 ),'[null, null]'::jsonb,'SDF project read model fabricates no project or operational status');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000006',null)->'project','null'::jsonb,'legacy SDF application without project linkage remains safe');
+select is(public.get_operator_application_v1('a1150000-0000-4000-8000-000000000006',null)->'project','null'::jsonb,'legacy SDF application without project linkage remains safe');
 select is((select count(*)::integer from public.sdf_projects),1,'SDF project authority contains only the explicitly persisted project');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'name','Accepted Application','owner resolves detail by application reference');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'request_kind','website','application detail exposes the same stored website request kind');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'request_kind','slimme_documentenflow','application detail exposes the same stored Documentenflow request kind');
 select is(jsonb_build_array(
   public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'customer_type',
   public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'enterprise_number',
@@ -243,49 +243,49 @@ select is(jsonb_build_array(
   public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->>'billing_email'
 ),'["business", "0123456789", "valid", "Webstraat 1", "billing-website@example.test"]'::jsonb,'Website detail exposes persisted Customer Core fields');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'customer_type',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'enterprise_number',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'vat_validation_status',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'billing_address',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->>'billing_email'
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'customer_type',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'enterprise_number',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'vat_validation_status',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'billing_address',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->>'billing_email'
 ),'["business", "0987654321", "unavailable", "Flowstraat 3", "billing-sdf@example.test"]'::jsonb,'Documentenflow detail exposes its own persisted Customer Core fields');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'customer_type',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'enterprise_number',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'enterprise_validation_status',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'vat_number',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'vat_validation_status',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'billing_address',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'billing_email'
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'customer_type',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'enterprise_number',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'enterprise_validation_status',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'vat_number',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'vat_validation_status',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'billing_address',
+  public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'billing_email'
 ),'[null, null, "not_checked", null, "not_checked", null, null]'::jsonb,'missing optional Customer Core fields remain neutral without fabricated values');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'website_type',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'budget',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'timing'
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'website_type',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'budget',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'timing'
 ),'[null, null, null]'::jsonb,'Documentenflow detail does not fabricate website fields');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'intake_status','null'::jsonb,'Documentenflow detail does not fabricate Website intake status');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'pricing','null'::jsonb,'Documentenflow detail does not expose Website pricing');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'quotation','null'::jsonb,'Documentenflow detail does not expose a Website quotation');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'acceptance','null'::jsonb,'Documentenflow detail does not expose Website acceptance');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'intake_status','null'::jsonb,'Documentenflow detail does not fabricate Website intake status');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'pricing','null'::jsonb,'Documentenflow detail does not expose Website pricing');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'quotation','null'::jsonb,'Documentenflow detail does not expose a Website quotation');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'acceptance','null'::jsonb,'Documentenflow detail does not expose Website acceptance');
 select is(jsonb_build_array(
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'accepted_total_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'m1_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'m2_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'m3_minor',
-  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'project'->'revision'
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'accepted_total_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'m1_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'m2_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'m3_minor',
+  public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'project'->'revision'
 ),'[null, null, null, null, null]'::jsonb,'Documentenflow detail does not expose Website project money, milestones, or revision');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'acceptance','null'::jsonb,'unaccepted detail has no fabricated acceptance');
+select is(public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'acceptance','null'::jsonb,'unaccepted detail has no fabricated acceptance');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'project','null'::jsonb,'accepted but unpromoted dossier has no fabricated project');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'pricing'->>'known_minimum_minor','180000','application dossier uses the persisted pricing minimum');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'quotation'->>'issuance_status','ISSUED','application dossier exposes authoritative quotation issuance state');
 select is(public.get_operator_application_v1(null,'LWS-AAN-2099-0001')->'quotation'->>'binary_archive_available','false','quotation metadata does not pretend a binary archive exists');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'pricing','null'::jsonb,'application without pricing has an explicit empty pricing state');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000002',null)->'quotation','null'::jsonb,'application without quotation evidence has an explicit empty quotation state');
-select is(public.get_operator_application_v1('a1100000-0000-4000-8000-000000000003',null)->'application_reference','null'::jsonb,'legacy UUID lookup does not fabricate an application reference');
+select is(public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'pricing','null'::jsonb,'application without pricing has an explicit empty pricing state');
+select is(public.get_operator_application_v1('a1110000-0000-4000-8000-000000000002',null)->'quotation','null'::jsonb,'application without quotation evidence has an explicit empty quotation state');
+select is(public.get_operator_application_v1('a1120000-0000-4000-8000-000000000003',null)->'application_reference','null'::jsonb,'legacy UUID lookup does not fabricate an application reference');
 select throws_ok($$select public.get_operator_application_v1(null,'bad')$$,'22023','INVALID_APPLICATION_REFERENCE','malformed human locator is rejected');
 select throws_ok($$select public.get_operator_application_v1(null,null)$$,'22023','EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED','missing locator is rejected');
 select throws_ok($$select public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001','LWS-AAN-2099-0001')$$,'22023','EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED','ambiguous locator is rejected');
-select throws_ok($$select public.promote_operator_application_v1('a1800000-0000-4000-8000-000000000001','a1100000-0000-4000-8000-000000000002',null)$$,'P0001','APPLICATION_NOT_ACCEPTED','unaccepted application cannot be promoted');
+select throws_ok($$select public.promote_operator_application_v1('a1800000-0000-4000-8000-000000000001','a1110000-0000-4000-8000-000000000002',null)$$,'P0001','APPLICATION_NOT_ACCEPTED','unaccepted application cannot be promoted');
 
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000002',true);
 select is(jsonb_array_length(public.list_operator_applications_v1()),6,'admin has the same global application visibility');

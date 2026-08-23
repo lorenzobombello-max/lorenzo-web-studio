@@ -66,6 +66,18 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
         if (error) throw new Error(error.message);
         return data;
       }
+      if (["bind_project_site", "rotate_project_site"].includes(input.action)) {
+        const { data, error } = await client.rpc("execute_operator_project_site_command_v1", {
+          p_project_id: input.project_id,
+          p_operation: input.operation,
+          p_expected_revision: input.expected_revision,
+          p_idempotency_key: input.idempotency_key,
+          p_canonical_domain: input.canonical_domain,
+          p_evidence: input.evidence,
+        });
+        if (error) throw new Error(error.message);
+        return data;
+      }
       if (input.action === "create_internal_e2e_run") {
         const approvalToken = await createApprovalTokenForIdempotencyKey(input.idempotency_key);
         const intakeToken = await createInternalE2EIntakeTokenForIdempotencyKey(input.idempotency_key);
@@ -108,10 +120,14 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
           p_project_id: input.project_id
         })
         : input.action === "get_application_detail"
-        ? client.rpc("get_operator_application_v1", {
-          p_quote_request_id: input.quote_request_id,
-          p_application_reference: input.application_reference
-        })
+        ? input.support_reference
+          ? client.rpc("get_operator_application_by_support_reference_v1", {
+            p_support_reference: input.support_reference
+          })
+          : client.rpc("get_operator_application_v1", {
+            p_quote_request_id: input.quote_request_id,
+            p_application_reference: input.application_reference
+          })
         : client.rpc("promote_operator_application_v1", {
           p_idempotency_key: input.idempotency_key,
           p_quote_request_id: input.quote_request_id,
