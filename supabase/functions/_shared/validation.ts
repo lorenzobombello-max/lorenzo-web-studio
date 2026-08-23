@@ -777,6 +777,10 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   const customerType = customerTypeInput as CustomerType | null;
   const company = normalizeText(input.company ?? "");
   let enterpriseNumber = normalizeNullableText("enterprise_number", input.enterprise_number ?? null, 40) || "";
+  const hasVatNumber = input.has_vat_number === undefined ? null : input.has_vat_number;
+  if (hasVatNumber !== null && typeof hasVatNumber !== "boolean") {
+    throw new InputValidationError("INVALID_TYPE", "has_vat_number");
+  }
   let vatNumber = normalizeNullableText("vat_number", input.vat_number ?? null, 40) || "";
   const billingAddress = normalizeNullableText("billing_address", input.billing_address ?? null, 200) || "";
   const billingPostalCode = normalizeNullableText("billing_postal_code", input.billing_postal_code ?? null, 20) || "";
@@ -824,6 +828,9 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   }
   if (vatNumber) {
     vatNumber = vatNumber.toUpperCase().replace(/[\s.\-_/]/g, "");
+    if (/^\d{10}$/.test(vatNumber) && /^(be|belgi[eë]|belgium)$/i.test(billingCountry)) {
+      vatNumber = `BE${vatNumber}`;
+    }
     if (!/^[A-Z]{2}[A-Z0-9]{2,12}$/.test(vatNumber) || !VIES_COUNTRY_CODES.has(vatNumber.slice(0, 2))) {
       throw new InputValidationError("INVALID_FORMAT", "vat_number");
     }
@@ -835,7 +842,13 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
   if (customerType === "individual" && businessValues.some(Boolean)) {
     throw new InputValidationError("INVALID_CONDITION", "customer_type");
   }
+  if (customerType !== "business" && hasVatNumber !== null) {
+    throw new InputValidationError("INVALID_CONDITION", "has_vat_number");
+  }
   if (customerType === "business") {
+    if (hasVatNumber === null) throw new InputValidationError("REQUIRED_FIELD", "has_vat_number");
+    if (hasVatNumber && !vatNumber) throw new InputValidationError("REQUIRED_FIELD", "vat_number");
+    if (!hasVatNumber && vatNumber) throw new InputValidationError("INVALID_CONDITION", "vat_number");
     for (const [field, value] of [
       ["company", company],
       ["enterprise_number", enterpriseNumber],
@@ -900,6 +913,7 @@ export function sanitizeAndValidateSubmitPayload(payload: unknown): SanitizedQuo
     company: company || null,
     enterprise_number: enterpriseNumber || null,
     enterprise_validation_status: enterpriseValidationStatus,
+    has_vat_number: hasVatNumber,
     vat_number: vatNumber || null,
     billing_address: billingAddress || null,
     billing_postal_code: billingPostalCode || null,

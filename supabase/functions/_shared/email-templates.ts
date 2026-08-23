@@ -94,6 +94,7 @@ export function buildAdminNotificationEmail(data: AdminEmailData) {
     ...(data.enterpriseValidationStatus === "format_valid_not_externally_verified" ? ["Ondernemingsnummerstatus: formaat geldig, niet extern geverifieerd"] : []),
     ...(data.vatNumber ? [`BTW-nummer: ${data.vatNumber}`] : []),
     ...(data.vatNumber ? [`BTW-validatiestatus: ${vatStatus}`] : []),
+    ...(!data.vatNumber ? ["BTW-status: geen btw-nummer; handmatige controle vereist"] : []),
     `Facturatieadres: ${data.billingAddress || "Niet ingevuld"}, ${data.billingPostalCode || ""} ${data.billingCity || ""}, ${data.billingCountry || ""}`,
     ...(data.billingEmail ? [`Facturatie-e-mail: ${data.billingEmail}`] : []),
   ] : [];

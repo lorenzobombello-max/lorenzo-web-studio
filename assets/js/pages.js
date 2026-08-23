@@ -249,6 +249,8 @@
     const customerTypeControls = [...form.querySelectorAll('input[name="customer-type"]')];
     const businessFields = document.getElementById("businessFields");
     const businessControls = [...businessFields.querySelectorAll("input, select, textarea")];
+    const vatNumberField = document.getElementById("vatNumberField");
+    const vatNumber = document.getElementById("vat-number");
     const packageInterest = document.getElementById("packageInterest");
     let idempotencyKey = "";
     let isSubmitting = false;
@@ -331,8 +333,17 @@
       businessControls.forEach((control) => {
         control.disabled = !showBusinessFields;
         control.required = showBusinessFields && control.hasAttribute("data-business-required");
-        if (!showBusinessFields && customerType === "individual") control.value = "";
+        if (!showBusinessFields && customerType === "individual") {
+          if (control instanceof HTMLInputElement && (control.type === "radio" || control.type === "checkbox")) control.checked = false;
+          else control.value = "";
+        }
       });
+      const hasVatNumber = form.querySelector('input[name="has-vat-number"]:checked')?.value;
+      const showVatNumber = showBusinessFields && hasVatNumber === "yes";
+      vatNumberField.hidden = !showVatNumber;
+      vatNumber.disabled = !showVatNumber;
+      vatNumber.required = showVatNumber;
+      if (!showVatNumber) vatNumber.value = "";
     }
 
     function applyRequestMode() {
@@ -413,7 +424,8 @@
             ...(isDocumentenflowRequest ? { sdf_package: text("sdf-package") } : {}),
             name: text("name"), customer_type: text("customer-type"),
             ...(isBusinessCustomer ? {
-              company: text("company"), enterprise_number: text("enterprise-number"), vat_number: text("vat-number"),
+              company: text("company"), enterprise_number: text("enterprise-number"),
+              has_vat_number: text("has-vat-number") === "yes", vat_number: text("vat-number"),
               billing_address: text("billing-address"), billing_postal_code: text("billing-postal-code"),
               billing_city: text("billing-city"), billing_country: text("billing-country"), billing_email: text("billing-email")
             } : {}),
@@ -436,9 +448,16 @@
           body: JSON.stringify(payload)
         });
         const result = await response.json().catch(() => ({}));
+        if (!response.ok && result.code === "VAT_VALIDATION_UNAVAILABLE") {
+          document.getElementById("vat-number")?.focus();
+          setMessage("De officiële btw-controle is tijdelijk niet beschikbaar. Probeer het later opnieuw.", "error");
+          return;
+        }
         if (!response.ok && result.field === "vat_number") {
           document.getElementById("vat-number")?.focus();
-          setMessage("Dit btw-nummer heeft geen geldig EU-formaat. Controleer het nummer.", "error");
+          setMessage(result.code === "VAT_NUMBER_INVALID"
+            ? "Dit btw-nummer kon niet als geldig worden bevestigd. Controleer het nummer."
+            : "Dit btw-nummer heeft geen geldig EU-formaat. Controleer het nummer.", "error");
           return;
         }
         if (!response.ok && result.field === "enterprise_number") {
@@ -455,10 +474,8 @@
           ? "Je verzoek is veilig opgeslagen en wordt persoonlijk behandeld."
           : isBusinessCustomer && result.vat_validation_status === "valid"
           ? "BTW-nummer geverifieerd. Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken."
-          : isBusinessCustomer && result.vat_validation_status === "invalid"
-          ? "Dit btw-nummer kon niet als geldig worden bevestigd. Controleer het nummer. Uw aanvraag is wel verzonden."
-          : isBusinessCustomer && result.vat_validation_status === "unavailable"
-          ? "De officiële btw-controle is tijdelijk niet beschikbaar. Uw aanvraag kan wel worden verzonden; we controleren het nummer later."
+          : isBusinessCustomer && text("has-vat-number") === "no"
+          ? "Je aanvraag is veilig verzonden en wordt handmatig gecontroleerd op basis van het ondernemingsnummer."
           : "Je aanvraag is veilig verzonden en wordt persoonlijk nagekeken.";
         modal.hidden = false;
         modal.querySelector(".success-panel__inner").focus();
@@ -498,6 +515,7 @@
     }
     requestKind?.addEventListener("change", applyRequestMode);
     customerTypeControls.forEach((control) => control.addEventListener("change", applyCustomerType));
+    form.querySelectorAll('input[name="has-vat-number"]').forEach((control) => control.addEventListener("change", applyCustomerType));
     close.addEventListener("click", closeModal);
     modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) closeModal(); });

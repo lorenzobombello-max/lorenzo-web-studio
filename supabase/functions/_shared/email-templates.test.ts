@@ -66,6 +66,25 @@ Deno.test("admin email omits business lines for individual requests", () => {
   assertEquals(result.text.includes("Facturatieadres:"), false);
 });
 
+Deno.test("admin email marks a business without VAT for manual review", () => {
+  const result = buildAdminNotificationEmail({
+    ...base,
+    customerType: "business",
+    company: "Voorbeeld BV",
+    enterpriseNumber: "0123456749",
+    enterpriseValidationStatus: "format_valid_not_externally_verified",
+    vatNumber: null,
+    vatValidationStatus: "not_checked",
+    vatValidatedAt: null,
+    billingAddress: "Voorbeeldstraat 10",
+    billingPostalCode: "9000",
+    billingCity: "Gent",
+    billingCountry: "Belgie",
+    billingEmail: null,
+  });
+  assertStringIncludes(result.text, "BTW-status: geen btw-nummer; handmatige controle vereist");
+});
+
 Deno.test("admin email identifies Documentenflow without fabricated website fields", () => {
   const result = buildAdminNotificationEmail({
     ...base,

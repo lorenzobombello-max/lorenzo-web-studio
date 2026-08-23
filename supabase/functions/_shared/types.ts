@@ -25,6 +25,7 @@ export interface SubmitQuotePayload {
   customer_type?: CustomerType;
   company?: string;
   enterprise_number?: string;
+  has_vat_number?: boolean;
   vat_number?: string;
   billing_address?: string;
   billing_postal_code?: string;
@@ -49,6 +50,7 @@ export interface SanitizedQuotePayload {
   company: string | null;
   enterprise_number: string | null;
   enterprise_validation_status: EnterpriseValidationStatus;
+  has_vat_number: boolean | null;
   vat_number: string | null;
   billing_address: string | null;
   billing_postal_code: string | null;

@@ -139,7 +139,9 @@
     const billingAddress = isBusiness
       ? [request?.billing_address, [request?.billing_postal_code, request?.billing_city].filter(Boolean).join(" "), request?.billing_country].filter(Boolean).join(", ")
       : "";
-    const vatValidationStatus = request?.vat_validation_status === "valid"
+    const vatValidationStatus = isBusiness && !request?.vat_number
+      ? "Geen btw-nummer; handmatige controle vereist"
+      : request?.vat_validation_status === "valid"
       ? `Geverifieerd${request?.vat_validated_at ? ` op ${new Date(request.vat_validated_at).toLocaleDateString("nl-BE")}` : ""}`
       : request?.vat_validation_status === "invalid"
       ? "Niet als geldig bevestigd"
@@ -156,8 +158,8 @@
       ["Bedrijfsnaam", request?.company || "-"],
       ["Ondernemingsnummer", request?.enterprise_number || "-"],
       ["Ondernemingsnummerstatus", request?.enterprise_validation_status === "format_valid_not_externally_verified" ? "Formaat geldig; niet extern geverifieerd" : "Niet gecontroleerd"],
-      ["BTW-nummer", request?.vat_number || "Niet van toepassing"],
-      ["BTW-validatiestatus", request?.vat_number ? vatValidationStatus : "Niet van toepassing"],
+      ["BTW-nummer", request?.vat_number || (isBusiness ? "Geen btw-nummer" : "Niet van toepassing")],
+      ["BTW-validatiestatus", isBusiness ? vatValidationStatus : "Niet van toepassing"],
       ["Facturatieadres", billingAddress || "-"],
       ["Facturatie-e-mail", request?.billing_email || request?.email || "-"],
       ["E-mailadres", request?.email || "-"],

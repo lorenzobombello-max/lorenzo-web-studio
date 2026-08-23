@@ -28,12 +28,13 @@ Deno.test("individual quote strips no hidden business values", () => {
   assertEquals(result.billing_email, null);
 });
 
-Deno.test("business quote keeps required billing data and optional VAT", () => {
+Deno.test("business quote without VAT requires explicit manual-review route", () => {
   const result = sanitizeAndValidateSubmitPayload({
     ...basePayload,
     customer_type: "business",
     company: "Voorbeeld BV",
     enterprise_number: "0123.456.749",
+    has_vat_number: false,
     vat_number: "",
     billing_address: "Voorbeeldstraat 10",
     billing_postal_code: "9000",
@@ -178,6 +179,7 @@ Deno.test("normalizes EU VAT and rejects malformed VAT before external validatio
     customer_type: "business",
     company: "Voorbeeld BV",
     enterprise_number: "0123.456.749",
+    has_vat_number: true,
     vat_number: "be 0123.456.749",
     billing_address: "Voorbeeldstraat 10",
     billing_postal_code: "9000",
@@ -192,6 +194,44 @@ Deno.test("normalizes EU VAT and rejects malformed VAT before external validatio
   );
 });
 
+Deno.test("normalizes common Belgian VAT presentation formats", () => {
+  for (const vatNumber of ["0742.361.487", "0742 361 487", "0742361487", "BE0742361487", "BE 0742 361 487"]) {
+    const result = sanitizeAndValidateSubmitPayload({
+      ...basePayload,
+      customer_type: "business",
+      company: "Lorenzo Web Solutions",
+      enterprise_number: "0742.361.487",
+      has_vat_number: true,
+      vat_number: vatNumber,
+      billing_address: "Grote Baan 164",
+      billing_postal_code: "9920",
+      billing_city: "Lievegem",
+      billing_country: "Belgie",
+    });
+    assertEquals(result.vat_number, "BE0742361487");
+  }
+});
+
+Deno.test("business VAT choice fails closed when missing or inconsistent", () => {
+  const business = {
+    ...basePayload,
+    customer_type: "business" as const,
+    company: "Voorbeeld BV",
+    enterprise_number: "0123.456.749",
+    billing_address: "Voorbeeldstraat 10",
+    billing_postal_code: "9000",
+    billing_city: "Gent",
+    billing_country: "Belgie",
+  };
+  assertThrows(() => sanitizeAndValidateSubmitPayload(business), InputValidationError, "REQUIRED_FIELD");
+  assertThrows(() => sanitizeAndValidateSubmitPayload({ ...business, has_vat_number: true }), InputValidationError, "REQUIRED_FIELD");
+  assertThrows(
+    () => sanitizeAndValidateSubmitPayload({ ...business, has_vat_number: false, vat_number: "BE0123456749" }),
+    InputValidationError,
+    "INVALID_CONDITION",
+  );
+});
+
 Deno.test("rejects a Belgian enterprise number with an invalid check digit", () => {
   assertThrows(
     () => sanitizeAndValidateSubmitPayload({
@@ -199,6 +239,7 @@ Deno.test("rejects a Belgian enterprise number with an invalid check digit", () 
       customer_type: "business",
       company: "Voorbeeld BV",
       enterprise_number: "0123.456.789",
+      has_vat_number: false,
       billing_address: "Voorbeeldstraat 10",
       billing_postal_code: "9000",
       billing_city: "Gent",

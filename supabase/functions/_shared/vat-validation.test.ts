@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { validateVatWithVies } from "./vat-validation.ts";
+import { blockedBusinessVatSubmission, validateVatWithVies } from "./vat-validation.ts";
 
 const checkedAt = new Date("2026-08-09T12:00:00.000Z");
 const soapResponse = (valid: boolean) => `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ns2:checkVatResponse xmlns:ns2="urn:ec.europa.eu:taxud:vies:services:checkVat:types"><ns2:countryCode>BE</ns2:countryCode><ns2:vatNumber>0123456749</ns2:vatNumber><ns2:requestDate>2026-08-09</ns2:requestDate><ns2:valid>${valid}</ns2:valid><ns2:name>SHOULD NOT BE STORED</ns2:name><ns2:address>SHOULD NOT BE STORED</ns2:address></ns2:checkVatResponse></soap:Body></soap:Envelope>`;
@@ -28,7 +28,7 @@ Deno.test("VIES maps an official invalid response neutrally", async () => {
   assertEquals(result, { status: "invalid", validatedAt: checkedAt.toISOString() });
 });
 
-Deno.test("VIES faults and network failures are non-blocking unavailable results", async () => {
+Deno.test("VIES faults and network failures map to unavailable results", async () => {
   const fault = await validateVatWithVies("BE0123456749", {
     fetchImpl: syncFetch(() => new Response("<soap:Fault><faultstring>SERVICE_UNAVAILABLE</faultstring></soap:Fault>", { status: 500 })),
     now: () => checkedAt,
@@ -39,4 +39,13 @@ Deno.test("VIES faults and network failures are non-blocking unavailable results
   });
   assertEquals(fault, { status: "unavailable", validatedAt: checkedAt.toISOString() });
   assertEquals(network, { status: "unavailable", validatedAt: checkedAt.toISOString() });
+});
+
+Deno.test("business VAT submission gate allows only authoritative valid status", () => {
+  assertEquals(blockedBusinessVatSubmission("business", true, { status: "valid", validatedAt: checkedAt.toISOString() }), null);
+  assertEquals(blockedBusinessVatSubmission("business", true, { status: "invalid", validatedAt: checkedAt.toISOString() }), "invalid");
+  assertEquals(blockedBusinessVatSubmission("business", true, { status: "unavailable", validatedAt: checkedAt.toISOString() }), "unavailable");
+  assertEquals(blockedBusinessVatSubmission("business", true, { status: "not_checked", validatedAt: null }), "unverified");
+  assertEquals(blockedBusinessVatSubmission("business", false, { status: "not_checked", validatedAt: null }), null);
+  assertEquals(blockedBusinessVatSubmission("individual", null, { status: "not_checked", validatedAt: null }), null);
 });

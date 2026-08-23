@@ -5,7 +5,7 @@ import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { computeTokenExpiry, createApprovalTokenForIdempotencyKey, extractClientIp, hashApprovalToken, hashClientIp } from "../_shared/security.ts";
 import { isRateLimited } from "../_shared/rate-limit.ts";
 import { InputValidationError, sanitizeAndValidateSubmitPayload } from "../_shared/validation.ts";
-import { validateVatWithVies, type VatValidationResult } from "../_shared/vat-validation.ts";
+import { blockedBusinessVatSubmission, validateVatWithVies, type VatValidationResult } from "../_shared/vat-validation.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const IDEMPOTENCY_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -78,7 +78,7 @@ function jsonResponse(status: number, body: Record<string, unknown>, origin: str
   });
 }
 
-Deno.serve(async (request) => {
+export async function handleSubmitQuoteRequest(request: Request): Promise<Response> {
   const origin = request.headers.get("origin");
 
   if (request.method === "OPTIONS") {
@@ -160,6 +160,7 @@ Deno.serve(async (request) => {
     customer_type: sanitized.customer_type,
     company: sanitized.company,
     enterprise_number: sanitized.enterprise_number,
+    has_vat_number: sanitized.has_vat_number,
     vat_number: sanitized.vat_number,
     billing_address: sanitized.billing_address,
     billing_postal_code: sanitized.billing_postal_code,
@@ -237,6 +238,22 @@ Deno.serve(async (request) => {
     : sanitized.vat_number
     ? await validateVatWithVies(sanitized.vat_number)
     : { status: "not_checked", validatedAt: null };
+
+  const vatBlock = blockedBusinessVatSubmission(
+    sanitized.customer_type,
+    sanitized.has_vat_number,
+    vatValidation,
+  );
+  if (vatBlock) {
+    const unavailable = vatBlock === "unavailable";
+    return jsonResponse(unavailable ? 503 : 422, {
+      ok: false,
+      code: unavailable ? "VAT_VALIDATION_UNAVAILABLE" : "VAT_NUMBER_INVALID",
+      field: "vat_number",
+      message: unavailable ? "VAT validation is temporarily unavailable." : "VAT number could not be validated.",
+      vat_validation_status: vatValidation.status,
+    }, origin);
+  }
 
   const approvalToken = await createApprovalTokenForIdempotencyKey(idempotencyKey);
   const approvalTokenHash = await hashApprovalToken(approvalToken);
@@ -351,4 +368,6 @@ Deno.serve(async (request) => {
     vat_validation_status: vatValidation.status,
     vat_validated_at: vatValidation.validatedAt,
   }, origin);
-});
+}
+
+if (import.meta.main) Deno.serve(handleSubmitQuoteRequest);

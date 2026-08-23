@@ -5,6 +5,19 @@ export interface VatValidationResult {
   validatedAt: string | null;
 }
 
+export type VatSubmissionBlock = "invalid" | "unavailable" | "unverified" | null;
+
+export function blockedBusinessVatSubmission(
+  customerType: "individual" | "business" | null,
+  hasVatNumber: boolean | null,
+  result: VatValidationResult,
+): VatSubmissionBlock {
+  if (customerType !== "business" || !hasVatNumber || result.status === "valid") return null;
+  if (result.status === "invalid") return "invalid";
+  if (result.status === "unavailable") return "unavailable";
+  return "unverified";
+}
+
 interface ViesValidationOptions {
   fetchImpl?: typeof fetch;
   endpoint?: string;
