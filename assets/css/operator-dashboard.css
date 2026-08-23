@@ -93,6 +93,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .status-list div { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
 .status-list dt { color:var(--muted); font-size:.78rem; font-weight:800; }
 .status-list dd { max-width:65%; margin:0; overflow-wrap:anywhere; text-align:right; }
+.lifecycle-status { margin-top:1rem; }
+.lifecycle-status__technical { color:var(--muted); font-size:.78rem; }
+.lifecycle-actions { min-height:44px; margin-top:1rem; display:flex; flex-wrap:wrap; gap:.6rem; }
+.lifecycle-actions .primary-action { margin:0; }
+.lifecycle-actions button:disabled,.confirmation__actions button:disabled { cursor:not-allowed; opacity:.5; }
 .blockers article { padding:1rem 0; border-bottom:1px solid var(--line); }
 .blockers article p { margin:.65rem 0 0; }
 .blocked-list { margin:.9rem 0 0; padding-left:1.1rem; color:var(--muted); font-size:.82rem; }
@@ -114,6 +119,8 @@ dialog { width:min(34rem,calc(100% - 2rem)); padding:0; border:0; border-radius:
 dialog::backdrop { background:rgba(5,10,14,.72); }
 .confirmation { padding:1.5rem; }
 .confirmation h2 { margin:.4rem 0; font-size:1.65rem; }
+.confirmation__field { margin-top:1.2rem; display:grid; gap:.4rem; color:var(--navy); font-weight:800; }
+.confirmation__field textarea { width:100%; min-width:0; resize:vertical; padding:.7rem .75rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:#fbfcfc; }
 .confirmation__actions { margin-top:1.4rem; display:flex; justify-content:flex-end; gap:.6rem; }
 .secondary-action,.danger-action { min-height:44px; padding:.65rem .9rem; border-radius:4px; font-weight:900; }
 .secondary-action { border:1px solid var(--line); background:var(--white); }

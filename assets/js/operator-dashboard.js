@@ -5,12 +5,24 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const REQUEST_KINDS = new Set(["website", "slimme_documentenflow"]);
 const PRODUCT_FILTERS = new Set(["all", ...REQUEST_KINDS]);
 const WEBSITE_DOSSIER_IDS = Object.freeze([
-  "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
+  "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
 const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfProjectDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
+const LIFECYCLE_PRESENTATION = Object.freeze({
+  ACTIVE: Object.freeze({ label: "Actief", tone: "green", actions: Object.freeze(["interrupt_intake", "cancel_intake"]) }),
+  INTERRUPTED: Object.freeze({ label: "Onderbroken", tone: "amber", actions: Object.freeze(["resume_intake", "cancel_intake"]) }),
+  EXPIRED: Object.freeze({ label: "Verlopen", tone: "red", actions: Object.freeze(["reactivate_intake"]) }),
+  CANCELLED: Object.freeze({ label: "Geannuleerd", tone: "red", actions: Object.freeze([]) }),
+});
+const LIFECYCLE_ACTIONS = Object.freeze({
+  interrupt_intake: Object.freeze({ label: "Onderbreken", title: "Intake onderbreken", description: "De klant kan deze intake niet gebruiken totdat een operator ze hervat." }),
+  resume_intake: Object.freeze({ label: "Hervatten", title: "Intake hervatten", description: "De bestaande geldigheidstermijn blijft behouden." }),
+  cancel_intake: Object.freeze({ label: "Definitief annuleren", title: "Intake definitief annuleren", description: "Annuleren is definitief voor deze intake en kan niet worden hervat." }),
+  reactivate_intake: Object.freeze({ label: "Reactiveren", title: "Intake reactiveren", description: "De server start een nieuwe geldigheidstermijn van zeven dagen." }),
+});
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
   M1_PAYMENT_PENDING: "Mijlpaal 1 betaling verwacht",
@@ -30,6 +42,48 @@ export function applicationReferenceFromUrl(url) {
 
 export function canPromoteApplication(detail) {
   return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
+}
+
+export function intakeLifecyclePresentation(lifecycle) {
+  const state = String(lifecycle?.effective_access || "");
+  const presentation = LIFECYCLE_PRESENTATION[state];
+  if (!presentation
+      || !UUID.test(String(lifecycle?.intake_id || ""))
+      || !Number.isSafeInteger(lifecycle?.lifecycle_revision)
+      || lifecycle.lifecycle_revision < 0
+      || !lifecycle?.access_token_expires_at) return null;
+  return { state, ...presentation };
+}
+
+export function intakeLifecycleAction(action) {
+  return LIFECYCLE_ACTIONS[action] || null;
+}
+
+export function buildIntakeLifecycleCommand(action, lifecycle, reason, idempotencyKey) {
+  const presentation = intakeLifecyclePresentation(lifecycle);
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (!presentation?.actions.includes(action)
+      || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length < 1
+      || normalizedReason.length > 500) throw new Error("INVALID_LIFECYCLE_COMMAND");
+  return {
+    action,
+    intake_id: lifecycle.intake_id,
+    expected_revision: lifecycle.lifecycle_revision,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
+  };
+}
+
+export function intakeLifecycleError(code) {
+  if (code === "CONCURRENT_MODIFICATION") return { message: "Deze intake werd ondertussen gewijzigd. De gegevens worden opnieuw geladen.", refresh: true };
+  if (code === "COMMAND_REJECTED" || code === "INVALID_INTAKE_LIFECYCLE_TRANSITION") return { message: "De status van deze intake is ondertussen gewijzigd. De gegevens worden opnieuw geladen.", refresh: true };
+  if (code === "IDEMPOTENCY_CONFLICT") return { message: "Deze aanvraag conflicteert met een eerdere poging. De gegevens worden opnieuw geladen.", refresh: true };
+  if (code === "INTAKE_NOT_FOUND" || code === "APPLICATION_NOT_FOUND") return { message: "Deze intake of aanvraag is niet meer beschikbaar.", refresh: true };
+  if (["AUTHENTICATION_REQUIRED", "INVALID_JWT", "HUMAN_JWT_REQUIRED", "OPERATOR_NOT_AUTHORIZED", "INSUFFICIENT_PERMISSIONS"].includes(code)) {
+    return { message: "Je sessie is verlopen of je hebt onvoldoende bevoegdheid voor deze actie.", refresh: false };
+  }
+  return { message: "De lifecycleactie kon niet worden uitgevoerd. Probeer het opnieuw.", refresh: false };
 }
 
 export function applicationsForFilter(applications, filter) {
@@ -270,6 +324,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const detailMessage = document.getElementById("applicationDetailMessage");
   const promote = document.getElementById("promoteApplication");
   const confirmation = document.getElementById("promotionDialog");
+  const lifecycleDossier = document.getElementById("lifecycleDossier");
+  const lifecycleDossierTitle = document.getElementById("lifecycleDossierTitle");
+  const lifecycleMessage = document.getElementById("lifecycleActionMessage");
+  const lifecycleButtons = Array.from(document.querySelectorAll("[data-lifecycle-action]"));
+  const lifecycleDialog = document.getElementById("lifecycleDialog");
+  const lifecycleForm = document.getElementById("lifecycleForm");
+  const lifecycleReason = document.getElementById("lifecycleReason");
+  const lifecycleConfirm = document.getElementById("lifecycleConfirm");
+  const lifecycleCancel = document.getElementById("lifecycleCancel");
   const dossierSections = Array.from(document.querySelectorAll(".dossier-section"));
   const websiteDossierSections = WEBSITE_DOSSIER_IDS.map((id) => document.getElementById(id));
   const sdfDossierSections = SDF_DOSSIER_IDS.map((id) => document.getElementById(id));
@@ -282,6 +345,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let selectedLocator = applicationLocatorFromUrl(window.location.href);
   let selectedDetail = null;
   let detailRequestId = 0;
+  let lifecycleBusy = false;
+  let pendingLifecycleAction = null;
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
@@ -304,6 +369,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     selectedDetail = null;
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
+    lifecycleMessage.textContent = "";
     updateLocation(null);
   }
 
@@ -406,6 +472,28 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     renderTimeline(project);
   }
 
+  function renderIntakeLifecycle(lifecycle) {
+    const presentation = intakeLifecyclePresentation(lifecycle);
+    lifecycleDossier.hidden = !presentation;
+    if (!presentation) {
+      for (const button of lifecycleButtons) button.hidden = true;
+      return;
+    }
+    setBadge("lifecycleStateBadge", presentation.label, presentation.tone);
+    setText("detailLifecycleExpiresAt", formatDate(lifecycle.access_token_expires_at));
+    setText("detailLifecycleRevision", lifecycle.lifecycle_revision);
+    for (const button of lifecycleButtons) {
+      button.hidden = !presentation.actions.includes(button.dataset.lifecycleAction);
+      button.disabled = lifecycleBusy;
+    }
+  }
+
+  function setLifecycleBusy(busy) {
+    lifecycleBusy = busy;
+    lifecycleConfirm.disabled = busy;
+    for (const button of lifecycleButtons) button.disabled = busy;
+  }
+
   function renderDetail(application) {
     if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
     const isWebsite = application.request_kind === "website";
@@ -450,7 +538,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailIntakeStatus", application.intake_status || "Niet beschikbaar");
     setText("detailSubmittedAt", formatDate(application.submitted_at));
     promote.hidden = true;
-    if (!isWebsite) return;
+    if (!isWebsite) return renderIntakeLifecycle(null);
+    renderIntakeLifecycle(application.intake_lifecycle);
     setText("detailPackage", PACKAGE_LABELS[application.pricing?.selected_package] || application.pricing?.selected_package || "Niet vastgelegd");
     setText("detailIndicativeTotal", formatMoney(application.pricing?.known_minimum_minor));
     setText("detailBudgetGuard", application.pricing?.budget_guard_status || "Niet beschikbaar");
@@ -471,6 +560,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const requestId = ++detailRequestId;
     selectedDetail = null;
     promote.hidden = true;
+    lifecycleDossier.hidden = true;
+    lifecycleMessage.textContent = "";
     detailMessage.textContent = "Aanvraag wordt geladen.";
     try {
       const application = await invoke({ action: "get_application_detail", ...locator });
@@ -578,7 +669,81 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   });
 
+  for (const button of lifecycleButtons) {
+    button.addEventListener("click", ()=>{
+      const action = button.dataset.lifecycleAction;
+      const lifecycle = selectedDetail?.intake_lifecycle;
+      const presentation = intakeLifecyclePresentation(lifecycle);
+      const actionPresentation = intakeLifecycleAction(action);
+      if (lifecycleBusy || !presentation?.actions.includes(action) || !actionPresentation || !selectedLocator) return;
+      pendingLifecycleAction = {
+        action,
+        lifecycle,
+        locator: { ...selectedLocator },
+        presentation: actionPresentation,
+      };
+      setText("lifecycleDialogTitle", actionPresentation.title);
+      setText("lifecycleDialogDescription", actionPresentation.description);
+      lifecycleConfirm.textContent = actionPresentation.label;
+      lifecycleConfirm.className = action === "cancel_intake" ? "danger-action" : "primary-action primary-action--compact";
+      lifecycleReason.value = "";
+      lifecycleReason.setCustomValidity("");
+      lifecycleDialog.returnValue = "";
+      lifecycleDialog.showModal();
+      lifecycleReason.focus();
+    });
+  }
+
+  lifecycleReason.addEventListener("input", ()=>lifecycleReason.setCustomValidity(""));
+  lifecycleCancel.addEventListener("click", ()=>lifecycleDialog.close("cancel"));
+  lifecycleForm.addEventListener("submit", (event)=>{
+    const reason = lifecycleReason.value.trim();
+    if (reason.length >= 1 && reason.length <= 500) return;
+    event.preventDefault();
+    lifecycleReason.setCustomValidity("Vul een korte reden in.");
+    lifecycleReason.reportValidity();
+  });
+  lifecycleDialog.addEventListener("close", async ()=>{
+    const command = pendingLifecycleAction;
+    pendingLifecycleAction = null;
+    if (lifecycleDialog.returnValue !== "confirm" || !command || lifecycleBusy) return;
+    let input;
+    try {
+      input = buildIntakeLifecycleCommand(command.action, command.lifecycle, lifecycleReason.value, crypto.randomUUID());
+    } catch {
+      lifecycleMessage.textContent = "Vul een geldige reden in en probeer opnieuw.";
+      return;
+    }
+    setLifecycleBusy(true);
+    lifecycleMessage.textContent = `${command.presentation.label} wordt uitgevoerd.`;
+    let completed = false;
+    try {
+      await invoke(input);
+      await loadDetail(command.locator);
+      completed = true;
+      lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
+    } catch (error) {
+      const outcome = intakeLifecycleError(error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED");
+      if (outcome.refresh) await loadDetail(command.locator);
+      lifecycleMessage.textContent = outcome.message;
+    } finally {
+      setLifecycleBusy(false);
+      if (selectedDetail?.request_kind === "website") renderIntakeLifecycle(selectedDetail.intake_lifecycle);
+      if (completed) focusIntakeLifecycle(selectedDetail?.intake_lifecycle, lifecycleButtons, lifecycleDossierTitle);
+    }
+  });
+
   await loadList();
+}
+
+export function focusIntakeLifecycle(lifecycle, buttons, fallback) {
+  const actions = intakeLifecyclePresentation(lifecycle)?.actions || [];
+  const target = actions
+    .map((action)=>buttons.find((button)=>button.dataset.lifecycleAction === action))
+    .find((button)=>button && !button.hidden && !button.disabled)
+    || fallback;
+  target?.focus();
+  return target || null;
 }
 
 export function applicationLocatorFromUrl(url) {

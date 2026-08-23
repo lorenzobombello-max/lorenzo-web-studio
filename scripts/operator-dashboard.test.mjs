@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, canPromoteApplication, customerCorePresentation, emptyStateForFilter, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -82,6 +82,97 @@ test("promotion is visible only for accepted applications without a project", ()
   assert.equal(canPromoteApplication({ request_kind: "website", acceptance: null, project: null }), false);
   assert.equal(canPromoteApplication({ request_kind: "website", acceptance: { acceptance_id: "accepted" }, project: { project_id: "project" } }), false);
   assert.equal(canPromoteApplication({ request_kind: "slimme_documentenflow", acceptance: { acceptance_id: "unexpected" }, project: null }), false);
+});
+
+function intakeLifecycle(effectiveAccess, overrides = {}) {
+  return {
+    intake_id: "a1800000-0000-4000-8000-000000000030",
+    access_state: effectiveAccess === "EXPIRED" ? "ACTIVE" : effectiveAccess,
+    effective_access: effectiveAccess,
+    access_token_expires_at: "2099-08-30T12:00:00Z",
+    lifecycle_revision: 2,
+    ...overrides,
+  };
+}
+
+test("lifecycle actions follow only the authoritative effective state", () => {
+  assert.deepEqual(intakeLifecyclePresentation(intakeLifecycle("ACTIVE")).actions, ["interrupt_intake", "cancel_intake"]);
+  assert.deepEqual(intakeLifecyclePresentation(intakeLifecycle("INTERRUPTED")).actions, ["resume_intake", "cancel_intake"]);
+  assert.deepEqual(intakeLifecyclePresentation(intakeLifecycle("EXPIRED")).actions, ["reactivate_intake"]);
+  assert.deepEqual(intakeLifecyclePresentation(intakeLifecycle("CANCELLED")).actions, []);
+  assert.equal(intakeLifecyclePresentation(intakeLifecycle("UNKNOWN")), null);
+  assert.equal(intakeLifecyclePresentation(null), null);
+});
+
+test("lifecycle command sends revision and idempotency without token or expiry authority", () => {
+  const command = buildIntakeLifecycleCommand(
+    "interrupt_intake",
+    intakeLifecycle("ACTIVE"),
+    "  Klant vroeg om een tijdelijke pauze.  ",
+    "a1800000-0000-4000-8000-000000000031",
+  );
+  assert.deepEqual(command, {
+    action: "interrupt_intake",
+    intake_id: "a1800000-0000-4000-8000-000000000030",
+    expected_revision: 2,
+    idempotency_key: "a1800000-0000-4000-8000-000000000031",
+    reason: "Klant vroeg om een tijdelijke pauze.",
+  });
+  assert.equal(Object.hasOwn(command, "access_token"), false);
+  assert.equal(Object.hasOwn(command, "expires_at"), false);
+});
+
+test("lifecycle command fails closed for blank reason and forbidden transitions", () => {
+  assert.throws(()=>buildIntakeLifecycleCommand("interrupt_intake", intakeLifecycle("ACTIVE"), "   ", "a1800000-0000-4000-8000-000000000031"), /INVALID_LIFECYCLE_COMMAND/);
+  assert.throws(()=>buildIntakeLifecycleCommand("resume_intake", intakeLifecycle("ACTIVE"), "Reden", "a1800000-0000-4000-8000-000000000031"), /INVALID_LIFECYCLE_COMMAND/);
+  assert.throws(()=>buildIntakeLifecycleCommand("reactivate_intake", intakeLifecycle("CANCELLED"), "Reden", "a1800000-0000-4000-8000-000000000031"), /INVALID_LIFECYCLE_COMMAND/);
+});
+
+test("lifecycle errors request authoritative refresh without exposing internals", () => {
+  assert.equal(intakeLifecycleError("CONCURRENT_MODIFICATION").refresh, true);
+  assert.equal(intakeLifecycleError("COMMAND_REJECTED").refresh, true);
+  assert.equal(intakeLifecycleError("IDEMPOTENCY_CONFLICT").refresh, true);
+  assert.equal(intakeLifecycleError("INTAKE_NOT_FOUND").refresh, true);
+  assert.equal(intakeLifecycleError("OPERATOR_NOT_AUTHORIZED").refresh, false);
+  assert.doesNotMatch(intakeLifecycleError("internal SQL detail").message, /SQL|postgres|internal/i);
+});
+
+test("lifecycle UI uses one accessible dialog, busy guard, and authoritative reload", async () => {
+  const [html, script] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard.js"),
+  ]);
+  assert.match(html, /id="lifecycleDossier"/);
+  assert.match(html, /id="lifecycleDialog"[^>]*aria-labelledby="lifecycleDialogTitle"[^>]*aria-describedby="lifecycleDialogDescription"/);
+  assert.match(html, /id="lifecycleReason"[^>]*maxlength="500"[^>]*required/);
+  assert.doesNotMatch(html, /customer token|access token|access_token/i);
+  assert.match(script, /if \(lifecycleBusy \|\|/);
+  assert.match(script, /button\.disabled = lifecycleBusy/);
+  assert.match(script, /crypto\.randomUUID\(\)/);
+  assert.match(script, /await invoke\(input\);[\s\S]{0,80}await loadDetail\(command\.locator\)/);
+  assert.match(script, /if \(outcome\.refresh\) await loadDetail\(command\.locator\)/);
+});
+
+test("successful interrupt focuses the visible resume action instead of the hidden trigger", () => {
+  const focused = [];
+  const buttons = [
+    { dataset: { lifecycleAction: "interrupt_intake" }, hidden: true, disabled: false, focus: ()=>focused.push("interrupt_intake") },
+    { dataset: { lifecycleAction: "resume_intake" }, hidden: false, disabled: false, focus: ()=>focused.push("resume_intake") },
+    { dataset: { lifecycleAction: "cancel_intake" }, hidden: false, disabled: false, focus: ()=>focused.push("cancel_intake") },
+  ];
+  const body = { focus: ()=>focused.push("body") };
+
+  assert.equal(focusIntakeLifecycle(intakeLifecycle("INTERRUPTED"), buttons, body), buttons[1]);
+  assert.deepEqual(focused, ["resume_intake"]);
+});
+
+test("successful cancellation focuses the visible lifecycle heading fallback", () => {
+  const focused = [];
+  const hiddenTrigger = { dataset: { lifecycleAction: "cancel_intake" }, hidden: true, disabled: false, focus: ()=>focused.push("cancel_intake") };
+  const heading = { focus: ()=>focused.push("heading") };
+
+  assert.equal(focusIntakeLifecycle(intakeLifecycle("CANCELLED"), [hiddenTrigger], heading), heading);
+  assert.deepEqual(focused, ["heading"]);
 });
 
 test("product filters use only authoritative request_kind and fail closed", () => {
