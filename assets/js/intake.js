@@ -176,6 +176,7 @@
 
   const PREVIEW_DEBOUNCE_MS = 350;
   const PREVIEW_CONTRACT_VERSION = 3;
+  const INITIAL_INSPECT_TIMEOUT_MS = 15_000;
   const commaFields = ["languages", "brand_colors", "seo_keywords", "social_channels", "integrations"];
   const arrayFields = ["website_goals", "requested_pages", "requested_features", "design_styles", "image_support", "priorities"];
   const booleanFields = ["has_existing_website", "shop_required", "booking_required", "budget_confirmed"];
@@ -1677,11 +1678,12 @@
     return false;
   }
 
-  async function request(action, data) {
+  async function request(action, data, signal) {
     const requiresRevision = action === "save_draft" || action === "reset_draft";
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      ...(signal ? { signal } : {}),
       body: JSON.stringify({
         action,
         token,
@@ -1722,6 +1724,22 @@
 
   function handleNetworkError() {
     setMessage("De service is niet bereikbaar. Controleer je internetverbinding en probeer opnieuw.", "error");
+  }
+
+  function initialInspectErrorMessage(status, code) {
+    if (status === 401 || code === "INVALID_INTAKE_TOKEN") {
+      return "Deze intake-link is ongeldig of niet meer geldig.";
+    }
+    if (code === "INTAKE_ACCESS_INTERRUPTED") {
+      return "Deze intake is tijdelijk niet beschikbaar. Neem contact met ons op als je hulp nodig hebt.";
+    }
+    if (code === "INTAKE_ACCESS_EXPIRED") {
+      return "Deze intake-link is verlopen. Neem contact met ons op voor een nieuwe link.";
+    }
+    if (code === "INTAKE_ACCESS_CANCELLED") {
+      return "Deze intake is niet meer beschikbaar. Neem contact met ons op als je vragen hebt.";
+    }
+    return "De intake kon tijdelijk niet worden geladen. Probeer later opnieuw.";
   }
 
   async function saveDraft() {
@@ -1878,9 +1896,11 @@
   async function inspect() {
     previewStopped = false;
     if (!token || !endpoint) return showUnavailable("Deze intake-link is ongeldig of niet meer geldig.");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), INITIAL_INSPECT_TIMEOUT_MS);
     try {
-      const { response, body } = await request("inspect");
-      if (!response.ok) return handleApiError(response, body);
+      const { response, body } = await request("inspect", undefined, controller.signal);
+      if (!response.ok) return showUnavailable(initialInspectErrorMessage(response.status, body.code));
       restoreData(body.data);
       if (!Number.isSafeInteger(body.intake?.revision) || body.intake.revision < 0) {
         return showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw.");
@@ -1896,7 +1916,11 @@
       if (status === "in_progress") setMessage("Je eerder opgeslagen concept is hersteld.", "success");
       if (status === "submitted" || status === "reviewed") setReadOnly(status, body.application);
       else schedulePricingPreview({ force: true, immediate: true });
-    } catch { showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw."); }
+    } catch {
+      showUnavailable("De intake kon tijdelijk niet worden geladen. Probeer later opnieuw.");
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   form.addEventListener("input", (event) => {
