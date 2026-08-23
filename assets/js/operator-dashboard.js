@@ -40,6 +40,21 @@ export function applicationReferenceFromUrl(url) {
   return value && APPLICATION_REFERENCE.test(value) ? value : null;
 }
 
+export function applicationIdentityPresentation(application) {
+  const applicationReference = String(application?.application_reference || "");
+  const quoteRequestId = String(application?.quote_request_id || "");
+  if (APPLICATION_REFERENCE.test(applicationReference)) {
+    return {
+      visibleReference: applicationReference,
+      locator: { application_reference: applicationReference },
+    };
+  }
+  return {
+    visibleReference: `Oudere aanvraag · ${quoteRequestId}`,
+    locator: { quote_request_id: quoteRequestId },
+  };
+}
+
 export function canPromoteApplication(detail) {
   return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
 }
@@ -499,7 +514,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
     applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
-    setText("detailReference", application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`);
+    setText("detailReference", applicationIdentityPresentation(application).visibleReference);
     setText("detailName", application.name);
     setText("detailRequestKind", isWebsite ? "Website" : "Slimme Documentenflow");
     setText("detailSdfPackage", sdfPackageLabel(application.sdf_package));
@@ -599,7 +614,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const name = document.createElement("strong");
       name.textContent = application.company || application.name;
       const reference = document.createElement("small");
-      reference.textContent = `${application.application_reference || `Oudere aanvraag · ${application.quote_request_id}`} · ${formatDate(application.submitted_at)}`;
+      const applicationPresentation = applicationIdentityPresentation(application);
+      reference.textContent = `${applicationPresentation.visibleReference} · ${formatDate(application.submitted_at)}`;
       identity.append(name, reference);
       const state = application.request_kind === "slimme_documentenflow"
         ? badge("Documentenflow")
@@ -609,9 +625,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         ? badge("Geaccepteerd", "amber")
         : badge("Ingediend");
       button.append(identity, state);
-      const locator = application.application_reference
-        ? { application_reference: application.application_reference }
-        : { quote_request_id: application.quote_request_id };
+      const locator = applicationPresentation.locator;
       if (locatorMatchesApplication(selectedLocator, application)) button.setAttribute("aria-current", "true");
       button.addEventListener("click", ()=>{
         for (const candidate of list.querySelectorAll("[aria-current]")) candidate.removeAttribute("aria-current");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -75,6 +75,34 @@ test("production dashboard uses real application data and no synthetic state", a
 test("application reference query is the only accepted human locator", () => {
   assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=LWS-AAN-2099-0001"), "LWS-AAN-2099-0001");
   assert.equal(applicationReferenceFromUrl("https://example.test/operator/dashboard/?application=bad"), null);
+});
+
+test("application identity presents the human reference and routes with the existing reference contract", () => {
+  const application = {
+    application_reference: "LWS-AAN-2099-0401",
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+  };
+  assert.deepEqual(applicationIdentityPresentation(application), {
+    visibleReference: "LWS-AAN-2099-0401",
+    locator: { application_reference: "LWS-AAN-2099-0401" },
+  });
+  assert.equal(application.quote_request_id, "a1100000-0000-4000-8000-000000000003");
+});
+
+test("application identity preserves the technical UUID fallback for legacy records", () => {
+  const quoteRequestId = "a1100000-0000-4000-8000-000000000003";
+  assert.deepEqual(applicationIdentityPresentation({ application_reference: null, quote_request_id: quoteRequestId }), {
+    visibleReference: `Oudere aanvraag · ${quoteRequestId}`,
+    locator: { quote_request_id: quoteRequestId },
+  });
+  assert.deepEqual(applicationIdentityPresentation({ application_reference: "invalid", quote_request_id: quoteRequestId }).locator, { quote_request_id: quoteRequestId });
+});
+
+test("application list and detail use the same human-readable identity presentation", async () => {
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /setText\("detailReference", applicationIdentityPresentation\(application\)\.visibleReference\)/);
+  assert.match(script, /reference\.textContent = `\$\{applicationPresentation\.visibleReference\}/);
+  assert.match(script, /const locator = applicationPresentation\.locator/);
 });
 
 test("promotion is visible only for accepted applications without a project", () => {
