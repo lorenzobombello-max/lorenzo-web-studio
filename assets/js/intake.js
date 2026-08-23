@@ -8,14 +8,14 @@
     { phase: 0, title: "Budget", intro: "Geef uw budgetverwachting mee. Zo vergelijken we uw keuzes meteen met een realistische projectbasis.", nodes: [
       ['input[name="budget_confirmed"]'], ["#budget_update_category"], ["#budget_notes"],
     ] },
+    { phase: 0, title: "Kies uw pakket", intro: "Kies de bestaande pakketbasis die het best aansluit bij de omvang van uw website.", nodes: [
+      [".package-selection", ".package-selection"],
+    ] },
     { phase: 0, title: "Huidige situatie", intro: "We brengen eerst uw bestaande website, domeinnaam en hosting in kaart.", nodes: [
       ['input[name="has_existing_website"]'], ["#existingWebsiteFields", ".conditional-panel"], ["#domain_status"], ["#domain_name"], ["#hosting_status"], ["#hosting_support"],
     ] },
     { phase: 0, title: "Webshop en reservaties", intro: "Bepaal vroeg of verkoop, reservaties of afspraken deel uitmaken van de technische oplossing.", nodes: [
       ['input[name="shop_required"]'], ["#shopFields", ".conditional-panel"], ['input[name="booking_required"]'], ["#bookingFields", ".conditional-panel"], ['input[name="online_payment_required"]'], ["#onlinePaymentFields", ".conditional-panel"],
-    ] },
-    { phase: 1, title: "Kies uw pakket", intro: "Kies de bestaande pakketbasis die het best aansluit bij de omvang van uw website.", nodes: [
-      [".package-selection", ".package-selection"],
     ] },
     { phase: 1, title: "Bedrijf en doelen", intro: "Vertel wat uw organisatie doet, wie u wilt bereiken en welke actie uw website moet stimuleren.", nodes: [
       ["#business_description"], ["#target_audience"], ['[data-group="website_goals"]'], ["#primary_conversion_goal"],
@@ -42,7 +42,7 @@
       ['[data-name="priorities"]'], ["#additional_notes"], ["#confirmation", ".confirmation-field"],
     ] },
   ];
-  const phaseStartScreens = [0, 3, 5, 8, 10];
+  const phaseStartScreens = [0, 4, 5, 8, 10];
   const phaseLabels = ["Uw project", "Uw oplossing", "Uw website", "Uw uitstraling", "Afronding"];
 
   function initializeIntakeScreens() {
@@ -1635,8 +1635,8 @@
       showStep(0);
       return false;
     }
-    if (targetStep > 3 && !form.querySelector('input[name="selected_package_definition_id"]:checked')) {
-      showStep(3);
+    if (targetStep > 1 && !form.querySelector('input[name="selected_package_definition_id"]:checked')) {
+      showStep(1);
       validatePackageSelection();
       return false;
     }
@@ -1943,7 +1943,7 @@
     document.getElementById("budget_update_category")?.focus?.();
   });
   document.getElementById("changePackage").addEventListener("click", () => {
-    showStep(3);
+    showStep(1);
     (form.querySelector('input[name="selected_package_definition_id"]:checked') ||
       form.querySelector('input[name="selected_package_definition_id"]'))?.focus?.();
   });

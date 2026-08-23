@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert@1";
+import { assertEquals, assertExists, assertMatch, assertStringIncludes } from "jsr:@std/assert@1";
 import { DOMParser } from "npm:linkedom@0.18.12";
 
 const source = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
@@ -23,6 +23,12 @@ Deno.test("runtime defines twelve screens across all five phases", () => {
   assertExists(definitions);
   assertEquals([...definitions[1].matchAll(/\{ phase: ([0-4]), title:/g)].length, 12);
   assertEquals(new Set([...definitions[1].matchAll(/\{ phase: ([0-4]), title:/g)].map((match) => match[1])).size, 5);
+  assertEquals([...definitions[1].matchAll(/\{ phase: [0-4], title: "([^"]+)"/g)].map((match) => match[1]).slice(0, 4), [
+    "Budget",
+    "Kies uw pakket",
+    "Huidige situatie",
+    "Webshop en reservaties",
+  ]);
   assertStringIncludes(source, "INTAKE_SCREEN_CONTROL_MISMATCH");
 });
 
@@ -60,6 +66,12 @@ Deno.test("budget is first, required and keeps exact authoritative values", () =
     "Meer dan EUR 6.000",
   ]);
   assertStringIncludes(source, '{ phase: 0, title: "Budget"');
+});
+
+Deno.test("package navigation targets the second screen", () => {
+  assertStringIncludes(source, "if (targetStep > 1");
+  assertMatch(source, /if \(targetStep > 1[\s\S]*showStep\(1\);[\s\S]*validatePackageSelection\(\);/);
+  assertMatch(source, /getElementById\("changePackage"\)[\s\S]*showStep\(1\);/);
 });
 
 Deno.test("review screen uses existing form data and server preview text", () => {

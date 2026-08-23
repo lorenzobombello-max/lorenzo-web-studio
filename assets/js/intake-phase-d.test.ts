@@ -323,6 +323,6 @@ Deno.test("intake navigation preserves five phases and twelve screens", () => {
   assertEquals([...definitions.matchAll(/\{ phase: \d/g)].length, 12);
   assert(definitions.includes('["#logoDeliveryFields"]'));
   assert(definitions.includes('["#imageDeliveryFields"]'));
-  assertMatch(source, /const phaseStartScreens = \[0, 3, 5, 8, 10\]/);
+  assertMatch(source, /const phaseStartScreens = \[0, 4, 5, 8, 10\]/);
   assertMatch(source, /const phaseLabels = \[[^\]]*"Uw project"[^\]]*"Afronding"/);
 });
