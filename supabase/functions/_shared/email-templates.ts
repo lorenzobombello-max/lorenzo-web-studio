@@ -414,7 +414,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
                 <tr>
                   <td style="padding:18px 20px;">
                     <strong style="color:#172033;">Aanvraag ${safeReference}</strong><br>
-                    Je persoonlijke link blijft 14 dagen geldig. Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.
+                    Je persoonlijke link blijft 7 dagen geldig. Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.
                   </td>
                 </tr>
               </table>
@@ -456,7 +456,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
     "De volgende stap is een korte maar grondige websitebriefing. Daarmee brengen we je doelen, gewenste inhoud, stijl en praktische verwachtingen helder in kaart.",
     "",
     `Aanvraag ${requestReference}`,
-    "Je persoonlijke link blijft 14 dagen geldig.",
+    "Je persoonlijke link blijft 7 dagen geldig.",
     "Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.",
     "",
     "Mijn websitebriefing invullen:",
