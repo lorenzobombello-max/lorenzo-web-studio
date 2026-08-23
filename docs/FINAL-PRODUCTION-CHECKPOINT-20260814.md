@@ -6,13 +6,25 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 - Repository: `lorenzobombello-max/lorenzo-web-studio`
 - Production branch: `origin/main`
-- Finale productiecommit: `17669ab1e649f5cbfaeee6349ba8dccdc91a76ff`
-- Commit: `Fix homepage hero descender clipping`
+- Finale productiecommit: `3a2a96db2737024a6eb7fefcd2b82c17ce56f019`
+- Commit: `fix(intake): correct inspect transaction mode`
 - Website status: **KLAAR / PRODUCTION READY voor de huidige goedgekeurde scope**
 - Live URL: `https://lorenzowebsolutions.be/`
-- Statusdatum: 2026-08-14
+- Statusdatum: 2026-08-23
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
+
+## Intake inspect transaction mode continuity - 23-08-2026
+
+**Status: ROOT CAUSE PROVEN / REMEDIATED / REVIEWED / PRODUCTION APPLIED / PRODUCTION VERIFIED.**
+
+- Release-HEAD en fixcommit: `3a2a96db2737024a6eb7fefcd2b82c17ce56f019` (`fix(intake): correct inspect transaction mode`).
+- Root cause: de inspect-RPC transaction mode was incompatibel met de lockingsemantiek.
+- Remediation: de betrokken inspectwrappers v2-v5 zijn gecorrigeerd naar `VOLATILE`, met behoud van `FOR SHARE` en de bestaande security- en authoritycontracten.
+- Productionverificatie: Lorenzo bevestigde handmatig dat de beveiligde intake opnieuw correct opent en de workspace wordt geladen.
+- De production migration is toegepast en de production-RPC is zonder SQLSTATE `25006` of `INTAKE_INSPECT_FAILED` geverifieerd.
+- Het niet-tracked bestand `LWS_MASTER_CONTINUITY_CONTROL_2026-08-18.md` is op 23-08-2026 niet aangetroffen in de reeds bekende projectauthoritylocaties en is niet gereconstrueerd.
+- Deze incidentclosure start geen nieuwe technische fase. De hieronder vastgelegde eerstvolgende atomic Phase-B stap blijft `SDF MILESTONE 1 INVOICE AUTHORITY RECOVERY`.
 
 ## Operator Phase B continuity - 21-08-2026
 
