@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(92);
+select plan(118);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -314,6 +314,215 @@ select is(jsonb_array_length(public.get_commercial_project_view_v2((select (resu
 select is(jsonb_array_length(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'timeline'),2,'project dossier combines workflow and audit creation events');
 select ok((select bool_and(previous_time >= occurred_at) from (select occurred_at,lag(occurred_at) over (order by ordinal) as previous_time from jsonb_array_elements(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'timeline') with ordinality as event(value,ordinal) cross join lateral (select (event.value->>'occurred_at')::timestamptz as occurred_at) parsed) ordered where previous_time is not null),'project timeline is newest first');
 
+insert into public.quote_request_pricing_snapshots (
+  id,intake_id,snapshot_contract_version,config_version,config_hash,
+  normalized_evidence,calculation,package_advice,budget_evaluation
+)
+select
+  'b1300000-0000-4000-8000-000000000001','a1200000-0000-4000-8000-000000000002',snapshot_contract_version,config_version,repeat('2',64),
+  normalized_evidence,calculation,package_advice,budget_evaluation
+from public.quote_request_pricing_snapshots
+where id='a1300000-0000-4000-8000-000000000001';
+insert into public.quote_request_pricing_snapshot_integrity(snapshot_id,algorithm_version,key_id,mac)
+values('b1300000-0000-4000-8000-000000000001','hmac-sha256-v1','v1',repeat('a',64));
+
+create temporary table second_handoff_approval_payload as
+select jsonb_set(
+  jsonb_set(
+    jsonb_set(
+      jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(payload,'{source_quote_request_id}','"a1110000-0000-4000-8000-000000000002"'),
+            '{source_intake_id}','"a1200000-0000-4000-8000-000000000002"'
+          ),
+          '{pricing_snapshot,snapshot_id}','"b1300000-0000-4000-8000-000000000001"'
+        ),
+        '{customer_identity,source_quote_request_id}','"a1110000-0000-4000-8000-000000000002"'
+      ),
+      '{customer_identity,source_intake_id}','"a1200000-0000-4000-8000-000000000002"'
+    ),
+    '{project_scope,source_intake_id}','"a1200000-0000-4000-8000-000000000002"'
+  ),
+  '{project_scope,source_pricing_snapshot_id}','"b1300000-0000-4000-8000-000000000001"'
+) as payload
+from handoff_approval_payload;
+
+insert into public.quote_request_quotation_approval_drafts(id,quote_request_id,intake_id,pricing_snapshot_id,contract_version,approval_payload,payload_fingerprint,idempotency_key,created_by)
+select 'b1400000-0000-4000-8000-000000000001','a1110000-0000-4000-8000-000000000002','a1200000-0000-4000-8000-000000000002','b1300000-0000-4000-8000-000000000001',1,payload,public.quotation_approval_payload_sha256_v1(payload),'b1400000-0000-4000-8000-000000000002','admin:test' from second_handoff_approval_payload;
+insert into public.quote_request_quotation_approvals(id,draft_id,quote_request_id,intake_id,pricing_snapshot_id,contract_version,approval_version,approved_payload,payload_sha256,approved_by,approved_at)
+select 'b1500000-0000-4000-8000-000000000001','b1400000-0000-4000-8000-000000000001','a1110000-0000-4000-8000-000000000002','a1200000-0000-4000-8000-000000000002','b1300000-0000-4000-8000-000000000001',1,1,payload,public.quotation_approval_payload_sha256_v1(payload),'admin:test',clock_timestamp() from second_handoff_approval_payload;
+insert into public.quote_request_quotation_approval_integrity(approval_id,algorithm_version,key_id,mac)
+values('b1500000-0000-4000-8000-000000000001','hmac-sha256-v1','v1',repeat('e',64));
+insert into public.quote_request_quotation_issuances (
+  id,quotation_number,quotation_version,status,approval_id,issued_at,issued_by,
+  template_id,template_version,template_sha256,generation_contract_version,
+  issuance_input_sha256,generation_payload_sha256,docx_sha256,docx_bytes,
+  prepare_idempotency_key,prepare_fingerprint,commit_idempotency_key,commit_fingerprint
+) values (
+  'b1600000-0000-4000-8000-000000000001','LWS-OFF-2099-0002',1,'ISSUED','b1500000-0000-4000-8000-000000000001',clock_timestamp(),'admin:test',
+  'LWS_QUOTATION_NL_BE','1.0.0-technical',repeat('3',64),1,
+  repeat('4',64),repeat('5',64),repeat('6',64),12345,
+  'b1600000-0000-4000-8000-000000000002',repeat('7',64),'b1600000-0000-4000-8000-000000000003',repeat('8',64)
+);
+create temporary table second_handoff_acceptance_payload as
+select jsonb_set(
+  jsonb_set(payload,'{issuance_id}','"b1600000-0000-4000-8000-000000000001"'),
+  '{quotation_number}','"LWS-OFF-2099-0002"'
+) as payload
+from handoff_acceptance_payload;
+insert into public.quote_request_quotation_acceptances (
+  id,issuance_id,quotation_number,quotation_version,customer_identity_sha256,customer_legal_name,
+  generation_payload_sha256,template_id,template_version,template_sha256,docx_sha256,docx_bytes,
+  acceptance_contract_version,acceptance_terms_id,acceptance_terms_version,acceptance_terms_sha256,
+  accepting_name,accepting_email,accepting_organization,accepting_role,authority_declaration,
+  acceptance_payload,acceptance_payload_sha256,semantic_request_fingerprint,accepted_at,created_at
+)
+select
+  'b1700000-0000-4000-8000-000000000001','b1600000-0000-4000-8000-000000000001','LWS-OFF-2099-0002',1,repeat('b',64),'Accepted BV',
+  repeat('5',64),'LWS_QUOTATION_NL_BE','1.0.0-technical',repeat('3',64),repeat('6',64),12345,
+  1,'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT','1.0.0-technical',repeat('9',64),
+  'Test Acceptant','acceptant@example.test','Accepted BV','Bestuurder',true,
+  payload,public.quotation_acceptance_payload_sha256_v1(payload),repeat('1',64),
+  '2026-08-21T12:00:00Z','2026-08-21T12:00:00Z'
+from second_handoff_acceptance_payload;
+
+insert into public.commercial_projects(project_id,customer_id,quotation_issuance_id,acceptance_id,accepted_total_minor,currency,m1_minor,m2_minor,m3_minor,current_state,revision)
+select 'b1900000-0000-4000-8000-000000000001',project.customer_id,'b1600000-0000-4000-8000-000000000001','b1700000-0000-4000-8000-000000000001',350000,'EUR',140000,140000,70000,'QUOTE_ACCEPTED',1
+from public.commercial_projects as project
+where project.project_id=(select (result->>'project_id')::uuid from first_promotion);
+
+select is(
+  (select customer_id from public.commercial_projects where project_id='b1900000-0000-4000-8000-000000000001'),
+  (select customer_id from public.commercial_projects where project_id=(select (result->>'project_id')::uuid from first_promotion)),
+  'one commercial customer can retain project-isolated financial projections'
+);
+
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'prepare_milestone_1','QUOTE_ACCEPTED',1,
+  'b1800000-0000-4000-8000-000000000001','{}'::jsonb
+);
+select public.execute_commercial_command_v2(
+  'b1900000-0000-4000-8000-000000000001','prepare_milestone_1','QUOTE_ACCEPTED',1,
+  'b1800000-0000-4000-8000-000000000002','{}'::jsonb
+);
+
+create temporary table m1_evidence_one as
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'record_payment_evidence','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000003',jsonb_build_object(
+    'expected_reference','LWS-MILESTONE-'||(select result->>'project_id' from first_promotion)||'-M1',
+    'received_amount_minor',140000,'transaction_date','2026-08-22','transaction_reference','FIN-M1-ONE',
+    'evidence_reference','financial-test/m1-one','bank_iban','BE42 7380 5510 8954'
+  )
+) as result;
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'reconcile_payment','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000004',jsonb_build_object('payment_evidence_id',(select result->>'entity_id' from m1_evidence_one))
+);
+create temporary table m1_evidence_two as
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'record_payment_evidence','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000005',jsonb_build_object(
+    'expected_reference','LWS-MILESTONE-'||(select result->>'project_id' from first_promotion)||'-M1',
+    'received_amount_minor',140000,'transaction_date','2026-08-22','transaction_reference','FIN-M1-TWO',
+    'evidence_reference','financial-test/m1-two','bank_iban','BE42 7380 5510 8954'
+  )
+) as result;
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'reconcile_payment','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000006',jsonb_build_object('payment_evidence_id',(select result->>'entity_id' from m1_evidence_two))
+);
+create temporary table m2_partial_evidence as
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'record_payment_evidence','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000007',jsonb_build_object(
+    'expected_reference','LWS-MILESTONE-'||(select result->>'project_id' from first_promotion)||'-M2',
+    'received_amount_minor',139999,'transaction_date','2026-08-22','transaction_reference','FIN-M2-PARTIAL',
+    'evidence_reference','financial-test/m2-partial','bank_iban','BE42 7380 5510 8954'
+  )
+) as result;
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'reconcile_payment','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000008',jsonb_build_object('payment_evidence_id',(select result->>'entity_id' from m2_partial_evidence))
+);
+create temporary table m3_unconfirmed_evidence as
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'record_payment_evidence','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000009',jsonb_build_object(
+    'expected_reference','LWS-MILESTONE-'||(select result->>'project_id' from first_promotion)||'-M3',
+    'received_amount_minor',70000,'transaction_date','2026-08-22','transaction_reference','FIN-M3-UNCONFIRMED',
+    'evidence_reference','financial-test/m3-unconfirmed','bank_iban','BE42 7380 5510 8954'
+  )
+) as result;
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'reconcile_payment','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000010',jsonb_build_object('payment_evidence_id',(select result->>'entity_id' from m3_unconfirmed_evidence))
+);
+create temporary table m2_raw_evidence as
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'record_payment_evidence','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000012',jsonb_build_object(
+    'expected_reference','LWS-MILESTONE-'||(select result->>'project_id' from first_promotion)||'-M2',
+    'received_amount_minor',140000,'transaction_date','2026-08-22','transaction_reference','FIN-M2-RAW',
+    'evidence_reference','financial-test/m2-raw','bank_iban','BE42 7380 5510 8954'
+  )
+) as result;
+
+select is((select count(*)::integer from public.payment_evidence where payment_evidence_id=(select (result->>'entity_id')::uuid from m2_raw_evidence)),1,'raw M2 payment evidence exists exactly once');
+select is((select count(*)::integer from public.payment_reconciliations where payment_evidence_id=(select (result->>'entity_id')::uuid from m2_raw_evidence)),0,'raw M2 payment evidence has no reconciliation');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'received_minor','0','raw unreconciled evidence does not change received total');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->1->>'confirmed_received_minor','0','raw unreconciled M2 evidence remains unconfirmed');
+select isnt(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->1->>'payment_status','CONFIRMED','raw unreconciled M2 evidence does not produce confirmed status');
+select is(jsonb_build_array(
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->0->>'payment_status',
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->0->>'confirmed_received_minor',
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->2->>'payment_status',
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->2->>'confirmed_received_minor'
+),'["MATCHED_AWAITING_CONFIRMATION", "0", "MATCHED_AWAITING_CONFIRMATION", "0"]'::jsonb,'raw M2 evidence leaves M1 and M3 unchanged');
+select is(jsonb_build_array(
+  public.get_commercial_project_view_v2('b1900000-0000-4000-8000-000000000001')->'financial_summary'->>'expected_minor',
+  public.get_commercial_project_view_v2('b1900000-0000-4000-8000-000000000001')->'financial_summary'->>'received_minor'
+),'["350000", "0"]'::jsonb,'raw project A evidence leaves same-customer project B unchanged');
+
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'accepted_total_minor','350000','financial summary preserves the accepted project total');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->0->>'expected_minor','140000','M1 expected amount comes from its payment expectation');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->1->>'expected_minor','140000','M2 expected amount comes from its payment expectation');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->2->>'expected_minor','70000','M3 expected amount preserves the authoritative remainder');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'expected_minor','350000','expected total sums project-bound payment expectations once');
+select is(public.get_commercial_project_view_v2('b1900000-0000-4000-8000-000000000001')->'financial_summary'->>'expected_minor','350000','second project has its own expected total');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'expected_minor','350000','project A excludes project B expectations for the same customer');
+select ok(
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'invoice_projection_available'='false'
+  and public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'invoiced_minor'='null'::jsonb,
+  'invoice projection fails closed without production issuance authority'
+);
+select ok(
+  public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'outstanding_projection_available'='false'
+  and public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'outstanding_minor'='null'::jsonb,
+  'outstanding projection fails closed while invoice projection is unavailable'
+);
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'received_minor','0','MATCHED evidence is not received before final confirmation');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->0->>'payment_status','MATCHED_AWAITING_CONFIRMATION','M1 remains unconfirmed despite duplicate exact evidence');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->1->>'payment_status','PARTIAL','partial M2 evidence remains unmatched and unreceived');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->2->>'payment_status','MATCHED_AWAITING_CONFIRMATION','MATCHED M3 evidence remains unreceived without confirmation');
+
+select public.execute_commercial_command_v2(
+  (select (result->>'project_id')::uuid from first_promotion),'confirm_payment','M1_PAYMENT_PENDING',2,
+  'b1800000-0000-4000-8000-000000000011',jsonb_build_object('milestone',1)
+);
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'received_minor','140000','confirmed M1 is counted once as received');
+select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->'milestones'->0->>'confirmed_received_minor','140000','M1 exposes its confirmed expectation amount');
+select ok(
+  (select count(*) from public.payment_reconciliations where obligation_id=(select obligation_id from public.commercial_obligations where project_id=(select (result->>'project_id')::uuid from first_promotion) and milestone=1) and match_status='MATCHED')=2
+  and public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary'->>'received_minor'='140000',
+  'multiple MATCHED evidence rows cannot double count one confirmed expectation'
+);
+select ok(
+  not (public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->'financial_summary' ?| array['evidence_reference','transaction_reference','bank_account_fingerprint','verified_by']),
+  'financial summary exposes no sensitive payment evidence metadata'
+);
+
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000003',true);
 select throws_ok(format('select public.get_commercial_project_view_v2(%L)',(select result->>'project_id' from first_promotion)),'42501','PROJECT_SCOPE_DENIED','project-scoped operator cannot enumerate an ungranted project');
 insert into public.commercial_operator_project_grants(operator_id,project_id,access_level,granted_by)
@@ -324,6 +533,7 @@ cross join public.commercial_operators as admin
 where scoped.auth_user_id='a1000000-0000-4000-8000-000000000003'
   and admin.auth_user_id='a1000000-0000-4000-8000-000000000002';
 select is(public.get_commercial_project_view_v2((select (result->>'project_id')::uuid from first_promotion))->>'project_id',(select result->>'project_id' from first_promotion),'active project grant authorizes only the granted dossier');
+select throws_ok($$select public.get_commercial_project_view_v2('b1900000-0000-4000-8000-000000000001')$$,'42501','PROJECT_SCOPE_DENIED','project A grant does not expose project B for the same customer');
 update public.commercial_operator_project_grants set revoked_at=clock_timestamp();
 select throws_ok(format('select public.get_commercial_project_view_v2(%L)',(select result->>'project_id' from first_promotion)),'42501','PROJECT_SCOPE_DENIED','revoked project grant denies dossier access');
 select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
