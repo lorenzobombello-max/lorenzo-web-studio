@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applicationsForSearch, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, createApplicationSearchHandler, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, loadAllOperatorApplications, nextWorkflowStage, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -351,8 +351,8 @@ test("Customer Core presentation preserves untrusted text for textContent render
 
 test("filter navigation reuses loaded data and preserves out-of-order protection", async () => {
   const script = await read("assets/js/operator-dashboard.js");
-  assert.match(script, /activeFilter = nextFilter;[\s\S]{0,250}clearDetail\(\);[\s\S]{0,150}renderList/);
-  assert.match(script, /renderList\(applicationsForFilter\(applications, activeFilter\)\)/);
+  assert.match(script, /activeFilter = nextFilter;[\s\S]{0,250}clearDetail\(\);[\s\S]{0,150}renderVisibleApplications/);
+  assert.match(script, /applicationsForSearch\(applicationsForFilter\(applications, activeFilter\), searchInput\.value\)/);
   assert.match(script, /requestId !== detailRequestId/);
   assert.match(script, /detailRequestId \+= 1/);
   assert.equal(script.match(/action: "list_applications"/g)?.length, 1);
@@ -664,4 +664,112 @@ test("SDF project values clear on dossier switch and remain textContent-only", a
   assert.match(script, /setText\("detailSdfProjectId", sdfProject\?\.projectId \|\| "Nog geen project"\)/);
   assert.match(script, /element\.textContent = value/);
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
+});
+
+test("application search matches full and partial human references without returning another dossier", () => {
+  const expected = { application_reference: "LWS-AAN-2099-0401", request_kind: "website" };
+  const other = { application_reference: "LWS-AAN-2099-0402", request_kind: "website" };
+  const applications = [expected, other, { application_reference: null, quote_request_id: "a1100000-0000-4000-8000-000000000003", request_kind: "website" }];
+  assert.deepEqual(applicationsForSearch(applications, "LWS-AAN-2099-0401"), [expected]);
+  assert.deepEqual(applicationsForSearch(applications, "0401"), [expected]);
+  assert.deepEqual(applicationsForSearch(applications, "lws-aan-2099-0401"), [expected]);
+  assert.deepEqual(applicationsForSearch(applications, "9999"), []);
+});
+
+test("application search composes with existing product filters", () => {
+  const website = { application_reference: "LWS-AAN-2099-0401", request_kind: "website" };
+  const sdf = { application_reference: "LWS-AAN-2099-1401", request_kind: "slimme_documentenflow" };
+  assert.deepEqual(applicationsForSearch(applicationsForFilter([website, sdf], "website"), "0401"), [website]);
+  assert.deepEqual(applicationsForSearch(applicationsForFilter([website, sdf], "slimme_documentenflow"), "0401"), []);
+});
+
+test("application search exhausts only the existing authorized paginated list action", async () => {
+  const calls = [];
+  const first = [
+    { quote_request_id: "a1100000-0000-4000-8000-000000000001", application_reference: "LWS-AAN-2099-0001" },
+    { quote_request_id: "a1100000-0000-4000-8000-000000000002", application_reference: "LWS-AAN-2099-0002" },
+  ];
+  const last = [{ quote_request_id: "a1100000-0000-4000-8000-000000000003", application_reference: "LWS-AAN-2099-0003" }];
+  const result = await loadAllOperatorApplications(async (input) => {
+    calls.push(input);
+    return input.offset === 0 ? first : last;
+  }, 2);
+  assert.deepEqual(result, [...first, ...last]);
+  assert.deepEqual(calls, [
+    { action: "list_applications", limit: 2, offset: 0 },
+    { action: "list_applications", limit: 2, offset: 2 },
+  ]);
+  assert.equal(calls.some((input) => "token" in input || "application_reference" in input), false);
+});
+
+test("overlapping pagination deduplicates by technical dossier identity and preserves search and filters", async () => {
+  const website = { quote_request_id: "a1100000-0000-4000-8000-000000000011", application_reference: "LWS-AAN-2099-0011", request_kind: "website" };
+  const overlap = { quote_request_id: "a1100000-0000-4000-8000-000000000012", application_reference: "LWS-AAN-2099-0012", request_kind: "website" };
+  const sdf = { quote_request_id: "a1100000-0000-4000-8000-000000000013", application_reference: "LWS-AAN-2099-0013", request_kind: "slimme_documentenflow" };
+  const calls = [];
+  const result = await loadAllOperatorApplications(async (input) => {
+    calls.push(input);
+    if (input.offset === 0) return [website, overlap];
+    if (input.offset === 2) return [overlap, sdf];
+    return [];
+  }, 2);
+  assert.deepEqual(result, [website, overlap, sdf]);
+  assert.deepEqual(calls.map((input) => input.offset), [0, 2, 4]);
+  assert.deepEqual(applicationsForSearch(result, "0012"), [overlap]);
+  assert.deepEqual(applicationsForFilter(result, "website"), [website, overlap]);
+  assert.deepEqual(applicationsForFilter(result, "slimme_documentenflow"), [sdf]);
+});
+
+test("pagination fails closed when a full repeated page makes no identity progress", async () => {
+  const repeated = [
+    { quote_request_id: "a1100000-0000-4000-8000-000000000021", application_reference: "LWS-AAN-2099-0021" },
+    { quote_request_id: "a1100000-0000-4000-8000-000000000022", application_reference: "LWS-AAN-2099-0022" },
+  ];
+  let calls = 0;
+  await assert.rejects(
+    loadAllOperatorApplications(async () => {
+      calls += 1;
+      return repeated;
+    }, 2),
+    /NON_PROGRESSING_APPLICATION_PAGINATION/,
+  );
+  assert.equal(calls, 2);
+});
+
+test("search change behavior closes an open stale detail before rendering each result set", () => {
+  const selected = { application_reference: "LWS-AAN-2099-0031", request_kind: "website" };
+  const other = { application_reference: "LWS-AAN-2099-0032", request_kind: "website" };
+  let selectedDetail = selected;
+  let detailVisible = true;
+  let detailRequestId = 4;
+  let query = "0032";
+  let visible = [];
+  const handleSearch = createApplicationSearchHandler(
+    ()=>{
+      detailRequestId += 1;
+      selectedDetail = null;
+      detailVisible = false;
+    },
+    ()=>{
+      visible = applicationsForSearch([selected, other], query);
+    },
+  );
+
+  handleSearch();
+  assert.equal(selectedDetail, null);
+  assert.equal(detailVisible, false);
+  assert.equal(detailRequestId, 5);
+  assert.deepEqual(visible, [other]);
+
+  query = "9999";
+  handleSearch();
+  assert.equal(detailRequestId, 6);
+  assert.deepEqual(visible, []);
+});
+
+test("search UI is reference-only and no-result state is announced without moving focus", async () => {
+  const html = await read("operator/dashboard/index.html");
+  assert.match(html, /id="applicationSearch"[^>]+placeholder="Zoek op aanvraagnummer"/);
+  assert.doesNotMatch(html, /Zoek op (UUID|factuurnummer)/i);
+  assert.match(html, /id="applicationEmpty"[^>]+role="status"[^>]+aria-live="polite"[^>]+aria-atomic="true"[^>]+hidden/);
 });

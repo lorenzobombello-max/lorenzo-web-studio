@@ -1,10 +1,27 @@
-(function () {
+const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
+
+export function operatorHandoffPath(applicationReference) {
+  const reference = String(applicationReference || "");
+  return APPLICATION_REFERENCE.test(reference)
+    ? `/operator/dashboard/?application=${encodeURIComponent(reference)}`
+    : null;
+}
+
+export function scrubAdminIntakeUrl(value) {
+  const url = new URL(value);
+  for (const key of [...url.searchParams.keys()]) {
+    if (key.toLowerCase() === "token") url.searchParams.delete(key);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+if (typeof window !== "undefined" && typeof document !== "undefined") (function () {
   "use strict";
 
   const hashParameters = new URLSearchParams(window.location.hash.slice(1));
   const tokenCandidate = hashParameters.get("token") || "";
   const capability = /^[A-Za-z0-9_-]{43}$/.test(tokenCandidate) ? tokenCandidate : "";
-  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+  window.history.replaceState(null, "", scrubAdminIntakeUrl(window.location.href));
 
   const loading = document.getElementById("adminBriefingLoading");
   const unavailable = document.getElementById("adminBriefingUnavailable");
@@ -16,6 +33,7 @@
   const submittedNode = document.getElementById("adminBriefingSubmitted");
   const typeNode = document.getElementById("adminBriefingType");
   const printButton = document.getElementById("adminBriefingPrint");
+  const operatorLink = document.getElementById("adminBriefingOperator");
   const applicationNode = document.getElementById("adminBriefingApplication");
   const functionsBaseUrl = (
     document.querySelector('meta[name="lws-functions-base-url"]')?.getAttribute("content") || ""
@@ -250,10 +268,14 @@
       : "Niet gecontroleerd";
     clientNode.textContent = request.company ? `${request.company} · ${request.name}` : request.name || "Onbekende klant";
     const legacyReference = request.id ? `Legacy #${String(request.id).slice(0, 8).toUpperCase()}` : "Legacy aanvraag";
+    const operatorPath = operatorHandoffPath(application?.applicationReference);
     applicationNode.textContent = application?.applicationReference || legacyReference;
     referenceNode.textContent = application?.applicationReference || legacyReference;
     submittedNode.textContent = formatDateTime(submittedAt);
     typeNode.textContent = displayValue(request.website_type) || "Niet opgegeven";
+    operatorLink.hidden = !operatorPath;
+    if (operatorPath) operatorLink.href = operatorPath;
+    else operatorLink.removeAttribute("href");
     sectionsNode.replaceChildren();
 
     if (application) appendSection("Application", (list) => {

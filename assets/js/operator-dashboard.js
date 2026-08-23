@@ -55,6 +55,47 @@ export function applicationIdentityPresentation(application) {
   };
 }
 
+export function applicationsForSearch(applications, query) {
+  const normalizedQuery = String(query || "").trim().toUpperCase();
+  if (!normalizedQuery) return applications;
+  return applications.filter((application) => {
+    const reference = String(application?.application_reference || "").toUpperCase();
+    return APPLICATION_REFERENCE.test(reference) && reference.includes(normalizedQuery);
+  });
+}
+
+export async function loadAllOperatorApplications(invoke, pageSize = 200) {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+    throw new Error("INVALID_APPLICATION_PAGE_SIZE");
+  }
+  const applications = [];
+  const seenQuoteRequestIds = new Set();
+  let offset = 0;
+  while (true) {
+    const page = await invoke({ action: "list_applications", limit: pageSize, offset });
+    if (!Array.isArray(page)) throw new Error("INVALID_APPLICATION_LIST");
+    let added = 0;
+    for (const application of page) {
+      const quoteRequestId = String(application?.quote_request_id || "");
+      if (!UUID.test(quoteRequestId)) throw new Error("INVALID_APPLICATION_IDENTITY");
+      if (seenQuoteRequestIds.has(quoteRequestId)) continue;
+      seenQuoteRequestIds.add(quoteRequestId);
+      applications.push(application);
+      added += 1;
+    }
+    if (page.length < pageSize) return applications;
+    if (added === 0) throw new Error("NON_PROGRESSING_APPLICATION_PAGINATION");
+    offset += page.length;
+  }
+}
+
+export function createApplicationSearchHandler(clearDetail, renderVisibleApplications) {
+  return ()=>{
+    clearDetail();
+    renderVisibleApplications();
+  };
+}
+
 export function canPromoteApplication(detail) {
   return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
 }
@@ -401,6 +442,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const websiteDetailRows = Array.from(document.querySelectorAll("[data-website-detail]"));
   const sdfDetailRows = Array.from(document.querySelectorAll("[data-sdf-detail]"));
   const filterButtons = Array.from(document.querySelectorAll("[data-product-filter]"));
+  const searchInput = document.getElementById("applicationSearch");
   const sdfDetailNotice = document.getElementById("sdfDetailNotice");
   let applications = [];
   let activeFilter = "all";
@@ -409,6 +451,18 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let detailRequestId = 0;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
+
+  function visibleApplications() {
+    return applicationsForSearch(applicationsForFilter(applications, activeFilter), searchInput.value);
+  }
+
+  function renderVisibleApplications() {
+    const visible = visibleApplications();
+    renderList(visible);
+    empty.textContent = searchInput.value.trim()
+      ? "Geen aanvragen gevonden voor dit aanvraagnummer."
+      : emptyStateForFilter(activeFilter);
+  }
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
@@ -699,9 +753,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   async function loadList() {
     listMessage.textContent = "Aanvragen worden geladen.";
     try {
-      applications = applicationsForFilter(await invoke({ action: "list_applications", limit: 100, offset: 0 }), "all");
-      renderList(applicationsForFilter(applications, activeFilter));
-      empty.textContent = emptyStateForFilter(activeFilter);
+      applications = applicationsForFilter(await loadAllOperatorApplications(invoke), "all");
+      renderVisibleApplications();
       listMessage.textContent = "";
       if (selectedLocator) {
         const selectedApplication = applications.find((application) => locatorMatchesApplication(selectedLocator, application));
@@ -721,10 +774,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       activeFilter = nextFilter;
       for (const candidate of filterButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
       clearDetail();
-      renderList(applicationsForFilter(applications, activeFilter));
-      empty.textContent = emptyStateForFilter(activeFilter);
+      renderVisibleApplications();
     });
   }
+
+  searchInput.addEventListener("input", createApplicationSearchHandler(clearDetail, renderVisibleApplications));
 
   promote.addEventListener("click", ()=>confirmation.showModal());
   confirmation.addEventListener("close", async ()=>{

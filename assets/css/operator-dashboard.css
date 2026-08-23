@@ -69,6 +69,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .empty-state { color:var(--muted); }
 .topbar__logout { min-height:38px; padding:.4rem .7rem; color:#dce5ee; border:1px solid #52617a; border-radius:6px; background:transparent; font-weight:800; }
 .topbar__logout:hover { color:var(--white); border-color:#8ba0ba; background:rgba(255,255,255,.06); }
+.application-search { margin-top:1rem; display:grid; gap:.35rem; color:var(--muted); font-size:.7rem; font-weight:900; text-transform:uppercase; }
+.application-search input { width:100%; min-width:0; min-height:42px; padding:.6rem .7rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:#fbfcfc; letter-spacing:0; text-transform:none; }
 .product-filters { margin:1.15rem 0 .65rem; padding:.3rem; display:flex; gap:.25rem; border:1px solid var(--line); border-radius:7px; background:#f3f6f7; }
 .product-filters button { min-height:38px; flex:1 1 auto; padding:.5rem .65rem; color:#4e5e6c; border:1px solid transparent; border-radius:5px; background:transparent; font-size:.68rem; font-weight:900; text-transform:uppercase; }
 .product-filters button:hover { color:var(--navy); background:var(--white); }
