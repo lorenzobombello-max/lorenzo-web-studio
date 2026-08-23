@@ -26,7 +26,17 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_dossier",
   "promote_accepted_application",
   "create_internal_e2e_run",
-  "finalize_internal_e2e_run"
+  "finalize_internal_e2e_run",
+  "interrupt_intake",
+  "resume_intake",
+  "cancel_intake",
+  "reactivate_intake"
+]);
+const INTAKE_LIFECYCLE_ACTIONS = new Map([
+  ["interrupt_intake", "INTERRUPTED"],
+  ["resume_intake", "RESUMED"],
+  ["cancel_intake", "CANCELLED"],
+  ["reactivate_intake", "REACTIVATED"]
 ]);
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const FORBIDDEN_IDENTITY_FIELDS = new Set([
@@ -112,6 +122,8 @@ function validateApplicationAction(value) {
     ? new Set(["action", "project_id"])
     : action === "get_application_detail"
     ? new Set(["action", "quote_request_id", "application_reference"])
+    : INTAKE_LIFECYCLE_ACTIONS.has(action)
+    ? new Set(["action", "intake_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
   if (action === "list_applications") {
@@ -146,6 +158,25 @@ function validateApplicationAction(value) {
     if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, project_id: projectId };
   }
+  if (INTAKE_LIFECYCLE_ACTIONS.has(action)) {
+    const intakeId = String(value.intake_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (!UUID.test(intakeId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0
+      || reason.length < 1 || reason.length > 500) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      intake_id: intakeId,
+      event_type: INTAKE_LIFECYCLE_ACTIONS.get(action),
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+      reason
+    };
+  }
   const quoteRequestId = value.quote_request_id == null ? null : String(value.quote_request_id);
   const applicationReference = value.application_reference == null ? null : String(value.application_reference);
   if ((quoteRequestId === null) === (applicationReference === null)) throw new RequestError(400, "INVALID_REQUEST");
@@ -177,6 +208,7 @@ function mapDatabaseError(error) {
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "INTAKE_NOT_FOUND") return response(404, code);
   if (code === "INTERNAL_E2E_RUN_NOT_FOUND") return response(404, code);
   if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
@@ -185,13 +217,15 @@ function mapDatabaseError(error) {
     "INVALID_APPLICATION_REFERENCE",
     "EXACTLY_ONE_APPLICATION_LOCATOR_REQUIRED",
     "INVALID_PAGINATION",
-    "IDEMPOTENCY_KEY_REQUIRED"
+    "IDEMPOTENCY_KEY_REQUIRED",
+    "INVALID_INTAKE_LIFECYCLE_COMMAND"
     ,"INVALID_INTERNAL_E2E_REQUEST"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if ([
     "INVALID_STATE",
     "PAYMENT_NOT_MATCHED",
-    "ACCESS_DENIED"
+    "ACCESS_DENIED",
+    "INVALID_INTAKE_LIFECYCLE_TRANSITION"
   ].includes(code)) return response(409, "COMMAND_REJECTED");
   return response(500, "INTERNAL_ERROR");
 }

@@ -121,6 +121,77 @@ Deno.test("service role JWT cannot enter application actions", async ()=>{
   assertEquals(harness.calls.length, 0);
 });
 
+Deno.test("intake lifecycle actions require the fixed revisioned command shape", async ()=>{
+  for (const [action, eventType] of [
+    ["interrupt_intake", "INTERRUPTED"],
+    ["resume_intake", "RESUMED"],
+    ["cancel_intake", "CANCELLED"],
+    ["reactivate_intake", "REACTIVATED"]
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action,
+      intake_id: "a1800000-0000-4000-8000-000000000030",
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000031",
+      reason: "  Operator lifecycle reason  "
+    }), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls[0].input, {
+      action,
+      intake_id: "a1800000-0000-4000-8000-000000000030",
+      event_type: eventType,
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000031",
+      reason: "Operator lifecycle reason"
+    });
+  }
+
+  for (const invalid of [
+    { expected_revision: -1 },
+    { idempotency_key: "invalid" },
+    { reason: "" },
+    { reason: "x".repeat(501) },
+    { access_token: "forbidden" }
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "interrupt_intake",
+      intake_id: "a1800000-0000-4000-8000-000000000030",
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000031",
+      reason: "Reason",
+      ...invalid
+    }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("intake lifecycle database errors retain existing HTTP contracts", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ["INVALID_INTAKE_LIFECYCLE_TRANSITION", 409, "COMMAND_REJECTED"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["INTAKE_NOT_FOUND", 404, "INTAKE_NOT_FOUND"],
+    ["OPERATOR_REVOKED", 403, "OPERATOR_NOT_AUTHORIZED"]
+  ] as const) {
+    const harness = dependencies();
+    harness.deps.executeApplicationAction = async ()=>{
+      throw new Error(databaseCode);
+    };
+    const result = await handleCommercialOperator(request({
+      action: "interrupt_intake",
+      intake_id: "a1800000-0000-4000-8000-000000000030",
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000031",
+      reason: "Reason"
+    }), harness.deps);
+    assertEquals(result.status, status);
+    assertEquals((await result.json()).code, responseCode);
+  }
+});
+
 Deno.test("existing commercial command path remains rate limited and unchanged", async ()=>{
   const harness = dependencies();
   let rateLimitCalls = 0;

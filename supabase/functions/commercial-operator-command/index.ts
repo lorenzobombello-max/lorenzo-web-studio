@@ -55,6 +55,17 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
     },
     executeApplicationAction: async (jwt, input)=>{
       const client = clientFor(jwt);
+      if (["interrupt_intake", "resume_intake", "cancel_intake", "reactivate_intake"].includes(input.action)) {
+        const { data, error } = await client.rpc("execute_operator_intake_lifecycle_command_v1", {
+          p_intake_id: input.intake_id,
+          p_event_type: input.event_type,
+          p_expected_revision: input.expected_revision,
+          p_idempotency_key: input.idempotency_key,
+          p_reason: input.reason,
+        });
+        if (error) throw new Error(error.message);
+        return data;
+      }
       if (input.action === "create_internal_e2e_run") {
         const approvalToken = await createApprovalTokenForIdempotencyKey(input.idempotency_key);
         const intakeToken = await createInternalE2EIntakeTokenForIdempotencyKey(input.idempotency_key);
