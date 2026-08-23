@@ -136,7 +136,7 @@ select is((select intake_data->>'business_description' from public.inspect_quote
 select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('b',64),4)), 'not_editable', 'submitted reset is rejected');
 select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('7',64),7)), 'not_editable', 'reviewed reset is rejected');
 select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('0',64),0)), 'invalid_token', 'unknown token is rejected');
-select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('8',64),2)), 'invalid_token', 'expired token is rejected');
+select throws_ok($$select * from public.reset_quote_request_intake_draft_v1(repeat('8',64),2)$$, 'P0001', 'INTAKE_ACCESS_EXPIRED', 'expired token returns lifecycle denial');
 select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('9',64),2)), 'invalid_token', 'revoked token is rejected');
 select is((select business_description from public.quote_request_intakes where access_token_hash=repeat('f',64)), 'Other stays', 'another intake cannot be reset');
 select is((select count(*)::integer from public.quote_requests where id::text like 'd2200000-%'), 6, 'reset deletes no quote request');

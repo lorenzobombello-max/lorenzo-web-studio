@@ -1,14 +1,17 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { buildApplicationOutput, type ApplicationOutput } from "../_shared/application-output.ts";
+import {
+  type ApplicationOutput,
+  buildApplicationOutput,
+} from "../_shared/application-output.ts";
 import { buildAuthoritativeSubmitData } from "../_shared/authoritative-intake.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { buildSubmittedIntakeAdminEmail } from "../_shared/email-templates.ts";
 import {
-  resolveBudgetEvidence,
-  selectPricingSnapshotForSubmit,
   type PricingSnapshotV2,
   type PricingSnapshotV3,
+  resolveBudgetEvidence,
+  selectPricingSnapshotForSubmit,
 } from "../_shared/pricing-engine.ts";
 import { createPricingSnapshotIntegrity } from "../_shared/pricing-snapshot-integrity.ts";
 import { handlePricingPreview } from "../_shared/pricing-preview-handler.ts";
@@ -22,7 +25,11 @@ import {
   hashApprovalToken,
   hashIntakeToken,
 } from "../_shared/security.ts";
-import type { EmailJobStatus, IntakeAction, IntakeStatus } from "../_shared/types.ts";
+import type {
+  EmailJobStatus,
+  IntakeAction,
+  IntakeStatus,
+} from "../_shared/types.ts";
 import {
   InputValidationError,
   partitionIntakeData,
@@ -39,7 +46,11 @@ class IntakeRequestError extends Error {
   }
 }
 
-function jsonResponse(status: number, body: Record<string, unknown>, origin: string | null): Response {
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+  origin: string | null,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -51,14 +62,20 @@ function jsonResponse(status: number, body: Record<string, unknown>, origin: str
   });
 }
 
-async function parseJsonBody(request: Request): Promise<Record<string, unknown>> {
+async function parseJsonBody(
+  request: Request,
+): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") || "";
-  if (contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+  if (
+    contentType.split(";", 1)[0].trim().toLowerCase() !== "application/json"
+  ) {
     throw new IntakeRequestError(415, "UNSUPPORTED_CONTENT_TYPE");
   }
 
   const declaredLength = Number(request.headers.get("content-length") || "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_INTAKE_BODY_BYTES) {
+  if (
+    Number.isFinite(declaredLength) && declaredLength > MAX_INTAKE_BODY_BYTES
+  ) {
     throw new IntakeRequestError(413, "BODY_TOO_LARGE");
   }
 
@@ -86,8 +103,12 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
   });
 
   try {
-    const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid body");
+    const parsed = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes),
+    );
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("invalid body");
+    }
     return parsed as Record<string, unknown>;
   } catch {
     throw new IntakeRequestError(400, "INVALID_JSON");
@@ -110,15 +131,19 @@ function validateAction(value: unknown): IntakeAction {
 }
 
 function isIntakeStatus(value: unknown): value is IntakeStatus {
-  return value === "invited" || value === "in_progress" || value === "submitted" || value === "reviewed";
+  return value === "invited" || value === "in_progress" ||
+    value === "submitted" || value === "reviewed";
 }
 
 function isEmailJobStatus(value: unknown): value is EmailJobStatus {
-  return value === "pending" || value === "processing" || value === "sent" || value === "retry_wait" || value === "failed";
+  return value === "pending" || value === "processing" || value === "sent" ||
+    value === "retry_wait" || value === "failed";
 }
 
 function isUuid(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value);
 }
 
 function validateExpectedRevision(value: unknown): number {
@@ -134,6 +159,127 @@ function invalidIntakeToken(origin: string | null): Response {
     code: "INVALID_INTAKE_TOKEN",
     message: "Intake link is invalid or unavailable.",
   }, origin);
+}
+
+type CustomerAccessPreflight =
+  | { ok: true; tokenHash: string }
+  | { ok: false; response: Response };
+
+function lifecycleAccessDenied(
+  effectiveAccess: string,
+  origin: string | null,
+): Response | null {
+  const denial = effectiveAccess === "INTERRUPTED"
+    ? { status: 403, code: "INTAKE_ACCESS_INTERRUPTED" }
+    : effectiveAccess === "EXPIRED"
+    ? { status: 410, code: "INTAKE_ACCESS_EXPIRED" }
+    : effectiveAccess === "CANCELLED"
+    ? { status: 410, code: "INTAKE_ACCESS_CANCELLED" }
+    : null;
+  return denial
+    ? jsonResponse(denial.status, {
+      ok: false,
+      code: denial.code,
+      message: "Intake access is unavailable.",
+    }, origin)
+    : null;
+}
+
+function lifecycleDatabaseDenial(
+  error: unknown,
+): { status: number; code: string } | null {
+  if (!error || typeof error !== "object") return null;
+  const databaseError = error as Record<string, unknown>;
+  if (databaseError.code !== "P0001") return null;
+  const code = String(databaseError.message);
+  return code === "INTAKE_ACCESS_INTERRUPTED"
+    ? { status: 403, code }
+    : code === "INTAKE_ACCESS_EXPIRED" ||
+        code === "INTAKE_ACCESS_CANCELLED"
+    ? { status: 410, code }
+    : null;
+}
+
+function lifecycleDatabaseAccessDenied(
+  error: unknown,
+  origin: string | null,
+): Response | null {
+  const denial = lifecycleDatabaseDenial(error);
+  return denial
+    ? jsonResponse(denial.status, {
+      ok: false,
+      code: denial.code,
+      message: "Intake access is unavailable.",
+    }, origin)
+    : null;
+}
+
+async function withLifecycleDatabaseErrorMapping(
+  supabase: SupabaseClient,
+  origin: string | null,
+  operation: (
+    client: {
+      rpc(
+        functionName: string,
+        parameters: Record<string, unknown>,
+      ): PromiseLike<{ data: unknown; error: unknown }>;
+    },
+  ) => Promise<Response>,
+): Promise<Response> {
+  let lifecycleDenial: Response | null = null;
+  const monitoredClient = {
+    async rpc(functionName: string, parameters: Record<string, unknown>) {
+      const result = await supabase.rpc(functionName, parameters);
+      lifecycleDenial ??= lifecycleDatabaseAccessDenied(result.error, origin);
+      return result;
+    },
+  };
+  const response = await operation(monitoredClient);
+  return lifecycleDenial ?? response;
+}
+
+async function inspectCustomerAccess(
+  supabase: SupabaseClient,
+  rawToken: unknown,
+  origin: string | null,
+): Promise<CustomerAccessPreflight> {
+  let tokenHash: string;
+  try {
+    tokenHash = await hashIntakeToken(validateToken(rawToken));
+  } catch {
+    return { ok: false, response: invalidIntakeToken(origin) };
+  }
+
+  const { data, error } = await supabase.rpc(
+    "inspect_quote_request_intake_customer_access_v1",
+    {
+      p_access_token_hash: tokenHash,
+    },
+  );
+  if (error) {
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        ok: false,
+        code: "INTAKE_ACCESS_CHECK_FAILED",
+        message: "Intake access could not be verified.",
+      }, origin),
+    };
+  }
+
+  const result = Array.isArray(data) ? data[0] : null;
+  if (!result) return { ok: false, response: invalidIntakeToken(origin) };
+  if (result.effective_access === "ACTIVE") return { ok: true, tokenHash };
+
+  const denied = lifecycleAccessDenied(String(result.effective_access), origin);
+  return denied ? { ok: false, response: denied } : {
+    ok: false,
+    response: jsonResponse(500, {
+      ok: false,
+      code: "INVALID_INTAKE_ACCESS_STATE",
+      message: "Intake access could not be verified.",
+    }, origin),
+  };
 }
 
 interface SubmittedIntakeNotificationContext {
@@ -161,6 +307,10 @@ async function loadAuthoritativePricingContext(
     { p_access_token_hash: intakeTokenHash },
   );
   const inspection = Array.isArray(inspectionData) ? inspectionData[0] : null;
+  const lifecycleDenial = lifecycleDatabaseDenial(inspectionError);
+  if (lifecycleDenial) {
+    throw new IntakeRequestError(lifecycleDenial.status, lifecycleDenial.code);
+  }
   if (
     inspectionError || !inspection || !isIntakeStatus(inspection.intake_status)
   ) return null;
@@ -234,7 +384,9 @@ async function loadSubmittedIntakeNotificationContext(
 
   const { data: quoteRequest, error: requestError } = await supabase
     .from("quote_requests")
-    .select("id, record_classification, application_reference, name, company, email, phone, website_type, budget, timing")
+    .select(
+      "id, record_classification, application_reference, name, company, email, phone, website_type, budget, timing",
+    )
     .eq("id", intake.quote_request_id)
     .maybeSingle();
 
@@ -242,21 +394,37 @@ async function loadSubmittedIntakeNotificationContext(
     requestError ||
     !quoteRequest ||
     quoteRequest.id !== intake.quote_request_id ||
-    !["production", "internal_e2e"].includes(String(quoteRequest.record_classification)) ||
-    typeof quoteRequest.name !== "string" || typeof quoteRequest.email !== "string"
+    !["production", "internal_e2e"].includes(
+      String(quoteRequest.record_classification),
+    ) ||
+    typeof quoteRequest.name !== "string" ||
+    typeof quoteRequest.email !== "string"
   ) return null;
 
-  const [{ data: detailsData, error: detailsError }, { data: pricingData, error: pricingError }] = await Promise.all([
-    supabase.rpc("inspect_quote_request_intake_details_v4", { p_access_token_hash: intakeTokenHash }),
-    supabase.rpc("inspect_customer_pricing_read_v3", { p_access_token_hash: intakeTokenHash }),
+  const [
+    { data: detailsData, error: detailsError },
+    { data: pricingData, error: pricingError },
+  ] = await Promise.all([
+    supabase.rpc("inspect_quote_request_intake_details_v4", {
+      p_access_token_hash: intakeTokenHash,
+    }),
+    supabase.rpc("inspect_customer_pricing_read_v3", {
+      p_access_token_hash: intakeTokenHash,
+    }),
   ]);
   const details = Array.isArray(detailsData) ? detailsData[0] : null;
   const pricing = Array.isArray(pricingData) ? pricingData[0] : null;
-  if (detailsError || pricingError || !details || !pricing?.snapshot_present) return null;
-  const evidence = details.intake_data && typeof details.intake_data === "object" && !Array.isArray(details.intake_data)
-    ? details.intake_data as Record<string, unknown>
-    : {};
-  const authoritativeSnapshot = pricing.integrity_snapshot && typeof pricing.integrity_snapshot === "object" && !Array.isArray(pricing.integrity_snapshot)
+  if (detailsError || pricingError || !details || !pricing?.snapshot_present) {
+    return null;
+  }
+  const evidence =
+    details.intake_data && typeof details.intake_data === "object" &&
+      !Array.isArray(details.intake_data)
+      ? details.intake_data as Record<string, unknown>
+      : {};
+  const authoritativeSnapshot = pricing.integrity_snapshot &&
+      typeof pricing.integrity_snapshot === "object" &&
+      !Array.isArray(pricing.integrity_snapshot)
     ? pricing.integrity_snapshot as Record<string, unknown>
     : null;
   if (!authoritativeSnapshot) return null;
@@ -293,7 +461,10 @@ async function processSubmittedIntakeNotification(
   if (!resendApiKey || !adminEmail || !fromEmail) return jobStatus;
 
   try {
-    const context = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
+    const context = await loadSubmittedIntakeNotificationContext(
+      supabase,
+      intakeTokenHash,
+    );
     if (!context) return jobStatus;
 
     const emailPayload = buildSubmittedIntakeAdminEmail({
@@ -318,7 +489,9 @@ async function processSubmittedIntakeNotification(
   }
 }
 
-Deno.serve(async (request) => {
+export async function handleIntakeQuoteRequest(
+  request: Request,
+): Promise<Response> {
   const origin = request.headers.get("origin");
 
   if (request.method === "OPTIONS") {
@@ -329,12 +502,18 @@ Deno.serve(async (request) => {
   if (blocked) return blocked;
 
   if (request.method !== "POST") {
-    return jsonResponse(405, { ok: false, code: "METHOD_NOT_ALLOWED", message: "Method not allowed." }, origin);
+    return jsonResponse(405, {
+      ok: false,
+      code: "METHOD_NOT_ALLOWED",
+      message: "Method not allowed.",
+    }, origin);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey || !Deno.env.get("APPROVAL_TOKEN_SECRET")) {
+  if (
+    !supabaseUrl || !serviceRoleKey || !Deno.env.get("APPROVAL_TOKEN_SECRET")
+  ) {
     return jsonResponse(500, {
       ok: false,
       code: "SERVER_CONFIGURATION_ERROR",
@@ -349,9 +528,17 @@ Deno.serve(async (request) => {
     action = validateAction(body.action);
   } catch (error) {
     if (error instanceof IntakeRequestError) {
-      return jsonResponse(error.status, { ok: false, code: error.code, message: "Invalid request." }, origin);
+      return jsonResponse(error.status, {
+        ok: false,
+        code: error.code,
+        message: "Invalid request.",
+      }, origin);
     }
-    return jsonResponse(400, { ok: false, code: "INVALID_REQUEST", message: "Invalid request." }, origin);
+    return jsonResponse(400, {
+      ok: false,
+      code: "INVALID_REQUEST",
+      message: "Invalid request.",
+    }, origin);
   }
 
   if (
@@ -371,7 +558,13 @@ Deno.serve(async (request) => {
   });
 
   if (action === "preview_budget_guard") {
-    return await handlePricingPreview(body, origin, supabase);
+    const access = await inspectCustomerAccess(supabase, body.token, origin);
+    if (!access.ok) return access.response;
+    return await withLifecycleDatabaseErrorMapping(
+      supabase,
+      origin,
+      (client) => handlePricingPreview(body, origin, client),
+    );
   }
 
   if (action === "inspect_admin_pricing") {
@@ -379,7 +572,13 @@ Deno.serve(async (request) => {
   }
 
   if (action === "inspect_customer_pricing") {
-    return await dispatchPricingRead("customer", body.token, origin, supabase);
+    const access = await inspectCustomerAccess(supabase, body.token, origin);
+    if (!access.ok) return access.response;
+    return await withLifecycleDatabaseErrorMapping(
+      supabase,
+      origin,
+      (client) => dispatchPricingRead("customer", body.token, origin, client),
+    );
   }
 
   if (action === "inspect_submitted_intake_admin") {
@@ -396,9 +595,12 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
-    const { data, error } = await supabase.rpc("inspect_submitted_intake_for_admin", {
-      p_admin_access_token_hash: adminTokenHash,
-    });
+    const { data, error } = await supabase.rpc(
+      "inspect_submitted_intake_for_admin",
+      {
+        p_admin_access_token_hash: adminTokenHash,
+      },
+    );
     const result = Array.isArray(data) ? data[0] : null;
 
     if (error) {
@@ -425,11 +627,14 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
-    const { data: businessDetails, error: businessDetailsError } = await supabase
-      .from("quote_requests")
-      .select("application_reference, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email")
-      .eq("id", result.quote_request_id)
-      .maybeSingle();
+    const { data: businessDetails, error: businessDetailsError } =
+      await supabase
+        .from("quote_requests")
+        .select(
+          "application_reference, customer_type, company, enterprise_number, enterprise_validation_status, vat_number, vat_validation_status, vat_validated_at, billing_address, billing_postal_code, billing_city, billing_country, billing_email",
+        )
+        .eq("id", result.quote_request_id)
+        .maybeSingle();
     if (businessDetailsError || !businessDetails) {
       return jsonResponse(500, {
         ok: false,
@@ -438,19 +643,28 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
-    const evidence = result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
-      ? result.intake_data as Record<string, unknown>
-      : {};
+    const evidence =
+      result.intake_data && typeof result.intake_data === "object" &&
+        !Array.isArray(result.intake_data)
+        ? result.intake_data as Record<string, unknown>
+        : {};
     let applicationOutput: ApplicationOutput | null = null;
     if (businessDetails.application_reference !== null) {
-      const { data: pricingData, error: pricingError } = await supabase.rpc("inspect_admin_pricing_read_v3", {
-        p_admin_access_token_hash: adminTokenHash,
-      });
+      const { data: pricingData, error: pricingError } = await supabase.rpc(
+        "inspect_admin_pricing_read_v3",
+        {
+          p_admin_access_token_hash: adminTokenHash,
+        },
+      );
       const pricing = Array.isArray(pricingData) ? pricingData[0] : null;
-      const authoritativeSnapshot = pricing?.integrity_snapshot && typeof pricing.integrity_snapshot === "object" && !Array.isArray(pricing.integrity_snapshot)
+      const authoritativeSnapshot = pricing?.integrity_snapshot &&
+          typeof pricing.integrity_snapshot === "object" &&
+          !Array.isArray(pricing.integrity_snapshot)
         ? pricing.integrity_snapshot as Record<string, unknown>
         : null;
-      if (pricingError || !pricing?.snapshot_present || !authoritativeSnapshot) {
+      if (
+        pricingError || !pricing?.snapshot_present || !authoritativeSnapshot
+      ) {
         return jsonResponse(500, {
           ok: false,
           code: "ADMIN_PRICING_OUTPUT_UNAVAILABLE",
@@ -492,7 +706,8 @@ Deno.serve(async (request) => {
         customer_type: businessDetails.customer_type,
         company: businessDetails.company,
         enterprise_number: businessDetails.enterprise_number,
-        enterprise_validation_status: businessDetails.enterprise_validation_status,
+        enterprise_validation_status:
+          businessDetails.enterprise_validation_status,
         vat_number: businessDetails.vat_number,
         vat_validation_status: businessDetails.vat_validation_status,
         vat_validated_at: businessDetails.vat_validated_at,
@@ -571,21 +786,21 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
-  let intakeToken: string;
-  try {
-    intakeToken = validateToken(body.token);
-  } catch {
-    return invalidIntakeToken(origin);
-  }
-
-  const intakeTokenHash = await hashIntakeToken(intakeToken);
+  const access = await inspectCustomerAccess(supabase, body.token, origin);
+  if (!access.ok) return access.response;
+  const intakeTokenHash = access.tokenHash;
   if (action === "inspect") {
-    const { data, error } = await supabase.rpc("inspect_quote_request_intake_details_v5", {
-      p_access_token_hash: intakeTokenHash,
-    });
+    const { data, error } = await supabase.rpc(
+      "inspect_quote_request_intake_details_v5",
+      {
+        p_access_token_hash: intakeTokenHash,
+      },
+    );
     const result = Array.isArray(data) ? data[0] : null;
 
     if (error) {
+      const lifecycleDenial = lifecycleDatabaseAccessDenied(error, origin);
+      if (lifecycleDenial) return lifecycleDenial;
       return jsonResponse(500, {
         ok: false,
         code: "INTAKE_INSPECT_FAILED",
@@ -602,8 +817,12 @@ Deno.serve(async (request) => {
       }, origin);
     }
 
-    const submittedOutput = result.intake_status === "submitted" || result.intake_status === "reviewed"
-      ? await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash)
+    const submittedOutput = result.intake_status === "submitted" ||
+        result.intake_status === "reviewed"
+      ? await loadSubmittedIntakeNotificationContext(
+        supabase,
+        intakeTokenHash,
+      )
       : null;
 
     return jsonResponse(200, {
@@ -628,7 +847,8 @@ Deno.serve(async (request) => {
         timing: result.timing,
         description: result.description,
       },
-      data: result.intake_data && typeof result.intake_data === "object" && !Array.isArray(result.intake_data)
+      data: result.intake_data && typeof result.intake_data === "object" &&
+          !Array.isArray(result.intake_data)
         ? result.intake_data
         : {},
     }, origin);
@@ -649,12 +869,19 @@ Deno.serve(async (request) => {
       throw error;
     }
 
-    const { data, error } = await supabase.rpc("reset_quote_request_intake_draft_v1", {
-      p_access_token_hash: intakeTokenHash,
-      p_expected_revision: expectedRevision,
-    });
+    const { data, error } = await supabase.rpc(
+      "reset_quote_request_intake_draft_v1",
+      {
+        p_access_token_hash: intakeTokenHash,
+        p_expected_revision: expectedRevision,
+      },
+    );
     const result = Array.isArray(data) ? data[0] : null;
 
+    if (error) {
+      const lifecycleDenial = lifecycleDatabaseAccessDenied(error, origin);
+      if (lifecycleDenial) return lifecycleDenial;
+    }
     if (error || !result) {
       return jsonResponse(500, {
         ok: false,
@@ -698,7 +925,10 @@ Deno.serve(async (request) => {
 
   let intakeData: Record<string, unknown>;
   try {
-    intakeData = sanitizeAndValidateIntakeData(body.data, action === "submit" ? "submit" : "draft");
+    intakeData = sanitizeAndValidateIntakeData(
+      body.data,
+      action === "submit" ? "submit" : "draft",
+    );
   } catch (error) {
     if (error instanceof InputValidationError) {
       return jsonResponse(400, {
@@ -722,11 +952,23 @@ Deno.serve(async (request) => {
   let rawAdminCapability: string | null = null;
 
   if (action === "submit") {
-    const pricingContext = await loadAuthoritativePricingContext(
-      supabase,
-      intakeTokenHash,
-      intakeData,
-    );
+    let pricingContext: AuthoritativePricingContext | null;
+    try {
+      pricingContext = await loadAuthoritativePricingContext(
+        supabase,
+        intakeTokenHash,
+        intakeData,
+      );
+    } catch (error) {
+      if (error instanceof IntakeRequestError) {
+        return jsonResponse(error.status, {
+          ok: false,
+          code: error.code,
+          message: "Intake access is unavailable.",
+        }, origin);
+      }
+      throw error;
+    }
     if (!pricingContext) return invalidIntakeToken(origin);
 
     let existingSnapshot: Record<string, unknown> | null = null;
@@ -748,8 +990,7 @@ Deno.serve(async (request) => {
     const pricingSnapshot:
       | PricingSnapshotV2
       | PricingSnapshotV3
-      | Record<string, unknown> =
-      await selectPricingSnapshotForSubmit(
+      | Record<string, unknown> = await selectPricingSnapshotForSubmit(
         pricingContext.effectiveEvidence,
         budgetEvidence,
         existingSnapshot,
@@ -802,16 +1043,18 @@ Deno.serve(async (request) => {
     };
     mutationRpc = "save_quote_request_intake_draft_v2";
   } else {
-    mutationParameters = hasEvidence ? {
-      p_access_token_hash: intakeTokenHash,
-      p_action: action,
-      p_legacy_data: legacyData,
-      p_evidence_data: evidenceData,
-    } : {
-      p_access_token_hash: intakeTokenHash,
-      p_action: action,
-      p_data: intakeData,
-    };
+    mutationParameters = hasEvidence
+      ? {
+        p_access_token_hash: intakeTokenHash,
+        p_action: action,
+        p_legacy_data: legacyData,
+        p_evidence_data: evidenceData,
+      }
+      : {
+        p_access_token_hash: intakeTokenHash,
+        p_action: action,
+        p_data: intakeData,
+      };
     mutationRpc = hasEvidence
       ? "update_quote_request_intake_with_evidence"
       : "update_quote_request_intake";
@@ -821,6 +1064,8 @@ Deno.serve(async (request) => {
   const result = Array.isArray(data) ? data[0] : null;
 
   if (error || !result) {
+    const lifecycleDenial = lifecycleDatabaseAccessDenied(error, origin);
+    if (lifecycleDenial) return lifecycleDenial;
     return jsonResponse(500, {
       ok: false,
       code: "INTAKE_UPDATE_FAILED",
@@ -871,12 +1116,17 @@ Deno.serve(async (request) => {
       );
     }
 
-    const submittedOutput = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
-    if (!submittedOutput) return jsonResponse(500, {
-      ok: false,
-      code: "APPLICATION_OUTPUT_UNAVAILABLE",
-      message: "Submitted intake output is unavailable.",
-    }, origin);
+    const submittedOutput = await loadSubmittedIntakeNotificationContext(
+      supabase,
+      intakeTokenHash,
+    );
+    if (!submittedOutput) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "APPLICATION_OUTPUT_UNAVAILABLE",
+        message: "Submitted intake output is unavailable.",
+      }, origin);
+    }
     return jsonResponse(200, {
       ok: true,
       state: "already_submitted",
@@ -902,11 +1152,15 @@ Deno.serve(async (request) => {
   }
 
   if (action === "submit" && result.outcome === "submitted") {
-    if (!isUuid(result.notification_job_id) || !isEmailJobStatus(result.notification_job_status)) {
+    if (
+      !isUuid(result.notification_job_id) ||
+      !isEmailJobStatus(result.notification_job_status)
+    ) {
       return jsonResponse(500, {
         ok: false,
         code: "INTAKE_NOTIFICATION_JOB_UNAVAILABLE",
-        message: "Intake was submitted, but its notification job is unavailable.",
+        message:
+          "Intake was submitted, but its notification job is unavailable.",
       }, origin);
     }
 
@@ -914,7 +1168,8 @@ Deno.serve(async (request) => {
       return jsonResponse(500, {
         ok: false,
         code: "ADMIN_CAPABILITY_UNAVAILABLE",
-        message: "Intake was submitted, but its notification could not be prepared.",
+        message:
+          "Intake was submitted, but its notification could not be prepared.",
       }, origin);
     }
 
@@ -925,12 +1180,17 @@ Deno.serve(async (request) => {
       intakeTokenHash,
       rawAdminCapability,
     );
-    const submittedOutput = await loadSubmittedIntakeNotificationContext(supabase, intakeTokenHash);
-    if (!submittedOutput) return jsonResponse(500, {
-      ok: false,
-      code: "APPLICATION_OUTPUT_UNAVAILABLE",
-      message: "Submitted intake output is unavailable.",
-    }, origin);
+    const submittedOutput = await loadSubmittedIntakeNotificationContext(
+      supabase,
+      intakeTokenHash,
+    );
+    if (!submittedOutput) {
+      return jsonResponse(500, {
+        ok: false,
+        code: "APPLICATION_OUTPUT_UNAVAILABLE",
+        message: "Submitted intake output is unavailable.",
+      }, origin);
+    }
 
     return jsonResponse(200, {
       ok: true,
@@ -949,4 +1209,6 @@ Deno.serve(async (request) => {
     code: "INVALID_INTAKE_STATE",
     message: "Intake could not be updated.",
   }, origin);
-});
+}
+
+if (import.meta.main) Deno.serve(handleIntakeQuoteRequest);

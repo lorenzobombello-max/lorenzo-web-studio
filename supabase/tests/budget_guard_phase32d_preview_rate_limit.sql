@@ -267,9 +267,11 @@ select is(
   'submitted',
   'context exposes submitted lifecycle for handler rejection'
 );
-select is_empty(
+select throws_ok(
   $$select * from public.inspect_preview_budget_guard_context_v1(repeat('3', 64))$$,
-  'expired capability returns no preview context'
+  'P0001',
+  'INTAKE_ACCESS_EXPIRED',
+  'expired capability returns lifecycle denial'
 );
 select is_empty(
   $$select * from public.inspect_preview_budget_guard_context_v1(repeat('4', 64))$$,
