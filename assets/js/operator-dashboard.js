@@ -8,7 +8,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
-const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfProjectDossier"]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const LIFECYCLE_PRESENTATION = Object.freeze({
@@ -330,6 +330,53 @@ export function sdfProjectPresentation(application) {
   };
 }
 
+export function sdfM1InvoiceCandidatePresentation(application) {
+  if (application?.request_kind !== "slimme_documentenflow") return null;
+  const unavailable = {
+    state: "Nog geen candidate",
+    dossierReference: optionalDisplay(application?.application_reference),
+    milestone: "Niet beschikbaar",
+    percentage: "Niet beschikbaar",
+    netAmount: "Niet beschikbaar",
+    currency: "Niet beschikbaar",
+    templateBinding: "Niet beschikbaar",
+    invoiceNumber: "Niet toegewezen",
+    fiscalAuthority: "Niet actief",
+    issuance: "Geblokkeerd",
+    preparedAt: "Niet beschikbaar",
+  };
+  const candidate = application?.sdf_m1_invoice_candidate;
+  if (!candidate) return unavailable;
+  if (!UUID.test(candidate.candidate_id || "")
+      || candidate.candidate_state !== "PREPARED"
+      || !APPLICATION_REFERENCE.test(candidate.application_reference || "")
+      || candidate.application_reference !== application.application_reference
+      || candidate.milestone_identity !== "M1"
+      || candidate.percentage_basis_points !== 4000
+      || candidate.currency !== "EUR"
+      || !Number.isSafeInteger(candidate.net_amount_minor)
+      || candidate.net_amount_minor < 0
+      || candidate.template_binding_present !== true
+      || candidate.invoice_number !== null
+      || candidate.fiscal_authority_state !== "NOT_ACTIVE"
+      || candidate.production_issuance_available !== false
+      || !candidate.prepared_at
+      || Number.isNaN(Date.parse(candidate.prepared_at))) return unavailable;
+  return {
+    state: "Voorbereid",
+    dossierReference: candidate.application_reference,
+    milestone: "M1",
+    percentage: "40%",
+    netAmount: formatMoney(candidate.net_amount_minor),
+    currency: "EUR",
+    templateBinding: "Aanwezig",
+    invoiceNumber: "Niet toegewezen",
+    fiscalAuthority: "Niet actief",
+    issuance: "Geblokkeerd",
+    preparedAt: formatDate(candidate.prepared_at),
+  };
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -536,6 +583,18 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailSdfQuotationAcceptedAt", sdfQuotation?.acceptedAt || "Niet beschikbaar");
     setText("detailSdfQuotationAcceptedDocument", sdfQuotation?.acceptedDocument || "Niet beschikbaar");
     setText("detailSdfQuotationAcceptedHash", sdfQuotation?.acceptedHash || "Niet beschikbaar");
+    const sdfM1Invoice = sdfM1InvoiceCandidatePresentation(application);
+    setText("detailSdfM1InvoiceState", sdfM1Invoice?.state || "Nog geen candidate");
+    setText("detailSdfM1InvoiceDossierReference", sdfM1Invoice?.dossierReference || "Niet beschikbaar");
+    setText("detailSdfM1InvoiceMilestone", sdfM1Invoice?.milestone || "Niet beschikbaar");
+    setText("detailSdfM1InvoicePercentage", sdfM1Invoice?.percentage || "Niet beschikbaar");
+    setText("detailSdfM1InvoiceNetAmount", sdfM1Invoice?.netAmount || "Niet beschikbaar");
+    setText("detailSdfM1InvoiceCurrency", sdfM1Invoice?.currency || "Niet beschikbaar");
+    setText("detailSdfM1InvoiceTemplate", sdfM1Invoice?.templateBinding || "Niet beschikbaar");
+    setText("detailSdfM1InvoiceNumber", sdfM1Invoice?.invoiceNumber || "Niet toegewezen");
+    setText("detailSdfM1InvoiceFiscalAuthority", sdfM1Invoice?.fiscalAuthority || "Niet actief");
+    setText("detailSdfM1InvoiceIssuance", sdfM1Invoice?.issuance || "Geblokkeerd");
+    setText("detailSdfM1InvoicePreparedAt", sdfM1Invoice?.preparedAt || "Niet beschikbaar");
     const sdfProject = sdfProjectPresentation(application);
     setText("detailSdfProjectId", sdfProject?.projectId || "Nog geen project");
     setText("detailSdfProjectProduct", sdfProject?.product || "Niet beschikbaar");

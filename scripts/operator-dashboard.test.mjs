@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -532,6 +532,63 @@ test("SDF quotation values clear on dossier switch and remain textContent-only",
   assert.doesNotMatch(script, /detailSdfQuotationStatus/);
   assert.match(script, /element\.textContent = value/);
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
+});
+
+test("SDF M1 invoice candidate presenter exposes only policy-neutral prepared evidence", async () => {
+  const candidate = {
+    candidate_id: "a1b00000-0000-4000-8000-000000000001",
+    candidate_state: "PREPARED",
+    application_reference: "LWS-AAN-2099-0401",
+    milestone_identity: "M1",
+    percentage_basis_points: 4000,
+    currency: "EUR",
+    net_amount_minor: 114000,
+    template_binding_present: true,
+    invoice_number: null,
+    fiscal_authority_state: "NOT_ACTIVE",
+    production_issuance_available: false,
+    prepared_at: "2099-01-05T10:00:00Z",
+  };
+  const presentation = sdfM1InvoiceCandidatePresentation({ ...sdfApplication(), application_reference: "LWS-AAN-2099-0401", sdf_m1_invoice_candidate: candidate });
+  assert.equal(presentation.state, "Voorbereid");
+  assert.equal(presentation.dossierReference, "LWS-AAN-2099-0401");
+  assert.equal(presentation.milestone, "M1");
+  assert.equal(presentation.percentage, "40%");
+  assert.match(presentation.netAmount, /1[.,\s]140/);
+  assert.equal(presentation.invoiceNumber, "Niet toegewezen");
+  assert.equal(presentation.fiscalAuthority, "Niet actief");
+  assert.equal(presentation.issuance, "Geblokkeerd");
+  const html = await read("operator/dashboard/index.html");
+  assert.match(html, /id="sdfM1InvoiceDossier"[^>]* hidden/);
+  assert.match(html, /Definitieve uitgifte blijft geblokkeerd/);
+  assert.doesNotMatch(html, /id="[^\"]*SdfM1Invoice[^\"]*"[^>]*type="button"/);
+});
+
+test("SDF M1 invoice candidate presenter fails closed on issued or fiscal claims", () => {
+  const base = {
+    candidate_id: "a1b00000-0000-4000-8000-000000000001",
+    candidate_state: "PREPARED",
+    application_reference: "LWS-AAN-2099-0401",
+    milestone_identity: "M1",
+    percentage_basis_points: 4000,
+    currency: "EUR",
+    net_amount_minor: 114000,
+    template_binding_present: true,
+    invoice_number: null,
+    fiscal_authority_state: "NOT_ACTIVE",
+    production_issuance_available: false,
+    prepared_at: "2099-01-05T10:00:00Z",
+  };
+  for (const candidate of [
+    { ...base, invoice_number: "LWS-2099-0001" },
+    { ...base, fiscal_authority_state: "ACTIVE" },
+    { ...base, production_issuance_available: true },
+    { ...base, percentage_basis_points: 2100 },
+  ]) {
+    assert.equal(sdfM1InvoiceCandidatePresentation({ ...sdfApplication(), application_reference: "LWS-AAN-2099-0401", sdf_m1_invoice_candidate: candidate }).state, "Nog geen candidate");
+  }
+  assert.equal(sdfM1InvoiceCandidatePresentation({ ...sdfApplication(), application_reference: "LWS-AAN-2099-0402", sdf_m1_invoice_candidate: base }).state, "Nog geen candidate");
+  assert.equal(sdfM1InvoiceCandidatePresentation({ request_kind: "website", sdf_m1_invoice_candidate: base }), null);
 });
 
 function sdfApplication(project = null) {
