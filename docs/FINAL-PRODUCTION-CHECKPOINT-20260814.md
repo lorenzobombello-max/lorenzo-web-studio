@@ -6,15 +6,15 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 - Repository: `lorenzobombello-max/lorenzo-web-studio`
 - Production branch: `origin/main`
-- Finale productiecommit: `dfc1acd7df2998dcf160aa96262302d2fa7869de`
-- Commit: `feat(operator): bind support references to project sites`
+- Finale productiecommit: `258a2c98064b51112bd9b02bd1d300e2fbf602b5`
+- Commit: `feat(operator): add authoritative financial projection`
 - Website status: **KLAAR / PRODUCTION READY voor de huidige goedgekeurde scope**
 - Live URL: `https://lorenzowebsolutions.be/`
 - Statusdatum: 2026-08-23
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
-## CURRENT continuity - Operator commercial workflow Phase 1 - 23-08-2026
+## CURRENT continuity - Operator financial projection release - 23-08-2026
 
 Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zij actualiseert de productie- en vervolgstatus; oudere checkpoints en de onderstaande eerdere fasesecties blijven historisch bewijs en mogen niet als actuelere Git- of open-statusauthority worden gebruikt.
 
@@ -22,16 +22,16 @@ Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zi
 
 | Eigenschap | Actuele authority |
 |---|---|
-| Fase | Operator supportreference + customer/application/project/site foundation |
+| Fase | Operator supportreference + customer/application/project/site foundation + authoritative financial projection |
 | Status | **PRODUCTION RELEASE COMPLETE** |
-| Production SHA | `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
-| Previous main | `9a4d225dc05206d501fa1a3797df1e94111d9c82` |
-| Commit | `feat(operator): bind support references to project sites` |
-| Migration | `20260823170000_add_operator_support_reference_and_project_site.sql` |
+| Production SHA | `258a2c98064b51112bd9b02bd1d300e2fbf602b5` |
+| Previous main | `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
+| Commit | `feat(operator): add authoritative financial projection` |
+| Migration | `20260823180000_add_operator_financial_projection.sql` |
 | Migrationstatus | **APPLIED**; linked ledger parity; pending migrations `0` |
-| Edge Function | `commercial-operator-command`; **ACTIVE**; version `8` |
+| Edge Function | geen deployment voor deze release; bestaande `commercial-operator-command` blijft behouden |
 | Edge hash | `4a9b6ad49474a214acf2b834eb933088a78bc4e02343c36a5da0fd8f5bb3a562` |
-| GitHub Pages | **SUCCESS**; approved SHA `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
+| GitHub Pages | **SUCCESS**; run `32636931018`; approved SHA `258a2c98064b51112bd9b02bd1d300e2fbf602b5` |
 
 Productionbewijs na de gecontroleerde release:
 
@@ -41,6 +41,16 @@ Productionbewijs na de gecontroleerde release:
 - `commercial_project_sites` heeft RLS enabled en `FORCE RLS`;
 - directe table-writegrants voor `anon`, `authenticated` en `service_role` zijn `0`;
 - de guarded bind/rotate-RPC is aanwezig;
+- `financial_summary` production contract is **PASS**;
+- authorization, fixed `search_path` en bestaande execute-ACL zijn **PASS**;
+- expected gebruikt uitsluitend projectgebonden authoritative payment expectations;
+- invoiced en outstanding blijven fail-closed unavailable zolang volledige productionauthority ontbreekt;
+- received telt uitsluitend exact gematchte en bevestigde paymentauthority, maximaal eenmaal per milestone expectation;
+- raw, unreconciled, PARTIAL en MATCHED-zonder-confirmation evidence telt niet als ontvangen;
+- sensitive payment-evidencemetadata wordt niet rechtstreeks geprojecteerd;
+- 40/40/rest paymentauthority is **PRESERVED**;
+- production bevat `0` commercial projects; runtime business-record verification is **NOT APPLICABLE / NO PRODUCTION PROJECT AVAILABLE**;
+- release findings: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `0`;
 - er is geen handmatige businessdatawijziging, cleanup of fictieve customer/project/sitecreatie uitgevoerd.
 
 ### Referentiecontract - DONE / PRESERVE
@@ -71,22 +81,28 @@ Production bevat momenteel `0` commercial projects. Daarom zijn `project = null`
 ### Test- en reviewbewijs
 
 - support/site pgTAP: `47/47` PASS;
-- application handoff: `92/92` PASS;
+- application handoff en financial projection: `118/118` PASS;
 - Operator: `58/58` PASS;
 - Edge handler: `15/15` PASS;
 - volledige lokale migration reset: PASS;
 - Edge bundling: PASS;
-- independent review: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `2` commit-safe.
+- independent review: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `0`.
 
 ### Reeds afgewerkt - DONE / PRESERVE
 
 - Operator search en **Open in Operator**;
 - 7-day intake lifecycle en uitnodigingsmail met exact zeven dagen;
 - interne `application_reference` en afzonderlijke publieke `#supportreference`;
+- supportreference foundation;
+- application/customer/project binding;
 - customer/application/project/site foundation;
+- project/site foundation;
 - M1 invoice policy-neutral foundation;
 - bestaande commerciele en documentauthority;
-- bestaande 40/40/rest authority;
+- 40/40/rest paymentauthority;
+- authoritative financial projection met expected, fail-closed invoiced, confirmed received en fail-closed outstanding;
+- confirmed-payment authority als voorwaarde voor ontvangen inkomsten;
+- project-isolated en multi-project-isolated financial projection;
 - bestaande customer preview authority waar reeds checkpointed;
 - bestaande Drive documentauthority.
 
@@ -107,9 +123,17 @@ De bestaande workflowauthority blijft behouden in deze volgorde: offerte -> verz
 
 ### OPEN / NEXT
 
-#### A. Operator inkomstenoverzicht
+#### A. Dossierbeheer / Operator structure
 
-**OPEN / NIET ALS PRODUCTION-AFGEWERKT BESCHOUWEN.** Een toekomstige read-only projectie moet verwacht, gefactureerd en ontvangen strikt onderscheiden. Alleen financieel bevestigde authority mag als werkelijke inkomsten worden getoond.
+**OPEN / NEXT.** Dit checkpoint start geen implementatie en autoriseert geen deletefunctie.
+
+- de huidige lijst mag niet onbeperkt blijven groeien;
+- structureer dossiers per jaar en daarbinnen als Q1 / Q2 / Q3 / Q4;
+- zoeken en filteren moet binnen dossiers mogelijk worden en toekomstige jaren moeten uitbreidbaar blijven;
+- testdossiers moeten later gecontroleerd verwijderbaar kunnen zijn;
+- echte commerciele of boekhoudkundige records mogen nooit als testdata worden behandeld;
+- delete-authority moet daarom expliciet onderscheid maken tussen TEST en echte production/commerciele records;
+- ontwerp geen delete-implementatie voordat bestaande data-authority, relaties, auditvereisten en wettelijke bewaarplichten zijn geinventariseerd.
 
 #### B. Echte project/site businessbinding
 
@@ -129,25 +153,30 @@ Klant A mag nooit bestanden van klant B zien of uploaden. Een customer met meerd
 
 #### E. Documentenflow -> live Operator
 
-**OPEN.** De bestaande commerciele A->Y authority wordt niet opnieuw ontworpen. Volgende fases realiseren uitsluitend ontbrekende live Operator-koppelingen.
+**OPEN.** De bestaande commerciele A->Y authority wordt niet opnieuw ontworpen. Volgende fases realiseren uitsluitend ontbrekende live Operator-koppelingen. Documentenflow moet nog zichtbaar en bedienbaar worden in live Operator.
+
+#### F. Bestaande documenten en productkoppelingen
+
+**OPEN.** Inventariseer en hergebruik eerst de bestaande authority; maak deze documenten niet opnieuw.
+
+- SDF-koppeling aan de live Operatorworkflow;
+- bestaande offertes en facturen;
+- bestaande wijzigings- en contractdocumenten;
+- koppeling van deze authority aan klant, project en Operatorworkflow.
 
 ### Vaste projectdiscipline
 
-Na iedere afgeronde en goedgekeurde projectfase, en voordat een nieuwe implementatiefase start:
+Na iedere bewezen belangrijke fase geldt verplicht:
 
-1. bewijs production- en releasestatus;
-2. actualiseer dit CURRENT / AUTHORITATIVE checkpoint;
-3. noteer de gerealiseerde scope;
-4. noteer tests, release-SHA, migrations en deployments;
-5. noteer alle openstaande punten;
-6. noteer de exacte volgende kandidaatfase;
-7. start pas daarna een nieuwe implementatiefase.
+review -> gecontroleerde commit/push -> production release indien van toepassing -> verificatie -> continuity/checkpoint actualiseren -> pas daarna de volgende fase.
+
+Leg daarbij de gerealiseerde scope, tests, release-SHA, migrations, deployments, openstaande punten en exacte volgende kandidaatfase vast.
 
 Iedere volgende sessie leest eerst deze CURRENT-sectie. Een brede heranalyse van reeds bewezen werk is niet toegestaan zonder nieuwe concrete evidence.
 
 ### Exacte volgende kandidaatfase
 
-De logisch eerstvolgende kandidaat is **Operator inkomstenoverzicht - authority inventory en read-only projection**, omdat dit de bestaande financiele lagen ontsluit zonder nieuwe betalingsclaims te fabriceren. De harde grens blijft: verwacht, gefactureerd en ontvangen zijn afzonderlijke statussen en alleen bevestigde financiele authority telt als werkelijke inkomsten.
+De logisch eerstvolgende kandidaat is **DOSSIERBEHEER / OPERATOR STRUCTURE - authority inventory**. Inventariseer eerst data-authority, relaties, auditvereisten, wettelijke bewaarplichten en het onderscheid TEST versus echte production/commerciele records. Jaar-/kwartaalstructuur, zoeken/filteren en gecontroleerde test-delete blijven requirements; dit checkpoint ontwerpt of bouwt nog geen deletefunctie.
 
 Dit checkpoint kiest alleen de kandidaat en start geen implementatie.
 
