@@ -6,13 +6,150 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 - Repository: `lorenzobombello-max/lorenzo-web-studio`
 - Production branch: `origin/main`
-- Finale productiecommit: `3a2a96db2737024a6eb7fefcd2b82c17ce56f019`
-- Commit: `fix(intake): correct inspect transaction mode`
+- Finale productiecommit: `dfc1acd7df2998dcf160aa96262302d2fa7869de`
+- Commit: `feat(operator): bind support references to project sites`
 - Website status: **KLAAR / PRODUCTION READY voor de huidige goedgekeurde scope**
 - Live URL: `https://lorenzowebsolutions.be/`
 - Statusdatum: 2026-08-23
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
+
+## CURRENT continuity - Operator commercial workflow Phase 1 - 23-08-2026
+
+Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zij actualiseert de productie- en vervolgstatus; oudere checkpoints en de onderstaande eerdere fasesecties blijven historisch bewijs en mogen niet als actuelere Git- of open-statusauthority worden gebruikt.
+
+### Production release
+
+| Eigenschap | Actuele authority |
+|---|---|
+| Fase | Operator supportreference + customer/application/project/site foundation |
+| Status | **PRODUCTION RELEASE COMPLETE** |
+| Production SHA | `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
+| Previous main | `9a4d225dc05206d501fa1a3797df1e94111d9c82` |
+| Commit | `feat(operator): bind support references to project sites` |
+| Migration | `20260823170000_add_operator_support_reference_and_project_site.sql` |
+| Migrationstatus | **APPLIED**; linked ledger parity; pending migrations `0` |
+| Edge Function | `commercial-operator-command`; **ACTIVE**; version `8` |
+| Edge hash | `4a9b6ad49474a214acf2b834eb933088a78bc4e02343c36a5da0fd8f5bb3a562` |
+| GitHub Pages | **SUCCESS**; approved SHA `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
+
+Productionbewijs na de gecontroleerde release:
+
+- `support_reference` is een actieve stored generated authority;
+- format- en unique constraints zijn actief;
+- production supportreference-collisioncount is `0`;
+- `commercial_project_sites` heeft RLS enabled en `FORCE RLS`;
+- directe table-writegrants voor `anon`, `authenticated` en `service_role` zijn `0`;
+- de guarded bind/rotate-RPC is aanwezig;
+- er is geen handmatige businessdatawijziging, cleanup of fictieve customer/project/sitecreatie uitgevoerd.
+
+### Referentiecontract - DONE / PRESERVE
+
+| Identiteit | Productionwaarde |
+|---|---|
+| Interne aanvraag-/dossierreferentie | `LWS-AAN-2026-0001` |
+| Publieke klant-/supportreferentie | `#F98B2F08` |
+| Technische identiteit | UUID van het quote request/dossier |
+
+De interne en publieke referentie zijn afzonderlijke identiteiten en worden niet semantisch samengevoegd. Beide zijn production lookup-capable en resolveren aantoonbaar exact hetzelfde quote request/dossier. De UUID blijft de technische identiteit en fallback.
+
+### Project/site foundation - DONE / PRESERVE
+
+Gerealiseerd en niet opnieuw ontwerpen:
+
+- canonical application -> customer -> commercial project foundation;
+- projectgebonden site authority met initial bind;
+- append-only controlled site rotation en immutable site history;
+- expected revision/concurrency, project locking en idempotency;
+- owner/admin-only write-authority en cross-project isolation;
+- een customer kan meerdere onafhankelijk gebonden projecten/sites hebben;
+- intakevelden zoals `existing_website_url` en `domain_name` blijven evidence en worden niet automatisch canonical projectsite;
+- project/site-readprojectie en veilige HTTPS/exact-origin websitelink met `_blank` en `noopener noreferrer`.
+
+Production bevat momenteel `0` commercial projects. Daarom zijn `project = null` en `project_site = null` in het bestaande productiondossier correct en geen bug. Er is bewust geen fictief project of site aangemaakt.
+
+### Test- en reviewbewijs
+
+- support/site pgTAP: `47/47` PASS;
+- application handoff: `92/92` PASS;
+- Operator: `58/58` PASS;
+- Edge handler: `15/15` PASS;
+- volledige lokale migration reset: PASS;
+- Edge bundling: PASS;
+- independent review: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `2` commit-safe.
+
+### Reeds afgewerkt - DONE / PRESERVE
+
+- Operator search en **Open in Operator**;
+- 7-day intake lifecycle en uitnodigingsmail met exact zeven dagen;
+- interne `application_reference` en afzonderlijke publieke `#supportreference`;
+- customer/application/project/site foundation;
+- M1 invoice policy-neutral foundation;
+- bestaande commerciele en documentauthority;
+- bestaande 40/40/rest authority;
+- bestaande customer preview authority waar reeds checkpointed;
+- bestaande Drive documentauthority.
+
+Deze onderdelen zijn geen opdracht voor heranalyse of herontwerp in een volgende sessie.
+
+### Capabilitystatus
+
+Gebruik voor iedere vervolgscope vier afzonderlijke statussen. **AUTHORITY EXISTS** of **BACKEND EXISTS** betekent nooit automatisch dat **OPERATOR UI EXISTS** of **PRODUCTION READY** waar is.
+
+| Workflow | Authority | Backend | Operator UI | Production ready |
+|---|---|---|---|---|
+| Offerte -> verzenden -> acceptatie | EXISTS | EXISTS | gedeeltelijk/bestaand | alleen volgens bestaande checkpoints |
+| M1 -> betaling -> project release/start | EXISTS | foundation/bestaand | niet volledig end-to-end | NEE als volledige Operatorflow |
+| Preview -> M2 -> betaling -> final approval | EXISTS | foundation/bestaand | niet volledig end-to-end | NEE als volledige customer-facing flow |
+| Restfactuur -> volledige betaling -> transfer -> delivery -> receipt -> archive | EXISTS | foundation/bestaand | niet volledig end-to-end | NEE als volledige Operatorflow |
+
+De bestaande workflowauthority blijft behouden in deze volgorde: offerte -> verzenden -> acceptatie -> M1 -> betaling -> project release -> project start -> preview -> M2 -> betaling -> final approval -> restfactuur -> volledige betaling -> transfer -> delivery -> receipt -> archive. Specificatie of backendfoundation mag niet als volledige production-UI worden gepresenteerd.
+
+### OPEN / NEXT
+
+#### A. Operator inkomstenoverzicht
+
+**OPEN / NIET ALS PRODUCTION-AFGEWERKT BESCHOUWEN.** Een toekomstige read-only projectie moet verwacht, gefactureerd en ontvangen strikt onderscheiden. Alleen financieel bevestigde authority mag als werkelijke inkomsten worden getoond.
+
+#### B. Echte project/site businessbinding
+
+De foundation bestaat, maar er is nog geen werkelijk production commercial project/site geregistreerd. Initial bind of rotation mag alleen plaatsvinden wanneer een echt klantproject dit vereist en afzonderlijk is geautoriseerd.
+
+#### C. Preview + feedback
+
+Hergebruik de bestaande authority/foundation. De customer-facing end-to-end Operatorflow moet nog verder worden aangesloten en is niet als volledig production-ready bewezen.
+
+#### D. Projectgeisoleerde uploadflow
+
+**OPEN.** Een gedeelde klantuploadbak is verboden. Iedere toekomstige uploadauthority moet minimaal zijn gebonden als:
+
+`customer -> application/dossier -> project -> upload authority/batch -> file metadata`
+
+Klant A mag nooit bestanden van klant B zien of uploaden. Een customer met meerdere projecten blijft per project geisoleerd. De Operator kan later een afzonderlijke tijdelijke actie **Uploadlink versturen** krijgen. Hergebruik eerst bestaande intake-/artifactcomponenten waar dat aantoonbaar veilig is.
+
+#### E. Documentenflow -> live Operator
+
+**OPEN.** De bestaande commerciele A->Y authority wordt niet opnieuw ontworpen. Volgende fases realiseren uitsluitend ontbrekende live Operator-koppelingen.
+
+### Vaste projectdiscipline
+
+Na iedere afgeronde en goedgekeurde projectfase, en voordat een nieuwe implementatiefase start:
+
+1. bewijs production- en releasestatus;
+2. actualiseer dit CURRENT / AUTHORITATIVE checkpoint;
+3. noteer de gerealiseerde scope;
+4. noteer tests, release-SHA, migrations en deployments;
+5. noteer alle openstaande punten;
+6. noteer de exacte volgende kandidaatfase;
+7. start pas daarna een nieuwe implementatiefase.
+
+Iedere volgende sessie leest eerst deze CURRENT-sectie. Een brede heranalyse van reeds bewezen werk is niet toegestaan zonder nieuwe concrete evidence.
+
+### Exacte volgende kandidaatfase
+
+De logisch eerstvolgende kandidaat is **Operator inkomstenoverzicht - authority inventory en read-only projection**, omdat dit de bestaande financiele lagen ontsluit zonder nieuwe betalingsclaims te fabriceren. De harde grens blijft: verwacht, gefactureerd en ontvangen zijn afzonderlijke statussen en alleen bevestigde financiele authority telt als werkelijke inkomsten.
+
+Dit checkpoint kiest alleen de kandidaat en start geen implementatie.
 
 ## Intake inspect transaction mode continuity - 23-08-2026
 
