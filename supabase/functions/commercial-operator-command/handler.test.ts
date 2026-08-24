@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { createUnsignedTestJwt, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import { createUnsignedTestJwt, executeDossierLifecycleTransport, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
@@ -305,6 +305,139 @@ Deno.test("intake lifecycle database errors retain existing HTTP contracts", asy
     assertEquals(result.status, status);
     assertEquals((await result.json()).code, responseCode);
   }
+});
+
+Deno.test("dossier lifecycle actions require the fixed revisioned command shape", async ()=>{
+  for (const [action, eventType] of [
+    ["archive_dossier", "ARCHIVED"],
+    ["reactivate_dossier", "REACTIVATED"],
+    ["trash_dossier", "TRASHED"],
+    ["restore_dossier", "RESTORED"]
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action,
+      quote_request_id: "a1800000-0000-4000-8000-000000000040",
+      expected_revision: 3,
+      idempotency_key: "a1800000-0000-4000-8000-000000000041",
+      reason: "  Operator dossier reason  "
+    }), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls[0].input, {
+      action,
+      quote_request_id: "a1800000-0000-4000-8000-000000000040",
+      event_type: eventType,
+      expected_revision: 3,
+      idempotency_key: "a1800000-0000-4000-8000-000000000041",
+      reason: "Operator dossier reason"
+    });
+  }
+
+  for (const invalid of [
+    { quote_request_id: "invalid" },
+    { expected_revision: -1 },
+    { idempotency_key: "invalid" },
+    { reason: "" },
+    { reason: "x".repeat(501) },
+    { event_type: "TRASHED" },
+    { actor_operator_id: userId },
+    { deletion_eligible_at: "2099-01-01T00:00:00Z" }
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "trash_dossier",
+      quote_request_id: "a1800000-0000-4000-8000-000000000040",
+      expected_revision: 3,
+      idempotency_key: "a1800000-0000-4000-8000-000000000041",
+      reason: "Reason",
+      ...invalid
+    }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("dossier lifecycle database errors expose only stable public contracts", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["DOSSIER_NOT_FOUND", 404, "DOSSIER_NOT_FOUND"],
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["INVALID_OPERATOR_DOSSIER_TRANSITION", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_AUTHORITY_REQUIRED", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_IDENTITY_MISMATCH", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_QUOTATION_BLOCKER_PRESENT", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_COMMERCIAL_BLOCKER_PRESENT", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_PAYMENT_BLOCKER_PRESENT", 409, "COMMAND_REJECTED"],
+    ["LEGACY_TEST_CLEANUP_SDF_BLOCKER_PRESENT", 409, "COMMAND_REJECTED"],
+    ["TRASHED_DOSSIER_BLOCKER_CREATION_DENIED", 409, "COMMAND_REJECTED"],
+    ["EDGE_DOSSIER_CAPABILITY_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"]
+  ] as const) {
+    const harness = dependencies();
+    harness.deps.executeApplicationAction = async ()=>{
+      throw new Error(databaseCode);
+    };
+    const result = await handleCommercialOperator(request({
+      action: "trash_dossier",
+      quote_request_id: "a1800000-0000-4000-8000-000000000040",
+      expected_revision: 3,
+      idempotency_key: "a1800000-0000-4000-8000-000000000041",
+      reason: "Reason"
+    }), harness.deps);
+    assertEquals(result.status, status);
+    assertEquals((await result.json()).code, responseCode);
+  }
+});
+
+Deno.test("dossier lifecycle transport issues server capability before JWT-bound command", async ()=>{
+  const calls: Array<{ client: string; name: string; args: Record<string, unknown> }> = [];
+  const capability = "a1800000-0000-4000-8000-000000000042";
+  const input = {
+    action: "trash_dossier",
+    quote_request_id: "a1800000-0000-4000-8000-000000000040",
+    event_type: "TRASHED",
+    expected_revision: 3,
+    idempotency_key: "a1800000-0000-4000-8000-000000000041",
+    reason: "Operator dossier reason"
+  };
+  const issueCapability = (args: Record<string, unknown>)=>{
+    calls.push({ client: "service", name: "issue_operator_dossier_lifecycle_edge_capability_v1", args });
+    return Promise.resolve({ data: capability, error: null });
+  };
+  const executeCommand = (args: Record<string, unknown>)=>{
+    calls.push({ client: "human", name: "execute_operator_dossier_lifecycle_command_v1", args });
+    return Promise.resolve({ data: { state: "TRASHED", revision: 4 }, error: null });
+  };
+
+  assertEquals(
+    await executeDossierLifecycleTransport(issueCapability, executeCommand, userId, input),
+    { state: "TRASHED", revision: 4 }
+  );
+  assertEquals(calls, [
+    {
+      client: "service",
+      name: "issue_operator_dossier_lifecycle_edge_capability_v1",
+      args: {
+        p_actor_auth_user_id: userId,
+        p_quote_request_id: input.quote_request_id,
+        p_event_type: input.event_type,
+        p_expected_revision: input.expected_revision,
+        p_idempotency_key: input.idempotency_key,
+        p_reason: input.reason
+      }
+    },
+    {
+      client: "human",
+      name: "execute_operator_dossier_lifecycle_command_v1",
+      args: {
+        p_quote_request_id: input.quote_request_id,
+        p_event_type: input.event_type,
+        p_expected_revision: input.expected_revision,
+        p_idempotency_key: input.idempotency_key,
+        p_reason: input.reason,
+        p_edge_capability: capability
+      }
+    }
+  ]);
 });
 
 Deno.test("existing commercial command path remains rate limited and unchanged", async ()=>{

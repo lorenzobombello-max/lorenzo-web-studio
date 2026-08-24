@@ -33,6 +33,10 @@ const APPLICATION_ACTIONS = new Set([
   "resume_intake",
   "cancel_intake",
   "reactivate_intake",
+  "archive_dossier",
+  "reactivate_dossier",
+  "trash_dossier",
+  "restore_dossier",
   "bind_project_site",
   "rotate_project_site"
 ]);
@@ -49,6 +53,12 @@ const INTAKE_LIFECYCLE_ACTIONS = new Map([
   ["cancel_intake", "CANCELLED"],
   ["reactivate_intake", "REACTIVATED"]
 ]);
+const DOSSIER_LIFECYCLE_ACTIONS = new Map([
+  ["archive_dossier", "ARCHIVED"],
+  ["reactivate_dossier", "REACTIVATED"],
+  ["trash_dossier", "TRASHED"],
+  ["restore_dossier", "RESTORED"]
+]);
 const PROJECT_SITE_ACTIONS = new Map([
   ["bind_project_site", "INITIAL_BIND"],
   ["rotate_project_site", "ROTATION"]
@@ -56,6 +66,20 @@ const PROJECT_SITE_ACTIONS = new Map([
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
 const CANONICAL_DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+type DossierLifecycleRpcResult = Readonly<{
+  data: unknown;
+  error: Readonly<{ message: string }> | null;
+}>;
+type DossierLifecycleRpcCall = (
+  args: Record<string, unknown>
+)=>PromiseLike<DossierLifecycleRpcResult>;
+type DossierLifecycleTransportInput = Readonly<{
+  quote_request_id: string;
+  event_type: string;
+  expected_revision: number;
+  idempotency_key: string;
+  reason: string;
+}>;
 const FORBIDDEN_IDENTITY_FIELDS = new Set([
   "p_actor",
   "actor",
@@ -147,6 +171,8 @@ function validateApplicationAction(value) {
     ? new Set(["action", "project_id", "expected_revision", "idempotency_key", "canonical_domain", "evidence"])
     : INTAKE_LIFECYCLE_ACTIONS.has(action)
     ? new Set(["action", "intake_id", "expected_revision", "idempotency_key", "reason"])
+    : DOSSIER_LIFECYCLE_ACTIONS.has(action)
+    ? new Set(["action", "quote_request_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
   if (action === "list_applications_v2" || action === "get_application_facets_v2") {
@@ -251,6 +277,25 @@ function validateApplicationAction(value) {
       reason
     };
   }
+  if (DOSSIER_LIFECYCLE_ACTIONS.has(action)) {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0
+      || reason.length < 1 || reason.length > 500) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      event_type: DOSSIER_LIFECYCLE_ACTIONS.get(action),
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+      reason
+    };
+  }
   const quoteRequestId = value.quote_request_id == null ? null : String(value.quote_request_id);
   const applicationReference = value.application_reference == null ? null : String(value.application_reference);
   const rawSupportReference = value.support_reference == null ? null : String(value.support_reference).trim().toUpperCase();
@@ -279,7 +324,8 @@ function mapDatabaseError(error) {
     "OPERATOR_DISABLED",
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
-    "APPLICATION_SCOPE_DENIED"
+    "APPLICATION_SCOPE_DENIED",
+    "EDGE_DOSSIER_CAPABILITY_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
@@ -292,6 +338,7 @@ function mapDatabaseError(error) {
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
   if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
+  if (code === "DOSSIER_NOT_FOUND") return response(404, code);
   if (code === "INTERNAL_E2E_RUN_NOT_FOUND") return response(404, code);
   if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
@@ -305,6 +352,7 @@ function mapDatabaseError(error) {
     "INVALID_PAGINATION",
     "IDEMPOTENCY_KEY_REQUIRED",
     "INVALID_INTAKE_LIFECYCLE_COMMAND"
+    ,"INVALID_DOSSIER_LIFECYCLE_COMMAND"
     ,"INVALID_INTERNAL_E2E_REQUEST"
     ,"INVALID_OPERATOR_CURSOR_POSITION"
     ,"INVALID_OPERATOR_ZONE"
@@ -323,10 +371,45 @@ function mapDatabaseError(error) {
     "INVALID_STATE",
     "PAYMENT_NOT_MATCHED",
     "ACCESS_DENIED",
-    "INVALID_INTAKE_LIFECYCLE_TRANSITION"
+    "INVALID_INTAKE_LIFECYCLE_TRANSITION",
+    "INVALID_OPERATOR_DOSSIER_TRANSITION",
+    "INVALID_OPERATOR_DOSSIER_RESTORE",
+    "TRASHED_DOSSIER_BLOCKER_CREATION_DENIED"
   ].includes(code)) return response(409, "COMMAND_REJECTED");
+  if (code.startsWith("LEGACY_TEST_CLEANUP_")) return response(409, "COMMAND_REJECTED");
   return response(500, "INTERNAL_ERROR");
 }
+
+export async function executeDossierLifecycleTransport(
+  issueCapability: DossierLifecycleRpcCall,
+  executeCommand: DossierLifecycleRpcCall,
+  actorAuthUserId: string,
+  input: DossierLifecycleTransportInput
+): Promise<unknown> {
+  const capabilityResult = await issueCapability({
+    p_actor_auth_user_id: actorAuthUserId,
+    p_quote_request_id: input.quote_request_id,
+    p_event_type: input.event_type,
+    p_expected_revision: input.expected_revision,
+    p_idempotency_key: input.idempotency_key,
+    p_reason: input.reason,
+  });
+  if (capabilityResult.error || !UUID.test(String(capabilityResult.data || ""))) {
+    throw new Error(capabilityResult.error?.message || "SERVER_CONFIGURATION_ERROR");
+  }
+
+  const commandResult = await executeCommand({
+    p_quote_request_id: input.quote_request_id,
+    p_event_type: input.event_type,
+    p_expected_revision: input.expected_revision,
+    p_idempotency_key: input.idempotency_key,
+    p_reason: input.reason,
+    p_edge_capability: capabilityResult.data,
+  });
+  if (commandResult.error) throw new Error(commandResult.error.message);
+  return commandResult.data;
+}
+
 export async function handleCommercialOperator(request, deps) {
   try {
     if (request.method !== "POST") throw new RequestError(405, "METHOD_NOT_ALLOWED");

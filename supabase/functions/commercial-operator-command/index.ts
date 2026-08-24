@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import { executeDossierLifecycleTransport, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
 import {
   createApprovalTokenForIdempotencyKey,
   createInternalE2EIntakeTokenForIdempotencyKey,
@@ -134,7 +134,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       if (error) throw new Error(error.message);
       return data;
     },
-    executeApplicationAction: async (jwt, input)=>{
+    executeApplicationAction: async (jwt, input, actorAuthUserId: string)=>{
       const client = clientFor(jwt);
       if (["interrupt_intake", "resume_intake", "cancel_intake", "reactivate_intake"].includes(input.action)) {
         const { data, error } = await client.rpc("execute_operator_intake_lifecycle_command_v1", {
@@ -146,6 +146,14 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
         });
         if (error) throw new Error(error.message);
         return data;
+      }
+      if (["archive_dossier", "reactivate_dossier", "trash_dossier", "restore_dossier"].includes(input.action)) {
+        return await executeDossierLifecycleTransport(
+          (args)=>serviceClient().rpc("issue_operator_dossier_lifecycle_edge_capability_v1", args),
+          (args)=>client.rpc("execute_operator_dossier_lifecycle_command_v1", args),
+          actorAuthUserId,
+          input
+        );
       }
       if (["bind_project_site", "rotate_project_site"].includes(input.action)) {
         const { data, error } = await client.rpc("execute_operator_project_site_command_v1", {
