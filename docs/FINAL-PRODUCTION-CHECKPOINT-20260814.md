@@ -14,6 +14,133 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
+## CURRENT / AUTHORITATIVE continuity - Phase-1 dossier state production release - 24-08-2026
+
+Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor iedere volgende sessie. Zij vervangt uitsluitend de actuele resume-status van eerdere CURRENT-secties hieronder. Alle oudere checkpoints, releasesecties en evidence blijven ongewijzigd historisch bewijs.
+
+### Phase 1 production release - DONE / PRESERVE
+
+| Eigenschap | Actuele authority |
+|---|---|
+| Fase | Operator dossier management Phase 1 - private dossier-state authority foundation |
+| Status | **PRODUCTION RELEASE COMPLETE / DONE / PRESERVE** |
+| Release SHA | `729d4d050efa031db8828b6eeefec959766529a0` |
+| GitHub Pages | run `32701371523`; **SUCCESS** |
+| Production migration | `20260824120000_add_operator_dossier_state_authority.sql`; **APPLIED = JA** |
+| Migration SHA-256 | `F01FD67BA8B35C6C68D4B75F5386B7BDFBBB2D21D1C60CB28697570E34A62189` |
+| Linked ledger | **PARITY**; pending `0`; drift `0` |
+| Edge deployment | niet nodig en niet uitgevoerd |
+
+Production state-authoritybewijs:
+
+- production roots: `45`;
+- dossier-state rows: `45`;
+- distinct root parity: `45/45`;
+- duplicate rootbindings: `0`;
+- ontbrekende production rootbindings: `0`;
+- initiele `ACTIVE` backfill: `45/45`;
+- initiele revision `0`: `45/45`;
+- `internal_e2e` state rows: `0`;
+- invalid states: `0`;
+- `DELETED` states: `0`.
+
+Het canonical dossier-state model bestaat exact uit:
+
+- `ACTIVE`;
+- `ARCHIVED`;
+- `TRASHED`;
+- geen `DELETED`-state.
+
+De eventauthority is aanwezig en append-only/immutable guarded. De initiele production event count is `0`. De transitionauthority is fail-closed: exact zes transitioncombinaties zijn toegestaan en alle undefined transitions worden geweigerd.
+
+Securitybewijs:
+
+- beide private authoritytabellen hebben RLS enabled en `FORCE RLS`;
+- runtime table- en function-ACL violations zijn `0`;
+- er bestaan geen public dossier runtimecommands;
+- one-to-one rootbinding, revisioninvariants, `state_before_trash` en `deletion_eligible_at` zijn actief;
+- Phase 1 introduceert geen archive-, reactivate-, trash-, restore-, delete- of cleanupcommand.
+
+De volgende bestaande authorities en contracten zijn **DONE / PRESERVE** en door Phase 1 niet gewijzigd:
+
+- application numbering;
+- quotation numbering;
+- nummerconsumptie bij `PREPARED`;
+- issued-number immutability en geen nummerhergebruik;
+- quotation draft, approval, issuance en acceptance;
+- intake- en `CANCELLED`-semantiek; `CANCELLED` is geen dossierzone;
+- commercial project workflow;
+- 40/40/rest paymentauthority;
+- financial projection;
+- documents en artifacts;
+- SDF;
+- project/site;
+- immutable legacy cleanup authority voor exact elf historische test-/ontwikkelingsdossiers.
+
+Phase 1 is uitsluitend de production authority foundation. Er is geen Operator UI of runtimeimplementatie voor archive/reactivate/trash/restore/delete toegevoegd.
+
+### Phase 2 - OPEN / NEXT, geen implementatie gestart
+
+De volgende kandidaatfase is **PHASE 2 - OPERATOR READMODEL / SEARCH / FILTERS / PAGINATION**. Dit checkpoint autoriseert of implementeert geen Phase-2-code, UI, command of migration.
+
+Het toekomstige readmodel projecteert twee strikt afzonderlijke dimensies:
+
+1. de actuele dossierzone: `ACTIVE`, `ARCHIVED` of `TRASHED`;
+2. de actuele operationele status, waaronder `CANCELLED` / **Geannuleerd**.
+
+De huidige projectiemismatch moet later authoritative worden opgelost: detail kan **Geannuleerd** tonen terwijl de lijst links nog **Ingediend** toont. **Geannuleerd** vereist een server-authoritative projectie, rode statusweergave en ondersteuning in filters en search. Geannuleerd zijn archiveert of trasht een dossier niet automatisch.
+
+De toekomstige globale dossiersearch omvat, voor zover authority dit toestaat:
+
+- klantnaam;
+- bedrijfs- of organisatienaam;
+- application reference;
+- supportreference;
+- UUID of canonical identifier;
+- actieve en gearchiveerde dossiers;
+- trash uitsluitend met expliciete scope.
+
+Het huidige zoekveld **Zoek op aanvraagnummer** evolueert later conceptueel naar globale dossiersearch. De concrete vrije-tekstvelden en zoekcontracten blijven OPEN totdat zij afzonderlijk zijn geautoriseerd.
+
+Schaalbaarheid is verplicht:
+
+- vervang de huidige browserload-all door server-side search en filtering;
+- gebruik keysetpagination of een aantoonbaar gelijkwaardig schaalbaar contract;
+- laad geen duizenden dossiers naar de browser;
+- jaren komen dynamisch uit data en worden geen permanente twintig-jaar-tabstructuur;
+- filters omvatten jaar, Q1/Q2/Q3/Q4, dossierzone, operationele status en type/kind;
+- de standaard Operatorwerkruimte bevat in hoofdzaak `ACTIVE` dossiers;
+- afzonderlijke Archive- en Trash-views kunnen later worden ontworpen.
+
+Archive-, reactivate-, trash- en restore-runtimecommands behoren niet tot Phase 2 tenzij zij later afzonderlijk worden geautoriseerd. Delete en automatische cleanup behoren evenmin tot deze kandidaatfase.
+
+### OPEN business- en authoritybeslissingen
+
+De volgende beslissingen blijven expliciet **OPEN** en worden in dit checkpoint niet definitief gemaakt:
+
+- trash-retentie: `30` versus `60` dagen;
+- archive eligibility;
+- reactivate permissions;
+- wettelijke en business-retentie per documenttype;
+- canonical datum voor jaar- en Q1/Q2/Q3/Q4-projectie;
+- concrete vrije-tekst searchvelden;
+- automatische cleanupauthority;
+- declined/withdrawn quotation authority.
+
+### Financieel en boekhouding - OPEN / NEXT
+
+Als toekomstige requirements blijven behouden:
+
+- een financieel Operator-overzicht;
+- verwacht, gefactureerd, ontvangen en openstaand zodra productionauthority dit ondersteunt;
+- Q1/Q2/Q3/Q4 financieel overzicht;
+- reproduceerbare boekhouderexport;
+- XLSX/CSV en een leesbare PDF-samenvatting waar later authoritative;
+- koppeling aan officiele facturen en documenten;
+- export-ID, timestamp en auditability.
+
+Er is nu geen financiele implementatie gestart. Bij hervatting geldt verplicht: lees eerst deze CURRENT/AUTHORITATIVE-sectie, preserveer Phase 1 en start geen Phase 2 zonder afzonderlijke scope, review en autorisatie.
+
 ## CURRENT continuity - Legacy test cleanup authority release - 24-08-2026
 
 Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zij actualiseert de productie- en vervolgstatus; oudere checkpoints en de onderstaande eerdere fasesecties blijven historisch bewijs en mogen niet als actuelere Git- of open-statusauthority worden gebruikt.
