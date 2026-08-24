@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, effectiveOperatorZone, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260824-phase2c";
+const OPERATOR_ASSET_RELEASE = "20260824-lifecycle-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
@@ -233,6 +233,92 @@ test("successful cancellation focuses the visible lifecycle heading fallback", (
 
   assert.equal(focusIntakeLifecycle(intakeLifecycle("CANCELLED"), [hiddenTrigger], heading), heading);
   assert.deepEqual(focused, ["heading"]);
+});
+
+function dossierDetail(state, revision = 3) {
+  return {
+    quote_request_id: "a1800000-0000-4000-8000-000000000040",
+    dossier_lifecycle: { state, revision },
+  };
+}
+
+test("dossier lifecycle actions follow only authoritative detail state and revision", () => {
+  assert.deepEqual(dossierLifecyclePresentation(dossierDetail("ACTIVE").dossier_lifecycle).actions, ["archive_dossier", "trash_dossier"]);
+  assert.deepEqual(dossierLifecyclePresentation(dossierDetail("ARCHIVED").dossier_lifecycle).actions, ["reactivate_dossier", "trash_dossier"]);
+  assert.deepEqual(dossierLifecyclePresentation(dossierDetail("TRASHED").dossier_lifecycle).actions, ["restore_dossier"]);
+  assert.equal(dossierLifecyclePresentation({ state: "UNKNOWN", revision: 3 }), null);
+  assert.equal(dossierLifecyclePresentation({ state: "ACTIVE" }), null);
+  assert.equal(dossierLifecyclePresentation({ state: "ACTIVE", revision: -1 }), null);
+  assert.equal(dossierLifecyclePresentation({ state: "ACTIVE", revision: 1.5 }), null);
+  assert.equal(dossierLifecyclePresentation(null), null);
+});
+
+test("dossier lifecycle commands use current detail revision, UUID idempotency, and reason only", () => {
+  for (const [state, action] of [
+    ["ACTIVE", "archive_dossier"],
+    ["ACTIVE", "trash_dossier"],
+    ["ARCHIVED", "reactivate_dossier"],
+    ["TRASHED", "restore_dossier"],
+  ]) {
+    const command = buildDossierLifecycleCommand(action, dossierDetail(state, 7), "  Operationele reden.  ", "a1800000-0000-4000-8000-000000000041");
+    assert.deepEqual(command, {
+      action,
+      quote_request_id: "a1800000-0000-4000-8000-000000000040",
+      expected_revision: 7,
+      idempotency_key: "a1800000-0000-4000-8000-000000000041",
+      reason: "Operationele reden.",
+    });
+    for (const forbidden of ["actor", "actor_id", "operator_id", "operator_role", "name", "email", "service_role"]) {
+      assert.equal(Object.hasOwn(command, forbidden), false);
+    }
+  }
+});
+
+test("dossier lifecycle command validation fails closed", () => {
+  assert.throws(()=>buildDossierLifecycleCommand("archive_dossier", dossierDetail("ACTIVE"), "", "a1800000-0000-4000-8000-000000000041"), /INVALID_DOSSIER_LIFECYCLE_COMMAND/);
+  assert.throws(()=>buildDossierLifecycleCommand("restore_dossier", dossierDetail("ACTIVE"), "Reden", "a1800000-0000-4000-8000-000000000041"), /INVALID_DOSSIER_LIFECYCLE_COMMAND/);
+  assert.throws(()=>buildDossierLifecycleCommand("archive_dossier", dossierDetail("ACTIVE"), "Reden", "invalid"), /INVALID_DOSSIER_LIFECYCLE_COMMAND/);
+  assert.throws(()=>buildDossierLifecycleCommand("archive_dossier", dossierDetail("ACTIVE", -1), "Reden", "a1800000-0000-4000-8000-000000000041"), /INVALID_DOSSIER_LIFECYCLE_COMMAND/);
+});
+
+test("dossier lifecycle concurrency errors require refresh without automatic retry authority", () => {
+  for (const code of ["CONCURRENT_MODIFICATION", "COMMAND_REJECTED", "INVALID_DOSSIER_LIFECYCLE_TRANSITION", "INVALID_OPERATOR_DOSSIER_TRANSITION", "IDEMPOTENCY_CONFLICT"]) {
+    assert.equal(dossierLifecycleError(code).refresh, true);
+  }
+  assert.equal(dossierLifecycleError("OPERATOR_NOT_AUTHORIZED").refresh, false);
+  assert.doesNotMatch(dossierLifecycleError("internal SQL detail").message, /SQL|postgres|internal/i);
+});
+
+test("dossier lifecycle UI is minimal, non-destructive, and uses the Edge refresh flow", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="dossierLifecycleDossier"/);
+  assert.match(html, /data-dossier-lifecycle-action="archive_dossier"[^>]*hidden>Archiveren</);
+  assert.match(html, /data-dossier-lifecycle-action="reactivate_dossier"[^>]*hidden>Terug activeren</);
+  assert.match(html, /data-dossier-lifecycle-action="trash_dossier"[^>]*hidden>Naar prullenbak</);
+  assert.match(html, /data-dossier-lifecycle-action="restore_dossier"[^>]*hidden>Herstellen uit prullenbak</);
+  assert.match(html, /id="dossierLifecycleReason"[^>]*maxlength="500"[^>]*required/);
+  assert.doesNotMatch(html, /Permanent verwijderen|Definitief verwijderen|Hard delete|Purge/i);
+  assert.match(dossierLifecycleAction("trash_dossier").description, /niet permanent verwijderd/i);
+  assert.match(dossierLifecycleAction("trash_dossier").description, /niet hard gedeletet/i);
+  assert.match(dossierLifecycleAction("trash_dossier").description, /Herstellen uit prullenbak/i);
+  assert.match(script, /import \{ callCommercialOperator \} from "\.\/operator-auth-core\.mjs"/);
+  assert.match(script, /callOperator = callCommercialOperator/);
+  assert.match(script, /buildDossierLifecycleCommand\(command\.action, command\.detail, dossierLifecycleReason\.value, crypto\.randomUUID\(\)\)/);
+  assert.match(script, /command\.selectionRequestId !== detailRequestId \|\| !locatorMatchesApplication\(command\.locator, selectedDetail\)/);
+  assert.match(script, /refreshAfterOperatorMutation\([\s\S]{0,300}\(\)=>invoke\(input\)[\s\S]{0,300}\(\)=>detailRequestId/);
+  assert.match(script, /if \(outcome\.refresh\) await refreshMutationDetail\(command\.locator, command\.selectionRequestId\)/);
+  assert.doesNotMatch(script, /client\.rpc\([^)]*(?:dossier|lifecycle)/i);
+  assert.doesNotMatch(script, /service_role|hard_delete|purge_dossier|delete_dossier/i);
+});
+
+test("successful dossier transition focuses only an action allowed by refreshed detail", () => {
+  const focused = [];
+  const buttons = [
+    { dataset: { dossierLifecycleAction: "archive_dossier" }, hidden: true, disabled: false, focus: ()=>focused.push("archive") },
+    { dataset: { dossierLifecycleAction: "restore_dossier" }, hidden: false, disabled: false, focus: ()=>focused.push("restore") },
+  ];
+  assert.equal(focusDossierLifecycle({ state: "TRASHED", revision: 4 }, buttons, null), buttons[1]);
+  assert.deepEqual(focused, ["restore"]);
 });
 
 function detailVisibilityHarness() {

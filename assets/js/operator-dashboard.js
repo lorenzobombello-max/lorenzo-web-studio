@@ -26,6 +26,17 @@ const LIFECYCLE_ACTIONS = Object.freeze({
   cancel_intake: Object.freeze({ label: "Definitief annuleren", title: "Intake definitief annuleren", description: "Annuleren is definitief voor deze intake en kan niet worden hervat." }),
   reactivate_intake: Object.freeze({ label: "Reactiveren", title: "Intake reactiveren", description: "De server start een nieuwe geldigheidstermijn van zeven dagen." }),
 });
+const DOSSIER_LIFECYCLE_PRESENTATION = Object.freeze({
+  ACTIVE: Object.freeze({ label: "Actief", tone: "green", actions: Object.freeze(["archive_dossier", "trash_dossier"]) }),
+  ARCHIVED: Object.freeze({ label: "Gearchiveerd", tone: "amber", actions: Object.freeze(["reactivate_dossier", "trash_dossier"]) }),
+  TRASHED: Object.freeze({ label: "Prullenbak", tone: "red", actions: Object.freeze(["restore_dossier"]) }),
+});
+const DOSSIER_LIFECYCLE_ACTIONS = Object.freeze({
+  archive_dossier: Object.freeze({ label: "Archiveren", title: "Dossier archiveren", description: "Het dossier wordt naar het archief verplaatst en blijft beschikbaar voor later gebruik." }),
+  reactivate_dossier: Object.freeze({ label: "Terug activeren", title: "Dossier terug activeren", description: "Het dossier wordt opnieuw in de actieve werkruimte geplaatst." }),
+  trash_dossier: Object.freeze({ label: "Naar prullenbak", title: "Dossier naar prullenbak verplaatsen", description: "Het dossier wordt naar de prullenbak verplaatst en niet permanent verwijderd. Bestaande gegevens, documenten en evidence worden niet hard gedeletet. Herstellen blijft mogelijk via ‘Herstellen uit prullenbak’." }),
+  restore_dossier: Object.freeze({ label: "Herstellen uit prullenbak", title: "Dossier herstellen uit prullenbak", description: "Het dossier wordt hersteld naar de server-authoritatieve staat van vóór de prullenbak." }),
+});
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
   M1_PAYMENT_PENDING: "Mijlpaal 1 betaling verwacht",
@@ -111,6 +122,49 @@ export function buildIntakeLifecycleCommand(action, lifecycle, reason, idempoten
     idempotency_key: idempotencyKey,
     reason: normalizedReason,
   };
+}
+
+export function dossierLifecyclePresentation(lifecycle) {
+  const state = String(lifecycle?.state || "");
+  const presentation = DOSSIER_LIFECYCLE_PRESENTATION[state];
+  if (!presentation
+      || !Number.isSafeInteger(lifecycle?.revision)
+      || lifecycle.revision < 0) return null;
+  return { state, revision: lifecycle.revision, ...presentation };
+}
+
+export function dossierLifecycleAction(action) {
+  return DOSSIER_LIFECYCLE_ACTIONS[action] || null;
+}
+
+export function buildDossierLifecycleCommand(action, detail, reason, idempotencyKey) {
+  const presentation = dossierLifecyclePresentation(detail?.dossier_lifecycle);
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (!presentation?.actions.includes(action)
+      || !UUID.test(String(detail?.quote_request_id || ""))
+      || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length < 1
+      || normalizedReason.length > 500) throw new Error("INVALID_DOSSIER_LIFECYCLE_COMMAND");
+  return {
+    action,
+    quote_request_id: detail.quote_request_id,
+    expected_revision: presentation.revision,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
+  };
+}
+
+export function dossierLifecycleError(code) {
+  if (["CONCURRENT_MODIFICATION", "COMMAND_REJECTED", "INVALID_DOSSIER_LIFECYCLE_TRANSITION", "INVALID_OPERATOR_DOSSIER_TRANSITION", "IDEMPOTENCY_CONFLICT"].includes(code)) {
+    return { message: "De dossierstatus werd ondertussen gewijzigd. De actuele gegevens worden opnieuw geladen.", refresh: true };
+  }
+  if (code === "OPERATOR_DOSSIER_STATE_REQUIRED" || code === "APPLICATION_NOT_FOUND") {
+    return { message: "Dit dossier is niet meer beschikbaar. De actuele gegevens worden opnieuw geladen.", refresh: true };
+  }
+  if (["AUTHENTICATION_REQUIRED", "INVALID_JWT", "HUMAN_JWT_REQUIRED", "OPERATOR_NOT_AUTHORIZED", "INSUFFICIENT_PERMISSIONS"].includes(code)) {
+    return { message: "Je sessie is verlopen of je hebt onvoldoende bevoegdheid voor deze actie.", refresh: false };
+  }
+  return { message: "De dossieractie kon niet worden uitgevoerd. Controleer de actuele status en probeer opnieuw.", refresh: false };
 }
 
 export function intakeLifecycleError(code) {
@@ -393,6 +447,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const detailMessage = document.getElementById("applicationDetailMessage");
   const promote = document.getElementById("promoteApplication");
   const confirmation = document.getElementById("promotionDialog");
+  const dossierLifecycleDossier = document.getElementById("dossierLifecycleDossier");
+  const dossierLifecycleTitle = document.getElementById("dossierLifecycleTitle");
+  const dossierLifecycleMessage = document.getElementById("dossierLifecycleMessage");
+  const dossierLifecycleButtons = Array.from(document.querySelectorAll("[data-dossier-lifecycle-action]"));
+  const dossierLifecycleDialog = document.getElementById("dossierLifecycleDialog");
+  const dossierLifecycleForm = document.getElementById("dossierLifecycleForm");
+  const dossierLifecycleReason = document.getElementById("dossierLifecycleReason");
+  const dossierLifecycleConfirm = document.getElementById("dossierLifecycleConfirm");
+  const dossierLifecycleCancel = document.getElementById("dossierLifecycleCancel");
   const lifecycleDossier = document.getElementById("lifecycleDossier");
   const lifecycleDossierTitle = document.getElementById("lifecycleDossierTitle");
   const lifecycleMessage = document.getElementById("lifecycleActionMessage");
@@ -419,6 +482,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let selectedSummary = null;
   let selectedDetail = null;
   let detailRequestId = 0;
+  let dossierLifecycleBusy = false;
+  let pendingDossierLifecycleAction = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
 
@@ -473,6 +538,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     selectedDetail = null;
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
+    dossierLifecycleMessage.textContent = "";
     lifecycleMessage.textContent = "";
     updateLocation(null);
   }
@@ -607,6 +673,28 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   }
 
+  function renderDossierLifecycle(detailApplication) {
+    const presentation = dossierLifecyclePresentation(detailApplication?.dossier_lifecycle);
+    dossierLifecycleDossier.hidden = false;
+    if (!presentation) {
+      setBadge("dossierLifecycleStateBadge", "NIET BESCHIKBAAR", "amber");
+      for (const button of dossierLifecycleButtons) button.hidden = true;
+      dossierLifecycleMessage.textContent = "Dossierbeheer is momenteel niet beschikbaar. Vernieuw het dossier.";
+      return;
+    }
+    setBadge("dossierLifecycleStateBadge", presentation.label, presentation.tone);
+    for (const button of dossierLifecycleButtons) {
+      button.hidden = !presentation.actions.includes(button.dataset.dossierLifecycleAction);
+      button.disabled = dossierLifecycleBusy;
+    }
+  }
+
+  function setDossierLifecycleBusy(busy) {
+    dossierLifecycleBusy = busy;
+    dossierLifecycleConfirm.disabled = busy;
+    for (const button of dossierLifecycleButtons) button.disabled = busy;
+  }
+
   function setLifecycleBusy(busy) {
     lifecycleBusy = busy;
     lifecycleConfirm.disabled = busy;
@@ -672,6 +760,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setBadge("detailOperationalStatus", operationalStatus.label, operationalStatus.tone);
     setText("detailZone", selectedSummary?.zone || "Niet beschikbaar");
     setText("detailSubmittedAt", formatDate(selectedSummary?.dossier_date || application.submitted_at));
+    renderDossierLifecycle(application);
     promote.hidden = true;
     if (!isWebsite) return renderIntakeLifecycle(null);
     renderIntakeLifecycle(application.intake_lifecycle);
@@ -696,6 +785,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     selectedSummary = summary;
     selectedDetail = null;
     promote.hidden = true;
+    dossierLifecycleDossier.hidden = true;
+    dossierLifecycleMessage.textContent = "";
     lifecycleDossier.hidden = true;
     lifecycleMessage.textContent = "";
     detailMessage.textContent = "Aanvraag wordt geladen.";
@@ -841,6 +932,77 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   });
 
+  for (const button of dossierLifecycleButtons) {
+    button.addEventListener("click", ()=>{
+      const action = button.dataset.dossierLifecycleAction;
+      const presentation = dossierLifecyclePresentation(selectedDetail?.dossier_lifecycle);
+      const actionPresentation = dossierLifecycleAction(action);
+      if (dossierLifecycleBusy || !presentation?.actions.includes(action) || !actionPresentation || !selectedLocator) return;
+      pendingDossierLifecycleAction = {
+        action,
+        detail: selectedDetail,
+        locator: { ...selectedLocator },
+        selectionRequestId: detailRequestId,
+        presentation: actionPresentation,
+      };
+      setText("dossierLifecycleDialogTitle", actionPresentation.title);
+      setText("dossierLifecycleDialogDescription", actionPresentation.description);
+      dossierLifecycleConfirm.textContent = actionPresentation.label;
+      dossierLifecycleConfirm.className = action === "trash_dossier" ? "danger-action" : "primary-action primary-action--compact";
+      dossierLifecycleReason.value = "";
+      dossierLifecycleReason.setCustomValidity("");
+      dossierLifecycleDialog.returnValue = "";
+      dossierLifecycleDialog.showModal();
+      dossierLifecycleReason.focus();
+    });
+  }
+
+  dossierLifecycleReason.addEventListener("input", ()=>dossierLifecycleReason.setCustomValidity(""));
+  dossierLifecycleCancel.addEventListener("click", ()=>dossierLifecycleDialog.close("cancel"));
+  dossierLifecycleForm.addEventListener("submit", (event)=>{
+    const reason = dossierLifecycleReason.value.trim();
+    if (reason.length >= 1 && reason.length <= 500) return;
+    event.preventDefault();
+    dossierLifecycleReason.setCustomValidity("Vul een korte reden in.");
+    dossierLifecycleReason.reportValidity();
+  });
+  dossierLifecycleDialog.addEventListener("close", async ()=>{
+    const command = pendingDossierLifecycleAction;
+    pendingDossierLifecycleAction = null;
+    if (dossierLifecycleDialog.returnValue !== "confirm" || !command || dossierLifecycleBusy) return;
+    if (command.selectionRequestId !== detailRequestId || !locatorMatchesApplication(command.locator, selectedDetail)) {
+      dossierLifecycleMessage.textContent = "De dossierselectie is gewijzigd. Open de actie opnieuw vanuit het actuele dossier.";
+      return;
+    }
+    let input;
+    try {
+      input = buildDossierLifecycleCommand(command.action, command.detail, dossierLifecycleReason.value, crypto.randomUUID());
+    } catch {
+      dossierLifecycleMessage.textContent = "Vul een geldige reden in en probeer opnieuw.";
+      return;
+    }
+    setDossierLifecycleBusy(true);
+    dossierLifecycleMessage.textContent = `${command.presentation.label} wordt uitgevoerd.`;
+    let completed = false;
+    try {
+      const refresh = await refreshAfterOperatorMutation(
+        ()=>invoke(input),
+        (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
+        ()=>detailRequestId,
+      );
+      completed = refresh.status === "refreshed";
+      if (completed) dossierLifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele dossierstatus is geladen.`;
+    } catch (error) {
+      const outcome = dossierLifecycleError(error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED");
+      if (outcome.refresh) await refreshMutationDetail(command.locator, command.selectionRequestId);
+      dossierLifecycleMessage.textContent = outcome.message;
+    } finally {
+      setDossierLifecycleBusy(false);
+      if (selectedDetail) renderDossierLifecycle(selectedDetail);
+      if (completed) focusDossierLifecycle(selectedDetail?.dossier_lifecycle, dossierLifecycleButtons, dossierLifecycleTitle);
+    }
+  });
+
   for (const button of lifecycleButtons) {
     button.addEventListener("click", ()=>{
       const action = button.dataset.lifecycleAction;
@@ -924,6 +1086,16 @@ export function focusIntakeLifecycle(lifecycle, buttons, fallback) {
   const actions = intakeLifecyclePresentation(lifecycle)?.actions || [];
   const target = actions
     .map((action)=>buttons.find((button)=>button.dataset.lifecycleAction === action))
+    .find((button)=>button && !button.hidden && !button.disabled)
+    || fallback;
+  target?.focus();
+  return target || null;
+}
+
+export function focusDossierLifecycle(lifecycle, buttons, fallback) {
+  const actions = dossierLifecyclePresentation(lifecycle)?.actions || [];
+  const target = actions
+    .map((action)=>buttons.find((button)=>button.dataset.dossierLifecycleAction === action))
     .find((button)=>button && !button.hidden && !button.disabled)
     || fallback;
   target?.focus();
