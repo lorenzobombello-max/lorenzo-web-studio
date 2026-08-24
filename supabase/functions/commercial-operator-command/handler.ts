@@ -22,6 +22,8 @@ const COMMANDS = new Set([
 ]);
 const APPLICATION_ACTIONS = new Set([
   "list_applications",
+  "list_applications_v2",
+  "get_application_facets_v2",
   "get_application_detail",
   "get_project_dossier",
   "promote_accepted_application",
@@ -33,6 +35,13 @@ const APPLICATION_ACTIONS = new Set([
   "reactivate_intake",
   "bind_project_site",
   "rotate_project_site"
+]);
+const OPERATOR_ZONES = new Set(["ACTIVE", "ARCHIVED", "TRASHED", "ACTIVE_ARCHIVED"]);
+const OPERATOR_STATUSES = new Set([
+  "CANCELLED", "SUBMITTED", "REVIEWED", "QUOTE_ACCEPTED",
+  "M1_PAYMENT_PENDING", "M1_PAYMENT_RECEIVED", "PROJECT_RELEASED",
+  "PREVIEW_READY", "M2_PAYMENT_RECEIVED", "FINAL_APPROVAL_RECORDED",
+  "FULL_PAYMENT_RECEIVED", "FINAL_TRANSFER_AUTHORIZED", "DELIVERED", "ARCHIVED"
 ]);
 const INTAKE_LIFECYCLE_ACTIONS = new Map([
   ["interrupt_intake", "INTERRUPTED"],
@@ -122,6 +131,10 @@ function validateApplicationAction(value) {
   if (!APPLICATION_ACTIONS.has(action)) throw new RequestError(400, "INVALID_REQUEST");
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
+    : action === "list_applications_v2"
+    ? new Set(["action", "zone", "operational_status", "year", "quarter", "request_kind", "search", "cursor", "limit"])
+    : action === "get_application_facets_v2"
+    ? new Set(["action", "zone", "operational_status", "request_kind", "search"])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "finalize_internal_e2e_run"
@@ -136,6 +149,35 @@ function validateApplicationAction(value) {
     ? new Set(["action", "intake_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
+  if (action === "list_applications_v2" || action === "get_application_facets_v2") {
+    const zone = value.zone ?? "ACTIVE";
+    const operationalStatus = value.operational_status ?? null;
+    const requestKind = value.request_kind ?? null;
+    const search = typeof value.search === "string" ? value.search.trim() || null : value.search ?? null;
+    if (!OPERATOR_ZONES.has(zone)
+      || (operationalStatus !== null && !OPERATOR_STATUSES.has(operationalStatus))
+      || (requestKind !== null && !["website", "slimme_documentenflow"].includes(requestKind))
+      || (search !== null && (typeof search !== "string" || search.length > 140))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    if (action === "get_application_facets_v2") {
+      return { action, zone, operational_status: operationalStatus, request_kind: requestKind, search };
+    }
+    const year = value.year ?? null;
+    const quarter = value.quarter ?? null;
+    const cursor = value.cursor ?? null;
+    const limit = value.limit ?? 50;
+    if ((year !== null && (!Number.isSafeInteger(year) || year < 1 || year > 9999))
+      || (quarter !== null && (!year || !["Q1", "Q2", "Q3", "Q4"].includes(quarter)))
+      || (cursor !== null && (typeof cursor !== "string" || cursor.length < 1 || cursor.length > 4096))
+      || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action, zone, operational_status: operationalStatus, year, quarter,
+      request_kind: requestKind, search, cursor, limit
+    };
+  }
   if (action === "list_applications") {
     const limit = value.limit ?? 100, offset = value.offset ?? 0;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) throw new RequestError(400, "INVALID_REQUEST");
@@ -264,7 +306,19 @@ function mapDatabaseError(error) {
     "IDEMPOTENCY_KEY_REQUIRED",
     "INVALID_INTAKE_LIFECYCLE_COMMAND"
     ,"INVALID_INTERNAL_E2E_REQUEST"
+    ,"INVALID_OPERATOR_CURSOR_POSITION"
+    ,"INVALID_OPERATOR_ZONE"
+    ,"INVALID_OPERATOR_OPERATIONAL_STATUS_FILTER"
+    ,"INVALID_OPERATOR_REQUEST_KIND_FILTER"
+    ,"INVALID_OPERATOR_YEAR"
+    ,"INVALID_OPERATOR_QUARTER"
+    ,"INVALID_OPERATOR_PAGE_LIMIT"
+    ,"INVALID_OPERATOR_SEARCH"
   ].includes(code)) return response(400, "INVALID_REQUEST");
+  if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
+  if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
+    return response(500, "SERVER_CONFIGURATION_ERROR");
+  }
   if ([
     "INVALID_STATE",
     "PAYMENT_NOT_MATCHED",
@@ -283,8 +337,31 @@ export async function handleCommercialOperator(request, deps) {
     if (!user || user.id !== sub) throw new RequestError(401, "INVALID_JWT");
     const parsed = await body(request);
     if ("action" in parsed) {
+      if (parsed.action === "list_applications_v2" || parsed.action === "get_application_facets_v2") {
+        await deps.authorizeApplicationReader(jwt);
+      }
       const input = validateApplicationAction(parsed);
-      const result = await deps.executeApplicationAction(jwt, input);
+      if (input.action === "list_applications_v2") {
+        const cursorPosition = input.cursor === null ? null : await deps.verifyOperatorCursor(input.cursor, input);
+        const raw = await deps.executeApplicationListV2(user.id, input, cursorPosition);
+        if (!raw || typeof raw !== "object" || !Array.isArray(raw.items)
+          || typeof raw.has_more !== "boolean"
+          || (raw.has_more && (!raw.next_position || typeof raw.next_position !== "object"))
+          || (!raw.has_more && raw.next_position !== null)) {
+          throw new Error("INVALID_OPERATOR_CORE_RESPONSE");
+        }
+        const nextCursor = raw.has_more
+          ? await deps.signOperatorCursor(raw.next_position, input)
+          : null;
+        return response(200, "APPLICATION_ACTION_ACCEPTED", {
+          result: { items: raw.items, next_cursor: nextCursor }
+        });
+      }
+      if (input.action === "get_application_facets_v2") {
+        const result = await deps.executeApplicationFacetsV2(user.id, input);
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      const result = await deps.executeApplicationAction(jwt, input, user.id);
       return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
     }
     const input = validate(parsed);

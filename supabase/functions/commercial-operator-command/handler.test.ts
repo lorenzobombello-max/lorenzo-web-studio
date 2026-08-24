@@ -1,8 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { createUnsignedTestJwt, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
+const cursorSecret = "ERERERERERERERERERERERERERERERERERERERERERE";
 
 function request(body: Record<string, unknown>, token = jwt) {
   return new Request("https://example.test", {
@@ -12,22 +14,71 @@ function request(body: Record<string, unknown>, token = jwt) {
   });
 }
 
-function dependencies() {
+function cursorRequest(input: Record<string, unknown>) {
+  return {
+    zone: input.zone as "ACTIVE" | "ARCHIVED" | "TRASHED" | "ACTIVE_ARCHIVED",
+    operationalStatus: input.operational_status as string | null,
+    year: input.year as number | null,
+    quarter: input.quarter as "Q1" | "Q2" | "Q3" | "Q4" | null,
+    requestKind: input.request_kind as "website" | "slimme_documentenflow" | null,
+    search: input.search as string | null,
+  };
+}
+
+function dependencies(overrides: Record<string, unknown> = {}) {
   const calls: Array<{ jwt: string; input: Record<string, unknown> }> = [];
+  const events: string[] = [];
   return {
     calls,
+    events,
     deps: {
       now: ()=>Date.now(),
       verifyUser: async ()=>({ id: userId }),
+      authorizeApplicationReader: async ()=>{ events.push("preflight"); },
+      verifyOperatorCursor: async (cursor: string, input: Record<string, unknown>)=>{
+        events.push("verify");
+        return await verifyOperatorCursor(cursor, cursorRequest(input), { now: 4_102_444_800_001, secret: cursorSecret });
+      },
+      executeApplicationListV2: async ()=>{
+        events.push("core");
+        return {
+          items: [{ quote_request_id: userId }],
+          has_more: true,
+          next_position: { dossier_date: "2099-01-02T10:20:30+00:00", quote_request_id: userId }
+        };
+      },
+      signOperatorCursor: async (position: Record<string, string>, input: Record<string, unknown>)=>{
+        events.push("sign");
+        return await signOperatorCursor({
+          dossierDate: position.dossier_date,
+          quoteRequestId: position.quote_request_id,
+        }, cursorRequest(input), { now: 4_102_444_800_001, secret: cursorSecret });
+      },
+      executeApplicationFacetsV2: async ()=>{
+        events.push("facets");
+        return { years: [] };
+      },
       consumeRateLimit: async ()=>({ allowed: true, retry_after_seconds: 0 }),
       executeCommand: async ()=>({ command: true }),
       executeApplicationAction: async (token: string, input: Record<string, unknown>)=>{
         calls.push({ jwt: token, input });
         return { action: input.action };
-      }
+      },
+      ...overrides,
     }
   };
 }
+
+const v2Input = {
+  action: "list_applications_v2",
+  zone: "ACTIVE_ARCHIVED",
+  operational_status: "SUBMITTED",
+  year: 2099,
+  quarter: "Q1",
+  request_kind: "website",
+  search: "Example",
+  limit: 1,
+};
 
 Deno.test("allowed production preflight returns the complete CORS contract without side effects", async ()=>{
   let nextCalls = 0;
@@ -327,4 +378,79 @@ Deno.test("internal E2E finalization requires a terminal state and revision", as
   }), harness.deps);
   assertEquals(active.status, 400);
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("v2 list preserves preflight verify core sign order and hides raw position", async ()=>{
+  const harness = dependencies();
+  const signed = await signOperatorCursor({
+    dossierDate: "2099-01-03T10:20:30+00:00",
+    quoteRequestId: userId,
+  }, cursorRequest(v2Input), { now: 4_102_444_800_000, secret: cursorSecret });
+  const response = await handleCommercialOperator(request({ ...v2Input, cursor: signed }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.events, ["preflight", "verify", "core", "sign"]);
+  const body = await response.json();
+  assertEquals(Array.isArray(body.result.items), true);
+  assertEquals(typeof body.result.next_cursor, "string");
+  assertEquals("next_position" in body.result, false);
+});
+
+Deno.test("v2 list rejects forged position, changed search/filter, expired, and malformed cursors before core", async ()=>{
+  const signed = await signOperatorCursor({
+    dossierDate: "2099-01-03T10:20:30+00:00",
+    quoteRequestId: userId,
+  }, cursorRequest(v2Input), { now: 4_102_444_800_000, secret: cursorSecret });
+  const parts = signed.split(".");
+  const payloadPart = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+  const payload = JSON.parse(atob(payloadPart.padEnd(Math.ceil(payloadPart.length / 4) * 4, "=")));
+  payload.dossierDate = "2999-01-01T00:00:00+00:00";
+  payload.quoteRequestId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const binary = JSON.stringify(payload);
+  const forged = `v1.${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}.${parts[2]}`;
+  for (const input of [
+    { ...v2Input, cursor: forged },
+    { ...v2Input, search: "Changed", cursor: signed },
+    { ...v2Input, zone: "ACTIVE", cursor: signed },
+    { ...v2Input, cursor: "malformed" },
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(input), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.events.includes("core"), false);
+  }
+  const expiredHarness = dependencies({
+    verifyOperatorCursor: async (cursor: string, input: Record<string, unknown>)=>
+      await verifyOperatorCursor(cursor, cursorRequest(input), {
+        now: 4_102_444_800_000 + OPERATOR_CURSOR_TTL_MS,
+        secret: cursorSecret,
+      })
+  });
+  assertEquals((await handleCommercialOperator(request({ ...v2Input, cursor: signed }), expiredHarness.deps)).status, 400);
+});
+
+Deno.test("v2 facets uses preflight and actor-bound core without cursor signing", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({
+    action: "get_application_facets_v2",
+    zone: "ACTIVE_ARCHIVED",
+    operational_status: null,
+    request_kind: null,
+    search: null,
+  }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.events, ["preflight", "facets"]);
+});
+
+Deno.test("v2 list fails closed for unauthorized actor, missing secret, and invalid DB core response", async ()=>{
+  const unauthorized = dependencies({ authorizeApplicationReader: async ()=>{ throw new Error("APPLICATION_SCOPE_DENIED"); } });
+  assertEquals((await handleCommercialOperator(request(v2Input), unauthorized.deps)).status, 403);
+
+  const missingSecret = dependencies({
+    signOperatorCursor: async (position: Record<string, string>, input: Record<string, unknown>)=>
+      await signOperatorCursor({ dossierDate: position.dossier_date, quoteRequestId: position.quote_request_id }, cursorRequest(input), { secret: "short" })
+  });
+  assertEquals((await handleCommercialOperator(request(v2Input), missingSecret.deps)).status, 500);
+
+  const invalidCore = dependencies({ executeApplicationListV2: async ()=>({ items: [], has_more: true, next_position: null }) });
+  assertEquals((await handleCommercialOperator(request(v2Input), invalidCore.deps)).status, 500);
 });

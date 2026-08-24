@@ -8,6 +8,35 @@ import {
   hashApprovalToken,
   hashIntakeToken,
 } from "../_shared/security.ts";
+import {
+  signOperatorCursor,
+  verifyOperatorCursor,
+  type OperatorCursorPosition,
+  type OperatorCursorRequest,
+} from "../_shared/operator-cursor.ts";
+
+type OperatorApplicationCursorInput = Readonly<{
+  zone: OperatorCursorRequest["zone"];
+  operational_status: string | null;
+  year?: number | null;
+  quarter?: OperatorCursorRequest["quarter"];
+  request_kind: OperatorCursorRequest["requestKind"];
+  search: string | null;
+}>;
+
+type OperatorApplicationListV2Input = OperatorApplicationCursorInput & Readonly<{
+  year: number | null;
+  quarter: OperatorCursorRequest["quarter"];
+  cursor: string | null;
+  limit: number;
+}>;
+
+type OperatorApplicationFacetsV2Input = Omit<OperatorApplicationCursorInput, "year" | "quarter">;
+
+type OperatorCursorDatabasePosition = Readonly<{
+  dossier_date: string;
+  quote_request_id: string;
+}>;
 
 async function sha256(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -36,6 +65,21 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
         autoRefreshToken: false
       }
     });
+  const serviceClient = ()=>{
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) throw new Error("SERVER_CONFIGURATION_ERROR");
+    return createClient(url, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  };
+  const cursorRequest = (input: OperatorApplicationCursorInput): OperatorCursorRequest=>({
+    zone: input.zone,
+    operationalStatus: input.operational_status,
+    year: input.year ?? null,
+    quarter: input.quarter ?? null,
+    requestKind: input.request_kind,
+    search: input.search,
+  });
   return handleCommercialOperator(request, {
     now: ()=>Date.now(),
     verifyUser: async (jwt)=>{
@@ -43,6 +87,43 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       return error || !data.user ? null : {
         id: data.user.id
       };
+    },
+    authorizeApplicationReader: async (jwt: string)=>{
+      const { error } = await clientFor(jwt).rpc("authorize_operator_application_reader_v2");
+      if (error) throw new Error(error.message);
+    },
+    verifyOperatorCursor: async (cursor: string, input: OperatorApplicationListV2Input)=>
+      await verifyOperatorCursor(cursor, cursorRequest(input)),
+    signOperatorCursor: async (position: OperatorCursorDatabasePosition, input: OperatorApplicationListV2Input)=>await signOperatorCursor({
+      dossierDate: position.dossier_date,
+      quoteRequestId: position.quote_request_id,
+    }, cursorRequest(input)),
+    executeApplicationListV2: async (actorAuthUserId: string, input: OperatorApplicationListV2Input, position: OperatorCursorPosition | null)=>{
+      const { data, error } = await serviceClient().rpc("list_operator_applications_v2", {
+        p_actor_auth_user_id: actorAuthUserId,
+        p_zone: input.zone,
+        p_operational_status: input.operational_status,
+        p_year: input.year,
+        p_quarter: input.quarter,
+        p_request_kind: input.request_kind,
+        p_search: input.search,
+        p_cursor_date: position?.dossierDate ?? null,
+        p_cursor_id: position?.quoteRequestId ?? null,
+        p_limit: input.limit,
+      });
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    executeApplicationFacetsV2: async (actorAuthUserId: string, input: OperatorApplicationFacetsV2Input)=>{
+      const { data, error } = await serviceClient().rpc("get_operator_dossier_facets_v2", {
+        p_actor_auth_user_id: actorAuthUserId,
+        p_zone: input.zone,
+        p_operational_status: input.operational_status,
+        p_request_kind: input.request_kind,
+        p_search: input.search,
+      });
+      if (error) throw new Error(error.message);
+      return data;
     },
     consumeRateLimit: async (jwt, projectId)=>{
       const { data, error } = await clientFor(jwt).rpc("consume_commercial_operator_rate_limit_v1", {
