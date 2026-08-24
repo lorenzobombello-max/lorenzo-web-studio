@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(43);
+select plan(49);
 
 select has_table('lws_internal', 'operator_dossier_states', 'private dossier state authority exists');
 select has_table('lws_internal', 'operator_dossier_state_events', 'private dossier event authority exists');
@@ -81,11 +81,31 @@ select throws_ok(
   $$update lws_internal.operator_dossier_states set state='ACTIVE',revision=1,updated_at=clock_timestamp()+interval '1 second' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
   '23514','INVALID_OPERATOR_DOSSIER_TRANSITION','ACTIVE to ACTIVE is not a mutation'
 );
+select throws_ok(
+  $$update lws_internal.operator_dossier_states set state='TRASHED',revision=1,state_before_trash=null,deletion_eligible_at=null,updated_at=clock_timestamp()+interval '1 second' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
+  '23514',null,'TRASHED without state_before_trash fails closed'
+);
+select throws_ok(
+  $$update lws_internal.operator_dossier_states set state='ARCHIVED',revision=1,deletion_eligible_at=clock_timestamp(),updated_at=clock_timestamp()+interval '1 second' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
+  '23514',null,'ARCHIVED rejects deletion eligibility metadata'
+);
+select throws_ok(
+  $$update lws_internal.operator_dossier_states set state='ARCHIVED',revision=1,state_before_trash='ACTIVE',updated_at=clock_timestamp()+interval '1 second' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
+  '23514',null,'ARCHIVED rejects state_before_trash metadata'
+);
 
 update lws_internal.operator_dossier_states
 set state='ARCHIVED',revision=1,updated_at=clock_timestamp()+interval '1 second'
 where quote_request_id='d1100000-0000-4000-8000-000000000001';
 select is((select state from lws_internal.operator_dossier_states where quote_request_id='d1100000-0000-4000-8000-000000000001'),'ARCHIVED','ACTIVE transitions to ARCHIVED');
+select throws_ok(
+  $$update lws_internal.operator_dossier_states set state='ACTIVE',revision=2,deletion_eligible_at=clock_timestamp(),updated_at=clock_timestamp()+interval '2 seconds' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
+  '23514',null,'ACTIVE rejects deletion eligibility metadata'
+);
+select throws_ok(
+  $$update lws_internal.operator_dossier_states set state='ACTIVE',revision=2,state_before_trash='ARCHIVED',updated_at=clock_timestamp()+interval '2 seconds' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
+  '23514',null,'ACTIVE rejects state_before_trash metadata'
+);
 select throws_ok(
   $$update lws_internal.operator_dossier_states set state='ACTIVE',revision=1,updated_at=clock_timestamp()+interval '2 seconds' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
   '40001','OPERATOR_DOSSIER_REVISION_MISMATCH','stale revision fails closed'
@@ -97,12 +117,12 @@ select is((select state from lws_internal.operator_dossier_states where quote_re
 
 update lws_internal.operator_dossier_states
 set state='TRASHED',revision=3,state_before_trash='ACTIVE',
-    deletion_eligible_at=clock_timestamp()+interval '30 days',updated_at=clock_timestamp()+interval '3 seconds'
+    deletion_eligible_at=null,updated_at=clock_timestamp()+interval '3 seconds'
 where quote_request_id='d1100000-0000-4000-8000-000000000001';
 select ok(
-  (select state='TRASHED' and state_before_trash='ACTIVE' and deletion_eligible_at is not null and revision=3
+  (select state='TRASHED' and state_before_trash='ACTIVE' and deletion_eligible_at is null and revision=3
    from lws_internal.operator_dossier_states where quote_request_id='d1100000-0000-4000-8000-000000000001'),
-  'ACTIVE transitions to shaped TRASHED authority'
+  'ACTIVE transitions to TRASHED with explicit no-purge authority'
 );
 select throws_ok(
   $$update lws_internal.operator_dossier_states set state='ARCHIVED',revision=4,state_before_trash=null,deletion_eligible_at=null,updated_at=clock_timestamp()+interval '4 seconds' where quote_request_id='d1100000-0000-4000-8000-000000000001'$$,
@@ -119,9 +139,13 @@ set state='ARCHIVED',revision=1,updated_at=clock_timestamp()+interval '1 second'
 where quote_request_id='d1110000-0000-4000-8000-000000000002';
 update lws_internal.operator_dossier_states
 set state='TRASHED',revision=2,state_before_trash='ARCHIVED',
-    deletion_eligible_at=clock_timestamp()+interval '30 days',updated_at=clock_timestamp()+interval '2 seconds'
+    deletion_eligible_at=null,updated_at=clock_timestamp()+interval '2 seconds'
 where quote_request_id='d1110000-0000-4000-8000-000000000002';
-select is((select state_before_trash from lws_internal.operator_dossier_states where quote_request_id='d1110000-0000-4000-8000-000000000002'),'ARCHIVED','ARCHIVED transitions to TRASHED with prior state');
+select ok(
+  (select state_before_trash='ARCHIVED' and deletion_eligible_at is null
+   from lws_internal.operator_dossier_states where quote_request_id='d1110000-0000-4000-8000-000000000002'),
+  'ARCHIVED transitions to TRASHED with prior state and no purge authority'
+);
 update lws_internal.operator_dossier_states
 set state='ARCHIVED',revision=3,state_before_trash=null,deletion_eligible_at=null,
     updated_at=clock_timestamp()+interval '3 seconds'
@@ -152,11 +176,15 @@ insert into lws_internal.operator_dossier_state_events(
   previous_revision,new_revision,deletion_eligible_at,actor_operator_id,reason,
   idempotency_key,request_fingerprint,evidence
 ) values(
-  'd1100000-0000-4000-8000-000000000001','ARCHIVED','ACTIVE','ARCHIVED',null,
+  'd1100000-0000-4000-8000-000000000001','TRASHED','ACTIVE','TRASHED','ACTIVE',
   0,1,null,'d1010000-0000-4000-8000-000000000001','Archive contract evidence.',
   'd1200000-0000-4000-8000-000000000001',repeat('a',64),'{"contract_version":1}'
 );
-select is((select count(*)::integer from lws_internal.operator_dossier_state_events),1,'valid transition evidence appends once');
+select is((select count(*)::integer from lws_internal.operator_dossier_state_events where event_type='TRASHED' and deletion_eligible_at is null),1,'TRASHED event records explicit no-purge authority');
+select throws_ok(
+  $$insert into lws_internal.operator_dossier_state_events(quote_request_id,event_type,previous_state,new_state,state_before_trash,previous_revision,new_revision,deletion_eligible_at,actor_operator_id,reason,idempotency_key,request_fingerprint) values('d1110000-0000-4000-8000-000000000002','TRASHED','ACTIVE','TRASHED',null,0,1,null,'d1010000-0000-4000-8000-000000000001','Missing prior state.','d1200000-0000-4000-8000-000000000004',repeat('e',64))$$,
+  '23514',null,'TRASHED event without state_before_trash fails closed'
+);
 select throws_ok(
   $$update lws_internal.operator_dossier_state_events set reason='Changed'$$,
   '55000','OPERATOR_DOSSIER_STATE_EVENT_APPEND_ONLY','event update is denied'

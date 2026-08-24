@@ -137,7 +137,7 @@ set state='ARCHIVED',revision=1,updated_at=clock_timestamp()+interval '1 second'
 where quote_request_id='b2110000-0000-4000-8000-000000000002';
 update lws_internal.operator_dossier_states
 set state='TRASHED',revision=1,state_before_trash='ACTIVE',
-    deletion_eligible_at=clock_timestamp()+interval '30 days',updated_at=clock_timestamp()+interval '1 second'
+  deletion_eligible_at=null,updated_at=clock_timestamp()+interval '1 second'
 where quote_request_id='b2120000-0000-4000-8000-000000000003';
 
 select throws_ok(
