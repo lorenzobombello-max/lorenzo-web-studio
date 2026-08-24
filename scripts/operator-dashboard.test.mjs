@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applicationsForFilter, applicationsForSearch, applyDetailVisibility, buildIntakeLifecycleCommand, canPromoteApplication, createApplicationSearchHandler, customerCorePresentation, emptyStateForFilter, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, loadAllOperatorApplications, nextWorkflowStage, normalizeSupportReference, projectSitePresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, selectionFallsOutsideFilter } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, effectiveOperatorZone, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -82,17 +82,6 @@ test("support references normalize safely and route separately from application 
   assert.equal(normalizeSupportReference("#f98b2f08"), "#F98B2F08");
   assert.equal(normalizeSupportReference("F98B2F0"), null);
   assert.deepEqual(applicationLocatorFromUrl("https://example.test/operator/dashboard/?support=f98b2f08"), { support_reference: "#F98B2F08" });
-});
-
-test("search preserves internal references and matches support references exactly", () => {
-  const applications = [
-    { application_reference: "LWS-AAN-2099-0001", support_reference: "#F98B2F08" },
-    { application_reference: "LWS-AAN-2099-0002", support_reference: "#A1100000" },
-  ];
-  assert.deepEqual(applicationsForSearch(applications, "LWS-AAN-2099-0001"), [applications[0]]);
-  assert.deepEqual(applicationsForSearch(applications, "f98b2f08"), [applications[0]]);
-  assert.deepEqual(applicationsForSearch(applications, "#F98B2F08"), [applications[0]]);
-  assert.deepEqual(applicationsForSearch(applications, "#F98B2F09"), []);
 });
 
 test("application identity presents the human reference and routes with the existing reference contract", () => {
@@ -195,7 +184,7 @@ test("lifecycle UI uses one accessible dialog, busy guard, and authoritative rel
   assert.match(script, /if \(lifecycleBusy \|\|/);
   assert.match(script, /button\.disabled = lifecycleBusy/);
   assert.match(script, /crypto\.randomUUID\(\)/);
-  assert.match(script, /await invoke\(input\);[\s\S]{0,80}await loadDetail\(command\.locator\)/);
+  assert.match(script, /refreshAfterOperatorMutation\([\s\S]{0,300}\(\)=>invoke\(input\)[\s\S]{0,300}\(\)=>detailRequestId/);
   assert.match(script, /if \(outcome\.refresh\) await loadDetail\(command\.locator\)/);
 });
 
@@ -219,30 +208,6 @@ test("successful cancellation focuses the visible lifecycle heading fallback", (
 
   assert.equal(focusIntakeLifecycle(intakeLifecycle("CANCELLED"), [hiddenTrigger], heading), heading);
   assert.deepEqual(focused, ["heading"]);
-});
-
-test("product filters use only authoritative request_kind and fail closed", () => {
-  const website = { quote_request_id: "website", request_kind: "website", website_type: "business" };
-  const sdf = { quote_request_id: "sdf", request_kind: "slimme_documentenflow" };
-  const unknown = { quote_request_id: "unknown", request_kind: "unknown", website_type: "business" };
-  const missing = { quote_request_id: "missing", website_type: "business" };
-  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "all"), [website, sdf]);
-  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "website"), [website]);
-  assert.deepEqual(applicationsForFilter([website, sdf, unknown, missing], "slimme_documentenflow"), [sdf]);
-  assert.deepEqual(applicationsForFilter([website, sdf], "invalid"), []);
-});
-
-test("product filter empty states are specific and neutral", () => {
-  assert.equal(emptyStateForFilter("all"), "Geen ingediende aanvragen.");
-  assert.equal(emptyStateForFilter("website"), "Geen Website-aanvragen.");
-  assert.equal(emptyStateForFilter("slimme_documentenflow"), "Geen Slimme Documentenflow-aanvragen.");
-});
-
-test("filter changes invalidate stale or unsupported detail state", () => {
-  assert.equal(selectionFallsOutsideFilter({ request_kind: "website" }, "website"), false);
-  assert.equal(selectionFallsOutsideFilter({ request_kind: "website" }, "slimme_documentenflow"), true);
-  assert.equal(selectionFallsOutsideFilter({ request_kind: "slimme_documentenflow" }, "website"), true);
-  assert.equal(selectionFallsOutsideFilter({ request_kind: null }, "all"), true);
 });
 
 function detailVisibilityHarness() {
@@ -367,13 +332,14 @@ test("Customer Core presentation preserves untrusted text for textContent render
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });
 
-test("filter navigation reuses loaded data and preserves out-of-order protection", async () => {
+test("filter navigation is server-side and preserves out-of-order detail protection", async () => {
   const script = await read("assets/js/operator-dashboard.js");
-  assert.match(script, /activeFilter = nextFilter;[\s\S]{0,250}clearDetail\(\);[\s\S]{0,150}renderVisibleApplications/);
-  assert.match(script, /applicationsForSearch\(applicationsForFilter\(applications, activeFilter\), searchInput\.value\)/);
+  assert.match(script, /listController\.updateQuery\(\{ request_kind: requestKind \}\)/);
+  assert.match(script, /listController\.updateQuery\(\{ operational_status:/);
+  assert.doesNotMatch(script, /renderVisibleApplications|activeFilter = nextFilter/);
   assert.match(script, /requestId !== detailRequestId/);
   assert.match(script, /detailRequestId \+= 1/);
-  assert.equal(script.match(/action: "list_applications"/g)?.length, 1);
+  assert.doesNotMatch(script, /action: "list_applications"|offset/);
 });
 
 test("legacy applications use the internal UUID locator without fabricating a reference", () => {
@@ -684,112 +650,312 @@ test("SDF project values clear on dossier switch and remain textContent-only", a
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
 });
 
-test("application search matches full and partial human references without returning another dossier", () => {
-  const expected = { application_reference: "LWS-AAN-2099-0401", request_kind: "website" };
-  const other = { application_reference: "LWS-AAN-2099-0402", request_kind: "website" };
-  const applications = [expected, other, { application_reference: null, quote_request_id: "a1100000-0000-4000-8000-000000000003", request_kind: "website" }];
-  assert.deepEqual(applicationsForSearch(applications, "LWS-AAN-2099-0401"), [expected]);
-  assert.deepEqual(applicationsForSearch(applications, "0401"), [expected]);
-  assert.deepEqual(applicationsForSearch(applications, "lws-aan-2099-0401"), [expected]);
-  assert.deepEqual(applicationsForSearch(applications, "9999"), []);
+const operatorItem = (suffix, overrides = {}) => ({
+  quote_request_id: `a1100000-0000-4000-8000-${suffix.padStart(12, "0")}`,
+  application_reference: `LWS-AAN-2099-${suffix.padStart(4, "0")}`,
+  support_reference: "#F98B2F08",
+  name: "Lorenzo",
+  organization: "Lorenzo Web Solutions",
+  request_kind: "website",
+  zone: "ACTIVE",
+  operational_status: "SUBMITTED",
+  dossier_date: "2099-01-01T10:00:00Z",
+  ...overrides,
 });
 
-test("application search composes with existing product filters", () => {
-  const website = { application_reference: "LWS-AAN-2099-0401", request_kind: "website" };
-  const sdf = { application_reference: "LWS-AAN-2099-1401", request_kind: "slimme_documentenflow" };
-  assert.deepEqual(applicationsForSearch(applicationsForFilter([website, sdf], "website"), "0401"), [website]);
-  assert.deepEqual(applicationsForSearch(applicationsForFilter([website, sdf], "slimme_documentenflow"), "0401"), []);
+test("v2 request mapping defaults to ACTIVE and searches ACTIVE plus ARCHIVED without trash", () => {
+  assert.equal(effectiveOperatorZone("ACTIVE", ""), "ACTIVE");
+  assert.equal(effectiveOperatorZone("ACTIVE", "Lorenzo"), "ACTIVE_ARCHIVED");
+  assert.equal(effectiveOperatorZone("ARCHIVED", "Lorenzo"), "ARCHIVED");
+  assert.equal(effectiveOperatorZone("TRASHED", "Lorenzo"), "TRASHED");
+  const request = operatorListRequest({ search: "Lorenzo", request_kind: "website" });
+  assert.deepEqual(request, {
+    action: "list_applications_v2", zone: "ACTIVE_ARCHIVED", operational_status: null,
+    year: null, quarter: null, request_kind: "website", search: "Lorenzo", cursor: null, limit: 50,
+  });
+  assert.equal("offset" in request, false);
+  assert.equal(operatorListRequest({ request_kind: null }).request_kind, null);
+  assert.equal(operatorListRequest({ request_kind: "website" }).request_kind, "website");
+  assert.equal(operatorListRequest({ request_kind: "slimme_documentenflow" }).request_kind, "slimme_documentenflow");
+  assert.deepEqual(operatorFacetsRequest({ zone: "TRASHED", search: "Lorenzo" }), {
+    action: "get_application_facets_v2", zone: "TRASHED", operational_status: null,
+    request_kind: null, search: "Lorenzo",
+  });
 });
 
-test("application search exhausts only the existing authorized paginated list action", async () => {
+test("global search forwards name, organization, application, support, UUID, empty, and clear server-side", () => {
+  const searches = ["Lorenzo", "Lorenzo Web Solutions", "LWS-AAN-2099-0001", "#F98B2F08", "a1100000-0000-4000-8000-000000000001"];
+  for (const search of searches) assert.equal(operatorListRequest({ search }).search, search);
+  assert.equal(operatorListRequest({ search: "   " }).search, null);
+  assert.equal(operatorListRequest({ search: "" }).zone, "ACTIVE");
+});
+
+test("v2 status and identities are textual, authoritative, and defensively deduplicated", () => {
+  assert.deepEqual(operatorStatusPresentation("CANCELLED"), { label: "GEANNULEERD", tone: "red" });
+  assert.deepEqual(operatorStatusPresentation("ARCHIVED"), { label: "ARCHIVED", tone: "amber" });
+  const first = operatorItem("1");
+  const second = operatorItem("2");
+  assert.deepEqual(appendUniqueOperatorItems([first], [first, second, { quote_request_id: "bad" }]), [first, second]);
+});
+
+test("keyset controller loads 50, appends next_cursor pages, and prevents double-more", async () => {
   const calls = [];
-  const first = [
-    { quote_request_id: "a1100000-0000-4000-8000-000000000001", application_reference: "LWS-AAN-2099-0001" },
-    { quote_request_id: "a1100000-0000-4000-8000-000000000002", application_reference: "LWS-AAN-2099-0002" },
-  ];
-  const last = [{ quote_request_id: "a1100000-0000-4000-8000-000000000003", application_reference: "LWS-AAN-2099-0003" }];
-  const result = await loadAllOperatorApplications(async (input) => {
+  let releaseMore;
+  const controller = createOperatorListController(async (input) => {
     calls.push(input);
-    return input.offset === 0 ? first : last;
-  }, 2);
-  assert.deepEqual(result, [...first, ...last]);
-  assert.deepEqual(calls, [
-    { action: "list_applications", limit: 2, offset: 0 },
-    { action: "list_applications", limit: 2, offset: 2 },
-  ]);
-  assert.equal(calls.some((input) => "token" in input || "application_reference" in input), false);
+    if (input.action === "get_application_facets_v2") return { years: [{ year: 2099, count: 2, quarters: [{ quarter: "Q1", count: 2 }, { quarter: "Q2", count: 0 }, { quarter: "Q3", count: 0 }, { quarter: "Q4", count: 0 }] }] };
+    if (!input.cursor) return { items: [operatorItem("1")], next_cursor: "signed-next" };
+    return await new Promise((resolve)=>{ releaseMore = ()=>resolve({ items: [operatorItem("1"), operatorItem("2")], next_cursor: null }); });
+  });
+  await controller.load();
+  const firstMore = controller.loadMore();
+  assert.equal(await controller.loadMore(), false);
+  releaseMore();
+  assert.equal(await firstMore, true);
+  assert.deepEqual(controller.state.items.map((item)=>item.quote_request_id), [operatorItem("1").quote_request_id, operatorItem("2").quote_request_id]);
+  assert.equal(controller.state.next_cursor, null);
+  assert.equal(calls.filter((input)=>input.action === "list_applications_v2").every((input)=>input.limit === 50 && !("offset" in input)), true);
+  assert.equal(controller.state.facets.years[0].quarters[1].count, 0);
 });
 
-test("overlapping pagination deduplicates by technical dossier identity and preserves search and filters", async () => {
-  const website = { quote_request_id: "a1100000-0000-4000-8000-000000000011", application_reference: "LWS-AAN-2099-0011", request_kind: "website" };
-  const overlap = { quote_request_id: "a1100000-0000-4000-8000-000000000012", application_reference: "LWS-AAN-2099-0012", request_kind: "website" };
-  const sdf = { quote_request_id: "a1100000-0000-4000-8000-000000000013", application_reference: "LWS-AAN-2099-0013", request_kind: "slimme_documentenflow" };
-  const calls = [];
-  const result = await loadAllOperatorApplications(async (input) => {
-    calls.push(input);
-    if (input.offset === 0) return [website, overlap];
-    if (input.offset === 2) return [overlap, sdf];
-    return [];
-  }, 2);
-  assert.deepEqual(result, [website, overlap, sdf]);
-  assert.deepEqual(calls.map((input) => input.offset), [0, 2, 4]);
-  assert.deepEqual(applicationsForSearch(result, "0012"), [overlap]);
-  assert.deepEqual(applicationsForFilter(result, "website"), [website, overlap]);
-  assert.deepEqual(applicationsForFilter(result, "slimme_documentenflow"), [sdf]);
+test("query generation ignores stale responses and resets cursor for search and filters", async () => {
+  const pending = [];
+  const controller = createOperatorListController((input)=>new Promise((resolve)=>pending.push({ input, resolve })));
+  const oldLoad = controller.load();
+  const newLoad = controller.updateQuery({ search: "Lorenzo", request_kind: "website" });
+  const newer = pending.filter((entry)=>entry.input.search === "Lorenzo");
+  newer.find((entry)=>entry.input.action === "list_applications_v2").resolve({ items: [operatorItem("2")], next_cursor: null });
+  newer.find((entry)=>entry.input.action === "get_application_facets_v2").resolve({ years: [] });
+  await newLoad;
+  const older = pending.filter((entry)=>entry.input.search === null);
+  older.find((entry)=>entry.input.action === "list_applications_v2").resolve({ items: [operatorItem("1")], next_cursor: "stale" });
+  older.find((entry)=>entry.input.action === "get_application_facets_v2").resolve({ years: [] });
+  await oldLoad;
+  assert.deepEqual(controller.state.items, [operatorItem("2")]);
+  assert.equal(controller.state.next_cursor, null);
+  assert.equal(controller.state.generation, 1);
 });
 
-test("pagination fails closed when a full repeated page makes no identity progress", async () => {
-  const repeated = [
-    { quote_request_id: "a1100000-0000-4000-8000-000000000021", application_reference: "LWS-AAN-2099-0021" },
-    { quote_request_id: "a1100000-0000-4000-8000-000000000022", application_reference: "LWS-AAN-2099-0022" },
-  ];
-  let calls = 0;
-  await assert.rejects(
-    loadAllOperatorApplications(async () => {
-      calls += 1;
-      return repeated;
-    }, 2),
-    /NON_PROGRESSING_APPLICATION_PAGINATION/,
-  );
-  assert.equal(calls, 2);
+test("invalid cursor performs exactly one safe first-page retry", async () => {
+  let listCalls = 0;
+  const controller = createOperatorListController(async (input) => {
+    if (input.action === "get_application_facets_v2") return { years: [] };
+    listCalls += 1;
+    if (listCalls === 1) return { items: [operatorItem("1")], next_cursor: "expired" };
+    if (input.cursor) throw new Error("INVALID_OPERATOR_CURSOR");
+    return { items: [operatorItem("2")], next_cursor: null };
+  });
+  await controller.load();
+  await controller.loadMore();
+  assert.equal(listCalls, 3);
+  assert.deepEqual(controller.state.items, [operatorItem("2")]);
+  assert.equal(controller.state.error, null);
 });
 
-test("search change behavior closes an open stale detail before rendering each result set", () => {
-  const selected = { application_reference: "LWS-AAN-2099-0031", request_kind: "website" };
-  const other = { application_reference: "LWS-AAN-2099-0032", request_kind: "website" };
-  let selectedDetail = selected;
+test("mutation refresh replaces stale summary and reloads authoritative detail", async () => {
+  const previous = operatorItem("1", { operational_status: "QUOTE_ACCEPTED" });
+  const current = operatorItem("1", { operational_status: "PROJECT_RELEASED" });
+  const controller = createOperatorListController(async (input) => input.action === "get_application_facets_v2"
+    ? { years: [] }
+    : { items: [current], next_cursor: null });
+  controller.state.items = [previous];
+  let selectedSummary = previous;
+  let selectedDetail = { project: null };
+  let promoteVisible = true;
+  const result = await refreshOperatorSelection(controller, { application_reference: current.application_reference }, {
+    isCurrent: ()=>true,
+    close: ()=>assert.fail("selected dossier must remain visible"),
+    show: async (summary)=>{
+      selectedSummary = summary;
+      selectedDetail = { project: { project_id: "project-1" } };
+      promoteVisible = false;
+      return true;
+    },
+  });
+  assert.equal(result.status, "refreshed");
+  assert.equal(selectedSummary.operational_status, "PROJECT_RELEASED");
+  assert.equal(selectedDetail.project.project_id, "project-1");
+  assert.equal(promoteVisible, false);
+});
+
+test("mutation refresh closes detail without retaining a stale summary when dossier leaves query", async () => {
+  const previous = operatorItem("1", { operational_status: "QUOTE_ACCEPTED" });
+  const controller = createOperatorListController(async (input) => input.action === "get_application_facets_v2"
+    ? { years: [] }
+    : { items: [], next_cursor: null });
+  controller.state.items = [previous];
+  let selectedSummary = previous;
   let detailVisible = true;
-  let detailRequestId = 4;
-  let query = "0032";
-  let visible = [];
-  const handleSearch = createApplicationSearchHandler(
-    ()=>{
-      detailRequestId += 1;
-      selectedDetail = null;
+  const result = await refreshOperatorSelection(controller, { application_reference: previous.application_reference }, {
+    isCurrent: ()=>true,
+    close: ()=>{
+      selectedSummary = null;
       detailVisible = false;
     },
-    ()=>{
-      visible = applicationsForSearch([selected, other], query);
-    },
-  );
-
-  handleSearch();
-  assert.equal(selectedDetail, null);
+    show: async ()=>assert.fail("missing dossier must not reload detail"),
+  });
+  assert.equal(result.status, "closed");
+  assert.equal(selectedSummary, null);
   assert.equal(detailVisible, false);
-  assert.equal(detailRequestId, 5);
-  assert.deepEqual(visible, [other]);
-
-  query = "9999";
-  handleSearch();
-  assert.equal(detailRequestId, 6);
-  assert.deepEqual(visible, []);
 });
 
-test("search UI is reference-only and no-result state is announced without moving focus", async () => {
-  const html = await read("operator/dashboard/index.html");
-  assert.match(html, /id="applicationSearch"[^>]+placeholder="Zoek op aanvraagnummer"/);
-  assert.doesNotMatch(html, /Zoek op (UUID|factuurnummer)/i);
+test("mutation refresh cannot overwrite a selection changed during list reload", async () => {
+  const current = operatorItem("1", { operational_status: "PROJECT_RELEASED" });
+  const controller = createOperatorListController(async (input) => input.action === "get_application_facets_v2"
+    ? { years: [] }
+    : { items: [current], next_cursor: null });
+  let currentSelection = false;
+  let detailLoads = 0;
+  const result = await refreshOperatorSelection(controller, { application_reference: current.application_reference }, {
+    isCurrent: ()=>currentSelection,
+    close: ()=>assert.fail("superseded refresh must not close the new selection"),
+    show: async ()=>{ detailLoads += 1; },
+  });
+  assert.equal(result.status, "superseded");
+  assert.equal(detailLoads, 0);
+});
+
+test("mutation refresh reports a detail response superseded after list reload", async () => {
+  const current = operatorItem("1", { operational_status: "PROJECT_RELEASED" });
+  const controller = createOperatorListController(async (input) => input.action === "get_application_facets_v2"
+    ? { years: [] }
+    : { items: [current], next_cursor: null });
+  const result = await refreshOperatorSelection(controller, { application_reference: current.application_reference }, {
+    isCurrent: ()=>true,
+    close: ()=>assert.fail("selected dossier remains in the query"),
+    show: async ()=>false,
+  });
+  assert.equal(result.status, "superseded");
+  assert.equal(result.summary, current);
+});
+
+test("mutation refresh closes stale detail when its authoritative list reload fails", async () => {
+  const controller = createOperatorListController(async (input) => {
+    if (input.action === "get_application_facets_v2") return { years: [] };
+    throw new Error("OPERATOR_REQUEST_FAILED");
+  });
+  let detailVisible = true;
+  const result = await refreshOperatorSelection(controller, { application_reference: "LWS-AAN-2099-0001" }, {
+    isCurrent: ()=>true,
+    close: ()=>{ detailVisible = false; },
+    show: async ()=>assert.fail("failed list reload must not request detail"),
+  });
+  assert.equal(result.status, "closed");
+  assert.equal(detailVisible, false);
+});
+
+test("lifecycle mutation captures selection authority before pending B starts", async () => {
+  let releaseMutation;
+  const mutation = new Promise((resolve)=>{ releaseMutation = resolve; });
+  let detailRequestId = 11;
+  let activeSelection = "A";
+  let reopened = null;
+  const pendingRefresh = refreshAfterOperatorMutation(
+    ()=>mutation,
+    async (selectionRequestId)=>{
+      if (selectionRequestId !== detailRequestId || activeSelection !== "A") return { status: "superseded" };
+      reopened = "A";
+      return { status: "refreshed" };
+    },
+    ()=>detailRequestId,
+  );
+  detailRequestId = 12;
+  activeSelection = "B";
+  releaseMutation();
+  const result = await pendingRefresh;
+  assert.equal(result.status, "superseded");
+  assert.equal(reopened, null);
+  assert.equal(detailRequestId, 12);
+  assert.equal(activeSelection, "B");
+});
+
+test("lifecycle mutation refreshes A when selection authority remains unchanged", async () => {
+  let releaseMutation;
+  const mutation = new Promise((resolve)=>{ releaseMutation = resolve; });
+  let detailRequestId = 21;
+  let activeSelection = "A";
+  let reopened = null;
+  const pendingRefresh = refreshAfterOperatorMutation(
+    ()=>mutation,
+    async (selectionRequestId)=>{
+      if (selectionRequestId !== detailRequestId || activeSelection !== "A") return { status: "superseded" };
+      reopened = "A";
+      return { status: "refreshed" };
+    },
+    ()=>detailRequestId,
+  );
+  releaseMutation();
+  const result = await pendingRefresh;
+  assert.equal(result.status, "refreshed");
+  assert.equal(reopened, "A");
+  assert.equal(detailRequestId, 21);
+  assert.equal(activeSelection, "A");
+});
+
+test("facet invalidation atomically resets hidden year and quarter with one authoritative reload", async () => {
+  const listRequests = [];
+  let facetCalls = 0;
+  const controller = createOperatorListController(async (input) => {
+    if (input.action === "get_application_facets_v2") {
+      facetCalls += 1;
+      return facetCalls === 1
+        ? { years: [{ year: 2099, count: 1, quarters: [{ quarter: "Q4", count: 1 }] }] }
+        : { years: [{ year: 2098, count: 1, quarters: [{ quarter: "Q1", count: 1 }] }] };
+    }
+    listRequests.push({ year: input.year, quarter: input.quarter });
+    return { items: [], next_cursor: null };
+  });
+  await controller.load();
+  await controller.updateQuery({ year: 2099, quarter: "Q4", search: "Lorenzo" });
+  assert.equal(controller.state.year, null);
+  assert.equal(controller.state.quarter, null);
+  assert.deepEqual(controller.state.facets.years.map((entry)=>entry.year), [2098]);
+  assert.deepEqual(listRequests.slice(-2), [{ year: 2099, quarter: "Q4" }, { year: null, quarter: null }]);
+});
+
+test("facet invalidation resets an unavailable quarter while preserving its valid year", async () => {
+  const listRequests = [];
+  const controller = createOperatorListController(async (input) => {
+    if (input.action === "get_application_facets_v2") {
+      return { years: [{ year: 2099, count: 1, quarters: [{ quarter: "Q4", count: 0 }] }] };
+    }
+    listRequests.push({ year: input.year, quarter: input.quarter });
+    return { items: [], next_cursor: null };
+  });
+  await controller.updateQuery({ year: 2099, quarter: "Q4" });
+  assert.equal(controller.state.year, 2099);
+  assert.equal(controller.state.quarter, null);
+  assert.deepEqual(listRequests, [{ year: 2099, quarter: "Q4" }, { year: 2099, quarter: null }]);
+});
+
+test("loading and empty presentation are mutually exclusive", () => {
+  assert.deepEqual(operatorListVisibility({ loading: true, items: [], error: null }), {
+    message: "Dossiers laden...", emptyHidden: true,
+  });
+  assert.deepEqual(operatorListVisibility({ loading: false, items: [], error: null }), {
+    message: "", emptyHidden: false,
+  });
+  assert.deepEqual(operatorListVisibility({ loading: false, items: [operatorItem("1")], error: null }), {
+    message: "", emptyHidden: true,
+  });
+});
+
+test("v2 controls, dynamic facets, loading states, and security boundary are explicit", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="applicationSearch"[^>]+placeholder="Zoek op naam, bedrijf of referentie"[^>]+maxlength="140"/);
+  assert.match(html, /data-zone="ACTIVE"[^>]+aria-pressed="true"/);
+  assert.match(html, /data-zone="ARCHIVED"/);
+  assert.match(html, /data-zone="TRASHED"/);
+  assert.match(html, /id="applicationYearFilter"/);
+  assert.match(html, /id="applicationQuarterFilter" disabled/);
+  assert.match(html, /id="applicationLoadMore"[^>]+hidden/);
   assert.match(html, /id="applicationEmpty"[^>]+role="status"[^>]+aria-live="polite"[^>]+aria-atomic="true"[^>]+hidden/);
+  assert.match(script, /setTimeout\(applySearch, 300\)/);
+  assert.match(script, /option\.disabled = Number\(quarter\.count\) === 0/);
+  assert.match(script, /selectedSummary = summary/);
+  assert.match(script, /get_application_detail/);
+  assert.doesNotMatch(script, /client\.rpc\(["'](?:list_operator_applications_v2|get_operator_dossier_facets_v2)/);
+  assert.doesNotMatch(script, /service_role|loadAllOperatorApplications|action: "list_applications"|offset/);
 });
 
 test("project site presentation accepts only the exact project-bound HTTPS origin", () => {

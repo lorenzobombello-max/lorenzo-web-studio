@@ -5,6 +5,8 @@ const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_KINDS = new Set(["website", "slimme_documentenflow"]);
 const PRODUCT_FILTERS = new Set(["all", ...REQUEST_KINDS]);
+const OPERATOR_ZONES = new Set(["ACTIVE", "ARCHIVED", "TRASHED"]);
+const OPERATOR_PAGE_LIMIT = 50;
 const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
@@ -76,49 +78,6 @@ export function applicationIdentityPresentation(application) {
   };
 }
 
-export function applicationsForSearch(applications, query) {
-  const normalizedQuery = String(query || "").trim().toUpperCase();
-  if (!normalizedQuery) return applications;
-  const supportReference = normalizeSupportReference(normalizedQuery);
-  return applications.filter((application) => {
-    const reference = String(application?.application_reference || "").toUpperCase();
-    if (supportReference) return application?.support_reference === supportReference;
-    return APPLICATION_REFERENCE.test(reference) && reference.includes(normalizedQuery);
-  });
-}
-
-export async function loadAllOperatorApplications(invoke, pageSize = 200) {
-  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 200) {
-    throw new Error("INVALID_APPLICATION_PAGE_SIZE");
-  }
-  const applications = [];
-  const seenQuoteRequestIds = new Set();
-  let offset = 0;
-  while (true) {
-    const page = await invoke({ action: "list_applications", limit: pageSize, offset });
-    if (!Array.isArray(page)) throw new Error("INVALID_APPLICATION_LIST");
-    let added = 0;
-    for (const application of page) {
-      const quoteRequestId = String(application?.quote_request_id || "");
-      if (!UUID.test(quoteRequestId)) throw new Error("INVALID_APPLICATION_IDENTITY");
-      if (seenQuoteRequestIds.has(quoteRequestId)) continue;
-      seenQuoteRequestIds.add(quoteRequestId);
-      applications.push(application);
-      added += 1;
-    }
-    if (page.length < pageSize) return applications;
-    if (added === 0) throw new Error("NON_PROGRESSING_APPLICATION_PAGINATION");
-    offset += page.length;
-  }
-}
-
-export function createApplicationSearchHandler(clearDetail, renderVisibleApplications) {
-  return ()=>{
-    clearDetail();
-    renderVisibleApplications();
-  };
-}
-
 export function canPromoteApplication(detail) {
   return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
 }
@@ -163,22 +122,6 @@ export function intakeLifecycleError(code) {
     return { message: "Je sessie is verlopen of je hebt onvoldoende bevoegdheid voor deze actie.", refresh: false };
   }
   return { message: "De lifecycleactie kon niet worden uitgevoerd. Probeer het opnieuw.", refresh: false };
-}
-
-export function applicationsForFilter(applications, filter) {
-  if (!Array.isArray(applications) || !PRODUCT_FILTERS.has(filter)) return [];
-  return applications.filter((application) => REQUEST_KINDS.has(application?.request_kind)
-    && (filter === "all" || application.request_kind === filter));
-}
-
-export function emptyStateForFilter(filter) {
-  if (filter === "website") return "Geen Website-aanvragen.";
-  if (filter === "slimme_documentenflow") return "Geen Slimme Documentenflow-aanvragen.";
-  return "Geen ingediende aanvragen.";
-}
-
-export function selectionFallsOutsideFilter(application, filter) {
-  return Boolean(application && applicationsForFilter([application], filter).length === 0);
 }
 
 export function applyDetailVisibility(requestKind, nodes) {
@@ -465,33 +408,52 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const websiteDetailRows = Array.from(document.querySelectorAll("[data-website-detail]"));
   const sdfDetailRows = Array.from(document.querySelectorAll("[data-sdf-detail]"));
   const filterButtons = Array.from(document.querySelectorAll("[data-product-filter]"));
+  const zoneButtons = Array.from(document.querySelectorAll("[data-zone]"));
   const searchInput = document.getElementById("applicationSearch");
+  const statusFilter = document.getElementById("applicationStatusFilter");
+  const yearFilter = document.getElementById("applicationYearFilter");
+  const quarterFilter = document.getElementById("applicationQuarterFilter");
+  const loadMore = document.getElementById("applicationLoadMore");
   const sdfDetailNotice = document.getElementById("sdfDetailNotice");
-  let applications = [];
-  let activeFilter = "all";
   let selectedLocator = applicationLocatorFromUrl(window.location.href);
+  let selectedSummary = null;
   let selectedDetail = null;
   let detailRequestId = 0;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
-
-  function visibleApplications() {
-    return applicationsForSearch(applicationsForFilter(applications, activeFilter), searchInput.value);
-  }
-
-  function renderVisibleApplications() {
-    const visible = visibleApplications();
-    renderList(visible);
-    empty.textContent = searchInput.value.trim()
-      ? "Geen aanvragen gevonden voor dit aanvraagnummer."
-      : emptyStateForFilter(activeFilter);
-  }
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
     if (response.status >= 400 || !response.body?.ok) throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
     return response.body.result;
   }
+
+  function renderFacets(facets, selectedYear, selectedQuarter) {
+    const years = Array.isArray(facets?.years) ? facets.years : [];
+    yearFilter.replaceChildren(new Option("Alle jaren", ""));
+    for (const entry of years) yearFilter.add(new Option(`${entry.year} (${entry.count})`, String(entry.year)));
+    yearFilter.value = selectedYear ? String(selectedYear) : "";
+    const year = years.find((entry)=>entry.year === selectedYear);
+    quarterFilter.replaceChildren(new Option("Alle kwartalen", ""));
+    for (const quarter of year?.quarters || []) {
+      const option = new Option(`${quarter.quarter} (${quarter.count})`, quarter.quarter);
+      option.disabled = Number(quarter.count) === 0;
+      quarterFilter.add(option);
+    }
+    quarterFilter.disabled = !year;
+    quarterFilter.value = year && selectedQuarter ? selectedQuarter : "";
+  }
+
+  const listController = createOperatorListController(invoke, (state)=>{
+    renderList(state.items);
+    renderFacets(state.facets, state.year, state.quarter);
+    const visibility = operatorListVisibility(state);
+    empty.textContent = state.search ? "Geen resultaten voor deze zoekopdracht." : "Geen dossiers gevonden.";
+    empty.hidden = visibility.emptyHidden;
+    listMessage.textContent = visibility.message;
+    loadMore.hidden = !state.next_cursor;
+    loadMore.disabled = state.loading || !state.next_cursor;
+  });
 
   function updateLocation(locator) {
     const url = new URL(window.location.href);
@@ -507,6 +469,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   function clearDetail() {
     detailRequestId += 1;
     selectedLocator = null;
+    selectedSummary = null;
     selectedDetail = null;
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
@@ -705,8 +668,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailBudget", application.budget);
     setText("detailTiming", application.timing);
     setText("detailDescription", application.description);
-    setText("detailIntakeStatus", application.intake_status || "Niet beschikbaar");
-    setText("detailSubmittedAt", formatDate(application.submitted_at));
+    const operationalStatus = operatorStatusPresentation(selectedSummary?.operational_status);
+    setBadge("detailOperationalStatus", operationalStatus.label, operationalStatus.tone);
+    setText("detailZone", selectedSummary?.zone || "Niet beschikbaar");
+    setText("detailSubmittedAt", formatDate(selectedSummary?.dossier_date || application.submitted_at));
     promote.hidden = true;
     if (!isWebsite) return renderIntakeLifecycle(null);
     renderIntakeLifecycle(application.intake_lifecycle);
@@ -726,8 +691,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     renderProjectDossier(null);
   }
 
-  async function loadDetail(locator) {
+  async function loadDetail(locator, summary = selectedSummary) {
     const requestId = ++detailRequestId;
+    selectedSummary = summary;
     selectedDetail = null;
     promote.hidden = true;
     lifecycleDossier.hidden = true;
@@ -735,25 +701,27 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     detailMessage.textContent = "Aanvraag wordt geladen.";
     try {
       const application = await invoke({ action: "get_application_detail", ...locator });
-      if (requestId !== detailRequestId) return;
-      if (selectionFallsOutsideFilter(application, activeFilter)) throw new Error("FILTERED_REQUEST_KIND");
+      if (requestId !== detailRequestId) return false;
+      if (listController.state.request_kind && application.request_kind !== listController.state.request_kind) throw new Error("FILTERED_REQUEST_KIND");
       renderDetail(application);
       selectedLocator = locator;
       updateLocation(locator);
       if (application.request_kind === "website" && application.project?.project_id) {
         detailMessage.textContent = "Projectdossier wordt geladen.";
         const project = await invoke({ action: "get_project_dossier", project_id: application.project.project_id });
-        if (requestId !== detailRequestId) return;
+        if (requestId !== detailRequestId) return false;
         renderProjectDossier(project);
       }
       detailMessage.textContent = "";
+      return true;
     } catch {
-      if (requestId !== detailRequestId) return;
+      if (requestId !== detailRequestId) return false;
       if (!selectedDetail) {
         detail.hidden = true;
         detailEmpty.hidden = false;
       }
       detailMessage.textContent = selectedDetail ? "Het projectdossier kon niet worden geladen." : "De aanvraag kon niet worden geladen.";
+      return false;
     }
   }
 
@@ -767,25 +735,24 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       button.className = "application-list__button";
       const identity = document.createElement("span");
       const name = document.createElement("strong");
-      name.textContent = application.company || application.name;
+      name.textContent = application.organization || application.name;
       const reference = document.createElement("small");
       const applicationPresentation = applicationIdentityPresentation(application);
-      reference.textContent = `${applicationPresentation.visibleReference} · ${formatDate(application.submitted_at)}`;
+      reference.textContent = `${applicationPresentation.visibleReference} · ${formatDate(application.dossier_date)}`;
       identity.append(name, reference);
-      const state = application.request_kind === "slimme_documentenflow"
-        ? badge("Documentenflow")
-        : application.project_state
-        ? badge(application.project_state, "green")
-        : application.acceptance_id
-        ? badge("Geaccepteerd", "amber")
-        : badge("Ingediend");
-      button.append(identity, state);
+      const statuses = document.createElement("span");
+      statuses.className = "application-list__statuses";
+      const status = operatorStatusPresentation(application.operational_status);
+      statuses.append(badge(status.label, status.tone));
+      if (application.zone === "ARCHIVED") statuses.append(badge("ARCHIVED", "amber"));
+      if (application.zone === "TRASHED") statuses.append(badge("TRASHED", "red"));
+      button.append(identity, statuses);
       const locator = applicationPresentation.locator;
       if (locatorMatchesApplication(selectedLocator, application)) button.setAttribute("aria-current", "true");
       button.addEventListener("click", ()=>{
         for (const candidate of list.querySelectorAll("[aria-current]")) candidate.removeAttribute("aria-current");
         button.setAttribute("aria-current", "true");
-        loadDetail(locator);
+        loadDetail(locator, application);
       });
       item.append(button);
       list.append(item);
@@ -793,51 +760,80 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   }
 
   async function loadList() {
-    listMessage.textContent = "Aanvragen worden geladen.";
-    try {
-      applications = applicationsForFilter(await loadAllOperatorApplications(invoke), "all");
-      renderVisibleApplications();
-      listMessage.textContent = "";
-      if (selectedLocator) {
-        const selectedApplication = applications.find((application) => locatorMatchesApplication(selectedLocator, application));
-        if (selectedApplication && !selectionFallsOutsideFilter(selectedApplication, activeFilter)) {
-          await loadDetail(selectedLocator);
-        } else clearDetail();
-      }
-    } catch {
-      listMessage.textContent = "De aanvragen konden niet worden geladen.";
-    }
+    return await listController.load();
+  }
+
+  async function refreshMutationDetail(locator, selectionRequestId) {
+    return await refreshOperatorSelection(listController, locator, {
+      isCurrent: ()=>selectionRequestId === detailRequestId && locatorMatchesApplication(locator, selectedLocator),
+      close: clearDetail,
+      show: async (summary)=>{
+        selectedSummary = summary;
+        return await loadDetail(locator, summary);
+      },
+    });
   }
 
   for (const button of filterButtons) {
     button.addEventListener("click", ()=>{
       const nextFilter = button.dataset.productFilter;
-      if (!PRODUCT_FILTERS.has(nextFilter) || nextFilter === activeFilter) return;
-      activeFilter = nextFilter;
+      const requestKind = nextFilter === "all" ? null : nextFilter;
+      if (!PRODUCT_FILTERS.has(nextFilter) || requestKind === listController.state.request_kind) return;
       for (const candidate of filterButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
       clearDetail();
-      renderVisibleApplications();
+      listController.updateQuery({ request_kind: requestKind });
     });
   }
 
-  searchInput.addEventListener("input", createApplicationSearchHandler(clearDetail, renderVisibleApplications));
-  document.getElementById("applicationSearchForm").addEventListener("submit", async (event)=>{
-    event.preventDefault();
-    const supportReference = normalizeSupportReference(searchInput.value);
-    const applicationReference = String(searchInput.value || "").trim().toUpperCase();
-    if (supportReference) return await loadDetail({ support_reference: supportReference });
-    if (APPLICATION_REFERENCE.test(applicationReference)) return await loadDetail({ application_reference: applicationReference });
+  for (const button of zoneButtons) {
+    button.addEventListener("click", ()=>{
+      const zone = button.dataset.zone;
+      if (!OPERATOR_ZONES.has(zone) || zone === listController.state.zone) return;
+      for (const candidate of zoneButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
+      clearDetail();
+      listController.updateQuery({ zone });
+    });
+  }
+
+  let searchTimer = null;
+  function applySearch() {
+    clearTimeout(searchTimer);
+    clearDetail();
+    return listController.updateQuery({ search: searchInput.value });
+  }
+  searchInput.addEventListener("input", ()=>{
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applySearch, 300);
   });
+  document.getElementById("applicationSearchForm").addEventListener("submit", (event)=>{
+    event.preventDefault();
+    applySearch();
+  });
+  statusFilter.addEventListener("change", ()=>{
+    clearDetail();
+    listController.updateQuery({ operational_status: statusFilter.value || null });
+  });
+  yearFilter.addEventListener("change", ()=>{
+    clearDetail();
+    listController.updateQuery({ year: yearFilter.value ? Number(yearFilter.value) : null, quarter: null });
+  });
+  quarterFilter.addEventListener("change", ()=>{
+    clearDetail();
+    listController.updateQuery({ quarter: quarterFilter.value || null });
+  });
+  loadMore.addEventListener("click", ()=>listController.loadMore());
 
   promote.addEventListener("click", ()=>confirmation.showModal());
   confirmation.addEventListener("close", async ()=>{
     if (confirmation.returnValue !== "confirm" || !canPromoteApplication(selectedDetail)) return;
+    const locator = { ...selectedLocator };
+    const selectionRequestId = detailRequestId;
     promote.disabled = true;
     detailMessage.textContent = "Project wordt aangemaakt.";
     try {
-      await invoke({ action: "promote_accepted_application", ...selectedLocator, idempotency_key: crypto.randomUUID() });
-      await loadList();
-      detailMessage.textContent = "Project is gekoppeld.";
+      await invoke({ action: "promote_accepted_application", ...locator, idempotency_key: crypto.randomUUID() });
+      const refresh = await refreshMutationDetail(locator, selectionRequestId);
+      if (refresh.status === "refreshed") detailMessage.textContent = "Project is gekoppeld.";
     } catch {
       detailMessage.textContent = "Het project kon niet worden aangemaakt.";
     } finally {
@@ -894,10 +890,13 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     lifecycleMessage.textContent = `${command.presentation.label} wordt uitgevoerd.`;
     let completed = false;
     try {
-      await invoke(input);
-      await loadDetail(command.locator);
-      completed = true;
-      lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
+      const refresh = await refreshAfterOperatorMutation(
+        ()=>invoke(input),
+        (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
+        ()=>detailRequestId,
+      );
+      completed = refresh.status === "refreshed";
+      if (completed) lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
     } catch (error) {
       const outcome = intakeLifecycleError(error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED");
       if (outcome.refresh) await loadDetail(command.locator);
@@ -909,7 +908,16 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   });
 
-  await loadList();
+  if (selectedLocator) {
+    const initialSearch = selectedLocator.application_reference || selectedLocator.support_reference || selectedLocator.quote_request_id;
+    searchInput.value = initialSearch;
+    await listController.updateQuery({ search: initialSearch });
+    const summary = listController.state.items.find((item)=>locatorMatchesApplication(selectedLocator, item));
+    if (summary) await loadDetail(selectedLocator, summary);
+    else clearDetail();
+  } else {
+    await loadList();
+  }
 }
 
 export function focusIntakeLifecycle(lifecycle, buttons, fallback) {
@@ -969,4 +977,190 @@ function locatorMatchesApplication(locator, application) {
     : locator?.support_reference
     ? locator.support_reference === application?.support_reference
     : locator?.quote_request_id === application?.quote_request_id);
+}
+
+export function effectiveOperatorZone(zone, search) {
+  if (!OPERATOR_ZONES.has(zone)) throw new Error("INVALID_OPERATOR_ZONE");
+  if (zone === "ACTIVE" && String(search || "").trim()) return "ACTIVE_ARCHIVED";
+  return zone;
+}
+
+export function operatorListRequest(query, cursor = null) {
+  const search = String(query?.search || "").trim() || null;
+  return {
+    action: "list_applications_v2",
+    zone: effectiveOperatorZone(query?.zone || "ACTIVE", search),
+    operational_status: query?.operational_status || null,
+    year: query?.year || null,
+    quarter: query?.quarter || null,
+    request_kind: query?.request_kind || null,
+    search,
+    cursor,
+    limit: OPERATOR_PAGE_LIMIT,
+  };
+}
+
+export function operatorFacetsRequest(query) {
+  const listRequest = operatorListRequest(query);
+  return {
+    action: "get_application_facets_v2",
+    zone: listRequest.zone,
+    operational_status: listRequest.operational_status,
+    request_kind: listRequest.request_kind,
+    search: listRequest.search,
+  };
+}
+
+export function operatorStatusPresentation(status) {
+  if (status === "CANCELLED") return { label: "GEANNULEERD", tone: "red" };
+  if (status === "ARCHIVED") return { label: "ARCHIVED", tone: "amber" };
+  return { label: String(status || "ONBEKEND").replaceAll("_", " "), tone: status ? "green" : "" };
+}
+
+export function appendUniqueOperatorItems(current, incoming) {
+  const items = [...current];
+  const seen = new Set(items.map((item)=>item.quote_request_id));
+  for (const item of incoming) {
+    if (!UUID.test(String(item?.quote_request_id || "")) || seen.has(item.quote_request_id)) continue;
+    seen.add(item.quote_request_id);
+    items.push(item);
+  }
+  return items;
+}
+
+export function operatorFacetSelection(facets, selectedYear, selectedQuarter) {
+  const years = Array.isArray(facets?.years) ? facets.years : [];
+  const year = years.find((entry)=>entry.year === selectedYear);
+  const quarter = year?.quarters?.find((entry)=>entry.quarter === selectedQuarter && Number(entry.count) > 0);
+  return {
+    year: year ? selectedYear : null,
+    quarter: quarter ? selectedQuarter : null,
+  };
+}
+
+export function operatorListVisibility(state) {
+  const loading = Boolean(state?.loading);
+  const hasItems = Array.isArray(state?.items) && state.items.length > 0;
+  return {
+    message: loading
+      ? hasItems ? "Meer dossiers laden..." : "Dossiers laden..."
+      : state?.error ? "De dossiers konden niet worden geladen." : "",
+    emptyHidden: loading || Boolean(state?.error) || hasItems,
+  };
+}
+
+export async function refreshOperatorSelection(controller, locator, handlers) {
+  const loaded = await controller.refresh();
+  if (!handlers.isCurrent()) return { status: "superseded", summary: null };
+  if (!loaded) {
+    handlers.close();
+    return { status: "closed", summary: null };
+  }
+  const summary = controller.state.items.find((item)=>locatorMatchesApplication(locator, item)) || null;
+  if (!summary) {
+    handlers.close();
+    return { status: "closed", summary: null };
+  }
+  const shown = await handlers.show(summary);
+  return { status: shown === false ? "superseded" : "refreshed", summary };
+}
+
+export async function refreshAfterOperatorMutation(invokeMutation, refreshSelection, getSelectionRequestId) {
+  const selectionRequestId = getSelectionRequestId();
+  await invokeMutation();
+  return await refreshSelection(selectionRequestId);
+}
+
+export function createOperatorListController(invoke, onChange = ()=>{}) {
+  const state = {
+    zone: "ACTIVE",
+    operational_status: null,
+    year: null,
+    quarter: null,
+    request_kind: null,
+    search: "",
+    next_cursor: null,
+    items: [],
+    facets: { years: [] },
+    loading: false,
+    error: null,
+    generation: 0,
+  };
+
+  const publish = ()=>onChange({ ...state, items: [...state.items], facets: state.facets });
+
+  async function loadPage({ append = false, retryCursor = true } = {}) {
+    if (state.loading) return false;
+    const generation = state.generation;
+    const cursor = append ? state.next_cursor : null;
+    if (append && !cursor) return false;
+    state.loading = true;
+    state.error = null;
+    publish();
+    try {
+      const listPromise = invoke(operatorListRequest(state, cursor));
+      const facetsPromise = append ? null : invoke(operatorFacetsRequest(state));
+      const [page, facets] = await Promise.all([listPromise, facetsPromise]);
+      if (generation !== state.generation) return false;
+      if (!page || !Array.isArray(page.items) || (page.next_cursor !== null && typeof page.next_cursor !== "string")) {
+        throw new Error("INVALID_APPLICATION_LIST");
+      }
+      state.items = append ? appendUniqueOperatorItems(state.items, page.items) : appendUniqueOperatorItems([], page.items);
+      state.next_cursor = page.next_cursor;
+      if (facets !== null) {
+        state.facets = facets && Array.isArray(facets.years) ? facets : { years: [] };
+        const selection = operatorFacetSelection(state.facets, state.year, state.quarter);
+        if (selection.year !== state.year || selection.quarter !== state.quarter) {
+          state.year = selection.year;
+          state.quarter = selection.quarter;
+          state.items = [];
+          state.next_cursor = null;
+          state.loading = false;
+          state.generation += 1;
+          publish();
+          return loadPage();
+        }
+      }
+      return true;
+    } catch (error) {
+      if (generation !== state.generation) return false;
+      const code = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      if (cursor && retryCursor && code === "INVALID_OPERATOR_CURSOR") {
+        state.loading = false;
+        state.items = [];
+        state.next_cursor = null;
+        return loadPage({ append: false, retryCursor: false });
+      }
+      state.error = code;
+      return false;
+    } finally {
+      if (generation === state.generation) {
+        state.loading = false;
+        publish();
+      }
+    }
+  }
+
+  function updateQuery(patch) {
+    const next = { ...patch };
+    if (Object.hasOwn(next, "search")) next.search = String(next.search || "").trim();
+    if (Object.hasOwn(next, "year") && !next.year) next.quarter = null;
+    Object.assign(state, next, {
+      next_cursor: null,
+      items: [],
+      loading: false,
+      error: null,
+      generation: state.generation + 1,
+    });
+    publish();
+    return loadPage();
+  }
+
+  return {
+    state,
+    load: ()=>loadPage(),
+    refresh: ()=>updateQuery({}),
+    loadMore: ()=>loadPage({ append: true }),
+    updateQuery,
+  };
 }
