@@ -14,6 +14,179 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
+## CURRENT / AUTHORITATIVE continuity - Phase-2B production release - 24-08-2026
+
+Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor iedere volgende sessie. Zij actualiseert uitsluitend de actuele resume-status van eerdere CURRENT-secties hieronder. Alle oudere checkpoints, releasesecties en evidence blijven ongewijzigd historisch bewijs. Dit bestaande document blijft de primaire continuity-authority; er is geen afzonderlijk checkpointbestand aangemaakt.
+
+### Phase 2B production release - DONE / PRESERVE
+
+| Eigenschap | Actuele authority |
+|---|---|
+| Fase | Phase 2B - Operator readmodel, server-side search, filters en keysetpagination |
+| Status | **PRODUCTION RELEASE COMPLETE / DONE / PRESERVE** |
+| Release SHA | `bbaa2caf95d4c5208474e36fd98e2e02096ea18d` |
+| GitHub Pages | run `32713576259`; **SUCCESS** |
+| Production migration | `20260824130000_add_operator_dossier_readmodel_v2.sql`; **APPLIED = JA** |
+| Linked ledger | **PARITY / PASS**; pending `0`; drift `0` |
+| Cursor secret | `LWS_OPERATOR_CURSOR_SIGNING_KEY_V1`; **PROVISIONED = JA**; secretwaarde nooit geregistreerd |
+| Edge Function | `commercial-operator-command`; version `10`; **ACTIVE**; `verify_jwt = true` |
+
+Phase 2B is uitsluitend de production serverfoundation. Er is geen browser- of Operator-UI-switch uitgevoerd en er is geen Phase-2C-, workforce- of accountingimplementatie gestart.
+
+### Security boundary - DONE / PRESERVE
+
+- direct `authenticated` list-v2-transport: **DENIED**;
+- direct `authenticated` facets-v2-transport: **DENIED**;
+- list- en facetstransport zijn uitsluitend uitvoerbaar door `service_role`;
+- `authenticated` heeft uitsluitend de authority-preflight;
+- een menselijke bearer-JWT is verplicht en een service-role-JWT wordt als browseractor geweigerd;
+- de private databasecores revalideren de human actor als `ACTIVE` owner/admin;
+- raw `next_position` is nooit browser-facing;
+- Edge retourneert uitsluitend een signed `next_cursor`.
+
+### Cursor integrity - DONE / PRESERVE
+
+- HMAC-SHA256 met dedicated key separation;
+- signed dossierpositie: dossierdatum en quote-request-UUID;
+- signed search- en filtercontext;
+- TTL exact `15` minuten;
+- malformed cursor geweigerd;
+- forged `dossierDate` geweigerd;
+- forged UUID geweigerd;
+- gewijzigde search/filtercontext geweigerd;
+- unsigned cursor geweigerd;
+- wrong/invalid cursor geweigerd;
+- er bestaat geen unsigned fallback.
+
+### V2 readmodel production foundation - DONE / PRESERVE
+
+- list v2 production foundation is actief;
+- facets v2 production foundation is actief;
+- server-side search- en filterfoundation is actief;
+- jaar- en `Q1`/`Q2`/`Q3`/`Q4`-filtering is actief;
+- dossierzoneprojectie ondersteunt `ACTIVE`, `ARCHIVED` en `TRASHED`;
+- operationele-statusprojectie blijft een afzonderlijke dimensie;
+- keysetpagination is actief;
+- exact zes Phase-2B-indexen zijn aanwezig;
+- de `access_state`/dossier-date-index blijft **KEEP**.
+
+### Production smoke evidence
+
+- human owner/admin list v2: **PASS**, HTTP `200`;
+- facets v2: **PASS**, HTTP `200`;
+- signed cursor roundtrip: **PASS**;
+- tweede pagina: **PASS**, HTTP `200`;
+- forged-cursorrejection: **PASS**, HTTP `400`;
+- raw `next_position` exposed: **NEE**;
+- anon: HTTP `401`;
+- er zijn geen onveilige productionfixtures of productionusers aangemaakt.
+
+### Preservation - DONE / PRESERVE
+
+De huidige browser blijft v1 gebruiken en de bestaande Operator-UI is inhoudelijk ongewijzigd. Deze release voegt op zichzelf geen naamsearch, archive-UI, trash-UI of andere browserfunctie toe.
+
+De volgende bestaande authorities en contracten zijn behouden:
+
+- Phase-1 dossier-state authority;
+- `ACTIVE`, `ARCHIVED` en `TRASHED`;
+- `CANCELLED` als afzonderlijke operationele/intake-status;
+- application numbering;
+- quotation numbering;
+- quotation- en acceptanceflow;
+- payments en de 40/40/rest-authority;
+- financial projection;
+- documents en artifacts;
+- SDF;
+- project/site;
+- immutable legacy exact-11 cleanupauthority.
+
+### OPEN / NEXT - Phase 2C Operator browser integration
+
+De volgende kandidaatfase is **PHASE 2C - OPERATOR BROWSER INTEGRATION**. Deze continuity-update autoriseert of implementeert niets uit Phase 2C.
+
+Open requirements:
+
+1. schakel de huidige browser gecontroleerd van v1 naar de bewezen v2 Edge-route;
+2. breid globale search uit naar naam, bedrijf/organisatie, application reference, supportreference en canonical UUID;
+3. vervang de huidige tekst **Zoek op aanvraagnummer** later door een passende globale zoekplaceholder;
+4. maak lijst- en detailprojectie van de operationele status consistent;
+5. toon `CANCELLED` als **GEANNULEERD** met duidelijke rode statusweergave;
+6. integreer server-side filters voor zone, operationele status, jaar, `Q1`/`Q2`/`Q3`/`Q4` en request kind;
+7. projecteer beschikbare jaren dynamisch uit data;
+8. integreer keysetpagination in de browser;
+9. verwijder het browserpatroon `loadAllOperatorApplications` bij de uiteindelijke v2-switch;
+10. gebruik standaard een `ACTIVE` workspace;
+11. houd `ARCHIVED` afzonderlijk bereikbaar;
+12. ontsluit `TRASHED` uitsluitend als expliciete aparte scope;
+13. laat de browser nooit duizenden dossiers vooraf ophalen.
+
+### FUTURE - Workforce en teamarchitectuur
+
+Dit is uitsluitend een future requirement. De huidige situatie blijft single-owner; de architectuur moet later multi-user/team-ready kunnen worden zonder medewerkers algemene Owner-Operator-authority te geven.
+
+Later minimaal te ontwerpen:
+
+- employees/team members, rollen en permissions;
+- dossier- en taskassignments met least privilege;
+- `ACTIVE`, `SUSPENDED` en `REVOKED` employee access;
+- owner/admin-control, reassignment en management override;
+- audit trail, task completion en workflow handoff;
+- toegang per toegewezen taak/dossier en uitsluitend toegestane permissions.
+
+### FUTURE - Workflow en handoff
+
+- dossierownership blijft bij het bedrijf; een employee krijgt assignment en geen klantownership;
+- task states en een expliciete completion action;
+- automatische next-step handoff;
+- owner/admin-reassignment;
+- een suspended employee mag de workflow niet blokkeren;
+- historische assignment- en auditevidence blijft bewaard;
+- gevoelige transitions kunnen owner approval vereisen.
+
+Dit is geen implementatieauthority.
+
+### FUTURE - Recruitment
+
+- future careers/vacancymodule;
+- vacatures zijn standaard unpublished/inactive;
+- conceptuele states `DRAFT`, `PUBLISHED` en `CLOSED`;
+- kandidaatintake met CV/portfolio;
+- afzonderlijke Recruitment Authority;
+- applicant en employee blijven afzonderlijke identiteiten;
+- uitsluitend gecontroleerde onboarding kan later een workforceaccount maken;
+- privacy en retentie moeten later expliciet worden bepaald.
+
+Er is nu geen vacaturepublicatie of recruitmentimplementatie.
+
+### FUTURE - Time en payroll preparation
+
+- transparante projecttijdregistratie met start/pause/resume/stop/submit-concept;
+- tijd per project en taak;
+- approval/review en employee work history;
+- geen hidden-surveillance-design;
+- payroll preparation/export en latere koppeling met boekhouder of sociaal secretariaat;
+- afzonderlijke permissions voor payroll- en personeelsdata;
+- project profitability kan later worden ontworpen.
+
+Er wordt geen payroll-engine geimplementeerd.
+
+### Financieel en accounting - OPEN / FUTURE
+
+De bestaande open requirement blijft behouden:
+
+- financieel Operator-dashboard;
+- `Q1`/`Q2`/`Q3`/`Q4`;
+- expected;
+- invoiced zodra authoritative;
+- received;
+- outstanding zodra authoritative;
+- accountant-/boekhouderexport;
+- XLSX/CSV en leesbare PDF-samenvatting;
+- koppeling aan officiele documenten;
+- export-ID, timestamp en auditability.
+
+Er is geen financiele of accountingimplementatie gestart.
+
 ## CURRENT / AUTHORITATIVE continuity - Phase-1 dossier state production release - 24-08-2026
 
 Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor iedere volgende sessie. Zij vervangt uitsluitend de actuele resume-status van eerdere CURRENT-secties hieronder. Alle oudere checkpoints, releasesecties en evidence blijven ongewijzigd historisch bewijs.
