@@ -14,7 +14,7 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
-## CURRENT continuity - Operator financial projection release - 23-08-2026
+## CURRENT continuity - Legacy test cleanup authority release - 24-08-2026
 
 Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zij actualiseert de productie- en vervolgstatus; oudere checkpoints en de onderstaande eerdere fasesecties blijven historisch bewijs en mogen niet als actuelere Git- of open-statusauthority worden gebruikt.
 
@@ -22,19 +22,29 @@ Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor de volgende sessie. Zi
 
 | Eigenschap | Actuele authority |
 |---|---|
-| Fase | Operator supportreference + customer/application/project/site foundation + authoritative financial projection |
+| Fase | Legacy test cleanup authority, met behoud van alle eerdere Operator- en commercial foundations |
 | Status | **PRODUCTION RELEASE COMPLETE** |
-| Production SHA | `258a2c98064b51112bd9b02bd1d300e2fbf602b5` |
-| Previous main | `dfc1acd7df2998dcf160aa96262302d2fa7869de` |
-| Commit | `feat(operator): add authoritative financial projection` |
-| Migration | `20260823180000_add_operator_financial_projection.sql` |
-| Migrationstatus | **APPLIED**; linked ledger parity; pending migrations `0` |
-| Edge Function | geen deployment voor deze release; bestaande `commercial-operator-command` blijft behouden |
+| Production SHA | `9413e5867b67a79e8dbdd3aff202d9be5c22103f` |
+| Previous main | `258a2c98064b51112bd9b02bd1d300e2fbf602b5` |
+| Commit | `feat(operator): add legacy test cleanup authority` |
+| Migration | `20260823190000_add_legacy_test_cleanup_authority.sql` |
+| Migrationstatus | **APPLIED**; linked ledger parity; pending migrations `0`; drift `0` |
+| Edge Function | geen deployment nodig of uitgevoerd; bestaande `commercial-operator-command` blijft behouden |
 | Edge hash | `4a9b6ad49474a214acf2b834eb933088a78bc4e02343c36a5da0fd8f5bb3a562` |
-| GitHub Pages | **SUCCESS**; run `32636931018`; approved SHA `258a2c98064b51112bd9b02bd1d300e2fbf602b5` |
+| GitHub Pages | **SUCCESS**; run `32696991750`; approved SHA `9413e5867b67a79e8dbdd3aff202d9be5c22103f` |
 
 Productionbewijs na de gecontroleerde release:
 
+- legacy test cleanup authority bevat exact `11/11` migration-owned UUID's;
+- frozen identities en identity snapshots zijn `11/11` intact;
+- `record_classification = production` is voor `11/11` dossiers behouden;
+- de bestaande `internal_e2e` authority is behouden en ontvangt geen legacy authority;
+- beide legacy-authoritytabellen hebben RLS enabled en `FORCE RLS`;
+- runtime table- en function-ACL violations voor `anon`, `authenticated` en `service_role` zijn `0`;
+- authority is immutable en consumption evidence is append-only guarded;
+- de consumption table is aanwezig en de production consumption count is `0`;
+- quotation-, acceptance-, commercial-, payment-, document/artifact- en SDF-blockers zijn voor de elf dossiers allemaal `0`;
+- deze release introduceert geen delete- of cleanupcommand, cleanup-RPC, browserpermission of businessdatarewrite;
 - `support_reference` is een actieve stored generated authority;
 - format- en unique constraints zijn actief;
 - production supportreference-collisioncount is `0`;
@@ -50,7 +60,7 @@ Productionbewijs na de gecontroleerde release:
 - sensitive payment-evidencemetadata wordt niet rechtstreeks geprojecteerd;
 - 40/40/rest paymentauthority is **PRESERVED**;
 - production bevat `0` commercial projects; runtime business-record verification is **NOT APPLICABLE / NO PRODUCTION PROJECT AVAILABLE**;
-- release findings: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `0`;
+- release findings: BLOCKER `0`, HIGH `0`, MEDIUM `0`, LOW `1`; de LOW is uitsluitend de niet-blokkerende GitHub Actions Node.js 20-deprecationwaarschuwing;
 - er is geen handmatige businessdatawijziging, cleanup of fictieve customer/project/sitecreatie uitgevoerd.
 
 ### Referentiecontract - DONE / PRESERVE
@@ -105,6 +115,9 @@ Production bevat momenteel `0` commercial projects. Daarom zijn `project = null`
 - project-isolated en multi-project-isolated financial projection;
 - bestaande customer preview authority waar reeds checkpointed;
 - bestaande Drive documentauthority.
+- immutable legacy test cleanup allowlist voor exact elf historische test-/ontwikkelingsdossiers;
+- fail-closed identity- en blockerassertions, zonder delete- of cleanupauthority;
+- append-only consumption evidence foundation, production count `0`.
 
 Deze onderdelen zijn geen opdracht voor heranalyse of herontwerp in een volgende sessie.
 
@@ -127,13 +140,64 @@ De bestaande workflowauthority blijft behouden in deze volgorde: offerte -> verz
 
 **OPEN / NEXT.** Dit checkpoint start geen implementatie en autoriseert geen deletefunctie.
 
-- de huidige lijst mag niet onbeperkt blijven groeien;
-- structureer dossiers per jaar en daarbinnen als Q1 / Q2 / Q3 / Q4;
-- zoeken en filteren moet binnen dossiers mogelijk worden en toekomstige jaren moeten uitbreidbaar blijven;
-- testdossiers moeten later gecontroleerd verwijderbaar kunnen zijn;
-- echte commerciele of boekhoudkundige records mogen nooit als testdata worden behandeld;
-- delete-authority moet daarom expliciet onderscheid maken tussen TEST en echte production/commerciele records;
-- ontwerp geen delete-implementatie voordat bestaande data-authority, relaties, auditvereisten en wettelijke bewaarplichten zijn geinventariseerd.
+- testdossiers moeten later gecontroleerd verwijderd kunnen worden, maar verwijderen mag niet onmiddellijk permanent zijn;
+- voor verwijderen is een tweede bevestiging/pop-up vereist met exact: **"Ben je zeker dat je dit dossier wilt verwijderen?"**;
+- verwijderde testdossiers gaan eerst naar een prullenmand-/trash-status en moeten vanuit de prullenmand herstelbaar blijven;
+- de bewaartermijn van trash is een afzonderlijke OPEN authoritybeslissing; `30` of `60` dagen zijn uitsluitend voorbeelden en worden hier niet gekozen;
+- officiele, production-, commerciele of boekhoudkundige records krijgen niet dezelfde cleanup-authority zonder afzonderlijke wettelijke/business authority;
+- ontwerp geen hard delete van officiele records zonder expliciete authority;
+- offerte-, factuur-, contract-, payment- en overige wettelijke bewaarplichten moeten worden gerespecteerd;
+- inventariseer voor implementatie de bestaande data-authority, relaties, auditvereisten en het onderscheid TEST versus echte production-/commercial records;
+- de huidige lijst mag niet onbeperkt blijven groeien: structureer dossiers per jaar en daarbinnen als Q1 / Q2 / Q3 / Q4;
+- het Operator-overzicht vereist een statusoverzicht en schaalbaar zoeken/filteren; status moet een bruikbare index/filter zijn;
+- geannuleerde dossiers moeten extern duidelijk herkenbaar zijn met status **Geannuleerd** en een rode statusweergave naast/bij bestaande statussen zoals **Ingediend**;
+- SDF moet in de latere dossierflow worden meegenomen;
+- bestaande offertes, facturen, contracten/wijzigingen en documentenflow blijven gekoppeld aan dezelfde dossierauthority;
+- de bestaande 40/40/rest paymentauthority blijft onaangeraakt.
+
+##### Actieve Operatorwerkruimte
+
+De toekomstige primaire Operatorweergave is een dagelijkse werkruimte en geen onbeperkte lijst waarin alle dossiers jarenlang permanent zichtbaar blijven. Zij bevat in hoofdzaak operationeel relevante dossiers, waaronder nieuwe aanvragen, ingediende dossiers, dossiers in behandeling, dossiers die wachten op actie, actieve klanten/projecten en andere dossiers waarvoor nog werk nodig is.
+
+##### Archief en heractiveren
+
+Afgewerkte of niet langer operationeel actieve dossiers moeten uit de dagelijkse actieve lijst kunnen verdwijnen zonder het onderliggende dossier of officiele documenten te verwijderen. **Archiveren is niet hetzelfde als verwijderen.** Een gearchiveerd dossier en zijn relevante gegevens, historiek en documenten blijven bewaard volgens de nog vast te stellen wettelijke/business-retentieauthority.
+
+Een gearchiveerd dossier moet later opnieuw vindbaar en rechtstreeks oproepbaar zijn. Wanneer een klant na een of meerdere jaren opnieuw contact opneemt, moet de Operator het bestaande dossier kunnen vinden en openen, de historiek en documenten kunnen raadplegen en, waar functioneel toegestaan, het dossier opnieuw actief kunnen markeren. Heractivering laat het bestaande dossier terugkeren in de actieve Operatorwerkruimte en maakt niet uitsluitend wegens hernieuwde activiteit een duplicaat klant- of dossierrecord.
+
+##### Globale search en schaalbare navigatie
+
+De toekomstige search doorzoekt conceptueel niet alleen de actieve werkruimte, maar ook gearchiveerde dossiers en, waar toegestaan, verwijderde testdossiers in trash. Ieder zoekresultaat toont duidelijk zijn zone/status, bijvoorbeeld **Actief**, **Gearchiveerd**, **Geannuleerd** of **Prullenmand**. Een gearchiveerd resultaat moet rechtstreeks oproepbaar zijn zonder eerst door oude jaar- of kwartaalpagina's te navigeren.
+
+Jaar en Q1 / Q2 / Q3 / Q4 zijn filter- en navigatiestructuur, geen eeuwige hoofdlist met tientallen permanent zichtbare jaarknoppen. Oudere jaren blijven via archief, filter en search bereikbaar zonder de dagelijkse interface te belasten. Het ontwerp moet ook bij duizenden dossiers schaalbaar blijven:
+
+- laad nooit duizenden dossiers in een keer naar de browser;
+- haal alleen de benodigde subset op via server-side filtering/pagination of een gelijkwaardig schaalbaar mechanisme;
+- scheid actieve en gearchiveerde views logisch;
+- ontwerp search eveneens server-side en schaalbaar;
+- kies in deze fase nog geen concrete pagination-, search- of UX-techniek.
+
+##### Archiveren, trash en Geannuleerd blijven afzonderlijk
+
+- **Archiveren** is normaal lifecyclebeheer: het dossier blijft geldig en bewaard, documenten blijven bestaan, het dossier blijft oproepbaar en kan potentieel worden geheractiveerd.
+- **Trash** is uitsluitend voor records waarvoor toekomstige authority gecontroleerde verwijdering toestaat, in het bijzonder testdata. Trash vereist de beveiligde bevestiging, blijft tijdelijk herstelbaar en heeft nog geen gekozen retentieperiode (`30` of `60` dagen blijft OPEN). Hard delete na retentie mag alleen als toekomstige authority dit expliciet toestaat.
+- Voor officiele/business records wordt geen hard-delete-authority aangenomen.
+- **Geannuleerd** blijft een duidelijke rode status in overzicht en index, niet automatisch een verwijdering. Een geannuleerd dossier kan afhankelijk van de toekomstige lifecycle later worden gearchiveerd.
+
+Archiveren of heractiveren mag offertes, facturen, SDF, documentenflow, klant-/projecthistoriek of paymentauthority niet loskoppelen of wijzigen. De bestaande 40/40/rest paymentauthority blijft onaangeraakt.
+
+##### Expliciet OPEN authoritybeslissingen
+
+Deze documentatiefase maakt de volgende keuzes niet definitief:
+
+- exacte archiefstatus en database-representatie;
+- exacte lifecycle-state-machine;
+- wanneer automatisch of handmatig archiveren is toegestaan;
+- exacte permissies voor heractiveren;
+- trash-retentie van `30` versus `60` dagen;
+- wettelijke/business-retentie per documenttype;
+- concrete pagination- en searchtechniek;
+- UX-detail van de actieve werkruimte en archiefweergave.
 
 #### B. Echte project/site businessbinding
 
@@ -176,7 +240,7 @@ Iedere volgende sessie leest eerst deze CURRENT-sectie. Een brede heranalyse van
 
 ### Exacte volgende kandidaatfase
 
-De logisch eerstvolgende kandidaat is **DOSSIERBEHEER / OPERATOR STRUCTURE - authority inventory**. Inventariseer eerst data-authority, relaties, auditvereisten, wettelijke bewaarplichten en het onderscheid TEST versus echte production/commerciele records. Jaar-/kwartaalstructuur, zoeken/filteren en gecontroleerde test-delete blijven requirements; dit checkpoint ontwerpt of bouwt nog geen deletefunctie.
+De logisch eerstvolgende kandidaat is **DOSSIER MANAGEMENT / OPERATOR STRUCTURE - authority inventory**. Inventariseer eerst data-authority, relaties, auditvereisten, wettelijke bewaarplichten, trash/restore en het onderscheid TEST versus echte production/commerciele records. De trash-retentie blijft een afzonderlijke OPEN authoritybeslissing. Jaar-/kwartaalstructuur, statusindex, zoeken/filteren en gecontroleerde niet-permanente verwijdering van testdossiers blijven requirements; dit checkpoint ontwerpt of bouwt geen deletefunctie, trashflow, Operator UI of andere implementatie.
 
 Dit checkpoint kiest alleen de kandidaat en start geen implementatie.
 
