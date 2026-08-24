@@ -14,6 +14,107 @@ Dit document is vanaf 14 augustus 2026 de primaire hervattingsbron voor Lorenzo 
 
 De code, migrations en runtimeconfiguratie blijven de technische bron van waarheid. Dit checkpoint vervangt geen historische evidence; het bepaalt welke Git- en projectstatus bij hervatting actueel is. Neem nooit secrets, raw tokens, private capabilities, service-role credentials of private environmentwaarden op in repositorydocumentatie.
 
+## CURRENT / AUTHORITATIVE continuity - Phase-2C production release - 24-08-2026
+
+Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor iedere volgende sessie. Zij actualiseert uitsluitend de actuele resume-status van eerdere CURRENT-secties hieronder. Alle oudere checkpoints, releasesecties en evidence blijven ongewijzigd historisch bewijs. Dit bestaande document blijft de primaire continuity-authority; er is geen afzonderlijk checkpointbestand aangemaakt.
+
+### Phase 2C production release - DONE / PRODUCTION / PRESERVE
+
+| Eigenschap | Actuele authority |
+|---|---|
+| Fase | Phase 2C - Operator browserintegratie met v2 readmodel en deterministische assetversioning |
+| Status | **DONE / PRODUCTION / PRESERVE** |
+| Production/main SHA | `21d375c3b3e5f13d948d9b1a85aed0a677f220b2` |
+| Feature SHA | `21d375c3b3e5f13d948d9b1a85aed0a677f220b2` |
+| GitHub Pages | run `32721354386`; **SUCCESS**; head SHA exact gelijk aan production/main SHA |
+| Asset release-id | `20260824-phase2c` |
+| Productionwijziging | Uitsluitend de gecontroleerde main/GitHub Pages-browserrelease |
+
+Phase 2C mag niet opnieuw worden geopend zonder een concrete regressie of een nieuwe afzonderlijk geautoriseerde requirement.
+
+### Live production evidence - DONE / PRESERVE
+
+- Operator dashboard live: **PASS**;
+- bestaande menselijke operatorsessie en autorisatie: **PASS**;
+- standaardwerkruimte `ACTIVE`: **PASS**;
+- server-side search op naam: **PASS**;
+- server-side search op bedrijf/organisatie: **PASS**;
+- server-side search op referentie: **PASS**;
+- zones `ACTIVE`, `ARCHIVED` en `TRASHED`: **PASS**;
+- trash isolation: **PRESERVED**;
+- backendsemantiek `CANCELLED`: **PRESERVED**;
+- UI-label `GEANNULEERD`: **PASS**;
+- dynamische jaarfacets: **PASS**;
+- dynamische kwartaalfacets: **PASS**;
+- request-kindfilter: **PASS**.
+
+Er zijn tijdens deze controles geen klantgegevens gewijzigd, geen lifecyclemutaties uitgevoerd en geen productiefixtures aangemaakt.
+
+### Pagination - DONE / PRESERVE
+
+- de actuele productiedataset bevat minder dan `50` resultaten in de geteste standaardscope;
+- de live eerste pagina gebruikt `limit = 50`;
+- het signed `next_cursor`-contract is aanwezig;
+- raw `next_position` is niet browser-facing en niet exposed;
+- **Meer laden** kon daarom niet veilig live worden uitgevoerd;
+- het goedgekeurde regressiebewijs voor keysetpagination, dedupe, racebescherming en eenmalige invalid-cursorrecovery blijft authoritative en preserved.
+
+### Cache- en assetrelease - DONE / PRESERVE
+
+De live dependencyketen is met HTTP `200` bewezen en gebruikt overal exact dezelfde release-id:
+
+```text
+HTML -> /assets/css/operator-dashboard.css?v=20260824-phase2c
+HTML -> /assets/js/operator-dashboard-guard.mjs?v=20260824-phase2c
+guard -> ./operator-dashboard.js?v=20260824-phase2c
+```
+
+Er zijn geen actieve onversioned duplicaatreferenties in deze HTML -> guard -> dashboardketen. De eerdere **MEDIUM** cachefinding is **CLOSED**. De resterende **LOW** betreft uitsluitend niet-releaseblokkerende toekomstige testrobustheid voor het expliciet afwijzen van later toegevoegde dubbele onversioned assetreferenties.
+
+### Security en backend preservation - DONE / PRESERVE
+
+- Phase 1 dossier-state authority: **PRESERVED**;
+- Phase 2B productionbackend: **PRESERVED**;
+- human-JWT-boundary: **PRESERVED**;
+- browser service-role: **NEE**;
+- protected v2 authority blijft via Edge lopen;
+- cursor signing: **PRESERVED**;
+- Content Security Policy: **PRESERVED**;
+- secret exposure: **NEE**;
+- nieuwe externe origins: **GEEN**;
+- database changed tijdens Phase 2C: **NEE**;
+- migration executed tijdens Phase 2C: **NEE**;
+- Edge Function redeployed tijdens Phase 2C: **NEE**;
+- secret changed tijdens Phase 2C: **NEE**.
+
+De bestaande Phase-1- en Phase-2B-authorities blijven gelden, waaronder numbering, `CANCELLED`-backendsemantiek, 40/40/rest, documents/SDF, legacy exact-11 authority, service-role transportisolatie, human JWT via Edge, `commercial-operator-command` v10 **ACTIVE** en de provisioned cursor-signingsecret zonder registratie van de secretwaarde.
+
+### Auth-probe 409 - INFORMATIONAL
+
+De bestaande fail-closed auth-authorityprobe met nul-UUID kan HTTP `409` / `PROJECT_NOT_FOUND` produceren. Dit gedrag bestond vóór Phase 2C, is geen Phase-2C-regressie en krijgt in deze checkpointtaak geen remediation.
+
+### Release findings
+
+- **BLOCKER = 0**;
+- **HIGH = 0**;
+- **MEDIUM = 0**;
+- **LOW = 1**, uitsluitend de niet-releaseblokkerende toekomstige assetreferentie-testrobustheid hierboven.
+
+### OPEN / NEXT - geen nieuwe genummerde fase geregistreerd
+
+De bestaande authority registreerde na Phase 2C geen `Phase 2D`. Daarom wordt geen nieuwe genummerde fase of implementatieauthority verzonnen. `Phase 2D` is niet gestart en deze continuity-update autoriseert geen volgende implementatie.
+
+De reeds vastgelegde future requirements blijven ongewijzigd open/future en preserved:
+
+- workforce- en teamarchitectuur met beperkte employee-Operatorrollen en least-privilege permissions;
+- dossier- en taskassignment, workflow/handoff, reassignment, suspend en gecontroleerde overname;
+- recruitment/vacatures en gecontroleerde onboarding;
+- transparante tijdregistratie en payrollvoorbereiding zonder hidden-surveillance-design;
+- financieel/accounting-dashboard met `Q1`/`Q2`/`Q3`/`Q4`, expected, authoritative invoiced, received, authoritative outstanding en accountant-/boekhouderexport;
+- XLSX/CSV en leesbare PDF-samenvatting, officiele-documentkoppeling, export-ID, timestamp en auditability.
+
+Geen van deze future scopes is in Phase 2C geimplementeerd of door dit checkpoint gestart.
+
 ## CURRENT / AUTHORITATIVE continuity - Phase-2B production release - 24-08-2026
 
 Deze sectie is de **CURRENT / AUTHORITATIVE resume** voor iedere volgende sessie. Zij actualiseert uitsluitend de actuele resume-status van eerdere CURRENT-secties hieronder. Alle oudere checkpoints, releasesecties en evidence blijven ongewijzigd historisch bewijs. Dit bestaande document blijft de primaire continuity-authority; er is geen afzonderlijk checkpointbestand aangemaakt.
