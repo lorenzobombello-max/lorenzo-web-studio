@@ -5,6 +5,31 @@ import { applicationIdentityPresentation, applicationLocatorFromUrl, application
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+const OPERATOR_ASSET_RELEASE = "20260824-phase2c";
+
+test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
+  const [html, guard, prepare, verify] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+    read("scripts/prepare-pages-dist.ps1"),
+    read("scripts/verify-pages-dist.ps1"),
+  ]);
+  const cssUrl = html.match(/href="([^"]*operator-dashboard\.css[^"]*)"/)?.[1];
+  const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
+  const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
+  assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
+    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_ASSET_RELEASE}`,
+    `./operator-dashboard.js?v=${OPERATOR_ASSET_RELEASE}`,
+  ]);
+  for (const url of [cssUrl, guardUrl, dashboardUrl]) {
+    assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), OPERATOR_ASSET_RELEASE);
+  }
+  assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
+  assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
+  assert.match(prepare, /"assets\/js\/operator-dashboard\.js"/);
+  assert.match(verify, /\$clean = \(\$clean -split '\\\?'\)\[0\]/);
+});
 
 test("operator shell links to the canonical dashboard route", async () => {
   const source = await read("operator/index.html");
