@@ -59,6 +59,51 @@ export function normalizeSupportReference(value) {
   return SUPPORT_REFERENCE.test(normalized) ? `#${normalized.replace(/^#/, "")}` : null;
 }
 
+export function dossierReferenceFromDetail(detail) {
+  const applicationReference = String(detail?.application_reference || "");
+  if (APPLICATION_REFERENCE.test(applicationReference)) return applicationReference;
+  return normalizeSupportReference(detail?.support_reference);
+}
+
+export function assignmentPresentation(assignment) {
+  const state = String(assignment?.assignment_state || "");
+  const revision = assignment?.revision;
+  const assigneeOperatorId = assignment?.assignee_operator_id ?? null;
+  const assigneeDisplayName = assignment?.assignee_display_name ?? null;
+  if (!new Set(["UNASSIGNED", "ASSIGNED"]).has(state)
+      || !Number.isSafeInteger(revision) || revision < 0
+      || (state === "UNASSIGNED" && (assigneeOperatorId !== null || assigneeDisplayName !== null))
+      || (state === "ASSIGNED" && (!UUID.test(String(assigneeOperatorId || "")) || typeof assigneeDisplayName !== "string" || !assigneeDisplayName))) return null;
+  return { state, revision, assigneeOperatorId, assigneeDisplayName };
+}
+
+export function buildAssignmentCommand(dossierReference, assignment, assigneeOperatorId, reason, idempotencyKey) {
+  const presentation = assignmentPresentation(assignment);
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  const isReassignment = presentation?.state === "ASSIGNED" && presentation.assigneeOperatorId !== assigneeOperatorId;
+  if (!dossierReference || !presentation || !UUID.test(String(assigneeOperatorId || ""))
+      || presentation.assigneeOperatorId === assigneeOperatorId || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length > 500 || (isReassignment && normalizedReason.length < 1)) throw new Error("INVALID_ASSIGNMENT_COMMAND");
+  return {
+    action: "assign_dossier",
+    dossier_reference: dossierReference,
+    assignee_operator_id: assigneeOperatorId,
+    expected_revision: presentation.revision,
+    idempotency_key: idempotencyKey,
+    ...(normalizedReason ? { reason: normalizedReason } : {}),
+  };
+}
+
+export function assignmentError(code) {
+  if (["AUTHENTICATION_REQUIRED", "INVALID_JWT", "HUMAN_JWT_REQUIRED", "OPERATOR_NOT_AUTHORIZED", "INSUFFICIENT_PERMISSIONS"].includes(code)) return { hide: true, refresh: false, message: "" };
+  if (["DOSSIER_NOT_FOUND", "AMBIGUOUS_DOSSIER_REFERENCE"].includes(code)) return { hide: true, refresh: false, message: "Dossiertoewijzing is voor dit dossier niet beschikbaar." };
+  if (["ASSIGNEE_OPERATOR_NOT_FOUND", "ASSIGNEE_NOT_ELIGIBLE"].includes(code)) return { hide: false, refresh: true, message: "Deze operator is niet meer beschikbaar. Kies opnieuw." };
+  if (["COMMAND_REJECTED", "CONCURRENT_MODIFICATION"].includes(code)) return { hide: false, refresh: true, message: "Het dossier werd ondertussen gewijzigd. De actuele toewijzing is geladen; bevestig opnieuw." };
+  if (code === "IDEMPOTENCY_CONFLICT") return { hide: false, refresh: true, message: "Deze poging conflicteert met een eerdere actie. De actuele toewijzing is geladen." };
+  if (code === "INVALID_REQUEST") return { hide: false, refresh: false, message: "De toewijzing kon niet worden verwerkt. Controleer je keuze." };
+  return { hide: false, refresh: false, message: "De toewijzing is tijdelijk niet beschikbaar. Probeer later opnieuw." };
+}
+
 export function projectSitePresentation(projectId, site) {
   if (!UUID.test(String(projectId || "")) || site?.project_id !== projectId) return null;
   const domain = String(site.canonical_domain || "");
@@ -446,6 +491,14 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const detailEmpty = document.getElementById("applicationDetailEmpty");
   const detailMessage = document.getElementById("applicationDetailMessage");
   const promote = document.getElementById("promoteApplication");
+  const assignmentDossier = document.getElementById("assignmentDossier");
+  const assignmentCurrent = document.getElementById("assignmentCurrent");
+  const assignmentForm = document.getElementById("assignmentForm");
+  const assignmentOperator = document.getElementById("assignmentOperator");
+  const assignmentReasonField = document.getElementById("assignmentReasonField");
+  const assignmentReason = document.getElementById("assignmentReason");
+  const assignmentSubmit = document.getElementById("assignmentSubmit");
+  const assignmentMessage = document.getElementById("assignmentMessage");
   const confirmation = document.getElementById("promotionDialog");
   const dossierLifecycleDossier = document.getElementById("dossierLifecycleDossier");
   const dossierLifecycleTitle = document.getElementById("dossierLifecycleTitle");
@@ -482,6 +535,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let selectedSummary = null;
   let selectedDetail = null;
   let detailRequestId = 0;
+  let assignmentState = null;
+  let assignmentRoster = [];
+  let assignmentReference = null;
+  let assignmentLoading = false;
+  let assignmentSubmitting = false;
   let dossierLifecycleBusy = false;
   let pendingDossierLifecycleAction = null;
   let lifecycleBusy = false;
@@ -536,11 +594,85 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     selectedLocator = null;
     selectedSummary = null;
     selectedDetail = null;
+    resetAssignment();
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
     dossierLifecycleMessage.textContent = "";
     lifecycleMessage.textContent = "";
     updateLocation(null);
+  }
+
+  function resetAssignment() {
+    assignmentState = null;
+    assignmentRoster = [];
+    assignmentReference = null;
+    assignmentLoading = false;
+    assignmentSubmitting = false;
+    assignmentDossier.hidden = true;
+    assignmentOperator.replaceChildren(new Option("Kies een operator", ""));
+    assignmentReason.value = "";
+    assignmentReasonField.hidden = true;
+    assignmentReason.required = false;
+    assignmentMessage.textContent = "";
+  }
+
+  function renderAssignment() {
+    const presentation = assignmentPresentation(assignmentState);
+    assignmentDossier.hidden = !presentation;
+    if (!presentation) return;
+    assignmentCurrent.textContent = presentation.state === "UNASSIGNED" ? "Niet toegewezen" : presentation.assigneeDisplayName;
+    const selected = assignmentOperator.value || presentation.assigneeOperatorId || "";
+    assignmentOperator.replaceChildren(new Option("Kies een operator", ""));
+    for (const operator of assignmentRoster) {
+      if (!UUID.test(String(operator?.operator_id || "")) || typeof operator?.display_name !== "string" || !operator.display_name) continue;
+      assignmentOperator.add(new Option(operator.display_name, operator.operator_id));
+    }
+    assignmentOperator.value = assignmentRoster.some((operator)=>operator.operator_id === selected) ? selected : "";
+    const isReassignment = presentation.state === "ASSIGNED" && assignmentOperator.value && assignmentOperator.value !== presentation.assigneeOperatorId;
+    assignmentReasonField.hidden = !isReassignment;
+    assignmentReason.required = Boolean(isReassignment);
+    const reasonLength = assignmentReason.value.trim().length;
+    const validReason = !isReassignment || (reasonLength >= 1 && reasonLength <= 500);
+    assignmentOperator.disabled = assignmentLoading || assignmentSubmitting || assignmentRoster.length === 0;
+    assignmentReason.disabled = assignmentLoading || assignmentSubmitting;
+    assignmentSubmit.disabled = assignmentLoading || assignmentSubmitting || !assignmentOperator.value
+      || assignmentOperator.value === presentation.assigneeOperatorId || !validReason;
+    if (assignmentLoading) assignmentMessage.textContent = "Toewijzing wordt geladen.";
+    else if (!assignmentRoster.length) assignmentMessage.textContent = "Er zijn momenteel geen beschikbare operators.";
+  }
+
+  async function loadAssignment(application, requestId, successMessage = "") {
+    const dossierReference = dossierReferenceFromDetail(application);
+    resetAssignment();
+    if (!dossierReference || requestId !== detailRequestId) return false;
+    assignmentReference = dossierReference;
+    assignmentLoading = true;
+    assignmentDossier.hidden = false;
+    assignmentMessage.textContent = "Toewijzing wordt geladen.";
+    try {
+      const [assignment, roster] = await Promise.all([
+        invoke({ action: "get_dossier_assignment", dossier_reference: dossierReference }),
+        invoke({ action: "get_assignment_operator_roster" }),
+      ]);
+      if (requestId !== detailRequestId || dossierReference !== dossierReferenceFromDetail(selectedDetail)) return false;
+      if (!assignmentPresentation(assignment) || !Array.isArray(roster)) throw new Error("INVALID_ASSIGNMENT_RESPONSE");
+      assignmentState = assignment;
+      assignmentRoster = roster;
+      assignmentLoading = false;
+      assignmentMessage.textContent = successMessage;
+      renderAssignment();
+      return true;
+    } catch (error) {
+      if (requestId !== detailRequestId) return false;
+      assignmentLoading = false;
+      const outcome = assignmentError(error instanceof Error ? error.message : "INTERNAL_ERROR");
+      assignmentDossier.hidden = outcome.hide;
+      assignmentOperator.disabled = true;
+      assignmentReason.disabled = true;
+      assignmentSubmit.disabled = true;
+      assignmentMessage.textContent = outcome.message;
+      return false;
+    }
   }
 
   function renderRecurringServices(pricing) {
@@ -797,6 +929,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       renderDetail(application);
       selectedLocator = locator;
       updateLocation(locator);
+      await loadAssignment(application, requestId);
+      if (requestId !== detailRequestId) return false;
       if (application.request_kind === "website" && application.project?.project_id) {
         detailMessage.textContent = "Projectdossier wordt geladen.";
         const project = await invoke({ action: "get_project_dossier", project_id: application.project.project_id });
@@ -913,6 +1047,42 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     listController.updateQuery({ quarter: quarterFilter.value || null });
   });
   loadMore.addEventListener("click", ()=>listController.loadMore());
+
+  assignmentOperator.addEventListener("change", renderAssignment);
+  assignmentReason.addEventListener("input", renderAssignment);
+  assignmentForm.addEventListener("submit", async (event)=>{
+    event.preventDefault();
+    if (assignmentSubmitting || !assignmentState || !assignmentReference) return;
+    let input;
+    try {
+      input = buildAssignmentCommand(assignmentReference, assignmentState, assignmentOperator.value, assignmentReason.value, crypto.randomUUID());
+    } catch {
+      assignmentMessage.textContent = "Kies een andere operator en vul bij hertoewijzing een reden in.";
+      renderAssignment();
+      return;
+    }
+    const requestId = detailRequestId;
+    assignmentSubmitting = true;
+    assignmentMessage.textContent = "Toewijzing wordt opgeslagen.";
+    renderAssignment();
+    try {
+      await invoke(input);
+      if (requestId === detailRequestId) await loadAssignment(selectedDetail, requestId, "De actuele toewijzing is geladen.");
+    } catch (error) {
+      if (requestId !== detailRequestId) return;
+      assignmentSubmitting = false;
+      const outcome = assignmentError(error instanceof Error ? error.message : "INTERNAL_ERROR");
+      if (outcome.refresh) await loadAssignment(selectedDetail, requestId, outcome.message);
+      else {
+        assignmentDossier.hidden = outcome.hide;
+        assignmentMessage.textContent = outcome.message;
+        renderAssignment();
+      }
+    } finally {
+      assignmentSubmitting = false;
+      if (requestId === detailRequestId && !assignmentDossier.hidden) renderAssignment();
+    }
+  });
 
   promote.addEventListener("click", ()=>confirmation.showModal());
   confirmation.addEventListener("close", async ()=>{

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -241,6 +241,52 @@ function dossierDetail(state, revision = 3) {
     dossier_lifecycle: { state, revision },
   };
 }
+
+test("assignment uses only canonical dossier references and authoritative read state", () => {
+  assert.equal(dossierReferenceFromDetail({ application_reference: "LWS-AAN-2099-0001", support_reference: "#F98B2F08", quote_request_id: "a1800000-0000-4000-8000-000000000040" }), "LWS-AAN-2099-0001");
+  assert.equal(dossierReferenceFromDetail({ support_reference: " f98b2f08 ", quote_request_id: "a1800000-0000-4000-8000-000000000040" }), "#F98B2F08");
+  assert.equal(dossierReferenceFromDetail({ quote_request_id: "a1800000-0000-4000-8000-000000000040" }), null);
+  assert.deepEqual(assignmentPresentation({ assignment_state: "UNASSIGNED", assignee_operator_id: null, assignee_display_name: null, revision: 2 }), { state: "UNASSIGNED", revision: 2, assigneeOperatorId: null, assigneeDisplayName: null });
+  assert.equal(assignmentPresentation({ assignment_state: "ASSIGNED", assignee_operator_id: "a1800000-0000-4000-8000-000000000050", assignee_display_name: "Operator", revision: 3 }).assigneeDisplayName, "Operator");
+});
+
+test("assignment command keeps read revision and requires reason only for true reassignment", () => {
+  const uuid = "a1800000-0000-4000-8000-000000000051";
+  const operator = "a1800000-0000-4000-8000-000000000050";
+  const unassigned = { assignment_state: "UNASSIGNED", assignee_operator_id: null, assignee_display_name: null, revision: 2 };
+  assert.deepEqual(buildAssignmentCommand("#F98B2F08", unassigned, operator, "", uuid), { action: "assign_dossier", dossier_reference: "#F98B2F08", assignee_operator_id: operator, expected_revision: 2, idempotency_key: uuid });
+  const assigned = { assignment_state: "ASSIGNED", assignee_operator_id: "a1800000-0000-4000-8000-000000000052", assignee_display_name: "Vorige", revision: 7 };
+  assert.equal(buildAssignmentCommand("#F98B2F08", assigned, operator, "  Nieuwe planning  ", uuid).reason, "Nieuwe planning");
+  assert.throws(()=>buildAssignmentCommand("#F98B2F08", assigned, operator, "", uuid), /INVALID_ASSIGNMENT_COMMAND/);
+  assert.throws(()=>buildAssignmentCommand("#F98B2F08", assigned, assigned.assignee_operator_id, "reden", uuid), /INVALID_ASSIGNMENT_COMMAND/);
+  assert.equal(assigned.revision, 7);
+});
+
+test("assignment errors refresh server authority without mutation retry", () => {
+  for (const code of ["AUTHENTICATION_REQUIRED", "INVALID_JWT", "HUMAN_JWT_REQUIRED", "OPERATOR_NOT_AUTHORIZED", "INSUFFICIENT_PERMISSIONS"]) assert.equal(assignmentError(code).hide, true);
+  for (const code of ["CONCURRENT_MODIFICATION", "COMMAND_REJECTED", "IDEMPOTENCY_CONFLICT", "ASSIGNEE_NOT_ELIGIBLE"]) assert.equal(assignmentError(code).refresh, true);
+  assert.doesNotMatch(assignmentError("raw postgres error").message, /postgres|SQL/i);
+});
+
+test("assignment UI is bounded, accessible, stale-safe, and Edge-only", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="applicationDetail"[\s\S]*id="assignmentDossier"[\s\S]*id="dossierLifecycleDossier"/);
+  assert.match(html, /<label for="assignmentOperator">[\s\S]*<select id="assignmentOperator"/);
+  assert.match(html, /<label id="assignmentReasonField" for="assignmentReason" hidden>[\s\S]*maxlength="500"/);
+  assert.match(html, /id="assignmentSubmit"[^>]*disabled>Toewijzen</);
+  assert.match(html, /id="assignmentMessage"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.doesNotMatch(html, /Mijn dossiers|unassign|assignment history/i);
+  assert.match(script, /invoke\(\{ action: "get_dossier_assignment", dossier_reference: dossierReference \}\)/);
+  assert.match(script, /invoke\(\{ action: "get_assignment_operator_roster" \}\)/);
+  assert.match(script, /buildAssignmentCommand\(assignmentReference, assignmentState, assignmentOperator\.value, assignmentReason\.value, crypto\.randomUUID\(\)\)/);
+  assert.match(script, /if \(assignmentSubmitting \|\| !assignmentState \|\| !assignmentReference\) return/);
+  assert.match(script, /await invoke\(input\);[\s\S]{0,180}await loadAssignment\(selectedDetail, requestId/);
+  assert.match(script, /if \(outcome\.refresh\) await loadAssignment\(selectedDetail, requestId, outcome\.message\)/);
+  assert.match(script, /requestId !== detailRequestId \|\| dossierReference !== dossierReferenceFromDetail\(selectedDetail\)/);
+  assert.match(script, /selectedDetail = null;\s*resetAssignment\(\)/);
+  assert.doesNotMatch(script, /client\.rpc\(/);
+  assert.doesNotMatch(script, /assignmentState\.revision\s*(?:\+\+|\+=|=\s*assignmentState\.revision\s*\+)/);
+});
 
 test("dossier lifecycle actions follow only authoritative detail state and revision", () => {
   assert.deepEqual(dossierLifecyclePresentation(dossierDetail("ACTIVE").dossier_lifecycle).actions, ["archive_dossier", "trash_dossier"]);
