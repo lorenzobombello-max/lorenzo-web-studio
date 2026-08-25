@@ -484,6 +484,13 @@ export function sdfM1InvoiceCandidatePresentation(application) {
 }
 
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
+  const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
+  const personalQueueList = document.getElementById("personalQueueList");
+  const personalQueueEmpty = document.getElementById("personalQueueEmpty");
+  const personalQueueMessage = document.getElementById("personalQueueMessage");
+  const personalQueueRefresh = document.getElementById("personalQueueRefresh");
+  const personalQueueLoadMore = document.getElementById("personalQueueLoadMore");
+  const managerWorkspace = document.getElementById("managerWorkspace");
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
   const listMessage = document.getElementById("applicationListMessage");
@@ -551,6 +558,38 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     return response.body.result;
   }
 
+  function renderPersonalQueue(items) {
+    personalQueueList.replaceChildren();
+    for (const dossier of items) {
+      const item = document.createElement("li");
+      const identity = document.createElement("div");
+      const reference = document.createElement("strong");
+      const assignedAt = document.createElement("small");
+      const statuses = document.createElement("div");
+      reference.textContent = dossier.reference;
+      assignedAt.textContent = `Toegewezen op ${formatDate(dossier.assigned_at)}`;
+      identity.append(reference, assignedAt);
+      statuses.className = "personal-queue-list__statuses";
+      statuses.append(badge(dossier.status), badge(dossier.zone));
+      item.append(identity, statuses);
+      personalQueueList.append(item);
+    }
+  }
+
+  const personalQueueController = createPersonalQueueController(invoke, (state)=>{
+    renderPersonalQueue(state.items);
+    personalQueueMessage.textContent = state.loading
+      ? state.items.length ? "Meer dossiers laden…" : "Dossiers laden…"
+      : state.error ? "De dossiers konden niet worden geladen. Probeer het later opnieuw." : "";
+    personalQueueEmpty.hidden = state.loading || Boolean(state.error) || state.items.length > 0;
+    personalQueueRefresh.disabled = state.loading;
+    personalQueueLoadMore.hidden = !state.has_more || !state.next_cursor;
+    personalQueueLoadMore.disabled = state.loading || !state.has_more || !state.next_cursor;
+  });
+  personalQueueRefresh.addEventListener("click", ()=>personalQueueController.refresh());
+  personalQueueLoadMore.addEventListener("click", ()=>personalQueueController.loadMore());
+  personalQueueWorkspace.hidden = false;
+
   function renderFacets(facets, selectedYear, selectedQuarter) {
     const years = Array.isArray(facets?.years) ? facets.years : [];
     yearFilter.replaceChildren(new Option("Alle jaren", ""));
@@ -577,6 +616,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     loadMore.hidden = !state.next_cursor;
     loadMore.disabled = state.loading || !state.next_cursor;
   });
+
+  const dashboardRoute = await resolveDashboardAuthority({
+    loadPersonalQueue: ()=>personalQueueController.load(),
+    getPersonalQueueError: ()=>personalQueueController.state.error,
+    loadManagerAuthority: ()=>listController.load(),
+  });
+  if (dashboardRoute !== "manager") return;
+  personalQueueWorkspace.hidden = true;
+  managerWorkspace.hidden = false;
 
   function updateLocation(locator) {
     const url = new URL(window.location.href);
@@ -1247,8 +1295,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const summary = listController.state.items.find((item)=>locatorMatchesApplication(selectedLocator, item));
     if (summary) await loadDetail(selectedLocator, summary);
     else clearDetail();
-  } else {
-    await loadList();
   }
 }
 
@@ -1368,6 +1414,87 @@ export function appendUniqueOperatorItems(current, incoming) {
     items.push(item);
   }
   return items;
+}
+
+const PERSONAL_QUEUE_FIELDS = new Set(["reference", "source", "zone", "status", "assigned_at", "assignment_revision"]);
+
+export function personalQueueRequest(cursor = null) {
+  const request = { action: "get_my_assigned_dossiers", limit: 25 };
+  if (cursor) request.cursor = cursor;
+  return request;
+}
+
+export function appendUniquePersonalQueueItems(current, incoming) {
+  const items = [...current];
+  const seen = new Set(items.map((item)=>item.reference));
+  for (const item of incoming) {
+    const keys = item && typeof item === "object" ? Object.keys(item) : [];
+    const valid = keys.length === PERSONAL_QUEUE_FIELDS.size
+      && keys.every((key)=>PERSONAL_QUEUE_FIELDS.has(key))
+      && [item.reference, item.source, item.zone, item.status, item.assigned_at].every((value)=>typeof value === "string" && value.length > 0)
+      && Number.isSafeInteger(item.assignment_revision);
+    if (!valid) throw new Error("INVALID_PERSONAL_QUEUE");
+    if (seen.has(item.reference)) continue;
+    seen.add(item.reference);
+    items.push(item);
+  }
+  return items;
+}
+
+export async function resolveDashboardAuthority({ loadPersonalQueue, getPersonalQueueError, loadManagerAuthority }) {
+  if (await loadPersonalQueue()) return "personal";
+  if (getPersonalQueueError() !== "OPERATOR_NOT_AUTHORIZED") return "closed";
+  try {
+    return await loadManagerAuthority() ? "manager" : "closed";
+  } catch {
+    return "closed";
+  }
+}
+
+export function createPersonalQueueController(invoke, onChange = ()=>{}) {
+  const state = { items: [], has_more: false, next_cursor: null, loading: false, error: null };
+  const publish = ()=>onChange({ ...state, items: [...state.items] });
+
+  async function loadPage({ append = false } = {}) {
+    if (state.loading || (append && (!state.has_more || !state.next_cursor))) return false;
+    const cursor = append ? state.next_cursor : null;
+    state.loading = true;
+    state.error = null;
+    publish();
+    try {
+      const page = await invoke(personalQueueRequest(cursor));
+      if (!page || !Array.isArray(page.items) || typeof page.has_more !== "boolean"
+        || (page.next_cursor !== null && typeof page.next_cursor !== "string")
+        || (page.has_more && !page.next_cursor)) throw new Error("INVALID_PERSONAL_QUEUE");
+      state.items = append
+        ? appendUniquePersonalQueueItems(state.items, page.items)
+        : appendUniquePersonalQueueItems([], page.items);
+      state.has_more = page.has_more;
+      state.next_cursor = page.next_cursor;
+      return true;
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      state.loading = false;
+      publish();
+    }
+  }
+
+  return {
+    state,
+    load: ()=>loadPage(),
+    loadMore: ()=>loadPage({ append: true }),
+    refresh: ()=>{
+      if (state.loading) return Promise.resolve(false);
+      state.items = [];
+      state.has_more = false;
+      state.next_cursor = null;
+      state.error = null;
+      publish();
+      return loadPage();
+    },
+  };
 }
 
 export function operatorFacetSelection(facets, selectedYear, selectedQuarter) {

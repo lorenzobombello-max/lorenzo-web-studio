@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, createPersonalQueueController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -95,6 +95,163 @@ test("production dashboard uses real application data and no synthetic state", a
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
   assert.match(css, /\.dashboard-grid/);
   assert.match(css, /\.application-list/);
+});
+
+const personalQueueItem = (reference, revision = 1) => ({
+  reference,
+  source: "website",
+  zone: "ACTIVE",
+  status: "SUBMITTED",
+  assigned_at: "2099-01-03T11:00:00Z",
+  assignment_revision: revision,
+});
+
+test("personal queue request is caller-scoped and uses the bounded default", () => {
+  assert.deepEqual(personalQueueRequest(), { action: "get_my_assigned_dossiers", limit: 25 });
+  assert.deepEqual(personalQueueRequest("aabb"), { action: "get_my_assigned_dossiers", limit: 25, cursor: "aabb" });
+  for (const forbidden of ["operator_id", "assignee_operator_id", "auth_user_id", "role", "status"]) {
+    assert.equal(Object.hasOwn(personalQueueRequest(), forbidden), false);
+  }
+});
+
+test("personal queue accepts only the exact safe projection and removes duplicates", () => {
+  const first = personalQueueItem("LWS-AAN-2099-0001");
+  assert.deepEqual(appendUniquePersonalQueueItems([first], [first, personalQueueItem("#F98B2F08")]).map((item)=>item.reference), ["LWS-AAN-2099-0001", "#F98B2F08"]);
+  assert.throws(()=>appendUniquePersonalQueueItems([], [{ ...first, name: "Verboden klantveld" }]), /INVALID_PERSONAL_QUEUE/);
+  assert.throws(()=>appendUniquePersonalQueueItems([], [{ ...first, email: "verboden@example.test" }]), /INVALID_PERSONAL_QUEUE/);
+});
+
+test("personal queue load-more appends by next cursor and busy guard blocks overlap", async () => {
+  const requests = [];
+  let releaseFirst;
+  const firstPage = new Promise((resolve)=>{ releaseFirst = resolve; });
+  const controller = createPersonalQueueController(async (request)=>{
+    requests.push(request);
+    if (requests.length === 1) return await firstPage;
+    return { items: [personalQueueItem("#F98B2F08")], has_more: false, next_cursor: null };
+  });
+  const firstLoad = controller.load();
+  assert.equal(await controller.load(), false);
+  releaseFirst({ items: [personalQueueItem("LWS-AAN-2099-0001")], has_more: true, next_cursor: "aabb" });
+  assert.equal(await firstLoad, true);
+  assert.equal(await controller.loadMore(), true);
+  assert.deepEqual(requests, [personalQueueRequest(), personalQueueRequest("aabb")]);
+  assert.deepEqual(controller.state.items.map((item)=>item.reference), ["LWS-AAN-2099-0001", "#F98B2F08"]);
+  assert.equal(await controller.loadMore(), false);
+  assert.equal(requests.length, 2);
+});
+
+test("personal queue refresh clears pagination and replaces the queue", async () => {
+  const requests = [];
+  const controller = createPersonalQueueController(async (request)=>{
+    requests.push(request);
+    return requests.length === 1
+      ? { items: [personalQueueItem("LWS-AAN-2099-0001")], has_more: true, next_cursor: "aabb" }
+      : { items: [personalQueueItem("#F98B2F08", 2)], has_more: false, next_cursor: null };
+  });
+  await controller.load();
+  await controller.refresh();
+  assert.deepEqual(requests, [personalQueueRequest(), personalQueueRequest()]);
+  assert.deepEqual(controller.state.items.map((item)=>item.reference), ["#F98B2F08"]);
+  assert.equal(controller.state.next_cursor, null);
+});
+
+test("personal queue workspace renders only safe non-clickable dossier information", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  const workspace = html.match(/<section id="personalQueueWorkspace"[\s\S]*?<\/section>\s*<div id="managerWorkspace"/)?.[0] || "";
+  const renderer = script.match(/function renderPersonalQueue\(items\) \{[\s\S]*?\n  \}\n\n  const personalQueueController/)?.[0] || "";
+  assert.match(workspace, /Mijn dossiers/);
+  assert.match(workspace, /id="personalQueueList"/);
+  assert.match(workspace, /Er zijn momenteel geen dossiers aan jou toegewezen\./);
+  assert.match(workspace, />Vernieuwen</);
+  assert.match(workspace, />Meer laden</);
+  assert.doesNotMatch(workspace, /klant|organisatie|e-mail|contact|uuid|history/i);
+  assert.doesNotMatch(workspace, /href=|Open dossier|get_application_detail/);
+  assert.match(script, /reference\.textContent = dossier\.reference/);
+  assert.match(script, /badge\(dossier\.status\), badge\(dossier\.zone\)/);
+  assert.match(script, /formatDate\(dossier\.assigned_at\)/);
+  assert.doesNotMatch(renderer, /get_application_detail|get_operator_application_v1|support_reference/);
+});
+
+test("personal queue routing is server-result-driven and fails closed", async () => {
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /loadManagerAuthority: \(\)=>listController\.load\(\)/);
+  assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
+  assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
+  assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
+  assert.doesNotMatch(script, /\.rpc\(/);
+  assert.doesNotMatch(script, /localStorage/);
+});
+
+test("dashboard authority resolver keeps operator success out of manager flow", async () => {
+  let managerCalls = 0;
+  const route = await resolveDashboardAuthority({
+    loadPersonalQueue: async ()=>true,
+    getPersonalQueueError: ()=>null,
+    loadManagerAuthority: async ()=>{ managerCalls += 1; return true; },
+  });
+  assert.equal(route, "personal");
+  assert.equal(managerCalls, 0);
+});
+
+test("dashboard authority resolver requires a separate successful manager proof", async () => {
+  let managerVisible = false;
+  let managerDataRendered = false;
+  const route = await resolveDashboardAuthority({
+    loadPersonalQueue: async ()=>false,
+    getPersonalQueueError: ()=>"OPERATOR_NOT_AUTHORIZED",
+    loadManagerAuthority: async ()=>{
+      assert.equal(managerVisible, false);
+      managerDataRendered = true;
+      return true;
+    },
+  });
+  assert.equal(route, "manager");
+  assert.equal(managerVisible, false);
+  assert.equal(managerDataRendered, true);
+  if (route === "manager") managerVisible = true;
+  assert.equal(managerVisible, true);
+});
+
+test("dashboard authority resolver fails closed for every unproven manager response", async () => {
+  for (const code of ["AUTHENTICATION_REQUIRED", "OPERATOR_NOT_AUTHORIZED", "INTERNAL_ERROR"]) {
+    const route = await resolveDashboardAuthority({
+      loadPersonalQueue: async ()=>false,
+      getPersonalQueueError: ()=>"OPERATOR_NOT_AUTHORIZED",
+      loadManagerAuthority: async ()=>{ throw new Error(code); },
+    });
+    assert.equal(route, "closed", `manager ${code} must fail closed`);
+  }
+  const disabledOrRevoked = await resolveDashboardAuthority({
+    loadPersonalQueue: async ()=>false,
+    getPersonalQueueError: ()=>"OPERATOR_NOT_AUTHORIZED",
+    loadManagerAuthority: async ()=>false,
+  });
+  assert.equal(disabledOrRevoked, "closed");
+});
+
+test("personal authentication and server failures never start a manager probe", async () => {
+  for (const personalError of ["AUTHENTICATION_REQUIRED", "INVALID_JWT", "INTERNAL_ERROR", "OPERATOR_REQUEST_FAILED"]) {
+    let managerCalls = 0;
+    const route = await resolveDashboardAuthority({
+      loadPersonalQueue: async ()=>false,
+      getPersonalQueueError: ()=>personalError,
+      loadManagerAuthority: async ()=>{ managerCalls += 1; return true; },
+    });
+    assert.equal(route, "closed");
+    assert.equal(managerCalls, 0, `personal ${personalError} must not probe manager authority`);
+  }
+});
+
+test("personal queue loading, refresh, pagination, and manager separation are explicit", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="managerWorkspace" hidden/);
+  assert.match(script, /"Dossiers laden…"/);
+  assert.match(script, /"Meer dossiers laden…"/);
+  assert.match(script, /personalQueueRefresh\.addEventListener\("click", \(\)=>personalQueueController\.refresh\(\)\)/);
+  assert.match(script, /personalQueueLoadMore\.addEventListener\("click", \(\)=>personalQueueController\.loadMore\(\)\)/);
+  assert.match(script, /personalQueueLoadMore\.hidden = !state\.has_more \|\| !state\.next_cursor/);
+  assert.match(script, /personalQueueRefresh\.disabled = state\.loading/);
 });
 
 test("application reference query is the only accepted human locator", () => {
@@ -270,12 +427,14 @@ test("assignment errors refresh server authority without mutation retry", () => 
 
 test("assignment UI is bounded, accessible, stale-safe, and Edge-only", async () => {
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  const managerWorkspace = html.split('<div id="managerWorkspace" hidden>')[1] || "";
   assert.match(html, /id="applicationDetail"[\s\S]*id="assignmentDossier"[\s\S]*id="dossierLifecycleDossier"/);
   assert.match(html, /<label for="assignmentOperator">[\s\S]*<select id="assignmentOperator"/);
   assert.match(html, /<label id="assignmentReasonField" for="assignmentReason" hidden>[\s\S]*maxlength="500"/);
   assert.match(html, /id="assignmentSubmit"[^>]*disabled>Toewijzen</);
   assert.match(html, /id="assignmentMessage"[^>]*role="status"[^>]*aria-live="polite"/);
-  assert.doesNotMatch(html, /Mijn dossiers|unassign|assignment history/i);
+  assert.match(html, /id="personalQueueWorkspace"[\s\S]*id="managerWorkspace"/);
+  assert.doesNotMatch(managerWorkspace, /Mijn dossiers|unassign|assignment history/i);
   assert.match(script, /invoke\(\{ action: "get_dossier_assignment", dossier_reference: dossierReference \}\)/);
   assert.match(script, /invoke\(\{ action: "get_assignment_operator_roster" \}\)/);
   assert.match(script, /buildAssignmentCommand\(assignmentReference, assignmentState, assignmentOperator\.value, assignmentReason\.value, crypto\.randomUUID\(\)\)/);

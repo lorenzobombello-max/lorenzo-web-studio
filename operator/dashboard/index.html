@@ -20,6 +20,11 @@
     <a class="skip-link" href="#workspace">Ga naar dashboard</a>
     <header class="topbar"><a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatorsessie"><img class="identity__mark" src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span><strong>Lorenzo Web Solutions</strong><small>Operator dashboard</small></span></a><div class="topbar__status"><span class="badge badge--cyan">OPERATOR</span><button id="operatorDashboardLogoutActive" class="topbar__logout" type="button">Afmelden</button></div></header>
     <main id="workspace" class="workspace">
+      <section id="personalQueueWorkspace" class="personal-queue-workspace" aria-labelledby="personalQueueTitle" hidden>
+        <div class="project-heading"><div><p class="eyebrow">Operatorworkspace</p><h1 id="personalQueueTitle">Mijn dossiers</h1><p>De dossiers die momenteel aan jou zijn toegewezen.</p></div><button id="personalQueueRefresh" type="button" class="secondary-action">Vernieuwen</button></div>
+        <section class="panel" aria-labelledby="personalQueueListTitle"><div class="panel__heading"><div><p class="eyebrow">Toegewezen werk</p><h2 id="personalQueueListTitle">Mijn dossiers</h2></div><span class="badge">READ-ONLY</span></div><p id="personalQueueMessage" class="empty-state" role="status" aria-live="polite" aria-atomic="true"></p><ul id="personalQueueList" class="personal-queue-list"></ul><p id="personalQueueEmpty" class="empty-state" role="status" aria-live="polite" aria-atomic="true" hidden>Er zijn momenteel geen dossiers aan jou toegewezen.</p><button id="personalQueueLoadMore" type="button" class="secondary-action personal-queue-load-more" hidden>Meer laden</button></section>
+      </section>
+      <div id="managerWorkspace" hidden>
       <section class="project-heading" aria-labelledby="pageTitle"><div><p class="eyebrow">Commerciële intake</p><h1 id="pageTitle">Aanvragen</h1><p>Ingediende aanvragen en hun projectstatus.</p></div></section>
       <div class="dashboard-grid">
         <section class="panel" aria-labelledby="applicationsTitle">
@@ -56,6 +61,7 @@
           <section id="workflowDossier" class="panel dossier-section" hidden aria-labelledby="workflowDossierTitle"><div class="panel__heading"><div><p class="eyebrow">Workflow</p><h2 id="workflowDossierTitle">Status en volgende fase</h2></div></div><dl class="status-list"><div><dt>Huidige staat</dt><dd id="workflowCurrentState"></dd></div><div><dt>Volgende logische fase</dt><dd id="workflowNextStage"></dd></div><div><dt>Beschikbaarheid</dt><dd><span id="workflowAvailability" class="badge"></span></dd></div></dl><p class="empty-state">Muterende offerte-, betaling-, preview- en opleveracties zijn in deze fase niet geïmplementeerd.</p></section>
           <section id="historyDossier" class="panel dossier-section" hidden aria-labelledby="historyDossierTitle"><div class="panel__heading"><div><p class="eyebrow">Historie</p><h2 id="historyDossierTitle">Operationele tijdlijn</h2></div></div><ul id="auditTimeline" class="timeline"></ul><p id="auditTimelineEmpty" class="empty-state"></p></section>
         </aside>
+      </div>
       </div>
     </main>
     <dialog id="promotionDialog" aria-labelledby="promotionTitle"><form method="dialog" class="confirmation"><p class="eyebrow eyebrow--red">Expliciete bevestiging vereist</p><h2 id="promotionTitle">Commercieel project aanmaken</h2><p>Maak alleen een project aan voor de getoonde, geaccepteerde offerte.</p><div class="confirmation__actions"><button type="button" value="cancel" class="secondary-action">Annuleren</button><button type="button" value="confirm" class="danger-action">Project aanmaken</button></div></form></dialog>
