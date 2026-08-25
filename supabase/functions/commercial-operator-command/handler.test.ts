@@ -5,11 +5,12 @@ import {
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
+  executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtDossierAssignmentAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -304,6 +305,108 @@ Deno.test("assignment roster errors use stable authorization and internal contra
     }), harness.deps);
     assertEquals(response.status, status);
     assertEquals((await response.json()).code, responseCode);
+  }
+});
+
+Deno.test("personal dossier queue accepts only bounded cursor pagination without client authority", async ()=>{
+  for (const [body, input] of [
+    [{ action: "get_my_assigned_dossiers" }, { action: "get_my_assigned_dossiers", cursor: null, limit: 25 }],
+    [{ action: "get_my_assigned_dossiers", cursor: "aabb", limit: 100 }, { action: "get_my_assigned_dossiers", cursor: "aabb", limit: 100 }],
+  ] as const) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(body), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls, [{ jwt, input }]);
+  }
+
+  for (const invalid of [
+    { operator_id: userId }, { assignee_operator_id: userId }, { auth_user_id: userId },
+    { role: "operator" }, { status: "ACTIVE" }, { cursor: "" }, { cursor: 1 },
+    { limit: 0 }, { limit: -1 }, { limit: 1.5 }, { limit: 101 }, { limit: null },
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({ action: "get_my_assigned_dossiers", ...invalid }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("personal dossier queue transport uses the exact caller-scoped RPC", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const safeResult = { items: [{ reference: "LWS-AAN-2099-0001" }], has_more: false, next_cursor: null };
+  const result = await executeOperatorPersonalQueueTransport({
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({ data: safeResult, error: null });
+    }
+  }, { action: "get_my_assigned_dossiers", cursor: "aabb", limit: 25 });
+  assertEquals(calls, [{
+    name: "get_operator_personal_dossier_queue_v1",
+    args: { p_cursor: "aabb", p_limit: 25 }
+  }]);
+  assertEquals(result, safeResult);
+});
+
+Deno.test("personal dossier queue index dispatch constructs only a caller JWT client", async ()=>{
+  const clientForCalls: string[] = [];
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeCallerJwtOperatorPersonalQueueAction(
+    jwt,
+    { action: "get_my_assigned_dossiers", cursor: null, limit: 25 },
+    (token: string)=>{
+      clientForCalls.push(token);
+      return {
+        rpc: (name: string, args: Record<string, unknown>)=>{
+          rpcCalls.push({ name, args });
+          return Promise.resolve({ data: { items: [], has_more: false, next_cursor: null }, error: null });
+        }
+      };
+    }
+  );
+  assertEquals(clientForCalls, [jwt]);
+  assertEquals(rpcCalls, [{
+    name: "get_operator_personal_dossier_queue_v1",
+    args: { p_cursor: null, p_limit: 25 }
+  }]);
+  assertEquals(result, { items: [], has_more: false, next_cursor: null });
+});
+
+Deno.test("personal dossier queue rejects service role JWT before dispatch", async ()=>{
+  const serviceJwt = createUnsignedTestJwt({ sub: userId, role: "service_role", exp: 4102444800 });
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({ action: "get_my_assigned_dossiers" }, serviceJwt), harness.deps);
+  assertEquals(response.status, 401);
+  assertEquals((await response.json()).code, "HUMAN_JWT_REQUIRED");
+  assertEquals(harness.calls.length, 0);
+});
+
+Deno.test("personal dossier queue errors use stable public envelopes", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["OPERATOR_PERSONAL_QUEUE_READER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["OPERATOR_DISABLED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["INVALID_OPERATOR_PERSONAL_QUEUE_CURSOR", 400, "INVALID_REQUEST"],
+    ["INVALID_OPERATOR_PERSONAL_QUEUE_LIMIT", 400, "INVALID_REQUEST"],
+    ["UNEXPECTED_PERSONAL_QUEUE_FAILURE", 500, "INTERNAL_ERROR"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({ action: "get_my_assigned_dossiers" }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals(await response.json(), { ok: false, code: responseCode });
+  }
+});
+
+Deno.test("existing assignment Edge actions remain registered alongside personal queue", async ()=>{
+  for (const body of [
+    { action: "get_dossier_assignment", dossier_reference: "LWS-AAN-2099-0001" },
+    { action: "get_assignment_operator_roster" },
+    {
+      action: "assign_dossier", dossier_reference: "LWS-AAN-2099-0001",
+      assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+      expected_revision: 2, idempotency_key: "a1800000-0000-4000-8000-000000000051"
+    },
+  ]) {
+    const response = await handleCommercialOperator(request(body), dependencies().deps);
+    assertEquals(response.status, 200);
   }
 });
 

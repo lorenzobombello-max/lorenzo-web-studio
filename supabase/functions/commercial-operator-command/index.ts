@@ -4,6 +4,7 @@ import {
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
+  executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
@@ -68,6 +69,7 @@ type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   run_label: string;
   ttl_minutes: number;
   limit: number;
+  cursor: string | null;
   offset: number;
   support_reference: string | null;
   application_reference: string | null;
@@ -121,6 +123,14 @@ export async function executeCallerJwtAssignmentRosterAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeAssignmentOperatorRosterTransport(clientFor(jwt));
+}
+
+export async function executeCallerJwtOperatorPersonalQueueAction(
+  jwt: string,
+  input: Readonly<{ action: "get_my_assigned_dossiers"; cursor: string | null; limit: number }>,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  return await executeOperatorPersonalQueueTransport(clientFor(jwt), input);
 }
 
 if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
@@ -218,6 +228,13 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
     executeApplicationAction: async (jwt: string, input: ValidatedApplicationActionInput, actorAuthUserId: string)=>{
       if (input.action === "get_assignment_operator_roster") {
         return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
+      }
+      if (input.action === "get_my_assigned_dossiers") {
+        return await executeCallerJwtOperatorPersonalQueueAction(jwt, {
+          action: "get_my_assigned_dossiers",
+          cursor: input.cursor,
+          limit: input.limit,
+        }, clientFor);
       }
       if (input.action === "get_dossier_assignment" || input.action === "assign_dossier") {
         return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);

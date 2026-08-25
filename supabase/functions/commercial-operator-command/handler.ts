@@ -27,6 +27,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_application_detail",
   "get_assignment_operator_roster",
   "get_dossier_assignment",
+  "get_my_assigned_dossiers",
   "assign_dossier",
   "get_project_dossier",
   "promote_accepted_application",
@@ -96,6 +97,11 @@ type DossierAssignmentMutationInput = Readonly<{
   expected_revision: number;
   idempotency_key: string;
   reason: string | null;
+}>;
+type OperatorPersonalQueueInput = Readonly<{
+  action: "get_my_assigned_dossiers";
+  cursor: string | null;
+  limit: number;
 }>;
 type DossierLifecycleTransportInput = Readonly<{
   quote_request_id: string;
@@ -240,6 +246,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "application_reference", "support_reference"])
     : action === "get_assignment_operator_roster"
     ? new Set(["action"])
+    : action === "get_my_assigned_dossiers"
+    ? new Set(["action", "cursor", "limit"])
     : action === "get_dossier_assignment"
     ? new Set(["action", "dossier_reference"])
     : action === "assign_dossier"
@@ -253,6 +261,15 @@ function validateApplicationAction(value: UnvalidatedInput) {
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
   if (action === "get_assignment_operator_roster") return { action };
+  if (action === "get_my_assigned_dossiers") {
+    const cursor = value.cursor ?? null;
+    const limit = value.limit === undefined ? 25 : value.limit;
+    if ((cursor !== null && (typeof cursor !== "string" || cursor.length < 1))
+      || !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 100) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, cursor, limit };
+  }
   if (action === "get_dossier_assignment") {
     return { action, dossier_reference: normalizeDossierReference(value.dossier_reference) };
   }
@@ -429,6 +446,7 @@ function mapDatabaseError(error: unknown) {
     "EDGE_DOSSIER_CAPABILITY_REQUIRED",
     "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
     "DOSSIER_ASSIGNMENT_READER_REQUIRED",
+    "OPERATOR_PERSONAL_QUEUE_READER_REQUIRED",
     "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
@@ -473,6 +491,8 @@ function mapDatabaseError(error: unknown) {
     ,"INVALID_DOSSIER_REFERENCE"
     ,"INVALID_DOSSIER_ASSIGNMENT_COMMAND"
     ,"REASSIGNMENT_REASON_REQUIRED"
+    ,"INVALID_OPERATOR_PERSONAL_QUEUE_LIMIT"
+    ,"INVALID_OPERATOR_PERSONAL_QUEUE_CURSOR"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
   if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
@@ -642,4 +662,16 @@ export function createUnsignedTestJwt(payload: Record<string, unknown>): string 
     alg: "RS256",
     typ: "JWT"
   })}.${encode(payload)}.signature`;
+}
+
+export async function executeOperatorPersonalQueueTransport(
+  client: DossierAssignmentRpcClient,
+  input: OperatorPersonalQueueInput
+): Promise<unknown> {
+  const { data, error } = await client.rpc("get_operator_personal_dossier_queue_v1", {
+    p_cursor: input.cursor,
+    p_limit: input.limit,
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }
