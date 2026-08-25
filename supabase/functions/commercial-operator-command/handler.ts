@@ -25,6 +25,8 @@ const APPLICATION_ACTIONS = new Set([
   "list_applications_v2",
   "get_application_facets_v2",
   "get_application_detail",
+  "get_dossier_assignment",
+  "assign_dossier",
   "get_project_dossier",
   "promote_accepted_application",
   "create_internal_e2e_run",
@@ -73,12 +75,68 @@ type DossierLifecycleRpcResult = Readonly<{
 type DossierLifecycleRpcCall = (
   args: Record<string, unknown>
 )=>PromiseLike<DossierLifecycleRpcResult>;
+type DossierAssignmentRpcClient = Readonly<{
+  rpc: (name: string, args: Record<string, unknown>)=>PromiseLike<DossierLifecycleRpcResult>;
+}>;
+type DossierAssignmentReadInput = Readonly<{
+  action: "get_dossier_assignment";
+  dossier_reference: string;
+}>;
+type DossierAssignmentMutationInput = Readonly<{
+  action: "assign_dossier";
+  dossier_reference: string;
+  assignee_operator_id: string;
+  expected_revision: number;
+  idempotency_key: string;
+  reason: string | null;
+}>;
 type DossierLifecycleTransportInput = Readonly<{
   quote_request_id: string;
   event_type: string;
   expected_revision: number;
   idempotency_key: string;
   reason: string;
+}>;
+type UnvalidatedInput = Record<string, unknown> & Readonly<{
+  action?: string;
+  expected_revision?: number | null;
+  limit?: number | null;
+  offset?: number | null;
+  year?: number | null;
+  quarter?: string | null;
+  zone?: string | null;
+  operational_status?: string | null;
+  request_kind?: string | null;
+  ttl_minutes?: number | null;
+  search?: unknown;
+  cursor?: string | null;
+  reason?: unknown;
+  payload?: unknown;
+}>;
+type CommercialCommandInput = Readonly<{
+  project_id: string;
+  idempotency_key: string;
+  command_type: string;
+  expected_state: string;
+  expected_revision: number;
+  payload: Record<string, unknown>;
+}>;
+type OperatorListCoreResult = Readonly<{
+  items: unknown[];
+  has_more: boolean;
+  next_position: Record<string, string> | null;
+}>;
+type CommercialOperatorDependencies = Readonly<{
+  now(): number;
+  verifyUser(jwt: string): PromiseLike<Readonly<{ id: string }> | null>;
+  authorizeApplicationReader(jwt: string): PromiseLike<unknown>;
+  verifyOperatorCursor(cursor: string, input: Record<string, unknown>): PromiseLike<unknown>;
+  executeApplicationListV2(actorAuthUserId: string, input: Record<string, unknown>, position: unknown): PromiseLike<OperatorListCoreResult>;
+  signOperatorCursor(position: Record<string, string>, input: Record<string, unknown>): PromiseLike<string>;
+  executeApplicationFacetsV2(actorAuthUserId: string, input: Record<string, unknown>): PromiseLike<unknown>;
+  executeApplicationAction(jwt: string, input: Record<string, unknown>, actorAuthUserId: string): PromiseLike<unknown>;
+  consumeRateLimit(jwt: string, projectId: string): PromiseLike<Readonly<{ allowed: boolean; retry_after_seconds: number }>>;
+  executeCommand(jwt: string, input: CommercialCommandInput): PromiseLike<unknown>;
 }>;
 const FORBIDDEN_IDENTITY_FIELDS = new Set([
   "p_actor",
@@ -92,13 +150,13 @@ const FORBIDDEN_IDENTITY_FIELDS = new Set([
 class RequestError extends Error {
   status;
   code;
-  constructor(status, code){
+  constructor(status: number, code: string){
     super(code);
     this.status = status;
     this.code = code;
   }
 }
-function response(status, code, extra = {}) {
+function response(status: number, code: string, extra: Record<string, unknown> = {}) {
   return new Response(JSON.stringify({
     ok: status < 400,
     code,
@@ -112,12 +170,12 @@ function response(status, code, extra = {}) {
     }
   });
 }
-function bearer(request) {
+function bearer(request: Request): string {
   const match = (request.headers.get("authorization") || "").match(/^Bearer\s+([^\s]+)$/i);
   if (!match) throw new RequestError(401, "AUTHENTICATION_REQUIRED");
   return match[1];
 }
-function decodeClaims(jwt) {
+function decodeClaims(jwt: string): Record<string, unknown> {
   const parts = jwt.split(".");
   if (parts.length !== 3) throw new RequestError(401, "INVALID_JWT");
   try {
@@ -127,29 +185,35 @@ function decodeClaims(jwt) {
     throw new RequestError(401, "INVALID_JWT");
   }
 }
-async function body(request) {
+async function body(request: Request): Promise<UnvalidatedInput> {
   if ((request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase() !== "application/json") throw new RequestError(415, "UNSUPPORTED_CONTENT_TYPE");
   const declared = Number(request.headers.get("content-length") || "0");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new RequestError(413, "BODY_TOO_LARGE");
   const text = await request.text();
   if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) throw new RequestError(413, "BODY_TOO_LARGE");
   try {
-    const parsed = JSON.parse(text);
+    const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw 0;
-    return parsed;
+    return parsed as UnvalidatedInput;
   } catch  {
     throw new RequestError(400, "INVALID_JSON");
   }
 }
-function validate(value) {
+function validate(value: UnvalidatedInput): CommercialCommandInput {
   for (const key of FORBIDDEN_IDENTITY_FIELDS)if (key in value) throw new RequestError(400, "IDENTITY_FIELD_FORBIDDEN");
   if (!UUID.test(String(value.project_id || "")) || !UUID.test(String(value.idempotency_key || ""))) throw new RequestError(400, "INVALID_REQUEST");
   if (!COMMANDS.has(String(value.command_type || "")) || typeof value.expected_state !== "string" || !Number.isSafeInteger(value.expected_revision) || Number(value.expected_revision) < 0) throw new RequestError(400, "INVALID_REQUEST");
   if (!value.payload || typeof value.payload !== "object" || Array.isArray(value.payload)) throw new RequestError(400, "INVALID_REQUEST");
   for (const key of FORBIDDEN_IDENTITY_FIELDS)if (key in value.payload) throw new RequestError(400, "IDENTITY_FIELD_FORBIDDEN");
-  return value;
+  return value as UnvalidatedInput & CommercialCommandInput;
 }
-function validateApplicationAction(value) {
+function normalizeDossierReference(value: unknown) {
+  const reference = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (APPLICATION_REFERENCE.test(reference)) return reference;
+  if (SUPPORT_REFERENCE.test(reference)) return `#${reference.replace(/^#/, "")}`;
+  throw new RequestError(400, "INVALID_REQUEST");
+}
+function validateApplicationAction(value: UnvalidatedInput) {
   for (const key of FORBIDDEN_IDENTITY_FIELDS)if (key in value) throw new RequestError(400, "IDENTITY_FIELD_FORBIDDEN");
   const action = String(value.action || "");
   if (!APPLICATION_ACTIONS.has(action)) throw new RequestError(400, "INVALID_REQUEST");
@@ -167,6 +231,10 @@ function validateApplicationAction(value) {
     ? new Set(["action", "project_id"])
     : action === "get_application_detail"
     ? new Set(["action", "quote_request_id", "application_reference", "support_reference"])
+    : action === "get_dossier_assignment"
+    ? new Set(["action", "dossier_reference"])
+    : action === "assign_dossier"
+    ? new Set(["action", "dossier_reference", "assignee_operator_id", "expected_revision", "idempotency_key", "reason"])
     : PROJECT_SITE_ACTIONS.has(action)
     ? new Set(["action", "project_id", "expected_revision", "idempotency_key", "canonical_domain", "evidence"])
     : INTAKE_LIFECYCLE_ACTIONS.has(action)
@@ -175,6 +243,29 @@ function validateApplicationAction(value) {
     ? new Set(["action", "quote_request_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
+  if (action === "get_dossier_assignment") {
+    return { action, dossier_reference: normalizeDossierReference(value.dossier_reference) };
+  }
+  if (action === "assign_dossier") {
+    const assigneeOperatorId = String(value.assignee_operator_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    if (!UUID.test(assigneeOperatorId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0
+      || (value.reason !== undefined && value.reason !== null && typeof value.reason !== "string")) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    const reason = typeof value.reason === "string" ? value.reason.trim() || null : null;
+    if (reason !== null && reason.length > 500) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      dossier_reference: normalizeDossierReference(value.dossier_reference),
+      assignee_operator_id: assigneeOperatorId,
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+      reason
+    };
+  }
   if (action === "list_applications_v2" || action === "get_application_facets_v2") {
     const zone = value.zone ?? "ACTIVE";
     const operationalStatus = value.operational_status ?? null;
@@ -316,7 +407,7 @@ function validateApplicationAction(value) {
     ...(action === "promote_accepted_application" ? { idempotency_key: String(value.idempotency_key) } : {})
   };
 }
-function mapDatabaseError(error) {
+function mapDatabaseError(error: unknown) {
   const code = error instanceof Error ? error.message : "INTERNAL";
   if ([
     "HUMAN_JWT_REQUIRED",
@@ -325,7 +416,9 @@ function mapDatabaseError(error) {
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
     "APPLICATION_SCOPE_DENIED",
-    "EDGE_DOSSIER_CAPABILITY_REQUIRED"
+    "EDGE_DOSSIER_CAPABILITY_REQUIRED",
+    "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
+    "DOSSIER_ASSIGNMENT_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
@@ -339,6 +432,10 @@ function mapDatabaseError(error) {
   if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
   if (code === "DOSSIER_NOT_FOUND") return response(404, code);
+  if (code === "AMBIGUOUS_DOSSIER_REFERENCE") return response(409, code);
+  if (code === "ASSIGNEE_OPERATOR_NOT_FOUND") return response(404, code);
+  if (code === "ASSIGNEE_NOT_ELIGIBLE") return response(409, code);
+  if (code === "OPERATOR_DOSSIER_ASSIGNMENT_STATE_REQUIRED") return response(409, "COMMAND_REJECTED");
   if (code === "INTERNAL_E2E_RUN_NOT_FOUND") return response(404, code);
   if (code === "PROJECT_NOT_FOUND") return response(404, code);
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
@@ -362,6 +459,9 @@ function mapDatabaseError(error) {
     ,"INVALID_OPERATOR_QUARTER"
     ,"INVALID_OPERATOR_PAGE_LIMIT"
     ,"INVALID_OPERATOR_SEARCH"
+    ,"INVALID_DOSSIER_REFERENCE"
+    ,"INVALID_DOSSIER_ASSIGNMENT_COMMAND"
+    ,"REASSIGNMENT_REASON_REQUIRED"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
   if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
@@ -378,6 +478,32 @@ function mapDatabaseError(error) {
   ].includes(code)) return response(409, "COMMAND_REJECTED");
   if (code.startsWith("LEGACY_TEST_CLEANUP_")) return response(409, "COMMAND_REJECTED");
   return response(500, "INTERNAL_ERROR");
+}
+
+export async function executeDossierAssignmentReadTransport(
+  client: DossierAssignmentRpcClient,
+  input: DossierAssignmentReadInput
+): Promise<unknown> {
+  const { data, error } = await client.rpc("get_operator_dossier_assignment_v1", {
+    p_dossier_reference: input.dossier_reference,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function executeDossierAssignmentMutationTransport(
+  client: DossierAssignmentRpcClient,
+  input: DossierAssignmentMutationInput
+): Promise<unknown> {
+  const { data, error } = await client.rpc("assign_operator_dossier_v1", {
+    p_dossier_reference: input.dossier_reference,
+    p_assignee_operator_id: input.assignee_operator_id,
+    p_expected_revision: input.expected_revision,
+    p_idempotency_key: input.idempotency_key,
+    p_reason: input.reason,
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function executeDossierLifecycleTransport(
@@ -410,7 +536,7 @@ export async function executeDossierLifecycleTransport(
   return commandResult.data;
 }
 
-export async function handleCommercialOperator(request, deps) {
+export async function handleCommercialOperator(request: Request, deps: CommercialOperatorDependencies): Promise<Response> {
   try {
     if (request.method !== "POST") throw new RequestError(405, "METHOD_NOT_ALLOWED");
     const jwt = bearer(request), claims = decodeClaims(jwt), sub = String(claims.sub || "");
@@ -425,7 +551,9 @@ export async function handleCommercialOperator(request, deps) {
       }
       const input = validateApplicationAction(parsed);
       if (input.action === "list_applications_v2") {
-        const cursorPosition = input.cursor === null ? null : await deps.verifyOperatorCursor(input.cursor, input);
+        const cursorPosition = typeof input.cursor === "string"
+          ? await deps.verifyOperatorCursor(input.cursor, input)
+          : null;
         const raw = await deps.executeApplicationListV2(user.id, input, cursorPosition);
         if (!raw || typeof raw !== "object" || !Array.isArray(raw.items)
           || typeof raw.has_more !== "boolean"
@@ -433,8 +561,9 @@ export async function handleCommercialOperator(request, deps) {
           || (!raw.has_more && raw.next_position !== null)) {
           throw new Error("INVALID_OPERATOR_CORE_RESPONSE");
         }
-        const nextCursor = raw.has_more
-          ? await deps.signOperatorCursor(raw.next_position, input)
+        const nextPosition = raw.next_position;
+        const nextCursor = raw.has_more && nextPosition !== null
+          ? await deps.signOperatorCursor(nextPosition, input)
           : null;
         return response(200, "APPLICATION_ACTION_ACCEPTED", {
           result: { items: raw.items, next_cursor: nextCursor }
@@ -478,8 +607,8 @@ export async function withCommercialOperatorCors(request: Request, next: ()=>Res
     headers
   });
 }
-export function createUnsignedTestJwt(payload) {
-  const encode = (value)=>btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+export function createUnsignedTestJwt(payload: Record<string, unknown>): string {
+  const encode = (value: Record<string, unknown>)=>btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   return `${encode({
     alg: "RS256",
     typ: "JWT"

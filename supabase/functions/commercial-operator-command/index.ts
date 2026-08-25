@@ -1,5 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { executeDossierLifecycleTransport, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import {
+  executeDossierAssignmentMutationTransport,
+  executeDossierAssignmentReadTransport,
+  executeDossierLifecycleTransport,
+  handleCommercialOperator,
+  withCommercialOperatorCors
+} from "./handler.ts";
 import {
   createApprovalTokenForIdempotencyKey,
   createInternalE2EIntakeTokenForIdempotencyKey,
@@ -32,6 +38,54 @@ type OperatorApplicationListV2Input = OperatorApplicationCursorInput & Readonly<
 }>;
 
 type OperatorApplicationFacetsV2Input = Omit<OperatorApplicationCursorInput, "year" | "quarter">;
+type DossierAssignmentActionInput = Readonly<{
+  action: "get_dossier_assignment";
+  dossier_reference: string;
+}> | Readonly<{
+  action: "assign_dossier";
+  dossier_reference: string;
+  assignee_operator_id: string;
+  expected_revision: number;
+  idempotency_key: string;
+  reason: string | null;
+}>;
+type DossierAssignmentClient = Parameters<typeof executeDossierAssignmentReadTransport>[0];
+type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
+  action: string;
+  intake_id: string;
+  event_type: string;
+  expected_revision: number;
+  idempotency_key: string;
+  reason: string | null;
+  quote_request_id: string | null;
+  project_id: string;
+  operation: string;
+  canonical_domain: string;
+  evidence: string;
+  run_id: string;
+  terminal_status: string;
+  run_label: string;
+  ttl_minutes: number;
+  limit: number;
+  offset: number;
+  support_reference: string | null;
+  application_reference: string | null;
+  dossier_reference: string;
+  assignee_operator_id: string;
+}>;
+type ValidatedDossierLifecycleActionInput = ValidatedApplicationActionInput & Readonly<{
+  action: "archive_dossier" | "reactivate_dossier" | "trash_dossier" | "restore_dossier";
+  quote_request_id: string;
+  reason: string;
+}>;
+type ValidatedCommercialCommandInput = Readonly<{
+  project_id: string;
+  command_type: string;
+  expected_state: string;
+  expected_revision: number;
+  idempotency_key: string;
+  payload: Record<string, unknown>;
+}>;
 
 type OperatorCursorDatabasePosition = Readonly<{
   dossier_date: string;
@@ -42,7 +96,26 @@ async function sha256(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(bytes)].map((byte)=>byte.toString(16).padStart(2, "0")).join("");
 }
-Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
+
+function isDossierLifecycleAction(input: ValidatedApplicationActionInput): input is ValidatedDossierLifecycleActionInput {
+  return input.action === "archive_dossier"
+    || input.action === "reactivate_dossier"
+    || input.action === "trash_dossier"
+    || input.action === "restore_dossier";
+}
+
+export async function executeCallerJwtDossierAssignmentAction(
+  jwt: string,
+  input: DossierAssignmentActionInput,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  const client = clientFor(jwt);
+  return input.action === "get_dossier_assignment"
+    ? await executeDossierAssignmentReadTransport(client, input)
+    : await executeDossierAssignmentMutationTransport(client, input);
+}
+
+if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   const url = Deno.env.get("SUPABASE_URL"), anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) return new Response(JSON.stringify({
     ok: false,
@@ -54,7 +127,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       "Cache-Control": "no-store"
     }
   });
-  const clientFor = (jwt)=>createClient(url, anonKey, {
+  const clientFor = (jwt: string)=>createClient(url, anonKey, {
       global: {
         headers: {
           Authorization: `Bearer ${jwt}`
@@ -82,7 +155,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   });
   return handleCommercialOperator(request, {
     now: ()=>Date.now(),
-    verifyUser: async (jwt)=>{
+    verifyUser: async (jwt: string)=>{
       const { data, error } = await clientFor(jwt).auth.getUser(jwt);
       return error || !data.user ? null : {
         id: data.user.id
@@ -125,7 +198,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       if (error) throw new Error(error.message);
       return data;
     },
-    consumeRateLimit: async (jwt, projectId)=>{
+    consumeRateLimit: async (jwt: string, projectId: string)=>{
       const { data, error } = await clientFor(jwt).rpc("consume_commercial_operator_rate_limit_v1", {
         p_project_id: projectId,
         p_max_requests: 60,
@@ -134,7 +207,10 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       if (error) throw new Error(error.message);
       return data;
     },
-    executeApplicationAction: async (jwt, input, actorAuthUserId: string)=>{
+    executeApplicationAction: async (jwt: string, input: ValidatedApplicationActionInput, actorAuthUserId: string)=>{
+      if (input.action === "get_dossier_assignment" || input.action === "assign_dossier") {
+        return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);
+      }
       const client = clientFor(jwt);
       if (["interrupt_intake", "resume_intake", "cancel_intake", "reactivate_intake"].includes(input.action)) {
         const { data, error } = await client.rpc("execute_operator_intake_lifecycle_command_v1", {
@@ -147,7 +223,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
         if (error) throw new Error(error.message);
         return data;
       }
-      if (["archive_dossier", "reactivate_dossier", "trash_dossier", "restore_dossier"].includes(input.action)) {
+      if (isDossierLifecycleAction(input)) {
         return await executeDossierLifecycleTransport(
           (args)=>serviceClient().rpc("issue_operator_dossier_lifecycle_edge_capability_v1", args),
           (args)=>client.rpc("execute_operator_dossier_lifecycle_command_v1", args),
@@ -226,7 +302,7 @@ Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
       if (error) throw new Error(error.message);
       return data;
     },
-    executeCommand: async (jwt, input)=>{
+    executeCommand: async (jwt: string, input: ValidatedCommercialCommandInput)=>{
       const { data, error } = await clientFor(jwt).rpc("execute_commercial_command_v2", {
         p_project_id: input.project_id,
         p_command_type: input.command_type,

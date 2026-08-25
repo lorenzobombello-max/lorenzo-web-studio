@@ -1,6 +1,14 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { createUnsignedTestJwt, executeDossierLifecycleTransport, handleCommercialOperator, withCommercialOperatorCors } from "./handler.ts";
+import {
+  createUnsignedTestJwt,
+  executeDossierAssignmentMutationTransport,
+  executeDossierAssignmentReadTransport,
+  executeDossierLifecycleTransport,
+  handleCommercialOperator,
+  withCommercialOperatorCors
+} from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
+import { executeCallerJwtDossierAssignmentAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -141,8 +149,15 @@ Deno.test("application detail requires exactly one valid locator", async ()=>{
   const response = await handleCommercialOperator(request({ action: "get_application_detail", application_reference: "LWS-AAN-2099-0001" }), harness.deps);
   assertEquals(response.status, 200);
   assertEquals(harness.calls[0].input, { action: "get_application_detail", quote_request_id: null, application_reference: "LWS-AAN-2099-0001", support_reference: null });
+  for (const applicationReference of ["lws-aan-2099-0001", " LWS-AAN-2099-0001 "]) {
+    assertEquals((await handleCommercialOperator(request({
+      action: "get_application_detail",
+      application_reference: applicationReference
+    }), harness.deps)).status, 400);
+  }
   const ambiguous = await handleCommercialOperator(request({ action: "get_application_detail", quote_request_id: userId, application_reference: "LWS-AAN-2099-0001" }), harness.deps);
   assertEquals(ambiguous.status, 400);
+  assertEquals(harness.calls.length, 1);
 });
 
 Deno.test("application detail normalizes one support-reference locator", async ()=>{
@@ -159,6 +174,242 @@ Deno.test("application detail normalizes one support-reference locator", async (
     assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 400);
   }
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("dossier assignment read accepts only one normalized reference", async ()=>{
+  for (const [dossierReference, normalizedReference] of [
+    [" LWS-AAN-2099-0001 ", "LWS-AAN-2099-0001"],
+    [" f98b2f08 ", "#F98B2F08"],
+    ["#f98b2f08", "#F98B2F08"]
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "get_dossier_assignment",
+      dossier_reference: dossierReference
+    }), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls, [{
+      jwt,
+      input: { action: "get_dossier_assignment", dossier_reference: normalizedReference }
+    }]);
+    assertEquals(await response.json(), {
+      ok: true,
+      code: "APPLICATION_ACTION_ACCEPTED",
+      result: { action: "get_dossier_assignment" }
+    });
+  }
+
+  for (const invalid of [
+    {},
+    { dossier_reference: "invalid" },
+    { dossier_reference: "LWS-AAN-2099-0001", quote_request_id: userId },
+    { dossier_reference: "LWS-AAN-2099-0001", actor_id: userId }
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "get_dossier_assignment",
+      ...invalid
+    }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("dossier assignment mutation validates and normalizes the fixed command shape", async ()=>{
+  for (const [reasonInput, normalizedReason] of [
+    [undefined, null],
+    [null, null],
+    ["   ", null],
+    ["  Capacity rebalance  ", "Capacity rebalance"]
+  ]) {
+    const harness = dependencies();
+    const body: Record<string, unknown> = {
+      action: "assign_dossier",
+      dossier_reference: " f98b2f08 ",
+      assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000051"
+    };
+    if (reasonInput !== undefined) body.reason = reasonInput;
+    const response = await handleCommercialOperator(request(body), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls, [{
+      jwt,
+      input: {
+        action: "assign_dossier",
+        dossier_reference: "#F98B2F08",
+        assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+        expected_revision: 2,
+        idempotency_key: "a1800000-0000-4000-8000-000000000051",
+        reason: normalizedReason
+      }
+    }]);
+  }
+
+  for (const invalid of [
+    { dossier_reference: undefined },
+    { dossier_reference: "invalid" },
+    { assignee_operator_id: "invalid" },
+    { expected_revision: -1 },
+    { expected_revision: 1.5 },
+    { idempotency_key: "invalid" },
+    { reason: 42 },
+    { reason: "x".repeat(501) },
+    { auth_user_id: userId },
+    { role: "owner" },
+    { capability: userId }
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({
+      action: "assign_dossier",
+      dossier_reference: "LWS-AAN-2099-0001",
+      assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+      expected_revision: 2,
+      idempotency_key: "a1800000-0000-4000-8000-000000000051",
+      ...invalid
+    }), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("assignment transports call exact RPCs through the supplied human client", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const readResult = {
+    assignment_state: "ASSIGNED",
+    assignee_operator_id: userId,
+    assignee_display_name: "Assigned Operator",
+    revision: 2,
+    assigned_at: "2099-01-01T00:00:00Z"
+  };
+  const mutationResult = {
+    assignment_state: "ASSIGNED",
+    assignee_operator_id: userId,
+    revision: 3,
+    assigned_at: "2099-01-01T00:00:01Z",
+    no_change: false,
+    replayed: false
+  };
+  const client = {
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({
+        data: name === "get_operator_dossier_assignment_v1" ? readResult : mutationResult,
+        error: null
+      });
+    }
+  };
+  const actualReadResult = await executeDossierAssignmentReadTransport(client, {
+    action: "get_dossier_assignment",
+    dossier_reference: "#F98B2F08"
+  });
+  const actualMutationResult = await executeDossierAssignmentMutationTransport(client, {
+    action: "assign_dossier",
+    dossier_reference: "#F98B2F08",
+    assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+    expected_revision: 2,
+    idempotency_key: "a1800000-0000-4000-8000-000000000051",
+    reason: null
+  });
+  assertEquals(calls, [
+    {
+      name: "get_operator_dossier_assignment_v1",
+      args: { p_dossier_reference: "#F98B2F08" }
+    },
+    {
+      name: "assign_operator_dossier_v1",
+      args: {
+        p_dossier_reference: "#F98B2F08",
+        p_assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+        p_expected_revision: 2,
+        p_idempotency_key: "a1800000-0000-4000-8000-000000000051",
+        p_reason: null
+      }
+    }
+  ]);
+  assertEquals(actualReadResult, readResult);
+  assertEquals(actualMutationResult, mutationResult);
+});
+
+Deno.test("index assignment dispatch constructs both RPC clients from the caller JWT", async ()=>{
+  const clientForCalls: string[] = [];
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const clientFor = (token: string)=>{
+    clientForCalls.push(token);
+    return {
+      rpc: (name: string, args: Record<string, unknown>)=>{
+        rpcCalls.push({ name, args });
+        return Promise.resolve({ data: { assignment_state: "ASSIGNED" }, error: null });
+      }
+    };
+  };
+
+  await executeCallerJwtDossierAssignmentAction(jwt, {
+    action: "get_dossier_assignment",
+    dossier_reference: "#F98B2F08"
+  }, clientFor);
+  await executeCallerJwtDossierAssignmentAction(jwt, {
+    action: "assign_dossier",
+    dossier_reference: "#F98B2F08",
+    assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+    expected_revision: 2,
+    idempotency_key: "a1800000-0000-4000-8000-000000000051",
+    reason: null
+  }, clientFor);
+
+  assertEquals(clientForCalls, [jwt, jwt]);
+  assertEquals(rpcCalls.map(({ name })=>name), [
+    "get_operator_dossier_assignment_v1",
+    "assign_operator_dossier_v1"
+  ]);
+});
+
+Deno.test("assignment success variants pass through without synthetic state", async ()=>{
+  for (const result of [
+    { assignment_state: "ASSIGNED", assignee_operator_id: userId, revision: 1, assigned_at: "2099-01-01T00:00:00Z", no_change: false, replayed: false },
+    { assignment_state: "ASSIGNED", assignee_operator_id: userId, revision: 1, assigned_at: "2099-01-01T00:00:00Z", no_change: true, replayed: false },
+    { assignment_state: "ASSIGNED", assignee_operator_id: userId, revision: 1, assigned_at: "2099-01-01T00:00:00Z", no_change: false, replayed: true }
+  ]) {
+    const harness = dependencies({ executeApplicationAction: async ()=>result });
+    const response = await handleCommercialOperator(request({
+      action: "assign_dossier",
+      dossier_reference: "LWS-AAN-2099-0001",
+      assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+      expected_revision: 0,
+      idempotency_key: "a1800000-0000-4000-8000-000000000051"
+    }), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).result, result);
+  }
+});
+
+Deno.test("assignment database errors expose stable transport contracts", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["DOSSIER_ASSIGNMENT_ACTOR_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["DOSSIER_ASSIGNMENT_READER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["DOSSIER_NOT_FOUND", 404, "DOSSIER_NOT_FOUND"],
+    ["AMBIGUOUS_DOSSIER_REFERENCE", 409, "AMBIGUOUS_DOSSIER_REFERENCE"],
+    ["ASSIGNEE_OPERATOR_NOT_FOUND", 404, "ASSIGNEE_OPERATOR_NOT_FOUND"],
+    ["ASSIGNEE_NOT_ELIGIBLE", 409, "ASSIGNEE_NOT_ELIGIBLE"],
+    ["OPERATOR_DOSSIER_ASSIGNMENT_STATE_REQUIRED", 409, "COMMAND_REJECTED"],
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["INVALID_DOSSIER_REFERENCE", 400, "INVALID_REQUEST"],
+    ["INVALID_DOSSIER_ASSIGNMENT_COMMAND", 400, "INVALID_REQUEST"],
+    ["REASSIGNMENT_REASON_REQUIRED", 400, "INVALID_REQUEST"],
+    ["UNEXPECTED_ASSIGNMENT_FAILURE", 500, "INTERNAL_ERROR"]
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({
+      action: "assign_dossier",
+      dossier_reference: "LWS-AAN-2099-0001",
+      assignee_operator_id: "a1800000-0000-4000-8000-000000000050",
+      expected_revision: 0,
+      idempotency_key: "a1800000-0000-4000-8000-000000000051"
+    }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, responseCode);
+  }
 });
 
 Deno.test("project dossier accepts only one server-authorized project UUID", async ()=>{
