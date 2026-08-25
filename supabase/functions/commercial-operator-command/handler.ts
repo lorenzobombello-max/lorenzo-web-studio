@@ -25,6 +25,7 @@ const APPLICATION_ACTIONS = new Set([
   "list_applications_v2",
   "get_application_facets_v2",
   "get_application_detail",
+  "get_assignment_operator_roster",
   "get_dossier_assignment",
   "assign_dossier",
   "get_project_dossier",
@@ -77,6 +78,12 @@ type DossierLifecycleRpcCall = (
 )=>PromiseLike<DossierLifecycleRpcResult>;
 type DossierAssignmentRpcClient = Readonly<{
   rpc: (name: string, args: Record<string, unknown>)=>PromiseLike<DossierLifecycleRpcResult>;
+}>;
+type AssignmentRosterRow = Readonly<{
+  operator_id?: unknown;
+  display_name?: unknown;
+  role?: unknown;
+  status?: unknown;
 }>;
 type DossierAssignmentReadInput = Readonly<{
   action: "get_dossier_assignment";
@@ -231,6 +238,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "project_id"])
     : action === "get_application_detail"
     ? new Set(["action", "quote_request_id", "application_reference", "support_reference"])
+    : action === "get_assignment_operator_roster"
+    ? new Set(["action"])
     : action === "get_dossier_assignment"
     ? new Set(["action", "dossier_reference"])
     : action === "assign_dossier"
@@ -243,6 +252,7 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
+  if (action === "get_assignment_operator_roster") return { action };
   if (action === "get_dossier_assignment") {
     return { action, dossier_reference: normalizeDossierReference(value.dossier_reference) };
   }
@@ -418,7 +428,8 @@ function mapDatabaseError(error: unknown) {
     "APPLICATION_SCOPE_DENIED",
     "EDGE_DOSSIER_CAPABILITY_REQUIRED",
     "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
-    "DOSSIER_ASSIGNMENT_READER_REQUIRED"
+    "DOSSIER_ASSIGNMENT_READER_REQUIRED",
+    "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
@@ -489,6 +500,24 @@ export async function executeDossierAssignmentReadTransport(
   });
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function executeAssignmentOperatorRosterTransport(
+  client: DossierAssignmentRpcClient
+): Promise<ReadonlyArray<Readonly<{ operator_id: string; display_name: string }>>> {
+  const { data, error } = await client.rpc("get_operations_manager_roster_v1", {});
+  if (error) throw new Error(error.message);
+  if (!Array.isArray(data)) throw new Error("INVALID_ASSIGNMENT_ROSTER_RESPONSE");
+  return (data as AssignmentRosterRow[])
+    .filter((row)=>row?.role === "operator"
+      && row?.status === "ACTIVE"
+      && UUID.test(String(row.operator_id || ""))
+      && typeof row.display_name === "string"
+      && row.display_name.length > 0)
+    .map((row)=>({
+      operator_id: String(row.operator_id),
+      display_name: row.display_name as string,
+    }));
 }
 
 export async function executeDossierAssignmentMutationTransport(

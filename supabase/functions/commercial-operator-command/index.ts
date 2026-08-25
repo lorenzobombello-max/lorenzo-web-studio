@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  executeAssignmentOperatorRosterTransport,
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
@@ -115,6 +116,13 @@ export async function executeCallerJwtDossierAssignmentAction(
     : await executeDossierAssignmentMutationTransport(client, input);
 }
 
+export async function executeCallerJwtAssignmentRosterAction(
+  jwt: string,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  return await executeAssignmentOperatorRosterTransport(clientFor(jwt));
+}
+
 if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   const url = Deno.env.get("SUPABASE_URL"), anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) return new Response(JSON.stringify({
@@ -208,6 +216,9 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       return data;
     },
     executeApplicationAction: async (jwt: string, input: ValidatedApplicationActionInput, actorAuthUserId: string)=>{
+      if (input.action === "get_assignment_operator_roster") {
+        return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
+      }
       if (input.action === "get_dossier_assignment" || input.action === "assign_dossier") {
         return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);
       }

@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   createUnsignedTestJwt,
+  executeAssignmentOperatorRosterTransport,
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
@@ -8,7 +9,7 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtDossierAssignmentAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtDossierAssignmentAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -212,6 +213,97 @@ Deno.test("dossier assignment read accepts only one normalized reference", async
     }), harness.deps);
     assertEquals(response.status, 400);
     assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("assignment roster accepts only the fixed read action", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({
+    action: "get_assignment_operator_roster"
+  }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls, [{
+    jwt,
+    input: { action: "get_assignment_operator_roster" }
+  }]);
+  assertEquals(await response.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result: { action: "get_assignment_operator_roster" }
+  });
+
+  for (const extra of [{ role: "operator" }, { status: "ACTIVE" }, { actor_id: userId }]) {
+    const invalidHarness = dependencies();
+    const invalidResponse = await handleCommercialOperator(request({
+      action: "get_assignment_operator_roster",
+      ...extra
+    }), invalidHarness.deps);
+    assertEquals(invalidResponse.status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("assignment roster uses the exact RPC and exposes only eligible picker fields", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeAssignmentOperatorRosterTransport({
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({
+        data: [
+          { operator_id: "a1800000-0000-4000-8000-000000000060", display_name: "Active Operator", role: "operator", status: "ACTIVE", auth_user_id: userId, email: "private@example.test", history: [{ event_type: "PRIVATE" }] },
+          { operator_id: "a1800000-0000-4000-8000-000000000061", display_name: "Manager", role: "operations_manager", status: "ACTIVE" },
+          { operator_id: "a1800000-0000-4000-8000-000000000062", display_name: "Owner", role: "owner", status: "ACTIVE" },
+          { operator_id: "a1800000-0000-4000-8000-000000000063", display_name: "Disabled", role: "operator", status: "DISABLED" },
+          { operator_id: "a1800000-0000-4000-8000-000000000064", display_name: "Revoked", role: "operator", status: "REVOKED" },
+        ],
+        error: null
+      });
+    }
+  });
+  assertEquals(calls, [{ name: "get_operations_manager_roster_v1", args: {} }]);
+  assertEquals(result, [{
+    operator_id: "a1800000-0000-4000-8000-000000000060",
+    display_name: "Active Operator"
+  }]);
+  assertEquals(Object.keys(result[0]), ["operator_id", "display_name"]);
+});
+
+Deno.test("assignment roster preserves a valid empty eligible result", async ()=>{
+  const result = await executeAssignmentOperatorRosterTransport({
+    rpc: ()=>Promise.resolve({ data: [], error: null })
+  });
+  assertEquals(result, []);
+});
+
+Deno.test("index assignment roster dispatch constructs its RPC client from the caller JWT", async ()=>{
+  const clientForCalls: string[] = [];
+  const rpcCalls: string[] = [];
+  const result = await executeCallerJwtAssignmentRosterAction(jwt, (token: string)=>{
+    clientForCalls.push(token);
+    return {
+      rpc: (name: string)=>{
+        rpcCalls.push(name);
+        return Promise.resolve({ data: [], error: null });
+      }
+    };
+  });
+  assertEquals(clientForCalls, [jwt]);
+  assertEquals(rpcCalls, ["get_operations_manager_roster_v1"]);
+  assertEquals(result, []);
+});
+
+Deno.test("assignment roster errors use stable authorization and internal contracts", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["OPERATIONS_MANAGER_ROSTER_READER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["OPERATOR_REVOKED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["UNEXPECTED_ROSTER_FAILURE", 500, "INTERNAL_ERROR"]
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({
+      action: "get_assignment_operator_roster"
+    }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, responseCode);
   }
 });
 
@@ -480,11 +572,13 @@ Deno.test("promotion requires server-shaped locator and idempotency UUID", async
 });
 
 Deno.test("service role JWT cannot enter application actions", async ()=>{
-  const harness = dependencies();
   const serviceJwt = createUnsignedTestJwt({ sub: userId, role: "service_role", exp: 4102444800 });
-  const response = await handleCommercialOperator(request({ action: "list_applications" }, serviceJwt), harness.deps);
-  assertEquals(response.status, 401);
-  assertEquals(harness.calls.length, 0);
+  for (const action of ["list_applications", "get_assignment_operator_roster"]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request({ action }, serviceJwt), harness.deps);
+    assertEquals(response.status, 401);
+    assertEquals(harness.calls.length, 0);
+  }
 });
 
 Deno.test("intake lifecycle actions require the fixed revisioned command shape", async ()=>{
