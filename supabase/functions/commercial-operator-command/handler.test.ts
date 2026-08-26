@@ -5,12 +5,13 @@ import {
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
+  executeCustomerRequestTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCustomerRequestAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -1034,4 +1035,123 @@ Deno.test("v2 list fails closed for unauthorized actor, missing secret, and inva
 
   const invalidCore = dependencies({ executeApplicationListV2: async ()=>({ items: [], has_more: true, next_position: null }) });
   assertEquals((await handleCommercialOperator(request(v2Input), invalidCore.deps)).status, 500);
+});
+
+Deno.test("Customer Requests actions accept only bounded operational input", async ()=>{
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000071";
+  for (const [body, input] of [
+    [
+      { action: "list_customer_requests_for_dossier", dossier_reference: " lws-aan-2099-0001 " },
+      { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", cursor: null, limit: 25 },
+    ],
+    [
+      { action: "get_customer_request", request_id: requestId },
+      { action: "get_customer_request", request_id: requestId },
+    ],
+    [
+      { action: "transition_customer_request", request_id: requestId, command_type: "START", expected_revision: 2, idempotency_key: idempotencyKey },
+      { action: "transition_customer_request", request_id: requestId, command_type: "START", expected_revision: 2, idempotency_key: idempotencyKey },
+    ],
+  ] as const) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(body), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls, [{ jwt, input }]);
+  }
+
+  for (const invalid of [
+    { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", quote_request_id: requestId },
+    { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", customer_id: requestId },
+    { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", role: "operator" },
+    { action: "list_customer_requests_for_dossier", dossier_reference: "invalid" },
+    { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", cursor: "" },
+    { action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", limit: 101 },
+    { action: "get_customer_request", request_id: "invalid" },
+    { action: "get_customer_request", request_id: requestId, project_id: requestId },
+    { action: "transition_customer_request", request_id: requestId, command_type: "TRIAGE", expected_revision: 2, idempotency_key: idempotencyKey },
+    { action: "transition_customer_request", request_id: requestId, command_type: "START", expected_revision: -1, idempotency_key: idempotencyKey },
+    { action: "transition_customer_request", request_id: requestId, command_type: "START", expected_revision: 2, idempotency_key: idempotencyKey, payload: {} },
+  ]) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(invalid), harness.deps);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("Customer Requests transport uses exact caller-scoped RPCs", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const client = {
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({ data: { ok: true }, error: null });
+    }
+  };
+  await executeCustomerRequestTransport(client, {
+    action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", cursor: "aabb", limit: 25,
+  });
+  await executeCustomerRequestTransport(client, {
+    action: "get_customer_request", request_id: "a1800000-0000-4000-8000-000000000070",
+  });
+  await executeCustomerRequestTransport(client, {
+    action: "transition_customer_request", request_id: "a1800000-0000-4000-8000-000000000070",
+    command_type: "RESUME", expected_revision: 4, idempotency_key: "a1800000-0000-4000-8000-000000000071",
+  });
+  assertEquals(calls, [
+    { name: "get_customer_requests_for_dossier_v1", args: { p_dossier_reference: "LWS-AAN-2099-0001", p_cursor: "aabb", p_limit: 25 } },
+    { name: "get_customer_request_v1", args: { p_request_id: "a1800000-0000-4000-8000-000000000070" } },
+    {
+      name: "transition_customer_request_v1",
+      args: {
+        p_request_id: "a1800000-0000-4000-8000-000000000070", p_command_type: "RESUME",
+        p_expected_revision: 4, p_idempotency_key: "a1800000-0000-4000-8000-000000000071", p_payload: {},
+      },
+    },
+  ]);
+});
+
+Deno.test("Customer Requests index dispatch constructs only a caller JWT client", async ()=>{
+  const clientForCalls: string[] = [];
+  const rpcCalls: string[] = [];
+  const result = await executeCallerJwtCustomerRequestAction(jwt, {
+    action: "get_customer_request", request_id: "a1800000-0000-4000-8000-000000000070",
+  }, (token: string)=>{
+    clientForCalls.push(token);
+    return {
+      rpc: (name: string)=>{
+        rpcCalls.push(name);
+        return Promise.resolve({ data: { request_id: "a1800000-0000-4000-8000-000000000070" }, error: null });
+      },
+    };
+  });
+  assertEquals(clientForCalls, [jwt]);
+  assertEquals(rpcCalls, ["get_customer_request_v1"]);
+  assertEquals(result, { request_id: "a1800000-0000-4000-8000-000000000070" });
+});
+
+Deno.test("Customer Requests reject service role and expose stable error envelopes", async ()=>{
+  const serviceJwt = createUnsignedTestJwt({ sub: userId, role: "service_role", exp: 4102444800 });
+  const serviceHarness = dependencies();
+  const serviceResponse = await handleCommercialOperator(request({
+    action: "get_customer_request", request_id: "a1800000-0000-4000-8000-000000000070",
+  }, serviceJwt), serviceHarness.deps);
+  assertEquals(serviceResponse.status, 401);
+  assertEquals((await serviceResponse.json()).code, "HUMAN_JWT_REQUIRED");
+  assertEquals(serviceHarness.calls.length, 0);
+
+  for (const [databaseCode, status, responseCode] of [
+    ["CUSTOMER_REQUEST_ACCESS_DENIED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["INVALID_CUSTOMER_REQUEST_LIST_CURSOR", 400, "INVALID_REQUEST"],
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ["INVALID_CUSTOMER_REQUEST_TRANSITION", 409, "COMMAND_REJECTED"],
+    ["UNEXPECTED_CUSTOMER_REQUEST_FAILURE", 500, "INTERNAL_ERROR"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({
+      action: "get_customer_request", request_id: "a1800000-0000-4000-8000-000000000070",
+    }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, responseCode);
+  }
 });

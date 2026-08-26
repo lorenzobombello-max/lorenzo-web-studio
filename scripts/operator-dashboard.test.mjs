@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createOperatorListController, createPersonalQueueController, customerCorePresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -157,7 +157,7 @@ test("personal queue refresh clears pagination and replaces the queue", async ()
   assert.equal(controller.state.next_cursor, null);
 });
 
-test("personal queue workspace renders only safe non-clickable dossier information", async () => {
+test("personal queue workspace renders safe selectable dossier information", async () => {
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   const workspace = html.match(/<section id="personalQueueWorkspace"[\s\S]*?<\/section>\s*<div id="managerWorkspace"/)?.[0] || "";
   const renderer = script.match(/function renderPersonalQueue\(items\) \{[\s\S]*?\n  \}\n\n  const personalQueueController/)?.[0] || "";
@@ -166,12 +166,103 @@ test("personal queue workspace renders only safe non-clickable dossier informati
   assert.match(workspace, /Er zijn momenteel geen dossiers aan jou toegewezen\./);
   assert.match(workspace, />Vernieuwen</);
   assert.match(workspace, />Meer laden</);
-  assert.doesNotMatch(workspace, /klant|organisatie|e-mail|contact|uuid|history/i);
+  assert.doesNotMatch(workspace, /organisatie|e-mail|contact|uuid|history/i);
   assert.doesNotMatch(workspace, /href=|Open dossier|get_application_detail/);
   assert.match(script, /reference\.textContent = dossier\.reference/);
   assert.match(script, /badge\(dossier\.status\), badge\(dossier\.zone\)/);
   assert.match(script, /formatDate\(dossier\.assigned_at\)/);
   assert.doesNotMatch(renderer, /get_application_detail|get_operator_application_v1|support_reference/);
+});
+
+const customerRequestListItem = (requestId, revision = 1) => ({
+  request_id: requestId, request_reference: "LWS-VRZ-2099-0001", request_type: "OTHER",
+  title: "Operationele vraag", status: "TRIAGED", priority: "NORMAL",
+  submitted_at: "2099-01-03T11:00:00Z", updated_at: "2099-01-03T11:30:00Z", revision,
+});
+const customerRequestDetail = (requestId, status = "TRIAGED", revision = 1) => ({
+  ...customerRequestListItem(requestId, revision), status, source: "OPERATOR", description: "Operationele omschrijving.",
+});
+
+test("Customer Requests builders expose no client authority or commercial identifiers", () => {
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  assert.deepEqual(customerRequestsForDossierRequest("LWS-AAN-2099-0001"), {
+    action: "list_customer_requests_for_dossier", dossier_reference: "LWS-AAN-2099-0001", limit: 25,
+  });
+  assert.deepEqual(customerRequestDetailRequest(requestId), { action: "get_customer_request", request_id: requestId });
+  assert.deepEqual(customerRequestTransitionRequest(customerRequestDetail(requestId), "START", "a1800000-0000-4000-8000-000000000071"), {
+    action: "transition_customer_request", request_id: requestId, command_type: "START", expected_revision: 1,
+    idempotency_key: "a1800000-0000-4000-8000-000000000071",
+  });
+  for (const request of [customerRequestsForDossierRequest("LWS-AAN-2099-0001"), customerRequestDetailRequest(requestId)]) {
+    for (const forbidden of ["operator_id", "role", "access_level", "customer_id", "project_id", "quote_request_id"]) {
+      assert.equal(Object.hasOwn(request, forbidden), false);
+    }
+  }
+});
+
+test("Customer Requests projections are exact and work controls are status-bound", () => {
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  assert.deepEqual(appendUniqueCustomerRequestItems([], [customerRequestListItem(requestId)]), [customerRequestListItem(requestId)]);
+  assert.throws(()=>appendUniqueCustomerRequestItems([], [{ ...customerRequestListItem(requestId), customer_id: requestId }]), /INVALID_CUSTOMER_REQUEST_LIST/);
+  assert.deepEqual(validateCustomerRequestDetail(customerRequestDetail(requestId)), customerRequestDetail(requestId));
+  assert.throws(()=>validateCustomerRequestDetail({ ...customerRequestDetail(requestId), amount: 100 }), /INVALID_CUSTOMER_REQUEST_DETAIL/);
+  assert.deepEqual(["NEW", "TRIAGED", "IN_PROGRESS", "WAITING_CUSTOMER", "RESOLVED"].map(customerRequestWorkCommand), [null, "START", "REQUIRE_CUSTOMER_RESPONSE", "RESUME", null]);
+});
+
+test("dossier generation suppresses stale Customer Requests pages", async () => {
+  const requests = [];
+  const releases = [];
+  const controller = createCustomerRequestListController((request)=>{
+    requests.push(request);
+    return new Promise((resolve)=>releases.push(resolve));
+  });
+  const first = controller.selectDossier("LWS-AAN-2099-0001");
+  const second = controller.selectDossier("LWS-AAN-2099-0002");
+  releases[0]({ items: [customerRequestListItem("a1800000-0000-4000-8000-000000000070")], has_more: false, next_cursor: null });
+  assert.equal(await first, false);
+  releases[1]({ items: [customerRequestListItem("a1800000-0000-4000-8000-000000000071")], has_more: false, next_cursor: null });
+  assert.equal(await second, true);
+  assert.equal(controller.state.dossier_reference, "LWS-AAN-2099-0002");
+  assert.deepEqual(controller.state.items.map((item)=>item.request_id), ["a1800000-0000-4000-8000-000000000071"]);
+  assert.deepEqual(requests, [customerRequestsForDossierRequest("LWS-AAN-2099-0001"), customerRequestsForDossierRequest("LWS-AAN-2099-0002")]);
+});
+
+test("request generation and concurrency failures fail closed", async () => {
+  const firstId = "a1800000-0000-4000-8000-000000000070";
+  const secondId = "a1800000-0000-4000-8000-000000000071";
+  const releases = [];
+  const staleController = createCustomerRequestDetailController(()=>new Promise((resolve)=>releases.push(resolve)));
+  const first = staleController.selectRequest(firstId);
+  const second = staleController.selectRequest(secondId);
+  releases[0](customerRequestDetail(firstId));
+  assert.equal(await first, false);
+  releases[1](customerRequestDetail(secondId));
+  assert.equal(await second, true);
+  assert.equal(staleController.state.request.request_id, secondId);
+
+  let calls = 0;
+  const concurrencyController = createCustomerRequestDetailController(async ()=>{
+    calls += 1;
+    if (calls === 1) return customerRequestDetail(firstId);
+    throw new Error("CONCURRENT_MODIFICATION");
+  }, ()=>{}, ()=>"a1800000-0000-4000-8000-000000000072");
+  await concurrencyController.selectRequest(firstId);
+  assert.equal(await concurrencyController.transition("START"), false);
+  assert.equal(concurrencyController.state.request, null);
+  assert.equal(concurrencyController.state.error, "CONCURRENT_MODIFICATION");
+});
+
+test("Customer Requests UI stays inside personal workspace and exposes work actions only", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  const personal = html.split('<section id="personalQueueWorkspace"')[1]?.split('<div id="managerWorkspace"')[0] || "";
+  assert.match(personal, /id="customerRequestList"/);
+  assert.match(personal, /id="customerRequestDetail"/);
+  assert.match(personal, /data-customer-request-command="START"/);
+  assert.match(personal, /data-customer-request-command="REQUIRE_CUSTOMER_RESPONSE"/);
+  assert.match(personal, /data-customer-request-command="RESUME"/);
+  assert.doesNotMatch(personal, /TRIAGE|RESOLVE|CANCEL|SIGNAL_SCOPE_IMPACT|ACCEPT_CHANGE_ORDER|factuur|offerte|prijs/i);
+  assert.match(script, /customerRequestDetailController\.clear\(\);\s*customerRequestListController\.selectDossier\(dossier\.reference\)/);
+  assert.doesNotMatch(script, /service_role|SUPABASE_SERVICE_ROLE_KEY/);
 });
 
 test("personal queue routing is server-result-driven and fails closed", async () => {
@@ -249,7 +340,7 @@ test("personal queue loading, refresh, pagination, and manager separation are ex
   assert.match(html, /id="managerWorkspace" hidden/);
   assert.match(script, /"Dossiers laden…"/);
   assert.match(script, /"Meer dossiers laden…"/);
-  assert.match(script, /personalQueueRefresh\.addEventListener\("click", \(\)=>personalQueueController\.refresh\(\)\)/);
+  assert.match(script, /personalQueueRefresh\.addEventListener\("click", \(\)=>\{[\s\S]*selectedDossierReference = null;[\s\S]*customerRequestListController\.clear\(\);[\s\S]*customerRequestDetailController\.clear\(\);[\s\S]*personalQueueController\.refresh\(\);[\s\S]*\}\)/);
   assert.match(script, /personalQueueLoadMore\.addEventListener\("click", \(\)=>personalQueueController\.loadMore\(\)\)/);
   assert.match(script, /personalQueueLoadMore\.hidden = !state\.has_more \|\| !state\.next_cursor/);
   assert.match(script, /personalQueueRefresh\.disabled = state\.loading/);
