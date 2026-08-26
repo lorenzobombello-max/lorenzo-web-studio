@@ -111,25 +111,25 @@ insert into public.quote_requests(
 insert into public.quote_requests(
   id,request_kind,name,email,website_type,budget,timing,description,privacy_consent,status
 ) values (
-  'f2000000-0000-4000-8000-000000000002','website','Website Customer','website@example.test',
+  'f2000001-0000-4000-8000-000000000002','website','Website Customer','website@example.test',
   'business','Meer dan EUR 6.000','flexible','Website isolation fixture.',true,'approved'
 );
 insert into public.quote_requests(
   id,request_kind,sdf_package,name,email,description,privacy_consent,status
 ) values (
-  'f2000000-0000-4000-8000-000000000003','slimme_documentenflow','start','Legacy SDF',
+  'f2000002-0000-4000-8000-000000000003','slimme_documentenflow','start','Legacy SDF',
   'legacy-sdf@example.test','Accepted SDF fixture without application reference.',true,'approved'
 );
 insert into public.quote_request_intakes(
   id,quote_request_id,access_token_hash,access_token_expires_at,status,started_at,submitted_at,confirmation
 ) values (
-  'f2100000-0000-4000-8000-000000000002','f2000000-0000-4000-8000-000000000002',
+  'f2100000-0000-4000-8000-000000000002','f2000001-0000-4000-8000-000000000002',
   repeat('2',64),'2099-02-01T00:00:00Z','submitted','2099-01-01T09:00:00Z','2099-01-01T10:00:00Z',true
 );
 
 insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
   ('f3000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','2099-01-01T09:00:00Z'),
-  ('f3000000-0000-4000-8000-000000000003','f2000000-0000-4000-8000-000000000003','2099-01-01T09:00:00Z');
+  ('f3000000-0000-4000-8000-000000000003','f2000002-0000-4000-8000-000000000003','2099-01-01T09:00:00Z');
 insert into public.sdf_quotation_documents(
   quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256
 ) values (
@@ -333,7 +333,7 @@ select is(
   'human application reference directly resolves the same immutable invoice candidate dossier'
 );
 select is(
-  public.get_operator_application_v1('f2000000-0000-4000-8000-000000000002',null)->'sdf_m1_invoice_candidate',
+  public.get_operator_application_v1('f2000001-0000-4000-8000-000000000002',null)->'sdf_m1_invoice_candidate',
   'null'::jsonb,
   'Website Operator detail exposes no SDF invoice candidate'
 );

@@ -10,10 +10,10 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('26000000-0000-0000-0000-000000000001', 'Evidence valid', 'evidence-valid@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Valid evidence bridge fixture.', true, 'approved'),
-  ('26000000-0000-0000-0000-000000000002', 'Evidence submitted', 'evidence-submitted@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Submitted evidence bridge fixture.', true, 'approved'),
-  ('26000000-0000-0000-0000-000000000003', 'Evidence expired', 'evidence-expired@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Expired evidence bridge fixture.', true, 'approved'),
-  ('26000000-0000-0000-0000-000000000004', 'Evidence rollback', 'evidence-rollback@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Rollback evidence bridge fixture.', true, 'approved'),
-  ('26000000-0000-0000-0000-000000000005', 'Evidence legacy', 'evidence-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Legacy evidence bridge fixture.', true, 'approved');
+  ('26000001-0000-0000-0000-000000000002', 'Evidence submitted', 'evidence-submitted@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Submitted evidence bridge fixture.', true, 'approved'),
+  ('26000002-0000-0000-0000-000000000003', 'Evidence expired', 'evidence-expired@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Expired evidence bridge fixture.', true, 'approved'),
+  ('26000003-0000-0000-0000-000000000004', 'Evidence rollback', 'evidence-rollback@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Rollback evidence bridge fixture.', true, 'approved'),
+  ('26000004-0000-0000-0000-000000000005', 'Evidence legacy', 'evidence-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Legacy evidence bridge fixture.', true, 'approved');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
@@ -21,10 +21,10 @@ insert into public.quote_request_intakes (
   primary_language, created_at
 ) values
   ('26000000-0000-0000-0000-000000000001', repeat('1', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, null, clock_timestamp()),
-  ('26000000-0000-0000-0000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, null, 'nl', clock_timestamp() - interval '3 hours'),
-  ('26000000-0000-0000-0000-000000000003', repeat('3', 64), clock_timestamp() - interval '1 day', 'invited', null, null, false, null, null, clock_timestamp() - interval '2 days'),
-  ('26000000-0000-0000-0000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, null, clock_timestamp()),
-  ('26000000-0000-0000-0000-000000000005', repeat('5', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, 'EUR 1.500 - EUR 3.000', null, clock_timestamp());
+  ('26000001-0000-0000-0000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, null, 'nl', clock_timestamp() - interval '3 hours'),
+  ('26000002-0000-0000-0000-000000000003', repeat('3', 64), clock_timestamp() - interval '1 day', 'invited', null, null, false, null, null, clock_timestamp() - interval '2 days'),
+  ('26000003-0000-0000-0000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, null, clock_timestamp()),
+  ('26000004-0000-0000-0000-000000000005', repeat('5', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, 'EUR 1.500 - EUR 3.000', null, clock_timestamp());
 
 create temporary table phase26_valid_result as
 select *

@@ -47,7 +47,7 @@ select ok(
 
 insert into public.quote_requests (id,request_kind,sdf_package,name,email,website_type,budget,timing,description,privacy_consent,status) values
   ('d5100000-0000-4000-8000-000000000001','slimme_documentenflow','groei','SDF evidence fixture','sdf-evidence@example.test',null,null,null,'SDF evidence fixture.',true,'approved'),
-  ('d5100000-0000-4000-8000-000000000002','website',null,'Website evidence fixture','website-evidence@example.test','business','Meer dan EUR 6.000','flexible','Website isolation fixture.',true,'approved');
+  ('d5100001-0000-4000-8000-000000000002','website',null,'Website evidence fixture','website-evidence@example.test','business','Meer dan EUR 6.000','flexible','Website isolation fixture.',true,'approved');
 
 insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
   ('d5200000-0000-4000-8000-000000000001','d5100000-0000-4000-8000-000000000001','2099-01-02T09:00:00Z');

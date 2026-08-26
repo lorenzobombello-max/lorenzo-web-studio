@@ -10,12 +10,12 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('32000000-0000-0000-0000-000000000001', 'DB2 Budget Guard', 'db2-bg@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'DB2 Budget Guard fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('32000000-0000-0000-0000-000000000002', 'DB2 Legacy', 'db2-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'DB2 legacy fixture.', true, 'approved', null, null),
-  ('32000000-0000-0000-0000-000000000003', 'DB2 Missing', 'db2-missing@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 missing fixture.', true, 'approved', null, null),
-  ('32000000-0000-0000-0000-000000000004', 'DB2 Ambiguous', 'db2-ambiguous@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 ambiguous fixture.', true, 'approved', null, null),
-  ('32000000-0000-0000-0000-000000000005', 'DB2 Invalid', 'db2-invalid@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 invalid rollback fixture.', true, 'approved', null, null),
-  ('32000000-0000-0000-0000-000000000006', 'DB2 Failed', 'db2-failed@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 failed submit fixture.', true, 'approved', null, null),
-  ('32000000-0000-0000-0000-000000000007', 'DB2 Historical', 'db2-v1@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 historical v1 fixture.', true, 'approved', null, null);
+  ('32000001-0000-0000-0000-000000000002', 'DB2 Legacy', 'db2-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'DB2 legacy fixture.', true, 'approved', null, null),
+  ('32000002-0000-0000-0000-000000000003', 'DB2 Missing', 'db2-missing@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 missing fixture.', true, 'approved', null, null),
+  ('32000003-0000-0000-0000-000000000004', 'DB2 Ambiguous', 'db2-ambiguous@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 ambiguous fixture.', true, 'approved', null, null),
+  ('32000004-0000-0000-0000-000000000005', 'DB2 Invalid', 'db2-invalid@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 invalid rollback fixture.', true, 'approved', null, null),
+  ('32000005-0000-0000-0000-000000000006', 'DB2 Failed', 'db2-failed@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 failed submit fixture.', true, 'approved', null, null),
+  ('32000006-0000-0000-0000-000000000007', 'DB2 Historical', 'db2-v1@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'DB2 historical v1 fixture.', true, 'approved', null, null);
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
@@ -34,12 +34,12 @@ select
   clock_timestamp()
 from (values
   ('32000000-0000-0000-0000-000000000001'::uuid, '1'),
-  ('32000000-0000-0000-0000-000000000002'::uuid, '2'),
-  ('32000000-0000-0000-0000-000000000003'::uuid, '3'),
-  ('32000000-0000-0000-0000-000000000004'::uuid, '4'),
-  ('32000000-0000-0000-0000-000000000005'::uuid, '5'),
-  ('32000000-0000-0000-0000-000000000006'::uuid, '6'),
-  ('32000000-0000-0000-0000-000000000007'::uuid, '7')
+  ('32000001-0000-0000-0000-000000000002'::uuid, '2'),
+  ('32000002-0000-0000-0000-000000000003'::uuid, '3'),
+  ('32000003-0000-0000-0000-000000000004'::uuid, '4'),
+  ('32000004-0000-0000-0000-000000000005'::uuid, '5'),
+  ('32000005-0000-0000-0000-000000000006'::uuid, '6'),
+  ('32000006-0000-0000-0000-000000000007'::uuid, '7')
 ) as fixtures(request_id, token_character);
 
 create temporary table db2_fixture as

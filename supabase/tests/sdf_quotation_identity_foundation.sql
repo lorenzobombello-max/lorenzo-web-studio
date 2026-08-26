@@ -37,7 +37,7 @@ select ok(
 
 insert into public.quote_requests (id,request_kind,sdf_package,name,email,website_type,budget,timing,description,privacy_consent,status) values
   ('c5100000-0000-4000-8000-000000000001','slimme_documentenflow','groei','SDF quotation fixture','sdf-quotation@example.test',null,null,null,'SDF quotation identity fixture.',true,'approved'),
-  ('c5100000-0000-4000-8000-000000000002','website',null,'Website quotation fixture','website-quotation@example.test','business','Meer dan EUR 6.000','flexible','Website quotation isolation fixture.',true,'approved');
+  ('c5100001-0000-4000-8000-000000000002','website',null,'Website quotation fixture','website-quotation@example.test','business','Meer dan EUR 6.000','flexible','Website quotation isolation fixture.',true,'approved');
 
 select is((select count(*)::integer from public.sdf_quotations),0,'SDF application creation does not automatically create quotation identity');
 
@@ -59,7 +59,7 @@ select throws_ok(
   '23505', null, 'one SDF application cannot acquire multiple quotation identities'
 );
 select throws_ok(
-  $$insert into public.sdf_quotations(quotation_id,quote_request_id) values ('c5300000-0000-4000-8000-000000000003','c5100000-0000-4000-8000-000000000002')$$,
+  $$insert into public.sdf_quotations(quotation_id,quote_request_id) values ('c5300000-0000-4000-8000-000000000003','c5100001-0000-4000-8000-000000000002')$$,
   '23514', 'SDF_QUOTATION_REQUIRES_SDF_APPLICATION', 'Website applications cannot enter the SDF quotation identity authority'
 );
 select throws_ok(

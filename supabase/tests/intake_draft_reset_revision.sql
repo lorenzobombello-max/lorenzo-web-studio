@@ -10,11 +10,11 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('d2200000-0000-4000-8000-000000000001', 'Reset active', 'reset-active@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset active fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('d2200000-0000-4000-8000-000000000002', 'Reset submitted', 'reset-submitted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset submitted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('d2200000-0000-4000-8000-000000000003', 'Reset reviewed', 'reset-reviewed@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset reviewed fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('d2200000-0000-4000-8000-000000000004', 'Reset expired', 'reset-expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset expired fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('d2200000-0000-4000-8000-000000000005', 'Reset revoked', 'reset-revoked@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset revoked fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('d2200000-0000-4000-8000-000000000006', 'Reset other', 'reset-other@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset other fixture.', true, 'approved', 'budget_guard_v2', 'above_6000');
+  ('d2200001-0000-4000-8000-000000000002', 'Reset submitted', 'reset-submitted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset submitted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('d2200002-0000-4000-8000-000000000003', 'Reset reviewed', 'reset-reviewed@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset reviewed fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('d2200003-0000-4000-8000-000000000004', 'Reset expired', 'reset-expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset expired fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('d2200004-0000-4000-8000-000000000005', 'Reset revoked', 'reset-revoked@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset revoked fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('d2200005-0000-4000-8000-000000000006', 'Reset other', 'reset-other@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reset other fixture.', true, 'approved', 'budget_guard_v2', 'above_6000');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, status, access_token_hash, access_token_expires_at,
@@ -63,11 +63,11 @@ insert into public.quote_request_intakes (
   business_description, confirmation, admin_access_token_hash,
   admin_access_token_expires_at, draft_revision
 ) values
-  ('d2210000-0000-4000-8000-000000000002', 'd2200000-0000-4000-8000-000000000002', 'submitted', repeat('b',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', null, clock_timestamp()-interval '3 hours', 'Submitted stays', true, repeat('1',64), clock_timestamp()+interval '1 day', 4),
-  ('d2210000-0000-4000-8000-000000000003', 'd2200000-0000-4000-8000-000000000003', 'reviewed', repeat('7',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '3 hours', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', clock_timestamp()-interval '4 hours', 'Reviewed stays', true, repeat('2',64), clock_timestamp()+interval '1 day', 7),
-  ('d2210000-0000-4000-8000-000000000004', 'd2200000-0000-4000-8000-000000000004', 'in_progress', repeat('8',64), clock_timestamp()-interval '1 minute', null, clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Expired stays', false, null, null, 2),
-  ('d2210000-0000-4000-8000-000000000005', 'd2200000-0000-4000-8000-000000000005', 'in_progress', repeat('9',64), clock_timestamp()+interval '1 day', clock_timestamp()-interval '1 minute', clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Revoked stays', false, null, null, 2),
-  ('d2210000-0000-4000-8000-000000000006', 'd2200000-0000-4000-8000-000000000006', 'in_progress', repeat('f',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Other stays', false, null, null, 9);
+  ('d2210000-0000-4000-8000-000000000002', 'd2200001-0000-4000-8000-000000000002', 'submitted', repeat('b',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', null, clock_timestamp()-interval '3 hours', 'Submitted stays', true, repeat('1',64), clock_timestamp()+interval '1 day', 4),
+  ('d2210000-0000-4000-8000-000000000003', 'd2200002-0000-4000-8000-000000000003', 'reviewed', repeat('7',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '3 hours', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', clock_timestamp()-interval '4 hours', 'Reviewed stays', true, repeat('2',64), clock_timestamp()+interval '1 day', 7),
+  ('d2210000-0000-4000-8000-000000000004', 'd2200003-0000-4000-8000-000000000004', 'in_progress', repeat('8',64), clock_timestamp()-interval '1 minute', null, clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Expired stays', false, null, null, 2),
+  ('d2210000-0000-4000-8000-000000000005', 'd2200004-0000-4000-8000-000000000005', 'in_progress', repeat('9',64), clock_timestamp()+interval '1 day', clock_timestamp()-interval '1 minute', clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Revoked stays', false, null, null, 2),
+  ('d2210000-0000-4000-8000-000000000006', 'd2200005-0000-4000-8000-000000000006', 'in_progress', repeat('f',64), clock_timestamp()+interval '1 day', null, clock_timestamp()-interval '2 hours', null, null, clock_timestamp()-interval '3 hours', 'Other stays', false, null, null, 9);
 
 create temporary table reset_identity_before as
 select id, quote_request_id, access_token_hash, access_token_expires_at,
@@ -139,7 +139,14 @@ select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat
 select throws_ok($$select * from public.reset_quote_request_intake_draft_v1(repeat('8',64),2)$$, 'P0001', 'INTAKE_ACCESS_EXPIRED', 'expired token returns lifecycle denial');
 select is((select outcome from public.reset_quote_request_intake_draft_v1(repeat('9',64),2)), 'invalid_token', 'revoked token is rejected');
 select is((select business_description from public.quote_request_intakes where access_token_hash=repeat('f',64)), 'Other stays', 'another intake cannot be reset');
-select is((select count(*)::integer from public.quote_requests where id::text like 'd2200000-%'), 6, 'reset deletes no quote request');
+select is((select count(*)::integer from public.quote_requests where id in (
+  'd2200000-0000-4000-8000-000000000001',
+  'd2200001-0000-4000-8000-000000000002',
+  'd2200002-0000-4000-8000-000000000003',
+  'd2200003-0000-4000-8000-000000000004',
+  'd2200004-0000-4000-8000-000000000005',
+  'd2200005-0000-4000-8000-000000000006'
+)), 6, 'reset deletes no quote request');
 select is((select count(*)::integer from public.quote_request_intakes where id::text like 'd2210000-%'), 6, 'reset deletes no intake');
 select is((select business_description from public.quote_request_intakes where access_token_hash=repeat('b',64)), 'Submitted stays', 'submitted answer data remains unchanged');
 select is((select admin_access_token_hash from public.quote_request_intakes where access_token_hash=repeat('b',64)), repeat('1',64), 'submitted admin capability remains unchanged');

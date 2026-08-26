@@ -48,13 +48,13 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
 ('19a10000-0000-4000-8000-000000000001','Care submit','care@example.test','business','Meer dan EUR 6.000','flexible','Care persistence fixture',true,'approved','budget_guard_v2','above_6000'),
-('19a10000-0000-4000-8000-000000000002','Care plus submit','care-plus@example.test','business','Meer dan EUR 6.000','flexible','Care plus persistence fixture',true,'approved','budget_guard_v2','above_6000');
+('19a10001-0000-4000-8000-000000000002','Care plus submit','care-plus@example.test','business','Meer dan EUR 6.000','flexible','Care plus persistence fixture',true,'approved','budget_guard_v2','above_6000');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at
 ) values
 ('19a11000-0000-4000-8000-000000000001','19a10000-0000-4000-8000-000000000001',repeat('7',64),clock_timestamp()+interval '1 day'),
-('19a11000-0000-4000-8000-000000000002','19a10000-0000-4000-8000-000000000002',repeat('9',64),clock_timestamp()+interval '1 day');
+('19a11000-0000-4000-8000-000000000002','19a10001-0000-4000-8000-000000000002',repeat('9',64),clock_timestamp()+interval '1 day');
 
 create function pg_temp.submit_recurring(p_package_id text)
 returns table(outcome text, pricing_snapshot jsonb)

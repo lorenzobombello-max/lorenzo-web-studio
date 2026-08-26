@@ -10,24 +10,24 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('27000000-0000-0000-0000-000000000001', 'Atomic draft', 'atomic-draft@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Atomic draft fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000002', 'Atomic submit', 'atomic-submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Atomic submit fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000003', 'Legacy failure', 'legacy-failure@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Legacy rollback fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000004', 'Evidence failure', 'evidence-failure@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Evidence rollback fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000005', 'Submitted protected', 'submitted-protected@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Submitted lifecycle fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000006', 'Standalone legacy', 'standalone-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Standalone legacy fixture.', true, 'approved'),
-  ('27000000-0000-0000-0000-000000000007', 'Standalone bridge', 'standalone-bridge@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Standalone bridge fixture.', true, 'approved');
+  ('27000001-0000-0000-0000-000000000002', 'Atomic submit', 'atomic-submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Atomic submit fixture.', true, 'approved'),
+  ('27000002-0000-0000-0000-000000000003', 'Legacy failure', 'legacy-failure@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Legacy rollback fixture.', true, 'approved'),
+  ('27000003-0000-0000-0000-000000000004', 'Evidence failure', 'evidence-failure@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Evidence rollback fixture.', true, 'approved'),
+  ('27000004-0000-0000-0000-000000000005', 'Submitted protected', 'submitted-protected@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Submitted lifecycle fixture.', true, 'approved'),
+  ('27000005-0000-0000-0000-000000000006', 'Standalone legacy', 'standalone-legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Standalone legacy fixture.', true, 'approved'),
+  ('27000006-0000-0000-0000-000000000007', 'Standalone bridge', 'standalone-bridge@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Standalone bridge fixture.', true, 'approved');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
   status, started_at, submitted_at, confirmation, primary_language, created_at
 ) values
   ('27000000-0000-0000-0000-000000000001', repeat('a', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('27000000-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('27000000-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('27000000-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('27000000-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, 'nl', clock_timestamp() - interval '3 hours'),
-  ('27000000-0000-0000-0000-000000000006', repeat('f', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('27000000-0000-0000-0000-000000000007', repeat('0', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp());
+  ('27000001-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('27000002-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('27000003-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('27000004-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, 'nl', clock_timestamp() - interval '3 hours'),
+  ('27000005-0000-0000-0000-000000000006', repeat('f', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('27000006-0000-0000-0000-000000000007', repeat('0', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp());
 
 create temporary table phase27_draft_result as
 select *
@@ -114,7 +114,7 @@ select is(
   (
     select count(*)::integer
     from public.quote_request_email_jobs
-    where quote_request_id = '27000000-0000-0000-0000-000000000002'
+    where quote_request_id = '27000001-0000-0000-0000-000000000002'
       and kind = 'intake_submitted_notification'
   ),
   1,

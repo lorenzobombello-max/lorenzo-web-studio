@@ -10,11 +10,11 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('31000000-0000-0000-0000-000000000001', 'Historical v1', 'v1@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Historical v1 snapshot fixture.', true, 'approved', null, null),
-  ('31000000-0000-0000-0000-000000000002', 'Budget Guard v2', 'v2@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Budget Guard contract v2 fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('31000000-0000-0000-0000-000000000003', 'Legacy v2', 'legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Legacy provenance contract v2 fixture.', true, 'approved', null, null),
-  ('31000000-0000-0000-0000-000000000004', 'Invalid v2', 'invalid@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Invalid contract v2 rollback fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('31000000-0000-0000-0000-000000000005', 'Below starter v2', 'below@example.test', 'business', 'Minder dan EUR 1.800', 'flexible', 'Tri-state true fixture.', true, 'approved', 'budget_guard_v1', 'below_1800'),
-  ('31000000-0000-0000-0000-000000000006', 'Incomplete v2', 'incomplete@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Forced submit rollback fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive');
+  ('31000001-0000-0000-0000-000000000002', 'Budget Guard v2', 'v2@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Budget Guard contract v2 fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
+  ('31000002-0000-0000-0000-000000000003', 'Legacy v2', 'legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Legacy provenance contract v2 fixture.', true, 'approved', null, null),
+  ('31000003-0000-0000-0000-000000000004', 'Invalid v2', 'invalid@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Invalid contract v2 rollback fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
+  ('31000004-0000-0000-0000-000000000005', 'Below starter v2', 'below@example.test', 'business', 'Minder dan EUR 1.800', 'flexible', 'Tri-state true fixture.', true, 'approved', 'budget_guard_v1', 'below_1800'),
+  ('31000005-0000-0000-0000-000000000006', 'Incomplete v2', 'incomplete@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Forced submit rollback fixture.', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
@@ -22,11 +22,11 @@ insert into public.quote_request_intakes (
   created_at
 ) values
   ('31000000-0000-0000-0000-000000000001', repeat('1', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, 'EUR 3.000 - EUR 6.000', clock_timestamp() - interval '3 hours'),
-  ('31000000-0000-0000-0000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('31000000-0000-0000-0000-000000000003', repeat('3', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('31000000-0000-0000-0000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('31000000-0000-0000-0000-000000000005', repeat('5', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
-  ('31000000-0000-0000-0000-000000000006', repeat('6', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp());
+  ('31000001-0000-0000-0000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('31000002-0000-0000-0000-000000000003', repeat('3', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('31000003-0000-0000-0000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('31000004-0000-0000-0000-000000000005', repeat('5', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp()),
+  ('31000005-0000-0000-0000-000000000006', repeat('6', 64), clock_timestamp() + interval '1 day', 'invited', null, null, false, null, clock_timestamp());
 
 create temporary table phase31b_fixture as
 select

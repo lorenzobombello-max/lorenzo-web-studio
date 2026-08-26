@@ -10,22 +10,22 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('30000000-0000-0000-0000-000000000001', 'Historical evidence', 'historical@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Historical quote form fixture.', true, 'approved'),
-  ('30000000-0000-0000-0000-000000000002', 'Basic structure', 'basic@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Basic structure fixture.', true, 'approved'),
-  ('30000000-0000-0000-0000-000000000003', 'Extended structure', 'extended@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Extended structure fixture.', true, 'approved'),
-  ('30000000-0000-0000-0000-000000000004', 'Unsure structure', 'unsure@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Unsure structure fixture.', true, 'approved'),
-  ('30000000-0000-0000-0000-000000000005', 'Orchestrated structure', 'orchestrated@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Orchestrated structure fixture.', true, 'approved'),
-  ('30000000-0000-0000-0000-000000000006', 'Rollback structure', 'rollback@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Rollback structure fixture.', true, 'approved');
+  ('30000001-0000-0000-0000-000000000002', 'Basic structure', 'basic@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Basic structure fixture.', true, 'approved'),
+  ('30000002-0000-0000-0000-000000000003', 'Extended structure', 'extended@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Extended structure fixture.', true, 'approved'),
+  ('30000003-0000-0000-0000-000000000004', 'Unsure structure', 'unsure@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Unsure structure fixture.', true, 'approved'),
+  ('30000004-0000-0000-0000-000000000005', 'Orchestrated structure', 'orchestrated@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Orchestrated structure fixture.', true, 'approved'),
+  ('30000005-0000-0000-0000-000000000006', 'Rollback structure', 'rollback@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'Rollback structure fixture.', true, 'approved');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
   status, confirmation, quote_form_details, created_at
 ) values
   ('30000000-0000-0000-0000-000000000001', repeat('a', 64), clock_timestamp() + interval '1 day', 'invited', false, '{"classification":"extended","form_count":1}'::jsonb, clock_timestamp()),
-  ('30000000-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
-  ('30000000-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
-  ('30000000-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
-  ('30000000-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
-  ('30000000-0000-0000-0000-000000000006', repeat('f', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp());
+  ('30000001-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
+  ('30000002-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
+  ('30000003-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
+  ('30000004-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp()),
+  ('30000005-0000-0000-0000-000000000006', repeat('f', 64), clock_timestamp() + interval '1 day', 'invited', false, null, clock_timestamp());
 
 select lives_ok(
   $$

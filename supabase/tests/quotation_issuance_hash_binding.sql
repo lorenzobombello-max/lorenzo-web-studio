@@ -125,7 +125,12 @@ select is((select recipient_email from public.prepare_quotation_acceptance_confi
   'internal@example.test','internal confirmation uses explicit trusted recipient');
 select is((select count(*)::integer from public.quote_request_email_jobs where kind in('quotation_delivery','quotation_acceptance_customer','quotation_acceptance_internal')),3,'lifecycle creates three distinct email jobs');
 select is((select count(*)::integer from public.quote_request_quotation_acceptances),1,'confirmation preparation cannot duplicate or roll back acceptance');
-select is((select count(*)::integer from information_schema.tables where table_schema='public' and table_name like '%invoice%'),0,'delivery and confirmation lifecycle creates no invoice authority');
+select is((
+  (select count(*) from public.sdf_m1_invoice_candidates where quote_request_id='d3ea0000-0000-4000-8000-000000000001')
+  + (select count(*) from public.sdf_m1_invoice_issuances as issuance
+     join public.sdf_m1_invoice_candidates as candidate on candidate.candidate_id=issuance.candidate_id
+     where candidate.quote_request_id='d3ea0000-0000-4000-8000-000000000001')
+)::integer,0,'delivery and confirmation lifecycle creates no invoice authority');
 select throws_ok($$update public.quote_request_quotation_email_orchestrations set recipient_email='changed@example.test'$$,'55000','QUOTATION_EMAIL_ORCHESTRATION_IMMUTABLE','delivery evidence is immutable');
 
 select * from finish();

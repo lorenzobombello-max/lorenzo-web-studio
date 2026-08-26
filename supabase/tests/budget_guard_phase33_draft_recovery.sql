@@ -16,7 +16,7 @@ insert into public.quote_requests (
     'budget_guard_v2', 'above_6000'
   ),
   (
-    '33000000-0000-4000-8000-000000000002', 'Failed draft retry',
+    '33000001-0000-4000-8000-000000000002', 'Failed draft retry',
     'failed-draft-retry@example.test', 'business', 'Meer dan EUR 6.000',
     'flexible', 'Failed draft retry fixture.', true, 'approved',
     'budget_guard_v2', 'above_6000'
@@ -34,7 +34,7 @@ insert into public.quote_request_intakes (
   ),
   (
     '33001000-0000-4000-8000-000000000002',
-    '33000000-0000-4000-8000-000000000002', repeat('4', 64),
+    '33000001-0000-4000-8000-000000000002', repeat('4', 64),
     clock_timestamp() + interval '1 day', 'invited', null, null, false,
     clock_timestamp()
   );
@@ -156,7 +156,7 @@ select is(
   'D: retry state is coherent and reloadable'
 );
 select is(
-  (select count(*)::integer from public.quote_request_intakes where quote_request_id = '33000000-0000-4000-8000-000000000002'),
+  (select count(*)::integer from public.quote_request_intakes where quote_request_id = '33000001-0000-4000-8000-000000000002'),
   1,
   'D: retry does not create duplicate intake records'
 );

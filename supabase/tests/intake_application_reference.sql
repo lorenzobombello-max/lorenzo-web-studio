@@ -18,16 +18,16 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
 ('19b20000-0000-4000-8000-000000000001','Legacy application','legacy@example.test','business','Meer dan EUR 6.000','flexible','Legacy reference fixture',true,'approved','budget_guard_v2','above_6000'),
-('19b20000-0000-4000-8000-000000000002','New application one','one@example.test','business','Meer dan EUR 6.000','flexible','Reference fixture one',true,'approved','budget_guard_v2','above_6000'),
-('19b20000-0000-4000-8000-000000000003','New application two','two@example.test','business','Meer dan EUR 6.000','flexible','Reference fixture two',true,'approved','budget_guard_v2','above_6000'),
-('19b20000-0000-4000-8000-000000000004','Year boundary','year@example.test','business','Meer dan EUR 6.000','flexible','Year boundary fixture',true,'approved','budget_guard_v2','above_6000');
+('19b20001-0000-4000-8000-000000000002','New application one','one@example.test','business','Meer dan EUR 6.000','flexible','Reference fixture one',true,'approved','budget_guard_v2','above_6000'),
+('19b20002-0000-4000-8000-000000000003','New application two','two@example.test','business','Meer dan EUR 6.000','flexible','Reference fixture two',true,'approved','budget_guard_v2','above_6000'),
+('19b20003-0000-4000-8000-000000000004','Year boundary','year@example.test','business','Meer dan EUR 6.000','flexible','Year boundary fixture',true,'approved','budget_guard_v2','above_6000');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at
 ) values
-('19b21000-0000-4000-8000-000000000002','19b20000-0000-4000-8000-000000000002',repeat('1',64),clock_timestamp()+interval '1 day'),
-('19b21000-0000-4000-8000-000000000003','19b20000-0000-4000-8000-000000000003',repeat('2',64),clock_timestamp()+interval '1 day'),
-('19b21000-0000-4000-8000-000000000004','19b20000-0000-4000-8000-000000000004',repeat('3',64),clock_timestamp()+interval '10 years');
+('19b21000-0000-4000-8000-000000000002','19b20001-0000-4000-8000-000000000002',repeat('1',64),clock_timestamp()+interval '1 day'),
+('19b21000-0000-4000-8000-000000000003','19b20002-0000-4000-8000-000000000003',repeat('2',64),clock_timestamp()+interval '1 day'),
+('19b21000-0000-4000-8000-000000000004','19b20003-0000-4000-8000-000000000004',repeat('3',64),clock_timestamp()+interval '10 years');
 
 create function pg_temp.submit_application(p_access_hash text, p_admin_hash text)
 returns text
@@ -70,30 +70,30 @@ select is(
 select is(pg_temp.submit_application(repeat('1',64), repeat('a',64)), 'submitted', 'first valid submission succeeds');
 
 select matches(
-  (select application_reference from public.quote_requests where id='19b20000-0000-4000-8000-000000000002'),
+  (select application_reference from public.quote_requests where id='19b20001-0000-4000-8000-000000000002'),
   '^LWS-AAN-[0-9]{4}-[0-9]{4}$',
   'first submission receives the required human-readable format'
 );
 select is(
   (select id::text from public.quote_requests where application_reference is not null),
-  '19b20000-0000-4000-8000-000000000002',
+  '19b20001-0000-4000-8000-000000000002',
   'the internal UUID remains the database identifier'
 );
 
 create temporary table first_reference as
 select application_reference
 from public.quote_requests
-where id='19b20000-0000-4000-8000-000000000002';
+where id='19b20001-0000-4000-8000-000000000002';
 
 select is(pg_temp.submit_application(repeat('1',64), repeat('a',64)), 'already_submitted', 'duplicate submit follows the idempotent path');
 
 select is(
-  (select application_reference from public.quote_requests where id='19b20000-0000-4000-8000-000000000002'),
+  (select application_reference from public.quote_requests where id='19b20001-0000-4000-8000-000000000002'),
   (select application_reference from first_reference),
   'idempotent retry preserves the same application reference'
 );
 select is(
-  (select count(*)::integer from public.quote_request_email_jobs where quote_request_id='19b20000-0000-4000-8000-000000000002' and kind='intake_submitted_notification'),
+  (select count(*)::integer from public.quote_request_email_jobs where quote_request_id='19b20001-0000-4000-8000-000000000002' and kind='intake_submitted_notification'),
   1,
   'idempotent retry preserves one notification job'
 );
@@ -101,27 +101,27 @@ select is(
 select is(pg_temp.submit_application(repeat('2',64), repeat('b',64)), 'submitted', 'second valid submission succeeds');
 
 select is(
-  right((select application_reference from public.quote_requests where id='19b20000-0000-4000-8000-000000000003'), 4)::integer,
+  right((select application_reference from public.quote_requests where id='19b20002-0000-4000-8000-000000000003'), 4)::integer,
   right((select application_reference from first_reference), 4)::integer + 1,
   'references increase monotonically within the year'
 );
 select is(
-  left((select application_reference from public.quote_requests where id='19b20000-0000-4000-8000-000000000003'), 12),
+  left((select application_reference from public.quote_requests where id='19b20002-0000-4000-8000-000000000003'), 12),
   left((select application_reference from first_reference), 12),
   'consecutive references use the same current year prefix'
 );
 select is(
-  (select count(distinct application_reference)::integer from public.quote_requests where id in ('19b20000-0000-4000-8000-000000000002','19b20000-0000-4000-8000-000000000003')),
+  (select count(distinct application_reference)::integer from public.quote_requests where id in ('19b20001-0000-4000-8000-000000000002','19b20002-0000-4000-8000-000000000003')),
   2,
   'separate applications have unique references'
 );
 select throws_matching(
-  $$update public.quote_requests set application_reference='LWS-AAN-2099-9999' where id='19b20000-0000-4000-8000-000000000002'$$,
+  $$update public.quote_requests set application_reference='LWS-AAN-2099-9999' where id='19b20001-0000-4000-8000-000000000002'$$,
   'APPLICATION_REFERENCE_IMMUTABLE',
   'assigned application references cannot be changed'
 );
 select throws_matching(
-  $$update public.quote_requests set application_reference=null where id='19b20000-0000-4000-8000-000000000002'$$,
+  $$update public.quote_requests set application_reference=null where id='19b20001-0000-4000-8000-000000000002'$$,
   'APPLICATION_REFERENCE_IMMUTABLE',
   'assigned application references cannot be removed'
 );
@@ -145,7 +145,7 @@ set business_description='Year boundary', target_audience='Local businesses',
 where id='19b21000-0000-4000-8000-000000000004';
 
 select matches(
-  (select application_reference from public.quote_requests where id='19b20000-0000-4000-8000-000000000004'),
+  (select application_reference from public.quote_requests where id='19b20003-0000-4000-8000-000000000004'),
   '^LWS-AAN-2031-0001$',
   'reference year follows submitted_at in Europe Brussels at the year boundary'
 );

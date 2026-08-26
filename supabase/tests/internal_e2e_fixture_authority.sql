@@ -69,14 +69,14 @@ insert into public.quote_requests (
   id, name, email, website_type, budget, timing, description, privacy_consent, status
 ) values
   ('b4100000-0000-4000-8000-000000000001','Production New','new@example.test','Website','Budget','Timing','New production pagination fixture.',true,'approved'),
-  ('b4100000-0000-4000-8000-000000000002','Production Old','old@example.test','Website','Budget','Timing','Old production pagination fixture.',true,'approved');
+  ('b4100001-0000-4000-8000-000000000002','Production Old','old@example.test','Website','Budget','Timing','Old production pagination fixture.',true,'approved');
 insert into public.quote_request_intakes (
   id, quote_request_id, status, access_token_hash, access_token_expires_at, started_at, submitted_at, confirmation
 ) values
   ('b4200000-0000-4000-8000-000000000001','b4100000-0000-4000-8000-000000000001','submitted',repeat('a',64),clock_timestamp()+interval '1 hour',clock_timestamp(),clock_timestamp()+interval '1 minute',true),
-  ('b4200000-0000-4000-8000-000000000002','b4100000-0000-4000-8000-000000000002','submitted',repeat('b',64),clock_timestamp()+interval '1 hour',clock_timestamp(),clock_timestamp()-interval '1 minute',true);
+  ('b4200000-0000-4000-8000-000000000002','b4100001-0000-4000-8000-000000000002','submitted',repeat('b',64),clock_timestamp()+interval '1 hour',clock_timestamp(),clock_timestamp()-interval '1 minute',true);
 select is(jsonb_array_length(public.list_operator_applications_v1()), 2, 'E2E record is removed before production pagination');
-select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id', 'b4100000-0000-4000-8000-000000000002', 'offset applies to the filtered production sequence');
+select is(public.list_operator_applications_v1(1,1)->0->>'quote_request_id', 'b4100001-0000-4000-8000-000000000002', 'offset applies to the filtered production sequence');
 select throws_ok(
   format('select public.get_operator_application_v1(%L,null)', (select result->>'quote_request_id' from created_e2e)),
   'P0001', 'APPLICATION_NOT_FOUND', 'operator detail hides E2E fixture'

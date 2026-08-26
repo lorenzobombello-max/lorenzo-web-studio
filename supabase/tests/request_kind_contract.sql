@@ -39,13 +39,13 @@ select is(
 insert into public.quote_requests (
   id, request_kind, name, email, website_type, budget, timing, description, privacy_consent, status
 ) values (
-  '44000000-0000-4000-8000-000000000002', 'slimme_documentenflow',
+  '44000001-0000-4000-8000-000000000002', 'slimme_documentenflow',
   'Documentenflow request', 'flow@example.test', null, null, null,
   'Documentenflow request fixture.', true, 'approved'
 );
 
 select is(
-  (select request_kind from public.quote_requests where id = '44000000-0000-4000-8000-000000000002'),
+  (select request_kind from public.quote_requests where id = '44000001-0000-4000-8000-000000000002'),
   'slimme_documentenflow',
   'Documentenflow request persists distinctly'
 );
@@ -81,12 +81,12 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$update public.quote_requests set status='rejected' where id='44000000-0000-4000-8000-000000000002'$$,
+  $$update public.quote_requests set status='rejected' where id='44000001-0000-4000-8000-000000000002'$$,
   '42501', 'REQUEST_KIND_ACTION_NOT_ALLOWED', 'Documentenflow cannot enter website review transitions'
 );
 
 select throws_ok(
-  $$insert into public.quote_request_intakes (quote_request_id,access_token_hash,access_token_expires_at) values ('44000000-0000-4000-8000-000000000002',repeat('d',64),clock_timestamp()+interval '1 day')$$,
+  $$insert into public.quote_request_intakes (quote_request_id,access_token_hash,access_token_expires_at) values ('44000001-0000-4000-8000-000000000002',repeat('d',64),clock_timestamp()+interval '1 day')$$,
   '42501', 'REQUEST_KIND_INTAKE_NOT_ALLOWED', 'Documentenflow cannot enter website intake'
 );
 
