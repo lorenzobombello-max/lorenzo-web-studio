@@ -490,6 +490,22 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const personalQueueMessage = document.getElementById("personalQueueMessage");
   const personalQueueRefresh = document.getElementById("personalQueueRefresh");
   const personalQueueLoadMore = document.getElementById("personalQueueLoadMore");
+  const customerRequestDossier = document.getElementById("customerRequestDossier");
+  const customerRequestMessage = document.getElementById("customerRequestMessage");
+  const customerRequestList = document.getElementById("customerRequestList");
+  const customerRequestEmpty = document.getElementById("customerRequestEmpty");
+  const customerRequestLoadMore = document.getElementById("customerRequestLoadMore");
+  const customerRequestDetail = document.getElementById("customerRequestDetail");
+  const customerRequestDetailEmpty = document.getElementById("customerRequestDetailEmpty");
+  const customerRequestDetailMessage = document.getElementById("customerRequestDetailMessage");
+  const customerRequestReference = document.getElementById("customerRequestReference");
+  const customerRequestTitle = document.getElementById("customerRequestTitle");
+  const customerRequestType = document.getElementById("customerRequestType");
+  const customerRequestStatus = document.getElementById("customerRequestStatus");
+  const customerRequestPriority = document.getElementById("customerRequestPriority");
+  const customerRequestSubmittedAt = document.getElementById("customerRequestSubmittedAt");
+  const customerRequestDescription = document.getElementById("customerRequestDescription");
+  const customerRequestActionButtons = Array.from(document.querySelectorAll("[data-customer-request-command]"));
   const managerWorkspace = document.getElementById("managerWorkspace");
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -551,6 +567,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let pendingDossierLifecycleAction = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
+  let selectedDossierReference = null;
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
@@ -562,6 +579,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     personalQueueList.replaceChildren();
     for (const dossier of items) {
       const item = document.createElement("li");
+      const button = document.createElement("button");
       const identity = document.createElement("div");
       const reference = document.createElement("strong");
       const assignedAt = document.createElement("small");
@@ -571,9 +589,88 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       identity.append(reference, assignedAt);
       statuses.className = "personal-queue-list__statuses";
       statuses.append(badge(dossier.status), badge(dossier.zone));
-      item.append(identity, statuses);
+      button.type = "button";
+      button.className = "personal-queue-list__button";
+      button.setAttribute("aria-current", String(dossier.reference === selectedDossierReference));
+      button.addEventListener("click", ()=>{
+        selectedDossierReference = dossier.reference;
+        customerRequestDetailController.clear();
+        customerRequestListController.selectDossier(dossier.reference);
+        renderPersonalQueue(personalQueueController.state.items);
+      });
+      button.append(identity, statuses);
+      item.append(button);
       personalQueueList.append(item);
     }
+  }
+
+  function renderCustomerRequestList(items, selectedRequestId) {
+    customerRequestList.replaceChildren();
+    for (const request of items) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      const identity = document.createElement("span");
+      const title = document.createElement("strong");
+      const reference = document.createElement("small");
+      title.textContent = request.title;
+      reference.textContent = `${request.request_reference} · ${formatDate(request.submitted_at)}`;
+      identity.append(title, reference);
+      button.type = "button";
+      button.className = "customer-request-list__button";
+      button.setAttribute("aria-current", String(request.request_id === selectedRequestId));
+      button.addEventListener("click", ()=>customerRequestDetailController.selectRequest(request.request_id));
+      button.append(identity, badge(request.status));
+      item.append(button);
+      customerRequestList.append(item);
+    }
+  }
+
+  function renderCustomerRequestDetail(state) {
+    const request = state.request;
+    customerRequestDetail.hidden = !request;
+    customerRequestDetailEmpty.hidden = Boolean(request) || state.loading;
+    customerRequestDetailMessage.textContent = state.loading
+      ? "Request laden…"
+      : state.submitting ? "Actie verwerken…"
+      : state.error === "CONCURRENT_MODIFICATION"
+      ? "De request is intussen gewijzigd. Selecteer de request opnieuw."
+      : state.error ? "De request is niet langer beschikbaar." : "";
+    if (!request) {
+      for (const button of customerRequestActionButtons) button.hidden = true;
+      return;
+    }
+    customerRequestReference.textContent = request.request_reference;
+    customerRequestTitle.textContent = request.title;
+    customerRequestType.textContent = request.request_type.replaceAll("_", " ");
+    customerRequestStatus.textContent = request.status.replaceAll("_", " ");
+    customerRequestPriority.textContent = request.priority || "Niet toegewezen";
+    customerRequestSubmittedAt.textContent = formatDate(request.submitted_at);
+    customerRequestDescription.textContent = request.description;
+    const command = customerRequestWorkCommand(request.status);
+    for (const button of customerRequestActionButtons) {
+      button.hidden = button.dataset.customerRequestCommand !== command;
+      button.disabled = state.submitting;
+    }
+  }
+
+  let customerRequestListController;
+  const customerRequestDetailController = createCustomerRequestDetailController(invoke, (state)=>{
+    renderCustomerRequestDetail(state);
+    renderCustomerRequestList(customerRequestListController?.state.items || [], state.request_id);
+  });
+  customerRequestListController = createCustomerRequestListController(invoke, (state)=>{
+    customerRequestDossier.textContent = state.dossier_reference || "Selecteer een dossier";
+    renderCustomerRequestList(state.items, customerRequestDetailController.state.request_id);
+    customerRequestMessage.textContent = state.loading
+      ? state.items.length ? "Meer requests laden…" : "Requests laden…"
+      : state.error ? "De requests konden niet worden geladen." : "";
+    customerRequestEmpty.hidden = !state.dossier_reference || state.loading || Boolean(state.error) || state.items.length > 0;
+    customerRequestLoadMore.hidden = !state.has_more || !state.next_cursor;
+    customerRequestLoadMore.disabled = state.loading || !state.has_more || !state.next_cursor;
+  });
+  customerRequestLoadMore.addEventListener("click", ()=>customerRequestListController.loadMore());
+  for (const button of customerRequestActionButtons) {
+    button.addEventListener("click", ()=>customerRequestDetailController.transition(button.dataset.customerRequestCommand));
   }
 
   const personalQueueController = createPersonalQueueController(invoke, (state)=>{
@@ -586,7 +683,12 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     personalQueueLoadMore.hidden = !state.has_more || !state.next_cursor;
     personalQueueLoadMore.disabled = state.loading || !state.has_more || !state.next_cursor;
   });
-  personalQueueRefresh.addEventListener("click", ()=>personalQueueController.refresh());
+  personalQueueRefresh.addEventListener("click", ()=>{
+    selectedDossierReference = null;
+    customerRequestListController.clear();
+    customerRequestDetailController.clear();
+    personalQueueController.refresh();
+  });
   personalQueueLoadMore.addEventListener("click", ()=>personalQueueController.loadMore());
   personalQueueWorkspace.hidden = false;
 
@@ -1495,6 +1597,205 @@ export function createPersonalQueueController(invoke, onChange = ()=>{}) {
       return loadPage();
     },
   };
+}
+
+const CUSTOMER_REQUEST_LIST_FIELDS = new Set([
+  "request_id", "request_reference", "request_type", "title", "status",
+  "priority", "submitted_at", "updated_at", "revision",
+]);
+const CUSTOMER_REQUEST_DETAIL_FIELDS = new Set([
+  "request_id", "request_reference", "source", "request_type", "title",
+  "description", "status", "priority", "submitted_at", "revision", "updated_at",
+]);
+
+function exactCustomerRequestProjection(value, fields) {
+  const keys = value && typeof value === "object" ? Object.keys(value) : [];
+  return keys.length === fields.size && keys.every((key)=>fields.has(key));
+}
+
+export function customerRequestsForDossierRequest(dossierReference, cursor = null) {
+  const request = { action: "list_customer_requests_for_dossier", dossier_reference: dossierReference, limit: 25 };
+  if (cursor) request.cursor = cursor;
+  return request;
+}
+
+export function customerRequestDetailRequest(requestId) {
+  return { action: "get_customer_request", request_id: requestId };
+}
+
+export function customerRequestTransitionRequest(request, commandType, idempotencyKey) {
+  return {
+    action: "transition_customer_request",
+    request_id: request.request_id,
+    command_type: commandType,
+    expected_revision: request.revision,
+    idempotency_key: idempotencyKey,
+  };
+}
+
+export function customerRequestWorkCommand(status) {
+  if (status === "TRIAGED") return "START";
+  if (status === "IN_PROGRESS") return "REQUIRE_CUSTOMER_RESPONSE";
+  if (status === "WAITING_CUSTOMER") return "RESUME";
+  return null;
+}
+
+export function appendUniqueCustomerRequestItems(current, incoming) {
+  const items = [...current];
+  const seen = new Set(items.map((item)=>item.request_id));
+  for (const item of incoming) {
+    const valid = exactCustomerRequestProjection(item, CUSTOMER_REQUEST_LIST_FIELDS)
+      && UUID.test(String(item.request_id || ""))
+      && [item.request_reference, item.request_type, item.title, item.status, item.submitted_at, item.updated_at]
+        .every((value)=>typeof value === "string" && value.length > 0)
+      && (item.priority === null || typeof item.priority === "string")
+      && Number.isSafeInteger(item.revision) && item.revision >= 0;
+    if (!valid) throw new Error("INVALID_CUSTOMER_REQUEST_LIST");
+    if (seen.has(item.request_id)) continue;
+    seen.add(item.request_id);
+    items.push(item);
+  }
+  return items;
+}
+
+export function validateCustomerRequestDetail(request) {
+  const valid = exactCustomerRequestProjection(request, CUSTOMER_REQUEST_DETAIL_FIELDS)
+    && UUID.test(String(request?.request_id || ""))
+    && [request.request_reference, request.source, request.request_type, request.title, request.description, request.status, request.submitted_at, request.updated_at]
+      .every((value)=>typeof value === "string" && value.length > 0)
+    && (request.priority === null || typeof request.priority === "string")
+    && Number.isSafeInteger(request.revision) && request.revision >= 0;
+  if (!valid) throw new Error("INVALID_CUSTOMER_REQUEST_DETAIL");
+  return request;
+}
+
+export function createCustomerRequestListController(invoke, onChange = ()=>{}) {
+  const state = { dossier_reference: null, items: [], has_more: false, next_cursor: null, loading: false, error: null };
+  let generation = 0;
+  const publish = ()=>onChange({ ...state, items: [...state.items] });
+
+  async function loadPage({ append = false, expectedGeneration = generation } = {}) {
+    if (!state.dossier_reference || state.loading || expectedGeneration !== generation
+      || (append && (!state.has_more || !state.next_cursor))) return false;
+    const dossierReference = state.dossier_reference;
+    const cursor = append ? state.next_cursor : null;
+    state.loading = true;
+    state.error = null;
+    publish();
+    try {
+      const page = await invoke(customerRequestsForDossierRequest(dossierReference, cursor));
+      if (expectedGeneration !== generation || dossierReference !== state.dossier_reference) return false;
+      if (!page || !Array.isArray(page.items) || typeof page.has_more !== "boolean"
+        || (page.next_cursor !== null && typeof page.next_cursor !== "string")
+        || (page.has_more && !page.next_cursor)) throw new Error("INVALID_CUSTOMER_REQUEST_LIST");
+      state.items = append
+        ? appendUniqueCustomerRequestItems(state.items, page.items)
+        : appendUniqueCustomerRequestItems([], page.items);
+      state.has_more = page.has_more;
+      state.next_cursor = page.next_cursor;
+      return true;
+    } catch (error) {
+      if (expectedGeneration !== generation) return false;
+      state.items = [];
+      state.has_more = false;
+      state.next_cursor = null;
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      if (expectedGeneration === generation) {
+        state.loading = false;
+        publish();
+      }
+    }
+  }
+
+  return {
+    state,
+    selectDossier: (dossierReference)=>{
+      generation += 1;
+      state.dossier_reference = dossierReference;
+      state.items = [];
+      state.has_more = false;
+      state.next_cursor = null;
+      state.loading = false;
+      state.error = null;
+      publish();
+      return loadPage({ expectedGeneration: generation });
+    },
+    loadMore: ()=>loadPage({ append: true }),
+    clear: ()=>{
+      generation += 1;
+      state.dossier_reference = null;
+      state.items = [];
+      state.has_more = false;
+      state.next_cursor = null;
+      state.loading = false;
+      state.error = null;
+      publish();
+    },
+  };
+}
+
+export function createCustomerRequestDetailController(invoke, onChange = ()=>{}, randomUUID = ()=>crypto.randomUUID()) {
+  const state = { request_id: null, request: null, loading: false, submitting: false, error: null };
+  let generation = 0;
+  const publish = ()=>onChange({ ...state, request: state.request ? { ...state.request } : null });
+
+  async function selectRequest(requestId) {
+    generation += 1;
+    const expectedGeneration = generation;
+    state.request_id = requestId;
+    state.request = null;
+    state.loading = Boolean(requestId);
+    state.submitting = false;
+    state.error = null;
+    publish();
+    if (!requestId) return false;
+    try {
+      const request = validateCustomerRequestDetail(await invoke(customerRequestDetailRequest(requestId)));
+      if (expectedGeneration !== generation || requestId !== state.request_id) return false;
+      state.request = request;
+      return true;
+    } catch (error) {
+      if (expectedGeneration !== generation) return false;
+      state.request = null;
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      if (expectedGeneration === generation) {
+        state.loading = false;
+        publish();
+      }
+    }
+  }
+
+  async function transition(commandType) {
+    const request = state.request;
+    if (!request || state.submitting || customerRequestWorkCommand(request.status) !== commandType) return false;
+    const expectedGeneration = generation;
+    state.submitting = true;
+    state.error = null;
+    publish();
+    try {
+      await invoke(customerRequestTransitionRequest(request, commandType, randomUUID()));
+      const refreshed = validateCustomerRequestDetail(await invoke(customerRequestDetailRequest(request.request_id)));
+      if (expectedGeneration !== generation || request.request_id !== state.request_id) return false;
+      state.request = refreshed;
+      return true;
+    } catch (error) {
+      if (expectedGeneration !== generation) return false;
+      state.request = null;
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      if (expectedGeneration === generation) {
+        state.submitting = false;
+        publish();
+      }
+    }
+  }
+
+  return { state, selectRequest, transition, clear: ()=>selectRequest(null) };
 }
 
 export function operatorFacetSelection(facets, selectedYear, selectedQuarter) {

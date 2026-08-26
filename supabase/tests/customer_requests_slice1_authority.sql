@@ -48,16 +48,20 @@ select ok(
       and procedure.proname like '%customer_request%'
   ) = array[
     'get_customer_request_v1(uuid)',
+    'get_customer_requests_for_dossier_v1(text,text,integer)',
     'resolve_customer_request_authorization_v1(uuid,text)',
     'transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)'
   ]::text[]
   and has_function_privilege('authenticated', 'public.get_customer_request_v1(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and has_function_privilege('authenticated', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
   and not has_function_privilege('anon', 'public.get_customer_request_v1(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and not has_function_privilege('anon', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
   and not has_function_privilege('anon', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
   and not has_function_privilege('service_role', 'public.get_customer_request_v1(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and not has_function_privilege('service_role', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
   and not has_function_privilege('service_role', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute'),
   'public Customer Request functions and runtime execution match the exact capability allowlist'

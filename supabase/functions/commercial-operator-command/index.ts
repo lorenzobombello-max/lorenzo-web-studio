@@ -4,8 +4,10 @@ import {
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
+  executeCustomerRequestTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
+  type CustomerRequestActionInput,
   withCommercialOperatorCors
 } from "./handler.ts";
 import {
@@ -133,6 +135,14 @@ export async function executeCallerJwtOperatorPersonalQueueAction(
   return await executeOperatorPersonalQueueTransport(clientFor(jwt), input);
 }
 
+export async function executeCallerJwtCustomerRequestAction(
+  jwt: string,
+  input: CustomerRequestActionInput,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  return await executeCustomerRequestTransport(clientFor(jwt), input);
+}
+
 if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
   const url = Deno.env.get("SUPABASE_URL"), anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) return new Response(JSON.stringify({
@@ -235,6 +245,13 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
           cursor: input.cursor,
           limit: input.limit,
         }, clientFor);
+      }
+      if ([
+        "list_customer_requests_for_dossier",
+        "get_customer_request",
+        "transition_customer_request",
+      ].includes(input.action)) {
+        return await executeCallerJwtCustomerRequestAction(jwt, input as CustomerRequestActionInput, clientFor);
       }
       if (input.action === "get_dossier_assignment" || input.action === "assign_dossier") {
         return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);

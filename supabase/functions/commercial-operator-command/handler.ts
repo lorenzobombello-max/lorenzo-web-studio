@@ -28,6 +28,9 @@ const APPLICATION_ACTIONS = new Set([
   "get_assignment_operator_roster",
   "get_dossier_assignment",
   "get_my_assigned_dossiers",
+  "list_customer_requests_for_dossier",
+  "get_customer_request",
+  "transition_customer_request",
   "assign_dossier",
   "get_project_dossier",
   "promote_accepted_application",
@@ -70,6 +73,7 @@ const PROJECT_SITE_ACTIONS = new Map([
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
 const CANONICAL_DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const CUSTOMER_REQUEST_WORK_COMMANDS = new Set(["START", "REQUIRE_CUSTOMER_RESPONSE", "RESUME"]);
 type DossierLifecycleRpcResult = Readonly<{
   data: unknown;
   error: Readonly<{ message: string }> | null;
@@ -102,6 +106,21 @@ type OperatorPersonalQueueInput = Readonly<{
   action: "get_my_assigned_dossiers";
   cursor: string | null;
   limit: number;
+}>;
+export type CustomerRequestActionInput = Readonly<{
+  action: "list_customer_requests_for_dossier";
+  dossier_reference: string;
+  cursor: string | null;
+  limit: number;
+}> | Readonly<{
+  action: "get_customer_request";
+  request_id: string;
+}> | Readonly<{
+  action: "transition_customer_request";
+  request_id: string;
+  command_type: "START" | "REQUIRE_CUSTOMER_RESPONSE" | "RESUME";
+  expected_revision: number;
+  idempotency_key: string;
 }>;
 type DossierLifecycleTransportInput = Readonly<{
   quote_request_id: string;
@@ -248,6 +267,12 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action"])
     : action === "get_my_assigned_dossiers"
     ? new Set(["action", "cursor", "limit"])
+    : action === "list_customer_requests_for_dossier"
+    ? new Set(["action", "dossier_reference", "cursor", "limit"])
+    : action === "get_customer_request"
+    ? new Set(["action", "request_id"])
+    : action === "transition_customer_request"
+    ? new Set(["action", "request_id", "command_type", "expected_revision", "idempotency_key"])
     : action === "get_dossier_assignment"
     ? new Set(["action", "dossier_reference"])
     : action === "assign_dossier"
@@ -269,6 +294,38 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return { action, cursor, limit };
+  }
+  if (action === "list_customer_requests_for_dossier") {
+    const cursor = value.cursor ?? null;
+    const limit = value.limit === undefined ? 25 : value.limit;
+    if ((cursor !== null && (typeof cursor !== "string" || cursor.length < 1 || cursor.length > 4096))
+      || !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 100) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, dossier_reference: normalizeDossierReference(value.dossier_reference), cursor, limit };
+  }
+  if (action === "get_customer_request") {
+    const requestId = String(value.request_id || "");
+    if (!UUID.test(requestId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, request_id: requestId };
+  }
+  if (action === "transition_customer_request") {
+    const requestId = String(value.request_id || "");
+    const commandType = String(value.command_type || "");
+    const expectedRevision = value.expected_revision;
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(requestId) || !CUSTOMER_REQUEST_WORK_COMMANDS.has(commandType)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0
+      || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      request_id: requestId,
+      command_type: commandType as "START" | "REQUIRE_CUSTOMER_RESPONSE" | "RESUME",
+      expected_revision: expectedRevision as number,
+      idempotency_key: idempotencyKey,
+    };
   }
   if (action === "get_dossier_assignment") {
     return { action, dossier_reference: normalizeDossierReference(value.dossier_reference) };
@@ -447,6 +504,7 @@ function mapDatabaseError(error: unknown) {
     "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
     "DOSSIER_ASSIGNMENT_READER_REQUIRED",
     "OPERATOR_PERSONAL_QUEUE_READER_REQUIRED",
+    "CUSTOMER_REQUEST_ACCESS_DENIED",
     "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
@@ -493,6 +551,10 @@ function mapDatabaseError(error: unknown) {
     ,"REASSIGNMENT_REASON_REQUIRED"
     ,"INVALID_OPERATOR_PERSONAL_QUEUE_LIMIT"
     ,"INVALID_OPERATOR_PERSONAL_QUEUE_CURSOR"
+    ,"INVALID_CUSTOMER_REQUEST_LIST_LIMIT"
+    ,"INVALID_CUSTOMER_REQUEST_LIST_CURSOR"
+    ,"INVALID_CUSTOMER_REQUEST_ACTION"
+    ,"INVALID_CUSTOMER_REQUEST_COMMAND"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
   if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
@@ -506,6 +568,8 @@ function mapDatabaseError(error: unknown) {
     "INVALID_OPERATOR_DOSSIER_TRANSITION",
     "INVALID_OPERATOR_DOSSIER_RESTORE",
     "TRASHED_DOSSIER_BLOCKER_CREATION_DENIED"
+    ,"INVALID_CUSTOMER_REQUEST_TRANSITION"
+    ,"CUSTOMER_REQUEST_TERMINAL"
   ].includes(code)) return response(409, "COMMAND_REJECTED");
   if (code.startsWith("LEGACY_TEST_CLEANUP_")) return response(409, "COMMAND_REJECTED");
   return response(500, "INTERNAL_ERROR");
@@ -672,6 +736,30 @@ export async function executeOperatorPersonalQueueTransport(
     p_cursor: input.cursor,
     p_limit: input.limit,
   });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function executeCustomerRequestTransport(
+  client: DossierAssignmentRpcClient,
+  input: CustomerRequestActionInput
+): Promise<unknown> {
+  const request = input.action === "list_customer_requests_for_dossier"
+    ? client.rpc("get_customer_requests_for_dossier_v1", {
+      p_dossier_reference: input.dossier_reference,
+      p_cursor: input.cursor,
+      p_limit: input.limit,
+    })
+    : input.action === "get_customer_request"
+    ? client.rpc("get_customer_request_v1", { p_request_id: input.request_id })
+    : client.rpc("transition_customer_request_v1", {
+      p_request_id: input.request_id,
+      p_command_type: input.command_type,
+      p_expected_revision: input.expected_revision,
+      p_idempotency_key: input.idempotency_key,
+      p_payload: {},
+    });
+  const { data, error } = await request;
   if (error) throw new Error(error.message);
   return data;
 }
