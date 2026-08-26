@@ -41,14 +41,26 @@ select has_function(
   'private customer request lifecycle authority exists'
 );
 select ok(
-  not exists (
-    select 1
+  (select array_agg(procedure.oid::regprocedure::text order by procedure.oid::regprocedure::text)
     from pg_catalog.pg_proc as procedure
     join pg_catalog.pg_namespace as namespace on namespace.oid = procedure.pronamespace
     where namespace.nspname = 'public'
       and procedure.proname like '%customer_request%'
-  ),
-  'Slice 1 exposes no public runtime function'
+  ) = array[
+    'get_customer_request_v1(uuid)',
+    'resolve_customer_request_authorization_v1(uuid,text)',
+    'transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)'
+  ]::text[]
+  and has_function_privilege('authenticated', 'public.get_customer_request_v1(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
+  and not has_function_privilege('anon', 'public.get_customer_request_v1(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
+  and not has_function_privilege('service_role', 'public.get_customer_request_v1(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute'),
+  'public Customer Request functions and runtime execution match the exact capability allowlist'
 );
 select ok(
   not has_function_privilege('anon', 'lws_internal.create_customer_request_core_v1(uuid,uuid,uuid,uuid,uuid,uuid,jsonb)', 'execute')
