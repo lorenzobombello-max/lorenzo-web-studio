@@ -50,6 +50,49 @@ export function buildMagicLinkRequest(email, callbackUrl) {
   };
 }
 
+export function buildEmailOtpRequest(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error("EMAIL_INVALID");
+  return {
+    email: normalizedEmail,
+    options: { shouldCreateUser: false },
+  };
+}
+
+export function buildEmailOtpVerification(email, token) {
+  const request = buildEmailOtpRequest(email);
+  const normalizedToken = String(token || "").trim();
+  if (!/^\d{6}$/.test(normalizedToken)) throw new Error("OTP_FORMAT_INVALID");
+  return { email: request.email, token: normalizedToken, type: "email" };
+}
+
+function readRetryAfterSeconds(error) {
+  const headerValue = error?.context?.headers?.get?.("retry-after");
+  const value = error?.retryAfter ?? error?.retry_after ?? headerValue;
+  if (value === undefined || value === null || value === "") return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const retryAt = Date.parse(String(value));
+  if (!Number.isFinite(retryAt)) return null;
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+}
+
+export function classifyAuthError(error) {
+  const status = Number.isFinite(Number(error?.status)) ? Number(error.status) : null;
+  const code = typeof error?.code === "string" ? error.code : null;
+  const message = typeof error?.message === "string" ? error.message : "";
+  const normalizedCode = code?.toLowerCase();
+  let safeCode = "AUTH_REQUEST_FAILED";
+
+  if (status === 429) safeCode = "AUTH_RATE_LIMITED";
+  else if (["otp_expired", "token_expired"].includes(normalizedCode)) safeCode = "OTP_EXPIRED";
+  else if (["invalid_otp", "otp_invalid", "token_invalid"].includes(normalizedCode)) safeCode = "OTP_INVALID";
+  else if (["signup_disabled", "user_not_found", "email_not_confirmed"].includes(normalizedCode)) safeCode = "ACCOUNT_NOT_ALLOWED";
+  else if (error?.name === "AuthRetryableFetchError" || /failed to fetch|networkerror/i.test(message)) safeCode = "AUTH_NETWORK_ERROR";
+
+  return Object.freeze({ status, code, message, safeCode, retryAfterSeconds: readRetryAfterSeconds(error) });
+}
+
 export function hasAuthCallbackMaterial(urlLike) {
   const url = new URL(urlLike, "https://lorenzowebsolutions.be");
   const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
@@ -136,6 +179,13 @@ export function safeAuthMessage(code) {
   const messages = {
     AUTH_CONFIG_INVALID: "De aanmeldconfiguratie is niet beschikbaar.",
     EMAIL_INVALID: "Vul een geldig e-mailadres in.",
+    OTP_FORMAT_INVALID: "Vul de code van exact 6 cijfers in.",
+    OTP_INVALID: "De aanmeldcode is ongeldig. Controleer de code en probeer opnieuw.",
+    OTP_EXPIRED: "De aanmeldcode is verlopen. Vraag een nieuwe code aan.",
+    ACCOUNT_NOT_ALLOWED: "Dit account kan niet worden aangemeld.",
+    AUTH_RATE_LIMITED: "Er zijn te veel aanmeldcodes aangevraagd. Probeer opnieuw zodra de wachttijd voorbij is.",
+    AUTH_NETWORK_ERROR: "De aanmeldservice is niet bereikbaar. Controleer je verbinding en probeer opnieuw.",
+    AUTH_REQUEST_FAILED: "De beveiligde aanmelding kon niet worden voltooid.",
     SESSION_ESTABLISHMENT_FAILED: "De beveiligde sessie kon niet worden gestart.",
     SESSION_NOT_AVAILABLE: "De aanmeldlink is ongeldig of verlopen.",
     SIGN_OUT_FAILED: "Afmelden is niet gelukt. Probeer opnieuw.",
