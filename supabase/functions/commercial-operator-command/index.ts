@@ -5,6 +5,7 @@ import {
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
   executeCustomerRequestTransport,
+  executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   type CustomerRequestActionInput,
@@ -135,6 +136,13 @@ export async function executeCallerJwtOperatorPersonalQueueAction(
   return await executeOperatorPersonalQueueTransport(clientFor(jwt), input);
 }
 
+export async function executeCallerJwtCurrentOperatorIdentityAction(
+  jwt: string,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  return await executeCurrentOperatorIdentityTransport(clientFor(jwt));
+}
+
 export async function executeCallerJwtCustomerRequestAction(
   jwt: string,
   input: CustomerRequestActionInput,
@@ -236,6 +244,9 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       return data;
     },
     executeApplicationAction: async (jwt: string, input: ValidatedApplicationActionInput, actorAuthUserId: string)=>{
+      if (input.action === "get_current_operator_identity") {
+        return await executeCallerJwtCurrentOperatorIdentityAction(jwt, clientFor);
+      }
       if (input.action === "get_assignment_operator_roster") {
         return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
       }

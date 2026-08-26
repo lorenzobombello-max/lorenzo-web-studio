@@ -21,6 +21,7 @@ const COMMANDS = new Set([
   "archive_project"
 ]);
 const APPLICATION_ACTIONS = new Set([
+  "get_current_operator_identity",
   "list_applications",
   "list_applications_v2",
   "get_application_facets_v2",
@@ -106,6 +107,11 @@ type OperatorPersonalQueueInput = Readonly<{
   action: "get_my_assigned_dossiers";
   cursor: string | null;
   limit: number;
+}>;
+type CurrentOperatorIdentity = Readonly<{
+  display_name: string;
+  role: "owner" | "operations_manager" | "operator" | "reviewer" | "read_only" | "admin";
+  status: "ACTIVE";
 }>;
 export type CustomerRequestActionInput = Readonly<{
   action: "list_customer_requests_for_dossier";
@@ -265,6 +271,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "application_reference", "support_reference"])
     : action === "get_assignment_operator_roster"
     ? new Set(["action"])
+    : action === "get_current_operator_identity"
+    ? new Set(["action"])
     : action === "get_my_assigned_dossiers"
     ? new Set(["action", "cursor", "limit"])
     : action === "list_customer_requests_for_dossier"
@@ -285,7 +293,7 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
-  if (action === "get_assignment_operator_roster") return { action };
+  if (action === "get_assignment_operator_roster" || action === "get_current_operator_identity") return { action };
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
     const limit = value.limit === undefined ? 25 : value.limit;
@@ -762,4 +770,20 @@ export async function executeCustomerRequestTransport(
   const { data, error } = await request;
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function executeCurrentOperatorIdentityTransport(
+  client: DossierAssignmentRpcClient
+): Promise<CurrentOperatorIdentity> {
+  const { data, error } = await client.rpc("get_current_operator_identity_v1", {});
+  if (error) throw new Error(error.message);
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("INVALID_OPERATOR_IDENTITY_RESPONSE");
+  const identity = data as Record<string, unknown>;
+  if (Object.keys(identity).length !== 3
+    || typeof identity.display_name !== "string" || !identity.display_name
+    || !["owner", "operations_manager", "operator", "reviewer", "read_only", "admin"].includes(String(identity.role || ""))
+    || identity.status !== "ACTIVE") {
+    throw new Error("INVALID_OPERATOR_IDENTITY_RESPONSE");
+  }
+  return identity as CurrentOperatorIdentity;
 }

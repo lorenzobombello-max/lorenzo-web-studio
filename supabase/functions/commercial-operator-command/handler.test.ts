@@ -6,12 +6,13 @@ import {
   executeDossierAssignmentReadTransport,
   executeDossierLifecycleTransport,
   executeCustomerRequestTransport,
+  executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCustomerRequestAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -1153,5 +1154,58 @@ Deno.test("Customer Requests reject service role and expose stable error envelop
     }), harness.deps);
     assertEquals(response.status, status);
     assertEquals((await response.json()).code, responseCode);
+  }
+});
+
+Deno.test("current operator identity accepts only the fixed presentation action", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({ action: "get_current_operator_identity" }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls, [{ jwt, input: { action: "get_current_operator_identity" } }]);
+
+  for (const extra of [{ operator_id: userId }, { role: "owner" }, { status: "ACTIVE" }, { email: "private@example.test" }]) {
+    const invalidHarness = dependencies();
+    const invalidResponse = await handleCommercialOperator(request({ action: "get_current_operator_identity", ...extra }), invalidHarness.deps);
+    assertEquals(invalidResponse.status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("current operator identity transport exposes only the safe projection", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeCurrentOperatorIdentityTransport({
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({ data: { display_name: "Current Operator", role: "operator", status: "ACTIVE" }, error: null });
+    }
+  });
+  assertEquals(calls, [{ name: "get_current_operator_identity_v1", args: {} }]);
+  assertEquals(result, { display_name: "Current Operator", role: "operator", status: "ACTIVE" });
+  assertEquals(Object.keys(result), ["display_name", "role", "status"]);
+});
+
+Deno.test("current operator identity index dispatch constructs only a caller JWT client", async ()=>{
+  const clientForCalls: string[] = [];
+  const rpcCalls: string[] = [];
+  const result = await executeCallerJwtCurrentOperatorIdentityAction(jwt, (token: string)=>{
+    clientForCalls.push(token);
+    return {
+      rpc: (name: string)=>{
+        rpcCalls.push(name);
+        return Promise.resolve({ data: { display_name: "Owner", role: "owner", status: "ACTIVE" }, error: null });
+      }
+    };
+  });
+  assertEquals(clientForCalls, [jwt]);
+  assertEquals(rpcCalls, ["get_current_operator_identity_v1"]);
+  assertEquals(result, { display_name: "Owner", role: "owner", status: "ACTIVE" });
+});
+
+Deno.test("current operator identity errors use stable authorization envelopes", async ()=>{
+  for (const databaseCode of ["UNKNOWN_OPERATOR", "OPERATOR_DISABLED", "OPERATOR_REVOKED", "OPERATOR_INACTIVE"]) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({ action: "get_current_operator_identity" }), harness.deps);
+    assertEquals(response.status, 403);
+    assertEquals(await response.json(), { ok: false, code: "OPERATOR_NOT_AUTHORIZED" });
   }
 });

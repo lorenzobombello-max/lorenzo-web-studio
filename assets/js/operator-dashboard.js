@@ -7,6 +7,14 @@ const REQUEST_KINDS = new Set(["website", "slimme_documentenflow"]);
 const PRODUCT_FILTERS = new Set(["all", ...REQUEST_KINDS]);
 const OPERATOR_ZONES = new Set(["ACTIVE", "ARCHIVED", "TRASHED"]);
 const OPERATOR_PAGE_LIMIT = 50;
+const OPERATOR_ROLE_LABELS = Object.freeze({
+  owner: "OWNER",
+  operations_manager: "OPERATIONS MANAGER",
+  operator: "OPERATOR",
+  reviewer: "REVIEWER",
+  read_only: "READ ONLY",
+  admin: "ADMIN",
+});
 const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
@@ -37,6 +45,17 @@ const DOSSIER_LIFECYCLE_ACTIONS = Object.freeze({
   trash_dossier: Object.freeze({ label: "Naar prullenbak", title: "Dossier naar prullenbak verplaatsen", description: "Het dossier wordt naar de prullenbak verplaatst en niet permanent verwijderd. Bestaande gegevens, documenten en evidence worden niet hard gedeletet. Herstellen blijft mogelijk via ‘Herstellen uit prullenbak’." }),
   restore_dossier: Object.freeze({ label: "Herstellen uit prullenbak", title: "Dossier herstellen uit prullenbak", description: "Het dossier wordt hersteld naar de server-authoritatieve staat van vóór de prullenbak." }),
 });
+
+export function currentOperatorIdentityPresentation(identity) {
+  if (!identity || typeof identity !== "object" || Array.isArray(identity)
+    || Object.keys(identity).length !== 3
+    || typeof identity.display_name !== "string" || !identity.display_name
+    || identity.status !== "ACTIVE"
+    || !Object.hasOwn(OPERATOR_ROLE_LABELS, identity.role)) {
+    throw new Error("INVALID_OPERATOR_IDENTITY");
+  }
+  return { displayName: identity.display_name, roleLabel: OPERATOR_ROLE_LABELS[identity.role] };
+}
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
   M1_PAYMENT_PENDING: "Mijlpaal 1 betaling verwacht",
@@ -484,6 +503,7 @@ export function sdfM1InvoiceCandidatePresentation(application) {
 }
 
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
+  const roleBadges = Array.from(document.querySelectorAll("[data-operator-role-badge]"));
   const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
   const personalQueueList = document.getElementById("personalQueueList");
   const personalQueueEmpty = document.getElementById("personalQueueEmpty");
@@ -574,6 +594,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     if (response.status >= 400 || !response.body?.ok) throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
     return response.body.result;
   }
+
+  const identity = currentOperatorIdentityPresentation(await invoke({ action: "get_current_operator_identity" }));
+  for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
 
   function renderPersonalQueue(items) {
     personalQueueList.replaceChildren();

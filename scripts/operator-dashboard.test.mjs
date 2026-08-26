@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -1377,4 +1377,32 @@ test("project site presentation accepts only the exact project-bound HTTPS origi
   assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "http://project.example" }), null);
   assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "https://project.example/path" }), null);
   assert.equal(projectSitePresentation(projectId, { project_id: projectId, canonical_domain: "project.example", canonical_url: "https://attacker.example" }), null);
+});
+
+test("dashboard role presentation uses one exact server identity projection", async () => {
+  const labels = {
+    owner: "OWNER", operations_manager: "OPERATIONS MANAGER", operator: "OPERATOR",
+    reviewer: "REVIEWER", read_only: "READ ONLY", admin: "ADMIN",
+  };
+  for (const [role, roleLabel] of Object.entries(labels)) {
+    assert.deepEqual(currentOperatorIdentityPresentation({ display_name: "Current User", role, status: "ACTIVE" }), {
+      displayName: "Current User", roleLabel,
+    });
+  }
+  for (const identity of [
+    null,
+    { display_name: "Current User", role: "unknown", status: "ACTIVE" },
+    { display_name: "Current User", role: "operator", status: "DISABLED" },
+    { display_name: "Current User", role: "operator", status: "ACTIVE", email: "private@example.test" },
+  ]) assert.throws(()=>currentOperatorIdentityPresentation(identity), /INVALID_OPERATOR_IDENTITY/);
+});
+
+test("dashboard resolves identity before routing and contains no contradictory static role labels", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.equal((html.match(/data-operator-role-badge/g) || []).length, 3);
+  assert.doesNotMatch(html, />OPERATOR<|>OWNER \/ ADMIN</);
+  assert.match(script, /invoke\(\{ action: "get_current_operator_identity" \}\)/);
+  assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("resolveDashboardAuthority({"));
+  assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("personalQueueWorkspace.hidden = false"));
+  assert.match(script, /for \(const roleBadge of roleBadges\) roleBadge\.textContent = identity\.roleLabel/);
 });
