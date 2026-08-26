@@ -34,14 +34,14 @@ insert into public.quote_requests (
     'budget_guard_v2', 'above_6000'
   ),
   (
-    'e2320000-0000-4000-8000-000000000002', 'Invitation constructor',
+    'e2320001-0000-4000-8000-000000000002', 'Invitation constructor',
     'invitation-lifecycle@example.test', 'business', 'Meer dan EUR 6.000',
     'flexible', 'Invitation lifecycle constructor fixture.', true, 'approved',
     repeat('b', 64), clock_timestamp() + interval '1 day',
     'budget_guard_v2', 'above_6000'
   ),
   (
-    'e2320000-0000-4000-8000-000000000003', 'Existing revoked semantics',
+    'e2320002-0000-4000-8000-000000000003', 'Existing revoked semantics',
     'revoked-lifecycle@example.test', 'business', 'Meer dan EUR 6.000',
     'flexible', 'Existing revoked lifecycle fixture.', true, 'approved',
     repeat('c', 64), clock_timestamp() + interval '1 day',
@@ -62,7 +62,7 @@ insert into public.quote_request_intakes (
   access_token_revoked_at, started_at, created_at, draft_revision
 ) values (
   'e2330000-0000-4000-8000-000000000003',
-  'e2320000-0000-4000-8000-000000000003',
+  'e2320002-0000-4000-8000-000000000003',
   'in_progress', repeat('f', 64), clock_timestamp() + interval '1 day',
   clock_timestamp() - interval '1 minute', clock_timestamp() - interval '1 hour',
   clock_timestamp() - interval '2 hours', 9

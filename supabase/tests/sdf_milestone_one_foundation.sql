@@ -74,16 +74,16 @@ insert into public.commercial_operators(operator_id,auth_user_id,display_name,ro
 
 insert into public.quote_requests(id,request_kind,sdf_package,name,email,website_type,budget,timing,description,privacy_consent,status) values
   ('e2000000-0000-4000-8000-000000000001','slimme_documentenflow','start','M1 START','m1-start@example.test',null,null,null,'M1 START fixture.',true,'approved'),
-  ('e2000000-0000-4000-8000-000000000002','slimme_documentenflow','groei','M1 GROEI','m1-groei@example.test',null,null,null,'M1 GROEI fixture.',true,'approved'),
-  ('e2000000-0000-4000-8000-000000000003','slimme_documentenflow','maatwerk','M1 MAATWERK','m1-maatwerk@example.test',null,null,null,'M1 MAATWERK fixture.',true,'approved'),
-  ('e2000000-0000-4000-8000-000000000004','slimme_documentenflow','start','M1 no acceptance','m1-none@example.test',null,null,null,'M1 no acceptance fixture.',true,'approved'),
-  ('e2000000-0000-4000-8000-000000000005','website',null,'M1 Website','m1-website@example.test','business','Meer dan EUR 6.000','flexible','M1 Website isolation fixture.',true,'approved');
+  ('e2000001-0000-4000-8000-000000000002','slimme_documentenflow','groei','M1 GROEI','m1-groei@example.test',null,null,null,'M1 GROEI fixture.',true,'approved'),
+  ('e2000002-0000-4000-8000-000000000003','slimme_documentenflow','maatwerk','M1 MAATWERK','m1-maatwerk@example.test',null,null,null,'M1 MAATWERK fixture.',true,'approved'),
+  ('e2000003-0000-4000-8000-000000000004','slimme_documentenflow','start','M1 no acceptance','m1-none@example.test',null,null,null,'M1 no acceptance fixture.',true,'approved'),
+  ('e2000004-0000-4000-8000-000000000005','website',null,'M1 Website','m1-website@example.test','business','Meer dan EUR 6.000','flexible','M1 Website isolation fixture.',true,'approved');
 
 insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
   ('e3000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','2099-01-01T09:00:00Z'),
-  ('e3000000-0000-4000-8000-000000000002','e2000000-0000-4000-8000-000000000002','2099-01-01T09:00:00Z'),
-  ('e3000000-0000-4000-8000-000000000003','e2000000-0000-4000-8000-000000000003','2099-01-01T09:00:00Z'),
-  ('e3000000-0000-4000-8000-000000000004','e2000000-0000-4000-8000-000000000004','2099-01-01T09:00:00Z');
+  ('e3000000-0000-4000-8000-000000000002','e2000001-0000-4000-8000-000000000002','2099-01-01T09:00:00Z'),
+  ('e3000000-0000-4000-8000-000000000003','e2000002-0000-4000-8000-000000000003','2099-01-01T09:00:00Z'),
+  ('e3000000-0000-4000-8000-000000000004','e2000003-0000-4000-8000-000000000004','2099-01-01T09:00:00Z');
 
 insert into public.sdf_quotation_documents(quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256) values
   ('e3000000-0000-4000-8000-000000000001','2099-01-01','2099-02-01','2099-01-01T10:00:00Z','sdf/m1/start/quotation.docx',repeat('1',64)),

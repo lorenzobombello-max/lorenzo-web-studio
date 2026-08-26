@@ -96,7 +96,7 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('32c30000-0000-4000-8000-000000000001', 'FIX3 v2', 'fix3-v2@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'FIX3 v2 fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('32c30000-0000-4000-8000-000000000002', 'FIX3 v1', 'fix3-v1@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'FIX3 v1 fixture', true, 'approved', null, null);
+  ('32c30001-0000-4000-8000-000000000002', 'FIX3 v1', 'fix3-v1@example.test', 'business', 'EUR 3.000 - EUR 6.000', 'flexible', 'FIX3 v1 fixture', true, 'approved', null, null);
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
@@ -104,7 +104,7 @@ insert into public.quote_request_intakes (
   admin_access_token_expires_at
 ) values
   ('32c31000-0000-4000-8000-000000000001', '32c30000-0000-4000-8000-000000000001', repeat('1', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp(), clock_timestamp(), true, repeat('a', 64), clock_timestamp() + interval '1 day'),
-  ('32c31000-0000-4000-8000-000000000002', '32c30000-0000-4000-8000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp(), clock_timestamp(), true, repeat('b', 64), clock_timestamp() + interval '1 day');
+  ('32c31000-0000-4000-8000-000000000002', '32c30001-0000-4000-8000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 day', 'submitted', clock_timestamp(), clock_timestamp(), true, repeat('b', 64), clock_timestamp() + interval '1 day');
 
 insert into public.quote_request_pricing_snapshots (
   id, intake_id, snapshot_contract_version, config_version, config_hash,

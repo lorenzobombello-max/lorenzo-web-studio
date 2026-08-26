@@ -61,7 +61,7 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('f3100000-0000-4000-8000-000000000001', 'LWS-AAN-2099-0301', 'production', 'website', 'Lifecycle Active', 'active@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Active lifecycle fixture.', true, 'approved'),
-  ('f3100000-0000-4000-8000-000000000002', 'LWS-AAN-2099-0302', 'production', 'website', 'Lifecycle Expired', 'expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Expired lifecycle fixture.', true, 'approved');
+  ('f3100001-0000-4000-8000-000000000002', 'LWS-AAN-2099-0302', 'production', 'website', 'Lifecycle Expired', 'expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Expired lifecycle fixture.', true, 'approved');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, status, access_token_hash, access_token_expires_at,
@@ -69,7 +69,7 @@ insert into public.quote_request_intakes (
   created_at
 ) values
   ('f3200000-0000-4000-8000-000000000001', 'f3100000-0000-4000-8000-000000000001', 'submitted', repeat('3',64), '2099-08-30T12:00:00Z', 'ACTIVE', 0, clock_timestamp(), clock_timestamp(), true, clock_timestamp()),
-  ('f3200000-0000-4000-8000-000000000002', 'f3100000-0000-4000-8000-000000000002', 'in_progress', repeat('4',64), '2020-01-01T00:00:00Z', 'ACTIVE', 0, '2019-12-26T00:00:00Z', null, false, '2019-12-25T00:00:00Z');
+  ('f3200000-0000-4000-8000-000000000002', 'f3100001-0000-4000-8000-000000000002', 'in_progress', repeat('4',64), '2020-01-01T00:00:00Z', 'ACTIVE', 0, '2019-12-26T00:00:00Z', null, false, '2019-12-25T00:00:00Z');
 
 select throws_ok(
   $$select public.execute_operator_intake_lifecycle_command_v1('f3200000-0000-4000-8000-000000000001','INTERRUPTED',0,'f3300000-0000-4000-8000-000000000001','Operator pause')$$,

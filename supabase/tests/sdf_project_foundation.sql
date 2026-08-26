@@ -20,7 +20,7 @@ select ok(
 
 insert into public.quote_requests (id,request_kind,sdf_package,name,email,website_type,budget,timing,description,privacy_consent,status) values
   ('b5100000-0000-4000-8000-000000000001','slimme_documentenflow','groei','SDF project fixture','sdf-project@example.test',null,null,null,'SDF project foundation fixture.',true,'approved'),
-  ('b5100000-0000-4000-8000-000000000002','website',null,'Website project fixture','website-project@example.test','business','Meer dan EUR 6.000','flexible','Website project isolation fixture.',true,'approved');
+  ('b5100001-0000-4000-8000-000000000002','website',null,'Website project fixture','website-project@example.test','business','Meer dan EUR 6.000','flexible','Website project isolation fixture.',true,'approved');
 
 select lives_ok(
   $$insert into public.sdf_projects(project_id,quote_request_id,created_at) values ('b5200000-0000-4000-8000-000000000001','b5100000-0000-4000-8000-000000000001','2099-01-02T10:00:00Z')$$,
@@ -36,7 +36,7 @@ select throws_ok(
   '23505', null, 'one SDF application cannot acquire multiple project identities'
 );
 select throws_ok(
-  $$insert into public.sdf_projects(project_id,quote_request_id) values ('b5200000-0000-4000-8000-000000000003','b5100000-0000-4000-8000-000000000002')$$,
+  $$insert into public.sdf_projects(project_id,quote_request_id) values ('b5200000-0000-4000-8000-000000000003','b5100001-0000-4000-8000-000000000002')$$,
   '23514', 'SDF_PROJECT_REQUIRES_SDF_APPLICATION', 'Website applications cannot enter the SDF project authority'
 );
 select throws_ok(

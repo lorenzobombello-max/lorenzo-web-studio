@@ -238,9 +238,9 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('32d00000-0000-4000-8000-000000000001', 'Preview fixture 1', 'preview1@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('32d00000-0000-4000-8000-000000000002', 'Preview fixture 2', 'preview2@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('32d00000-0000-4000-8000-000000000003', 'Preview fixture 3', 'preview3@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
-  ('32d00000-0000-4000-8000-000000000004', 'Preview fixture 4', 'preview4@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive');
+  ('32d00001-0000-4000-8000-000000000002', 'Preview fixture 2', 'preview2@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
+  ('32d00002-0000-4000-8000-000000000003', 'Preview fixture 3', 'preview3@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive'),
+  ('32d00003-0000-4000-8000-000000000004', 'Preview fixture 4', 'preview4@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Preview fixture', true, 'approved', 'budget_guard_v1', '3200_to_6000_inclusive');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, access_token_hash, access_token_expires_at,
@@ -248,9 +248,9 @@ insert into public.quote_request_intakes (
   created_at, updated_at
 ) values
   ('32d01000-0000-4000-8000-000000000001', '32d00000-0000-4000-8000-000000000001', repeat('1', 64), clock_timestamp() + interval '1 hour', null, 'invited', null, null, false, clock_timestamp(), clock_timestamp()),
-  ('32d01000-0000-4000-8000-000000000002', '32d00000-0000-4000-8000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 hour', null, 'submitted', clock_timestamp(), clock_timestamp(), true, clock_timestamp() - interval '1 minute', clock_timestamp()),
-  ('32d01000-0000-4000-8000-000000000003', '32d00000-0000-4000-8000-000000000003', repeat('3', 64), clock_timestamp() - interval '1 hour', null, 'in_progress', clock_timestamp() - interval '90 minutes', null, false, clock_timestamp() - interval '2 hours', clock_timestamp()),
-  ('32d01000-0000-4000-8000-000000000004', '32d00000-0000-4000-8000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 hour', clock_timestamp(), 'in_progress', clock_timestamp(), null, false, clock_timestamp() - interval '1 minute', clock_timestamp());
+  ('32d01000-0000-4000-8000-000000000002', '32d00001-0000-4000-8000-000000000002', repeat('2', 64), clock_timestamp() + interval '1 hour', null, 'submitted', clock_timestamp(), clock_timestamp(), true, clock_timestamp() - interval '1 minute', clock_timestamp()),
+  ('32d01000-0000-4000-8000-000000000003', '32d00002-0000-4000-8000-000000000003', repeat('3', 64), clock_timestamp() - interval '1 hour', null, 'in_progress', clock_timestamp() - interval '90 minutes', null, false, clock_timestamp() - interval '2 hours', clock_timestamp()),
+  ('32d01000-0000-4000-8000-000000000004', '32d00003-0000-4000-8000-000000000004', repeat('4', 64), clock_timestamp() + interval '1 hour', clock_timestamp(), 'in_progress', clock_timestamp(), null, false, clock_timestamp() - interval '1 minute', clock_timestamp());
 
 select is(
   (select intake_status from public.inspect_preview_budget_guard_context_v1(repeat('1', 64))),

@@ -10,20 +10,20 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('10000000-0000-0000-0000-000000000001', 'Legacy test', 'legacy@example.test', 'business', 'EUR 1.500 - EUR 3.000', 'flexible', 'Legacy compatibility test request.', true, 'approved'),
-  ('10000000-0000-0000-0000-000000000002', 'V2 draft test', 'draft@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'V2 draft compatibility test request.', true, 'approved'),
-  ('10000000-0000-0000-0000-000000000003', 'V2 submit test', 'submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'V2 submit snapshot test request.', true, 'approved'),
-  ('10000000-0000-0000-0000-000000000004', 'Malformed test', 'malformed@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Malformed snapshot rollback test request.', true, 'approved'),
-  ('10000000-0000-0000-0000-000000000005', 'Constraint test', 'constraint@example.test', 'business', 'Minder dan EUR 1.800', 'flexible', 'Budget constraint compatibility test request.', true, 'approved');
+  ('10000001-0000-0000-0000-000000000002', 'V2 draft test', 'draft@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'V2 draft compatibility test request.', true, 'approved'),
+  ('10000002-0000-0000-0000-000000000003', 'V2 submit test', 'submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'V2 submit snapshot test request.', true, 'approved'),
+  ('10000003-0000-0000-0000-000000000004', 'Malformed test', 'malformed@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'Malformed snapshot rollback test request.', true, 'approved'),
+  ('10000004-0000-0000-0000-000000000005', 'Constraint test', 'constraint@example.test', 'business', 'Minder dan EUR 1.800', 'flexible', 'Budget constraint compatibility test request.', true, 'approved');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
   budget_update_category
 ) values
   ('10000000-0000-0000-0000-000000000001', repeat('a', 64), clock_timestamp() + interval '1 day', 'EUR 1.500 - EUR 3.000'),
-  ('10000000-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', null),
-  ('10000000-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', null),
-  ('10000000-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', null),
-  ('10000000-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'Tot EUR 1.500');
+  ('10000001-0000-0000-0000-000000000002', repeat('b', 64), clock_timestamp() + interval '1 day', null),
+  ('10000002-0000-0000-0000-000000000003', repeat('c', 64), clock_timestamp() + interval '1 day', null),
+  ('10000003-0000-0000-0000-000000000004', repeat('d', 64), clock_timestamp() + interval '1 day', null),
+  ('10000004-0000-0000-0000-000000000005', repeat('e', 64), clock_timestamp() + interval '1 day', 'Tot EUR 1.500');
 
 select lives_ok(
   $$update public.quote_request_intakes set budget_update_category = 'Tot EUR 1.500' where access_token_hash = repeat('e', 64)$$,
@@ -503,8 +503,13 @@ select is(
   'snapshot foreign key explicitly uses ON DELETE CASCADE'
 );
 
+set local session_replication_role = replica;
+delete from lws_internal.operator_dossier_assignments
+where quote_request_id = '10000002-0000-0000-0000-000000000003';
+set local session_replication_role = origin;
+
 delete from public.quote_requests
-where id = '10000000-0000-0000-0000-000000000003';
+where id = '10000002-0000-0000-0000-000000000003';
 
 select is(
   (select count(*)::integer from public.quote_request_pricing_snapshots),

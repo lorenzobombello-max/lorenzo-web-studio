@@ -10,12 +10,12 @@ insert into public.quote_requests (
   privacy_consent, status, budget_category_scheme, budget_category_code
 ) values
   ('f2300000-0000-4000-8000-000000000001', 'Active lifecycle', 'active@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Active fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000002', 'Interrupted lifecycle', 'interrupted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Interrupted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000003', 'Expired lifecycle', 'expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Expired fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000004', 'Cancelled lifecycle', 'cancelled@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Cancelled fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000005', 'Revoked lifecycle', 'revoked@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Revoked fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000006', 'Submitted lifecycle', 'submitted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Submitted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
-  ('f2300000-0000-4000-8000-000000000007', 'Reviewed lifecycle', 'reviewed@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reviewed fixture.', true, 'approved', 'budget_guard_v2', 'above_6000');
+  ('f2300001-0000-4000-8000-000000000002', 'Interrupted lifecycle', 'interrupted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Interrupted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('f2300002-0000-4000-8000-000000000003', 'Expired lifecycle', 'expired@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Expired fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('f2300003-0000-4000-8000-000000000004', 'Cancelled lifecycle', 'cancelled@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Cancelled fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('f2300004-0000-4000-8000-000000000005', 'Revoked lifecycle', 'revoked@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Revoked fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('f2300005-0000-4000-8000-000000000006', 'Submitted lifecycle', 'submitted@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Submitted fixture.', true, 'approved', 'budget_guard_v2', 'above_6000'),
+  ('f2300006-0000-4000-8000-000000000007', 'Reviewed lifecycle', 'reviewed@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Reviewed fixture.', true, 'approved', 'budget_guard_v2', 'above_6000');
 
 insert into public.quote_request_intakes (
   id, quote_request_id, status, access_token_hash, access_token_expires_at,
@@ -23,12 +23,12 @@ insert into public.quote_request_intakes (
   created_at, confirmation, draft_revision
 ) values
   ('f2310000-0000-4000-8000-000000000001', 'f2300000-0000-4000-8000-000000000001', 'invited', repeat('a',64), clock_timestamp()+interval '1 day', null, 'ACTIVE', null, null, null, clock_timestamp()-interval '1 day', false, 0),
-  ('f2310000-0000-4000-8000-000000000002', 'f2300000-0000-4000-8000-000000000002', 'in_progress', repeat('b',64), clock_timestamp()+interval '1 day', null, 'INTERRUPTED', clock_timestamp()-interval '1 hour', null, null, clock_timestamp()-interval '1 day', false, 2),
-  ('f2310000-0000-4000-8000-000000000003', 'f2300000-0000-4000-8000-000000000003', 'in_progress', repeat('c',64), clock_timestamp()-interval '1 hour', null, 'ACTIVE', clock_timestamp()-interval '1 day', null, null, clock_timestamp()-interval '2 days', false, 3),
-  ('f2310000-0000-4000-8000-000000000004', 'f2300000-0000-4000-8000-000000000004', 'in_progress', repeat('d',64), clock_timestamp()-interval '1 hour', null, 'CANCELLED', clock_timestamp()-interval '1 day', null, null, clock_timestamp()-interval '2 days', false, 4),
-  ('f2310000-0000-4000-8000-000000000005', 'f2300000-0000-4000-8000-000000000005', 'in_progress', repeat('e',64), clock_timestamp()+interval '1 day', clock_timestamp()-interval '1 minute', 'CANCELLED', clock_timestamp()-interval '1 hour', null, null, clock_timestamp()-interval '1 day', false, 5),
-  ('f2310000-0000-4000-8000-000000000006', 'f2300000-0000-4000-8000-000000000006', 'submitted', repeat('f',64), clock_timestamp()+interval '1 day', null, 'ACTIVE', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', null, clock_timestamp()-interval '1 day', true, 6),
-  ('f2310000-0000-4000-8000-000000000007', 'f2300000-0000-4000-8000-000000000007', 'reviewed', repeat('1',64), clock_timestamp()+interval '1 day', null, 'ACTIVE', clock_timestamp()-interval '3 hours', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', clock_timestamp()-interval '1 day', true, 7);
+  ('f2310000-0000-4000-8000-000000000002', 'f2300001-0000-4000-8000-000000000002', 'in_progress', repeat('b',64), clock_timestamp()+interval '1 day', null, 'INTERRUPTED', clock_timestamp()-interval '1 hour', null, null, clock_timestamp()-interval '1 day', false, 2),
+  ('f2310000-0000-4000-8000-000000000003', 'f2300002-0000-4000-8000-000000000003', 'in_progress', repeat('c',64), clock_timestamp()-interval '1 hour', null, 'ACTIVE', clock_timestamp()-interval '1 day', null, null, clock_timestamp()-interval '2 days', false, 3),
+  ('f2310000-0000-4000-8000-000000000004', 'f2300003-0000-4000-8000-000000000004', 'in_progress', repeat('d',64), clock_timestamp()-interval '1 hour', null, 'CANCELLED', clock_timestamp()-interval '1 day', null, null, clock_timestamp()-interval '2 days', false, 4),
+  ('f2310000-0000-4000-8000-000000000005', 'f2300004-0000-4000-8000-000000000005', 'in_progress', repeat('e',64), clock_timestamp()+interval '1 day', clock_timestamp()-interval '1 minute', 'CANCELLED', clock_timestamp()-interval '1 hour', null, null, clock_timestamp()-interval '1 day', false, 5),
+  ('f2310000-0000-4000-8000-000000000006', 'f2300005-0000-4000-8000-000000000006', 'submitted', repeat('f',64), clock_timestamp()+interval '1 day', null, 'ACTIVE', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', null, clock_timestamp()-interval '1 day', true, 6),
+  ('f2310000-0000-4000-8000-000000000007', 'f2300006-0000-4000-8000-000000000007', 'reviewed', repeat('1',64), clock_timestamp()+interval '1 day', null, 'ACTIVE', clock_timestamp()-interval '3 hours', clock_timestamp()-interval '2 hours', clock_timestamp()-interval '1 hour', clock_timestamp()-interval '1 day', true, 7);
 
 select is((select effective_access from public.inspect_quote_request_intake_customer_access_v1(repeat('a',64))), 'ACTIVE', 'preflight resolves active');
 select is((select effective_access from public.inspect_quote_request_intake_customer_access_v1(repeat('b',64))), 'INTERRUPTED', 'preflight resolves interrupted');

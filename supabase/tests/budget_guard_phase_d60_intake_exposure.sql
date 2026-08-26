@@ -10,14 +10,14 @@ insert into public.quote_requests (
   privacy_consent, status
 ) values
   ('d6000000-0000-4000-8000-000000000001', 'D60 draft', 'd60-draft@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'D60 draft fixture.', true, 'approved'),
-  ('d6000000-0000-4000-8000-000000000002', 'D60 submit', 'd60-submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'D60 submit fixture.', true, 'approved');
+  ('d6000001-0000-4000-8000-000000000002', 'D60 submit', 'd60-submit@example.test', 'business', 'EUR 3.200 t/m EUR 6.000', 'flexible', 'D60 submit fixture.', true, 'approved');
 
 insert into public.quote_request_intakes (
   quote_request_id, access_token_hash, access_token_expires_at,
   status, confirmation
 ) values
   ('d6000000-0000-4000-8000-000000000001', repeat('6', 64), clock_timestamp() + interval '1 day', 'invited', false),
-  ('d6000000-0000-4000-8000-000000000002', repeat('7', 64), clock_timestamp() + interval '1 day', 'invited', false);
+  ('d6000001-0000-4000-8000-000000000002', repeat('7', 64), clock_timestamp() + interval '1 day', 'invited', false);
 
 select has_function(
   'public',

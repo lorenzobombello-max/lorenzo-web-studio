@@ -93,7 +93,7 @@ insert into public.quote_requests (
   'flexible', 'Package v3 fixture', true, 'approved',
   'budget_guard_v1', '3200_to_6000_inclusive'
 ), (
-  '32fa0000-0000-4000-8000-000000000002', 'Budget mismatch',
+  '32fa0001-0000-4000-8000-000000000002', 'Budget mismatch',
   'budget-mismatch@example.test', 'business', 'Meer dan EUR 6.000',
   'flexible', 'Budget mismatch fixture', true, 'approved',
   'budget_guard_v1', 'above_6000'
@@ -112,7 +112,7 @@ insert into public.quote_request_intakes (
   'professional_v1'
 ), (
   '32fa1000-0000-4000-8000-000000000002',
-  '32fa0000-0000-4000-8000-000000000002', repeat('2',64),
+  '32fa0001-0000-4000-8000-000000000002', repeat('2',64),
   clock_timestamp() + interval '1 day', 'invited', null, null, false,
   null, null, null
 );
