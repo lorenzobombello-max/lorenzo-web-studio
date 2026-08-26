@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -180,7 +180,7 @@ const customerRequestListItem = (requestId, revision = 1) => ({
   submitted_at: "2099-01-03T11:00:00Z", updated_at: "2099-01-03T11:30:00Z", revision,
 });
 const customerRequestDetail = (requestId, status = "TRIAGED", revision = 1) => ({
-  ...customerRequestListItem(requestId, revision), status, source: "OPERATOR", description: "Operationele omschrijving.",
+  ...customerRequestListItem(requestId, revision), status, source: "OPERATOR", description: "Operationele omschrijving.", upload_request: null,
 });
 
 test("Customer Requests builders expose no client authority or commercial identifiers", () => {
@@ -207,6 +207,45 @@ test("Customer Requests projections are exact and work controls are status-bound
   assert.deepEqual(validateCustomerRequestDetail(customerRequestDetail(requestId)), customerRequestDetail(requestId));
   assert.throws(()=>validateCustomerRequestDetail({ ...customerRequestDetail(requestId), amount: 100 }), /INVALID_CUSTOMER_REQUEST_DETAIL/);
   assert.deepEqual(["NEW", "TRIAGED", "IN_PROGRESS", "WAITING_CUSTOMER", "RESOLVED"].map(customerRequestWorkCommand), [null, "START", "REQUIRE_CUSTOMER_RESPONSE", "RESUME", null]);
+});
+
+test("Customer Request upload-link builders expose only capability authority", () => {
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  const uploadRequestId = "a1800000-0000-4000-8000-000000000071";
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000072";
+  assert.deepEqual(customerRequestUploadCreateRequest(requestId, idempotencyKey), {
+    action: "create_customer_request_upload_link", request_id: requestId, idempotency_key: idempotencyKey,
+  });
+  assert.deepEqual(customerRequestUploadRevokeRequest(uploadRequestId, idempotencyKey), {
+    action: "revoke_customer_request_upload_link", upload_request_id: uploadRequestId,
+    reason: "Operator heeft de uploadlink ingetrokken.", idempotency_key: idempotencyKey,
+  });
+});
+
+test("Customer Request upload URL exists only in controller memory until revoke or selection change", async () => {
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  const uploadRequestId = "a1800000-0000-4000-8000-000000000071";
+  const token = "A".repeat(43);
+  const calls = [];
+  const controller = createCustomerRequestDetailController(async (input)=>{
+    calls.push(input);
+    if (input.action === "get_customer_request") return customerRequestDetail(requestId);
+    if (input.action === "create_customer_request_upload_link") return {
+      state: "ACTIVE", upload_request_id: uploadRequestId, expires_at: "2099-01-04T11:00:00Z",
+      was_created: true, upload_url: `https://lorenzowebsolutions.be/pages/customer-request-upload.html#token=${token}`,
+    };
+    return { state: "REVOKED", upload_request_id: uploadRequestId, was_revoked: true };
+  }, ()=>{}, ()=>"a1800000-0000-4000-8000-000000000072");
+  await controller.selectRequest(requestId);
+  assert.equal(await controller.createUploadLink(), true);
+  assert.equal(controller.state.upload_url.endsWith(`#token=${token}`), true);
+  assert.equal(controller.state.request.upload_request.upload_request_id, uploadRequestId);
+  assert.equal(await controller.revokeUploadLink(), true);
+  assert.equal(controller.state.upload_url, null);
+  assert.equal(controller.state.request.upload_request, null);
+  await controller.selectRequest(requestId);
+  assert.equal(controller.state.upload_url, null);
+  assert.equal(calls.some((input)=>Object.hasOwn(input, "upload_url") || Object.hasOwn(input, "token")), false);
 });
 
 test("dossier generation suppresses stale Customer Requests pages", async () => {
@@ -260,9 +299,13 @@ test("Customer Requests UI stays inside personal workspace and exposes work acti
   assert.match(personal, /data-customer-request-command="START"/);
   assert.match(personal, /data-customer-request-command="REQUIRE_CUSTOMER_RESPONSE"/);
   assert.match(personal, /data-customer-request-command="RESUME"/);
+  assert.match(personal, /id="customerRequestUploadCreate"/);
+  assert.match(personal, /id="customerRequestUploadCopy"[^>]+hidden/);
+  assert.match(personal, /id="customerRequestUploadRevoke"[^>]+hidden/);
   assert.doesNotMatch(personal, /TRIAGE|RESOLVE|CANCEL|SIGNAL_SCOPE_IMPACT|ACCEPT_CHANGE_ORDER|factuur|offerte|prijs/i);
   assert.match(script, /customerRequestDetailController\.clear\(\);\s*customerRequestListController\.selectDossier\(dossier\.reference\)/);
   assert.doesNotMatch(script, /service_role|SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(script, /localStorage|sessionStorage|document\.cookie/);
 });
 
 test("personal queue routing is server-result-driven and fails closed", async () => {

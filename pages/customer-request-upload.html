@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bestanden veilig aanleveren | Lorenzo Web Solutions</title>
+  <meta name="description" content="Beveiligde pagina om bestanden voor een lopende aanvraag aan Lorenzo Web Solutions te bezorgen." />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="../assets/css/pages.css" />
+  <link rel="stylesheet" href="../assets/css/quotation-acceptance.css?v=20260826-upload-link" />
+  <script defer src="../assets/js/customer-request-upload.js?v=20260826-upload-link"></script>
+</head>
+<body class="quotation-acceptance-page">
+  <a class="skip-link" href="#main-content">Ga naar inhoud</a>
+  <header class="acceptance-header"><div class="shell acceptance-header__inner"><span class="brand" aria-label="Lorenzo Web Solutions"><img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></span><span class="acceptance-secure"><span aria-hidden="true"></span>Persoonlijke upload</span></div></header>
+  <main id="main-content" class="acceptance-main">
+    <div id="uploadApp" class="shell acceptance-app" data-state="loading">
+      <header class="acceptance-intro"><div><p class="kicker">Veilige aanlevering</p><h1>Bezorg je bestanden.</h1><p>Upload documenten en afbeeldingen die nodig zijn om je aanvraag verder te behandelen.</p></div><div class="acceptance-status-card" aria-live="polite"><span>Huidige status</span><strong id="uploadStatus">Link wordt gecontroleerd...</strong><p id="uploadMessage">Even geduld.</p></div></header>
+      <section id="activeUpload" class="acceptance-layout" hidden>
+        <section class="acceptance-panel" aria-labelledby="uploadedFilesTitle"><div class="acceptance-panel__heading"><p class="kicker">Ontvangen</p><h2 id="uploadedFilesTitle">Geaccepteerde bestanden</h2></div><ul id="uploadFileList" class="acceptance-lines"></ul><p id="uploadFileEmpty" class="acceptance-help">Nog geen bestanden ontvangen.</p></section>
+        <form id="uploadForm" class="acceptance-panel acceptance-form"><div class="acceptance-panel__heading"><p class="kicker">Aanleveren</p><h2>Bestanden kiezen</h2></div><div class="acceptance-field"><label for="uploadFiles">PDF, PNG of JPEG</label><input id="uploadFiles" name="files" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple required /></div><button id="uploadSubmit" class="acceptance-submit" type="submit" disabled>Bestanden uploaden</button><button id="uploadComplete" class="acceptance-submit" type="button" disabled>Aanlevering afronden</button><p class="acceptance-help">Maximaal 5 bestanden, 8 MiB per bestand en 25 MiB totaal.</p></form>
+      </section>
+      <section id="uploadResult" class="acceptance-result" aria-live="polite" hidden><span class="acceptance-result__mark" aria-hidden="true"></span><p class="kicker">Status</p><h2 id="uploadResultTitle" tabindex="-1">Upload wordt gecontroleerd</h2><p id="uploadResultMessage">Even geduld.</p></section>
+    </div>
+  </main>
+  <footer class="acceptance-footer"><div class="shell"><p>Lorenzo Web Solutions · Beveiligde bestandsaanlevering</p></div></footer>
+</body>
+</html>

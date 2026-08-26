@@ -9,8 +9,10 @@ import {
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   type CustomerRequestActionInput,
+  type CustomerRequestUploadOperatorActionInput,
   withCommercialOperatorCors
 } from "./handler.ts";
+import { buildCustomerRequestUploadUrl, deriveCustomerRequestUploadCapabilityToken, hashCustomerRequestUploadCapabilityToken } from "../_shared/customer-request-upload-capability.ts";
 import {
   createApprovalTokenForIdempotencyKey,
   createInternalE2EIntakeTokenForIdempotencyKey,
@@ -78,6 +80,7 @@ type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   application_reference: string | null;
   dossier_reference: string;
   assignee_operator_id: string;
+  upload_request_id: string;
 }>;
 type ValidatedDossierLifecycleActionInput = ValidatedApplicationActionInput & Readonly<{
   action: "archive_dossier" | "reactivate_dossier" | "trash_dossier" | "restore_dossier";
@@ -149,6 +152,35 @@ export async function executeCallerJwtCustomerRequestAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeCustomerRequestTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtCustomerRequestUploadAction(
+  jwt: string,
+  input: CustomerRequestUploadOperatorActionInput,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  const client = clientFor(jwt);
+  if (input.action === "revoke_customer_request_upload_link") {
+    const { data, error } = await client.rpc("revoke_customer_request_upload_request_v1", {
+      p_upload_request_id: input.upload_request_id,
+      p_reason: input.reason,
+      p_idempotency_key: input.idempotency_key,
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  }
+  const token = await deriveCustomerRequestUploadCapabilityToken(input.request_id, input.idempotency_key);
+  const tokenDigest = await hashCustomerRequestUploadCapabilityToken(token);
+  const { data, error } = await client.rpc("create_customer_request_upload_request_v1", {
+    p_request_id: input.request_id,
+    p_token_digest: tokenDigest,
+    p_requested_expires_at: null,
+    p_idempotency_key: input.idempotency_key,
+  });
+  if (error || !data || typeof data !== "object" || Array.isArray(data) || (data as Record<string, unknown>).state !== "ACTIVE") {
+    throw new Error(error?.message || "INVALID_UPLOAD_REQUEST_RESPONSE");
+  }
+  return { ...(data as Record<string, unknown>), upload_url: buildCustomerRequestUploadUrl(token) };
 }
 
 if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
@@ -263,6 +295,9 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
         "transition_customer_request",
       ].includes(input.action)) {
         return await executeCallerJwtCustomerRequestAction(jwt, input as CustomerRequestActionInput, clientFor);
+      }
+      if (input.action === "create_customer_request_upload_link" || input.action === "revoke_customer_request_upload_link") {
+        return await executeCallerJwtCustomerRequestUploadAction(jwt, input as CustomerRequestUploadOperatorActionInput, clientFor);
       }
       if (input.action === "get_dossier_assignment" || input.action === "assign_dossier") {
         return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);
