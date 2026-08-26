@@ -32,6 +32,8 @@ const APPLICATION_ACTIONS = new Set([
   "list_customer_requests_for_dossier",
   "get_customer_request",
   "transition_customer_request",
+  "create_customer_request_upload_link",
+  "revoke_customer_request_upload_link",
   "assign_dossier",
   "get_project_dossier",
   "promote_accepted_application",
@@ -126,6 +128,16 @@ export type CustomerRequestActionInput = Readonly<{
   request_id: string;
   command_type: "START" | "REQUIRE_CUSTOMER_RESPONSE" | "RESUME";
   expected_revision: number;
+  idempotency_key: string;
+}>;
+export type CustomerRequestUploadOperatorActionInput = Readonly<{
+  action: "create_customer_request_upload_link";
+  request_id: string;
+  idempotency_key: string;
+}> | Readonly<{
+  action: "revoke_customer_request_upload_link";
+  upload_request_id: string;
+  reason: string;
   idempotency_key: string;
 }>;
 type DossierLifecycleTransportInput = Readonly<{
@@ -281,6 +293,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "request_id"])
     : action === "transition_customer_request"
     ? new Set(["action", "request_id", "command_type", "expected_revision", "idempotency_key"])
+    : action === "create_customer_request_upload_link"
+    ? new Set(["action", "request_id", "idempotency_key"])
+    : action === "revoke_customer_request_upload_link"
+    ? new Set(["action", "upload_request_id", "reason", "idempotency_key"])
     : action === "get_dossier_assignment"
     ? new Set(["action", "dossier_reference"])
     : action === "assign_dossier"
@@ -334,6 +350,19 @@ function validateApplicationAction(value: UnvalidatedInput) {
       expected_revision: expectedRevision as number,
       idempotency_key: idempotencyKey,
     };
+  }
+  if (action === "create_customer_request_upload_link") {
+    const requestId = String(value.request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(requestId) || !UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, request_id: requestId, idempotency_key: idempotencyKey };
+  }
+  if (action === "revoke_customer_request_upload_link") {
+    const uploadRequestId = String(value.upload_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (!UUID.test(uploadRequestId) || !UUID.test(idempotencyKey) || reason.length < 1 || reason.length > 500) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, upload_request_id: uploadRequestId, reason, idempotency_key: idempotencyKey };
   }
   if (action === "get_dossier_assignment") {
     return { action, dossier_reference: normalizeDossierReference(value.dossier_reference) };

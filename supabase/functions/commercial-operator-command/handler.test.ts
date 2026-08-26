@@ -12,7 +12,7 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -1129,6 +1129,75 @@ Deno.test("Customer Requests index dispatch constructs only a caller JWT client"
   assertEquals(clientForCalls, [jwt]);
   assertEquals(rpcCalls, ["get_customer_request_v1"]);
   assertEquals(result, { request_id: "a1800000-0000-4000-8000-000000000070" });
+});
+
+Deno.test("Customer Request upload-link actions accept only authority-minimal input", async ()=>{
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  const uploadRequestId = "a1800000-0000-4000-8000-000000000072";
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000071";
+  for (const [body, input] of [
+    [
+      { action: "create_customer_request_upload_link", request_id: requestId, idempotency_key: idempotencyKey },
+      { action: "create_customer_request_upload_link", request_id: requestId, idempotency_key: idempotencyKey },
+    ],
+    [
+      { action: "revoke_customer_request_upload_link", upload_request_id: uploadRequestId, reason: " Klant vroeg intrekking ", idempotency_key: idempotencyKey },
+      { action: "revoke_customer_request_upload_link", upload_request_id: uploadRequestId, reason: "Klant vroeg intrekking", idempotency_key: idempotencyKey },
+    ],
+  ] as const) {
+    const harness = dependencies();
+    assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 200);
+    assertEquals(harness.calls, [{ jwt, input }]);
+  }
+  for (const invalid of [
+    { action: "create_customer_request_upload_link", request_id: requestId, idempotency_key: idempotencyKey, customer_id: requestId },
+    { action: "create_customer_request_upload_link", request_id: "invalid", idempotency_key: idempotencyKey },
+    { action: "revoke_customer_request_upload_link", upload_request_id: uploadRequestId, reason: "", idempotency_key: idempotencyKey },
+    { action: "revoke_customer_request_upload_link", upload_request_id: uploadRequestId, request_id: requestId, reason: "x", idempotency_key: idempotencyKey },
+  ]) {
+    const harness = dependencies();
+    assertEquals((await handleCommercialOperator(request(invalid), harness.deps)).status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("Customer Request upload-link create is digest-only and retry-stable", async ()=>{
+  Deno.env.set("CUSTOMER_REQUEST_UPLOAD_CAPABILITY_SECRET", "u".repeat(32));
+  Deno.env.set("SITE_URL", "https://lorenzowebsolutions.be");
+  const requestId = "a1800000-0000-4000-8000-000000000070";
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000071";
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const clientFor = (token: string)=>({ rpc: async (name: string, args: Record<string, unknown>)=>{
+    assertEquals(token, jwt);
+    calls.push({ name, args });
+    return { data: { state: "ACTIVE", upload_request_id: "a1800000-0000-4000-8000-000000000072", expires_at: "2099-01-01T00:00:00Z" }, error: null };
+  } });
+  const input = { action: "create_customer_request_upload_link" as const, request_id: requestId, idempotency_key: idempotencyKey };
+  const first = await executeCallerJwtCustomerRequestUploadAction(jwt, input, clientFor);
+  const second = await executeCallerJwtCustomerRequestUploadAction(jwt, input, clientFor);
+  assertEquals(first, second);
+  assertEquals(calls.map((call)=>call.name), ["create_customer_request_upload_request_v1", "create_customer_request_upload_request_v1"]);
+  assertEquals(calls[0].args.p_token_digest, calls[1].args.p_token_digest);
+  assertEquals(typeof calls[0].args.p_token_digest, "string");
+  assertEquals(JSON.stringify(calls).includes(new URL((first as Record<string, string>).upload_url).hash.slice(7)), false);
+});
+
+Deno.test("Customer Request upload-link revoke uses only caller JWT and capability id", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeCallerJwtCustomerRequestUploadAction(jwt, {
+    action: "revoke_customer_request_upload_link",
+    upload_request_id: "a1800000-0000-4000-8000-000000000072",
+    reason: "Klant vroeg intrekking",
+    idempotency_key: "a1800000-0000-4000-8000-000000000071",
+  }, (token: string)=>({ rpc: async (name: string, args: Record<string, unknown>)=>{
+    assertEquals(token, jwt); calls.push({ name, args }); return { data: { state: "REVOKED" }, error: null };
+  } }));
+  assertEquals(result, { state: "REVOKED" });
+  assertEquals(calls, [{ name: "revoke_customer_request_upload_request_v1", args: {
+    p_upload_request_id: "a1800000-0000-4000-8000-000000000072",
+    p_reason: "Klant vroeg intrekking",
+    p_idempotency_key: "a1800000-0000-4000-8000-000000000071",
+  } }]);
 });
 
 Deno.test("Customer Requests reject service role and expose stable error envelopes", async ()=>{

@@ -526,6 +526,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const customerRequestSubmittedAt = document.getElementById("customerRequestSubmittedAt");
   const customerRequestDescription = document.getElementById("customerRequestDescription");
   const customerRequestActionButtons = Array.from(document.querySelectorAll("[data-customer-request-command]"));
+  const customerRequestUploadStatus = document.getElementById("customerRequestUploadStatus");
+  const customerRequestUploadUrl = document.getElementById("customerRequestUploadUrl");
+  const customerRequestUploadCreate = document.getElementById("customerRequestUploadCreate");
+  const customerRequestUploadCopy = document.getElementById("customerRequestUploadCopy");
+  const customerRequestUploadRevoke = document.getElementById("customerRequestUploadRevoke");
   const managerWorkspace = document.getElementById("managerWorkspace");
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -660,6 +665,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       : state.error ? "De request is niet langer beschikbaar." : "";
     if (!request) {
       for (const button of customerRequestActionButtons) button.hidden = true;
+      customerRequestUploadUrl.value = "";
+      customerRequestUploadUrl.hidden = true;
+      customerRequestUploadCreate.hidden = true;
+      customerRequestUploadCopy.hidden = true;
+      customerRequestUploadRevoke.hidden = true;
       return;
     }
     customerRequestReference.textContent = request.request_reference;
@@ -672,6 +682,18 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const command = customerRequestWorkCommand(request.status);
     for (const button of customerRequestActionButtons) {
       button.hidden = button.dataset.customerRequestCommand !== command;
+      button.disabled = state.submitting;
+    }
+    const activeUpload = request.upload_request;
+    customerRequestUploadStatus.textContent = activeUpload
+      ? `Actief tot ${formatDate(activeUpload.expires_at)}.`
+      : "Er is geen actieve uploadlink.";
+    customerRequestUploadUrl.value = state.upload_url || "";
+    customerRequestUploadUrl.hidden = !state.upload_url;
+    customerRequestUploadCreate.hidden = Boolean(activeUpload);
+    customerRequestUploadCopy.hidden = !state.upload_url;
+    customerRequestUploadRevoke.hidden = !activeUpload;
+    for (const button of [customerRequestUploadCreate, customerRequestUploadCopy, customerRequestUploadRevoke]) {
       button.disabled = state.submitting;
     }
   }
@@ -695,6 +717,13 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   for (const button of customerRequestActionButtons) {
     button.addEventListener("click", ()=>customerRequestDetailController.transition(button.dataset.customerRequestCommand));
   }
+  customerRequestUploadCreate.addEventListener("click", ()=>customerRequestDetailController.createUploadLink());
+  customerRequestUploadCopy.addEventListener("click", async ()=>{
+    if (!customerRequestDetailController.state.upload_url) return;
+    await navigator.clipboard.writeText(customerRequestDetailController.state.upload_url);
+    customerRequestUploadStatus.textContent = "Uploadlink gekopieerd.";
+  });
+  customerRequestUploadRevoke.addEventListener("click", ()=>customerRequestDetailController.revokeUploadLink());
 
   const personalQueueController = createPersonalQueueController(invoke, (state)=>{
     renderPersonalQueue(state.items);
@@ -1628,7 +1657,7 @@ const CUSTOMER_REQUEST_LIST_FIELDS = new Set([
 ]);
 const CUSTOMER_REQUEST_DETAIL_FIELDS = new Set([
   "request_id", "request_reference", "source", "request_type", "title",
-  "description", "status", "priority", "submitted_at", "revision", "updated_at",
+  "description", "status", "priority", "submitted_at", "revision", "updated_at", "upload_request",
 ]);
 
 function exactCustomerRequestProjection(value, fields) {
@@ -1652,6 +1681,19 @@ export function customerRequestTransitionRequest(request, commandType, idempoten
     request_id: request.request_id,
     command_type: commandType,
     expected_revision: request.revision,
+    idempotency_key: idempotencyKey,
+  };
+}
+
+export function customerRequestUploadCreateRequest(requestId, idempotencyKey) {
+  return { action: "create_customer_request_upload_link", request_id: requestId, idempotency_key: idempotencyKey };
+}
+
+export function customerRequestUploadRevokeRequest(uploadRequestId, idempotencyKey) {
+  return {
+    action: "revoke_customer_request_upload_link",
+    upload_request_id: uploadRequestId,
+    reason: "Operator heeft de uploadlink ingetrokken.",
     idempotency_key: idempotencyKey,
   };
 }
@@ -1682,12 +1724,20 @@ export function appendUniqueCustomerRequestItems(current, incoming) {
 }
 
 export function validateCustomerRequestDetail(request) {
+  const uploadRequest = request?.upload_request;
+  const validUploadRequest = uploadRequest === null || (
+    exactCustomerRequestProjection(uploadRequest, new Set(["upload_request_id", "status", "expires_at"]))
+    && UUID.test(String(uploadRequest.upload_request_id || ""))
+    && uploadRequest.status === "ACTIVE"
+    && typeof uploadRequest.expires_at === "string" && uploadRequest.expires_at.length > 0
+  );
   const valid = exactCustomerRequestProjection(request, CUSTOMER_REQUEST_DETAIL_FIELDS)
     && UUID.test(String(request?.request_id || ""))
     && [request.request_reference, request.source, request.request_type, request.title, request.description, request.status, request.submitted_at, request.updated_at]
       .every((value)=>typeof value === "string" && value.length > 0)
     && (request.priority === null || typeof request.priority === "string")
-    && Number.isSafeInteger(request.revision) && request.revision >= 0;
+    && Number.isSafeInteger(request.revision) && request.revision >= 0
+    && validUploadRequest;
   if (!valid) throw new Error("INVALID_CUSTOMER_REQUEST_DETAIL");
   return request;
 }
@@ -1760,7 +1810,7 @@ export function createCustomerRequestListController(invoke, onChange = ()=>{}) {
 }
 
 export function createCustomerRequestDetailController(invoke, onChange = ()=>{}, randomUUID = ()=>crypto.randomUUID()) {
-  const state = { request_id: null, request: null, loading: false, submitting: false, error: null };
+  const state = { request_id: null, request: null, upload_url: null, loading: false, submitting: false, error: null };
   let generation = 0;
   const publish = ()=>onChange({ ...state, request: state.request ? { ...state.request } : null });
 
@@ -1769,6 +1819,7 @@ export function createCustomerRequestDetailController(invoke, onChange = ()=>{},
     const expectedGeneration = generation;
     state.request_id = requestId;
     state.request = null;
+    state.upload_url = null;
     state.loading = Boolean(requestId);
     state.submitting = false;
     state.error = null;
@@ -1818,7 +1869,66 @@ export function createCustomerRequestDetailController(invoke, onChange = ()=>{},
     }
   }
 
-  return { state, selectRequest, transition, clear: ()=>selectRequest(null) };
+  async function createUploadLink() {
+    const request = state.request;
+    if (!request || request.upload_request || state.submitting) return false;
+    const expectedGeneration = generation;
+    state.submitting = true;
+    state.error = null;
+    publish();
+    try {
+      const result = await invoke(customerRequestUploadCreateRequest(request.request_id, randomUUID()));
+      const valid = exactCustomerRequestProjection(result, new Set(["state", "upload_request_id", "expires_at", "was_created", "upload_url"]))
+        && result.state === "ACTIVE" && UUID.test(String(result.upload_request_id || ""))
+        && typeof result.expires_at === "string" && typeof result.was_created === "boolean"
+        && typeof result.upload_url === "string" && /^https:\/\/[^#]+\/pages\/customer-request-upload\.html#token=[A-Za-z0-9_-]{43}$/.test(result.upload_url);
+      if (!valid) throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_LINK");
+      if (expectedGeneration !== generation || request.request_id !== state.request_id) return false;
+      state.request = { ...request, upload_request: { upload_request_id: result.upload_request_id, status: "ACTIVE", expires_at: result.expires_at } };
+      state.upload_url = result.upload_url;
+      return true;
+    } catch (error) {
+      if (expectedGeneration !== generation) return false;
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      if (expectedGeneration === generation) {
+        state.submitting = false;
+        publish();
+      }
+    }
+  }
+
+  async function revokeUploadLink() {
+    const request = state.request;
+    const uploadRequestId = request?.upload_request?.upload_request_id;
+    if (!request || !uploadRequestId || state.submitting) return false;
+    const expectedGeneration = generation;
+    state.submitting = true;
+    state.error = null;
+    publish();
+    try {
+      const result = await invoke(customerRequestUploadRevokeRequest(uploadRequestId, randomUUID()));
+      const valid = exactCustomerRequestProjection(result, new Set(["state", "upload_request_id", "was_revoked"]))
+        && result.state === "REVOKED" && result.upload_request_id === uploadRequestId && result.was_revoked === true;
+      if (!valid) throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_REVOKE");
+      if (expectedGeneration !== generation || request.request_id !== state.request_id) return false;
+      state.request = { ...request, upload_request: null };
+      state.upload_url = null;
+      return true;
+    } catch (error) {
+      if (expectedGeneration !== generation) return false;
+      state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+      return false;
+    } finally {
+      if (expectedGeneration === generation) {
+        state.submitting = false;
+        publish();
+      }
+    }
+  }
+
+  return { state, selectRequest, transition, createUploadLink, revokeUploadLink, clear: ()=>selectRequest(null) };
 }
 
 export function operatorFacetSelection(facets, selectedYear, selectedQuarter) {
