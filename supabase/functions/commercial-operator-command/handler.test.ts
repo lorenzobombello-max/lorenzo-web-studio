@@ -12,7 +12,7 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -991,6 +991,147 @@ Deno.test("Customer Request smoke fixture uses one atomic caller-JWT RPC", async
     args: { p_idempotency_key: "a1800000-0000-4000-8000-000000000030" },
   }]);
   assertEquals(result, { run_id: userId, request_id: "a1800000-0000-4000-8000-000000000031" });
+});
+
+Deno.test("internal E2E accepted-file cleanup accepts only exact server-binding input", async ()=>{
+  const harness = dependencies();
+  const validInput = {
+    action: "cleanup_internal_e2e_accepted_file",
+    run_id: "a1800000-0000-4000-8000-000000000040",
+    request_id: "a1800000-0000-4000-8000-000000000041",
+    upload_request_id: "a1800000-0000-4000-8000-000000000042",
+    uploaded_file_id: "a1800000-0000-4000-8000-000000000043",
+    idempotency_key: "a1800000-0000-4000-8000-000000000044",
+  };
+  const valid = await handleCommercialOperator(request(validInput), harness.deps);
+  assertEquals(valid.status, 200);
+  assertEquals(harness.calls[0].input, validInput);
+
+  for (const forbidden of [
+    { storage_bucket_id: "customer-request-quarantine" },
+    { storage_object_path: "caller/selected.png" },
+    { bucket: "customer-request-quarantine" },
+    { path: "caller/selected.png" },
+    { customer_id: userId },
+  ]) {
+    const blocked = await handleCommercialOperator(request({ ...validInput, ...forbidden }), harness.deps);
+    assertEquals(blocked.status, 400);
+  }
+  assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("internal E2E accepted-file cleanup authorizes, removes one exact object, then finalizes", async ()=>{
+  const events: Array<Record<string, unknown>> = [];
+  const input = {
+    action: "cleanup_internal_e2e_accepted_file" as const,
+    run_id: "a1800000-0000-4000-8000-000000000040",
+    request_id: "a1800000-0000-4000-8000-000000000041",
+    upload_request_id: "a1800000-0000-4000-8000-000000000042",
+    uploaded_file_id: "a1800000-0000-4000-8000-000000000043",
+    idempotency_key: "a1800000-0000-4000-8000-000000000044",
+  };
+  const result = await executeCallerJwtInternalE2EAcceptedFileCleanupAction(
+    jwt,
+    input,
+    (token: string)=>({
+      rpc: async (name: string, args: Record<string, unknown>)=>{
+        assertEquals(token, jwt);
+        events.push({ client: "human", name, args });
+        if (name === "authorize_internal_e2e_accepted_file_cleanup_v1") {
+          return { data: {
+            state: "AUTHORIZED",
+            cleanup_authorization_id: "a1800000-0000-4000-8000-000000000045",
+            storage_bucket_id: "customer-request-quarantine",
+            storage_object_path: `requests/${input.request_id}/uploads/${input.upload_request_id}/files/${input.uploaded_file_id}.png`,
+          }, error: null };
+        }
+        return { data: { state: "DELETED", uploaded_file_id: input.uploaded_file_id }, error: null };
+      },
+    }),
+    ()=>({
+      storage: {
+        from: (bucket: string)=>({
+          remove: async (paths: string[])=>{
+            events.push({ client: "service", operation: "remove", bucket, paths });
+            return { data: [], error: null };
+          },
+        }),
+      },
+    }),
+  );
+  assertEquals(result, { state: "DELETED", uploaded_file_id: input.uploaded_file_id });
+  assertEquals(events, [
+    {
+      client: "human",
+      name: "authorize_internal_e2e_accepted_file_cleanup_v1",
+      args: {
+        p_run_id: input.run_id,
+        p_request_id: input.request_id,
+        p_upload_request_id: input.upload_request_id,
+        p_uploaded_file_id: input.uploaded_file_id,
+        p_idempotency_key: input.idempotency_key,
+      },
+    },
+    {
+      client: "service",
+      operation: "remove",
+      bucket: "customer-request-quarantine",
+      paths: [`requests/${input.request_id}/uploads/${input.upload_request_id}/files/${input.uploaded_file_id}.png`],
+    },
+    {
+      client: "human",
+      name: "finalize_internal_e2e_accepted_file_cleanup_v1",
+      args: {
+        p_cleanup_authorization_id: "a1800000-0000-4000-8000-000000000045",
+        p_idempotency_key: input.idempotency_key,
+      },
+    },
+  ]);
+});
+
+Deno.test("internal E2E accepted-file cleanup never finalizes after Storage removal failure", async ()=>{
+  const rpcNames: string[] = [];
+  let removalCalls = 0;
+  let error: Error | null = null;
+  try {
+    await executeCallerJwtInternalE2EAcceptedFileCleanupAction(
+      jwt,
+      {
+        action: "cleanup_internal_e2e_accepted_file",
+        run_id: "a1800000-0000-4000-8000-000000000050",
+        request_id: "a1800000-0000-4000-8000-000000000051",
+        upload_request_id: "a1800000-0000-4000-8000-000000000052",
+        uploaded_file_id: "a1800000-0000-4000-8000-000000000053",
+        idempotency_key: "a1800000-0000-4000-8000-000000000054",
+      },
+      ()=>({
+        rpc: async (name: string, _args: Record<string, unknown>)=>{
+          rpcNames.push(name);
+          return { data: {
+            state: "AUTHORIZED",
+            cleanup_authorization_id: "a1800000-0000-4000-8000-000000000055",
+            storage_bucket_id: "customer-request-quarantine",
+            storage_object_path: "requests/a1800000-0000-4000-8000-000000000051/uploads/a1800000-0000-4000-8000-000000000052/files/a1800000-0000-4000-8000-000000000053.png",
+          }, error: null };
+        },
+      }),
+      ()=>({
+        storage: {
+          from: (_bucket: string)=>({
+            remove: async (_paths: string[])=>{
+              removalCalls += 1;
+              return { data: null, error: { message: "STORAGE_REMOVE_FAILED" } };
+            },
+          }),
+        },
+      }),
+    );
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "STORAGE_REMOVE_FAILED");
+  assertEquals(removalCalls, 1);
+  assertEquals(rpcNames, ["authorize_internal_e2e_accepted_file_cleanup_v1"]);
 });
 
 Deno.test("internal E2E finalization requires a terminal state and revision", async ()=>{

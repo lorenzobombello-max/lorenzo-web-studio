@@ -39,6 +39,7 @@ const APPLICATION_ACTIONS = new Set([
   "promote_accepted_application",
   "create_internal_e2e_run",
   "create_customer_request_smoke_fixture",
+  "cleanup_internal_e2e_accepted_file",
   "finalize_internal_e2e_run",
   "interrupt_intake",
   "resume_intake",
@@ -139,6 +140,14 @@ export type CustomerRequestUploadOperatorActionInput = Readonly<{
   action: "revoke_customer_request_upload_link";
   upload_request_id: string;
   reason: string;
+  idempotency_key: string;
+}>;
+export type InternalE2EAcceptedFileCleanupActionInput = Readonly<{
+  action: "cleanup_internal_e2e_accepted_file";
+  run_id: string;
+  request_id: string;
+  upload_request_id: string;
+  uploaded_file_id: string;
   idempotency_key: string;
 }>;
 type DossierLifecycleTransportInput = Readonly<{
@@ -278,6 +287,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "create_customer_request_smoke_fixture"
     ? new Set(["action", "idempotency_key"])
+    : action === "cleanup_internal_e2e_accepted_file"
+    ? new Set(["action", "run_id", "request_id", "upload_request_id", "uploaded_file_id", "idempotency_key"])
     : action === "finalize_internal_e2e_run"
     ? new Set(["action", "run_id", "terminal_status", "expected_revision", "idempotency_key"])
     : action === "get_project_dossier"
@@ -439,6 +450,24 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, idempotency_key: idempotencyKey };
   }
+  if (action === "cleanup_internal_e2e_accepted_file") {
+    const runId = String(value.run_id || "");
+    const requestId = String(value.request_id || "");
+    const uploadRequestId = String(value.upload_request_id || "");
+    const uploadedFileId = String(value.uploaded_file_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (![runId, requestId, uploadRequestId, uploadedFileId, idempotencyKey].every((field)=>UUID.test(field))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      run_id: runId,
+      request_id: requestId,
+      upload_request_id: uploadRequestId,
+      uploaded_file_id: uploadedFileId,
+      idempotency_key: idempotencyKey,
+    };
+  }
   if (action === "finalize_internal_e2e_run") {
     const runId = String(value.run_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
@@ -553,6 +582,8 @@ function mapDatabaseError(error: unknown) {
     "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
+    ,"INTERNAL_E2E_CLEANUP_BINDING_REQUIRED"
+    ,"INTERNAL_E2E_CLEANUP_AUTHORIZATION_REQUIRED"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if ([
     "PROJECT_SCOPE_DENIED",
@@ -573,6 +604,13 @@ function mapDatabaseError(error: unknown) {
   if (code === "APPLICATION_NOT_ACCEPTED") return response(409, code);
   if (["PROJECT_SITE_ALREADY_BOUND", "PROJECT_SITE_NOT_BOUND"].includes(code)) return response(409, "COMMAND_REJECTED");
   if (["INTERNAL_E2E_RUN_FINALIZED", "INTERNAL_E2E_PROMOTION_DENIED", "INTERNAL_E2E_QUOTATION_DENIED"].includes(code)) return response(409, code);
+  if ([
+    "ACCEPTED_INTERNAL_E2E_FILE_REQUIRED",
+    "INTERNAL_E2E_FILE_ALREADY_DELETED",
+    "INTERNAL_E2E_FILE_CLEANUP_ALREADY_AUTHORIZED",
+    "INTERNAL_E2E_FILE_CLEANUP_ALREADY_FINALIZED",
+    "INTERNAL_E2E_STORAGE_OBJECT_STILL_EXISTS"
+  ].includes(code)) return response(409, "COMMAND_REJECTED");
   if ([
     "INVALID_APPLICATION_REFERENCE",
     "INVALID_SUPPORT_REFERENCE",
