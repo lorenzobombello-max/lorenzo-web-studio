@@ -12,7 +12,7 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -940,6 +940,57 @@ Deno.test("internal E2E creation accepts only the fixed owner-command shape", as
     assertEquals(blocked.status, 400);
   }
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("Customer Request smoke fixture accepts only an idempotency key", async ()=>{
+  const harness = dependencies();
+  const valid = await handleCommercialOperator(request({
+    action: "create_customer_request_smoke_fixture",
+    idempotency_key: "a1800000-0000-4000-8000-000000000030",
+  }), harness.deps);
+  assertEquals(valid.status, 200);
+  assertEquals(harness.calls[0].input, {
+    action: "create_customer_request_smoke_fixture",
+    idempotency_key: "a1800000-0000-4000-8000-000000000030",
+  });
+  for (const forbidden of [
+    { run_label: "caller controlled" },
+    { customer_id: userId },
+    { project_id: userId },
+    { quote_request_id: userId },
+    { name: "Real Person" },
+    { email: "real@example.com" },
+    { record_classification: "production" },
+    { request_reference: "LWS-VRZ-2099-9999" },
+  ]) {
+    const blocked = await handleCommercialOperator(request({
+      action: "create_customer_request_smoke_fixture",
+      idempotency_key: "a1800000-0000-4000-8000-000000000031",
+      ...forbidden,
+    }), harness.deps);
+    assertEquals(blocked.status, 400);
+  }
+  assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("Customer Request smoke fixture uses one atomic caller-JWT RPC", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeCallerJwtCustomerRequestSmokeFixtureAction(
+    jwt,
+    "a1800000-0000-4000-8000-000000000030",
+    (token: string)=>({
+      rpc: async (name: string, args: Record<string, unknown>)=>{
+        assertEquals(token, jwt);
+        calls.push({ name, args });
+        return { data: { run_id: userId, request_id: "a1800000-0000-4000-8000-000000000031" }, error: null };
+      },
+    }),
+  );
+  assertEquals(calls, [{
+    name: "create_customer_request_smoke_fixture_v1",
+    args: { p_idempotency_key: "a1800000-0000-4000-8000-000000000030" },
+  }]);
+  assertEquals(result, { run_id: userId, request_id: "a1800000-0000-4000-8000-000000000031" });
 });
 
 Deno.test("internal E2E finalization requires a terminal state and revision", async ()=>{

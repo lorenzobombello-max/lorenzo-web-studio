@@ -38,6 +38,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_dossier",
   "promote_accepted_application",
   "create_internal_e2e_run",
+  "create_customer_request_smoke_fixture",
   "finalize_internal_e2e_run",
   "interrupt_intake",
   "resume_intake",
@@ -275,6 +276,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "zone", "operational_status", "request_kind", "search"])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
+    : action === "create_customer_request_smoke_fixture"
+    ? new Set(["action", "idempotency_key"])
     : action === "finalize_internal_e2e_run"
     ? new Set(["action", "run_id", "terminal_status", "expected_revision", "idempotency_key"])
     : action === "get_project_dossier"
@@ -430,6 +433,11 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return { action, idempotency_key: idempotencyKey, run_label: runLabel, ttl_minutes: ttlMinutes };
+  }
+  if (action === "create_customer_request_smoke_fixture") {
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, idempotency_key: idempotencyKey };
   }
   if (action === "finalize_internal_e2e_run") {
     const runId = String(value.run_id || "");
