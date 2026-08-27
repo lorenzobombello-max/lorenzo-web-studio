@@ -1897,6 +1897,220 @@ test("internal Smoke B runs exactly one upload and returns only sanitized deleti
   assert.doesNotMatch(JSON.stringify(result), /token|upload_url|signed_upload_url|Authorization|BBBB/);
 });
 
+test("lost finalize acknowledgement reconciles ACCEPTED server state", async () => {
+  const fixture = {
+    run_id: "c3000000-0000-4000-8000-000000000001",
+    request_id: "c3000000-0000-4000-8000-000000000002",
+    status: "NEW",
+    revision: 0,
+    replayed: false,
+  };
+  const uploadRequestId = "c3000000-0000-4000-8000-000000000003";
+  const uploadedFileId = "c3000000-0000-4000-8000-000000000004";
+  const calls = [];
+  const result = await runInternalSmokeB({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+      },
+      rpc: async (name, input)=>{
+        calls.push({ channel: "rpc", name, input });
+        return { data: { status: "CANCELLED" }, error: null };
+      },
+    },
+    invoke: async (input)=>{
+      calls.push({ channel: "operator", ...input });
+      if (input.action === "get_current_operator_identity") return { role: "owner", status: "ACTIVE" };
+      if (input.action === "create_customer_request_smoke_fixture") {
+        return calls.filter((call)=>call.action === input.action).length === 1 ? fixture : { ...fixture, replayed: true };
+      }
+      if (input.action === "create_customer_request_upload_link") return {
+        state: "ACTIVE",
+        was_created: true,
+        upload_request_id: uploadRequestId,
+        upload_url: "https://operator.example/pages/customer-request-upload.html#token=DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+      };
+      if (input.action === "cleanup_internal_e2e_accepted_file") return {
+        state: "DELETED",
+        run_id: fixture.run_id,
+        request_id: fixture.request_id,
+        upload_request_id: uploadRequestId,
+        uploaded_file_id: uploadedFileId,
+      };
+      if (input.action === "finalize_internal_e2e_run") return { status: "PASSED" };
+      throw new Error("UNEXPECTED_ACTION");
+    },
+    uploadRequest: async (_capability, request)=>{
+      calls.push({ channel: "upload", ...request });
+      if (request.method === "GET") {
+        const reads = calls.filter((call)=>call.channel === "upload" && call.method === "GET").length;
+        return reads === 1
+          ? { state: "ACTIVE", title: "LWS-SMOKE-TEST-UPLOAD-LINK-20260827", file_count: 0 }
+          : { state: "ACTIVE", files: [{ file_id: uploadedFileId, status: "ACCEPTED" }], accepted_file_count: 1 };
+      }
+      if (request.action === "prepare") return { state: "PREPARED", file_id: uploadedFileId, signed_upload_url: "https://storage.example/signed/lost-finalize" };
+      if (request.action === "finalize") throw new Error("FINALIZE_ACK_LOST");
+      if (request.action === "complete") return { state: "COMPLETED" };
+      throw new Error("UNEXPECTED_UPLOAD_REQUEST");
+    },
+    putSignedBlob: async ()=>{ calls.push({ channel: "put" }); },
+    randomUUID: ()=>crypto.randomUUID(),
+  });
+
+  assert.equal(result.SMOKE_STATUS, "PASS");
+  assert.equal(result.accepted_file_count, 1);
+  assert.equal(result.cleanup, "DELETED");
+  assert.equal(result.internal_e2e_final_status, "PASSED");
+  assert.equal(calls.filter((call)=>call.channel === "put").length, 1);
+  assert.equal(calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+  assert.equal(calls.filter((call)=>call.action === "cleanup_internal_e2e_accepted_file").length, 1);
+});
+
+test("lost cleanup acknowledgement reconciles terminal cleanup state", async () => {
+  const fixture = {
+    run_id: "c4000000-0000-4000-8000-000000000001",
+    request_id: "c4000000-0000-4000-8000-000000000002",
+    status: "NEW",
+    revision: 0,
+    replayed: false,
+  };
+  const uploadRequestId = "c4000000-0000-4000-8000-000000000003";
+  const uploadedFileId = "c4000000-0000-4000-8000-000000000004";
+  const calls = [];
+  let cleanupServerEffects = 0;
+  const result = await runInternalSmokeB({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+      },
+      rpc: async (name, input)=>{
+        calls.push({ channel: "rpc", name, input });
+        return { data: { status: "CANCELLED" }, error: null };
+      },
+    },
+    invoke: async (input)=>{
+      calls.push({ channel: "operator", ...input });
+      if (input.action === "get_current_operator_identity") return { role: "owner", status: "ACTIVE" };
+      if (input.action === "create_customer_request_smoke_fixture") {
+        return calls.filter((call)=>call.action === input.action).length === 1 ? fixture : { ...fixture, replayed: true };
+      }
+      if (input.action === "create_customer_request_upload_link") return {
+        state: "ACTIVE",
+        was_created: true,
+        upload_request_id: uploadRequestId,
+        upload_url: "https://operator.example/pages/customer-request-upload.html#token=EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+      };
+      if (input.action === "cleanup_internal_e2e_accepted_file") {
+        if (cleanupServerEffects === 0) {
+          cleanupServerEffects = 1;
+          throw new Error("CLEANUP_ACK_LOST");
+        }
+        return {
+          state: "DELETED",
+          run_id: fixture.run_id,
+          request_id: fixture.request_id,
+          upload_request_id: uploadRequestId,
+          uploaded_file_id: uploadedFileId,
+        };
+      }
+      if (input.action === "finalize_internal_e2e_run") return { status: "PASSED" };
+      throw new Error("UNEXPECTED_ACTION");
+    },
+    uploadRequest: async (_capability, request)=>{
+      calls.push({ channel: "upload", ...request });
+      if (request.method === "GET") {
+        const reads = calls.filter((call)=>call.channel === "upload" && call.method === "GET").length;
+        return reads === 1
+          ? { state: "ACTIVE", title: "LWS-SMOKE-TEST-UPLOAD-LINK-20260827", file_count: 0 }
+          : { state: "ACTIVE", files: [{ file_id: uploadedFileId, status: "ACCEPTED" }], accepted_file_count: 1 };
+      }
+      if (request.action === "prepare") return { state: "PREPARED", file_id: uploadedFileId, signed_upload_url: "https://storage.example/signed/lost-cleanup" };
+      if (request.action === "finalize") return { state: "ACTIVE" };
+      if (request.action === "complete") return { state: "COMPLETED" };
+      throw new Error("UNEXPECTED_UPLOAD_REQUEST");
+    },
+    putSignedBlob: async ()=>{ calls.push({ channel: "put" }); },
+    randomUUID: ()=>crypto.randomUUID(),
+  });
+
+  const cleanupCalls = calls.filter((call)=>call.action === "cleanup_internal_e2e_accepted_file");
+  assert.equal(result.SMOKE_STATUS, "PASS");
+  assert.equal(result.cleanup, "DELETED");
+  assert.equal(cleanupCalls.length, 2);
+  assert.equal(cleanupCalls[0].idempotency_key, cleanupCalls[1].idempotency_key);
+  assert.equal(cleanupServerEffects, 1);
+  assert.equal(calls.filter((call)=>call.channel === "put").length, 1);
+  assert.equal(calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+});
+
+test("actual cleanup failure never reports terminal cleanup success", async () => {
+  const fixture = {
+    run_id: "c5000000-0000-4000-8000-000000000001",
+    request_id: "c5000000-0000-4000-8000-000000000002",
+    status: "NEW",
+    revision: 0,
+    replayed: false,
+  };
+  const uploadRequestId = "c5000000-0000-4000-8000-000000000003";
+  const uploadedFileId = "c5000000-0000-4000-8000-000000000004";
+  const calls = [];
+  const result = await runInternalSmokeB({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+      },
+      rpc: async (name, input)=>{
+        calls.push({ channel: "rpc", name, input });
+        return { data: { status: "CANCELLED" }, error: null };
+      },
+    },
+    invoke: async (input)=>{
+      calls.push({ channel: "operator", ...input });
+      if (input.action === "get_current_operator_identity") return { role: "owner", status: "ACTIVE" };
+      if (input.action === "create_customer_request_smoke_fixture") {
+        return calls.filter((call)=>call.action === input.action).length === 1 ? fixture : { ...fixture, replayed: true };
+      }
+      if (input.action === "create_customer_request_upload_link") return {
+        state: "ACTIVE",
+        was_created: true,
+        upload_request_id: uploadRequestId,
+        upload_url: "https://operator.example/pages/customer-request-upload.html#token=FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+      };
+      if (input.action === "cleanup_internal_e2e_accepted_file") throw new Error("CLEANUP_FAILED");
+      if (input.action === "finalize_internal_e2e_run") return { status: "PASSED" };
+      throw new Error("UNEXPECTED_ACTION");
+    },
+    uploadRequest: async (_capability, request)=>{
+      if (request.method === "GET") {
+        const reads = calls.filter((call)=>call.channel === "upload" && call.method === "GET").length;
+        calls.push({ channel: "upload", ...request });
+        return reads === 0
+          ? { state: "ACTIVE", title: "LWS-SMOKE-TEST-UPLOAD-LINK-20260827", file_count: 0 }
+          : { state: "ACTIVE", files: [{ file_id: uploadedFileId, status: "ACCEPTED" }], accepted_file_count: 1 };
+      }
+      calls.push({ channel: "upload", ...request });
+      if (request.action === "prepare") return { state: "PREPARED", file_id: uploadedFileId, signed_upload_url: "https://storage.example/signed/cleanup-failure" };
+      if (request.action === "finalize") return { state: "ACTIVE" };
+      if (request.action === "complete") return { state: "COMPLETED" };
+      throw new Error("UNEXPECTED_UPLOAD_REQUEST");
+    },
+    putSignedBlob: async ()=>{},
+    randomUUID: ()=>crypto.randomUUID(),
+  });
+
+  assert.equal(result.SMOKE_STATUS, "FAILED: CLEANUP");
+  assert.equal(result.cleanup, "FAIL");
+  assert.equal(result.internal_e2e_final_status, null);
+  assert.notEqual(result.SMOKE_STATUS, "PASS");
+  const cleanupCalls = calls.filter((call)=>call.action === "cleanup_internal_e2e_accepted_file");
+  assert.equal(cleanupCalls.length, 2);
+  assert.equal(cleanupCalls[0].idempotency_key, cleanupCalls[1].idempotency_key);
+  assert.equal(calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 0);
+});
+
 test("internal Smoke B revokes before cleaning an accepted partial upload and failing terminally", async () => {
   const fixture = {
     run_id: "c2000000-0000-4000-8000-000000000001",

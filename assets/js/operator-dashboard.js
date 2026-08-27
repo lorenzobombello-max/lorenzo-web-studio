@@ -759,6 +759,7 @@ export async function runInternalSmokeB({
   let syntheticFile = null;
   let uploadAccepted = false;
   let uploadCompleted = false;
+  let cleanupIdempotencyKey = null;
   let cleanupAttempted = false;
   let cleanupCompleted = false;
   let revokeAttempted = false;
@@ -769,6 +770,40 @@ export async function runInternalSmokeB({
   let phase = "AUTH";
   const required = (condition) => {
     if (!condition) throw new Error("INTERNAL_SMOKE_FAILED");
+  };
+  const acceptAuthoritativeList = (listed) => {
+    const accepted = Array.isArray(listed?.files)
+      ? listed.files.filter((file)=>file?.status === "ACCEPTED" && file?.file_id === result.uploaded_file_id)
+      : [];
+    result.accepted_file_count = accepted.length;
+    required(listed?.state === "ACTIVE" && listed?.accepted_file_count === 1
+      && listed.files.length === 1 && accepted.length === 1);
+    uploadAccepted = true;
+  };
+  const reconcileCleanup = async () => {
+    cleanupIdempotencyKey ||= randomUUID();
+    cleanupAttempted = true;
+    const input = {
+      action: "cleanup_internal_e2e_accepted_file",
+      run_id: result.run_id,
+      request_id: result.customer_request_id,
+      upload_request_id: result.upload_request_id,
+      uploaded_file_id: result.uploaded_file_id,
+      idempotency_key: cleanupIdempotencyKey,
+    };
+    let cleaned;
+    try {
+      cleaned = await invoke(input);
+    } catch {
+      cleaned = await invoke(input);
+    }
+    cleanupCompleted = cleaned?.state === "DELETED"
+      && cleaned.run_id === result.run_id
+      && cleaned.request_id === result.customer_request_id
+      && cleaned.upload_request_id === result.upload_request_id
+      && cleaned.uploaded_file_id === result.uploaded_file_id;
+    if (cleanupCompleted) result.cleanup = "DELETED";
+    return cleanupCompleted;
   };
   try {
     const session = await client.auth.getSession();
@@ -837,22 +872,22 @@ export async function runInternalSmokeB({
     await putSignedBlob(signedUploadUrl, syntheticFile.blob);
 
     phase = "UPLOAD_FINALIZE";
-    const finalizedUpload = await uploadRequest(capability, {
-      action: "finalize",
-      payload: { file_id: result.uploaded_file_id },
-      idempotencyKey: randomUUID(),
-    });
-    required(finalizedUpload?.state === "ACTIVE");
-    uploadAccepted = true;
+    try {
+      const finalizedUpload = await uploadRequest(capability, {
+        action: "finalize",
+        payload: { file_id: result.uploaded_file_id },
+        idempotencyKey: randomUUID(),
+      });
+      required(finalizedUpload?.state === "ACTIVE");
+      uploadAccepted = true;
+    } catch {
+      phase = "UPLOAD_FINALIZE_RECONCILE";
+      acceptAuthoritativeList(await uploadRequest(capability, { method: "GET" }));
+    }
 
     phase = "LIST_ACCEPTED";
     const listed = await uploadRequest(capability, { method: "GET" });
-    const accepted = Array.isArray(listed?.files)
-      ? listed.files.filter((file)=>file?.status === "ACCEPTED" && file?.file_id === result.uploaded_file_id)
-      : [];
-    result.accepted_file_count = accepted.length;
-    required(listed?.state === "ACTIVE" && listed?.accepted_file_count === 1
-      && listed.files.length === 1 && accepted.length === 1);
+    acceptAuthoritativeList(listed);
 
     phase = "UPLOAD_COMPLETE";
     const completed = await uploadRequest(capability, {
@@ -865,22 +900,7 @@ export async function runInternalSmokeB({
     uploadCompleted = true;
 
     phase = "CLEANUP";
-    cleanupAttempted = true;
-    const cleaned = await invoke({
-      action: "cleanup_internal_e2e_accepted_file",
-      run_id: result.run_id,
-      request_id: result.customer_request_id,
-      upload_request_id: result.upload_request_id,
-      uploaded_file_id: result.uploaded_file_id,
-      idempotency_key: randomUUID(),
-    });
-    result.cleanup = cleaned?.state === "DELETED"
-      && cleaned.run_id === result.run_id
-      && cleaned.request_id === result.customer_request_id
-      && cleaned.upload_request_id === result.upload_request_id
-      && cleaned.uploaded_file_id === result.uploaded_file_id ? "DELETED" : "FAIL";
-    required(result.cleanup === "DELETED");
-    cleanupCompleted = true;
+    required(await reconcileCleanup());
 
     phase = "CANCEL";
     cancelAttempted = true;
@@ -923,21 +943,7 @@ export async function runInternalSmokeB({
     }
     if (uploadAccepted && (uploadCompleted || uploadRevoked) && !cleanupAttempted && !cleanupCompleted) {
       try {
-        cleanupAttempted = true;
-        const cleaned = await invoke({
-          action: "cleanup_internal_e2e_accepted_file",
-          run_id: result.run_id,
-          request_id: result.customer_request_id,
-          upload_request_id: result.upload_request_id,
-          uploaded_file_id: result.uploaded_file_id,
-          idempotency_key: randomUUID(),
-        });
-        cleanupCompleted = cleaned?.state === "DELETED"
-          && cleaned.run_id === result.run_id
-          && cleaned.request_id === result.customer_request_id
-          && cleaned.upload_request_id === result.upload_request_id
-          && cleaned.uploaded_file_id === result.uploaded_file_id;
-        if (cleanupCompleted) result.cleanup = "DELETED";
+        await reconcileCleanup();
       } catch {}
     }
     if (result.customer_request_id && !cancelAttempted && !requestCancelled) {
