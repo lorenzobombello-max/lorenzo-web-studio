@@ -10,9 +10,9 @@
   <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/assets/css/pages.css" />
   <link rel="stylesheet" href="/assets/css/operator-auth.css" />
-  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260825-personal-queue-ui" />
+  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260827-owner-smoke-a-ui" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
-  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260825-personal-queue-ui"></script>
+  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260827-owner-smoke-a-ui"></script>
 </head>
 <body>
   <main id="operatorDashboardGate" class="operator-auth-main"><section class="operator-auth-panel operator-auth-panel--center" role="status"><span class="operator-auth-spinner" aria-hidden="true"></span><h1 id="operatorDashboardGateTitle">Autorisatie wordt gecontroleerd</h1><p id="operatorDashboardGateMessage" class="operator-auth-message">Even geduld.</p><button id="operatorDashboardLogout" class="button button--dark" type="button" hidden>Afmelden</button></section></main>
@@ -20,6 +20,14 @@
     <a class="skip-link" href="#workspace">Ga naar dashboard</a>
     <header class="topbar"><a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatorsessie"><img class="identity__mark" src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span><strong>Lorenzo Web Solutions</strong><small>Operator dashboard</small></span></a><div class="topbar__status"><span class="badge badge--cyan" data-operator-role-badge></span><button id="operatorDashboardLogoutActive" class="topbar__logout" type="button">Afmelden</button></div></header>
     <main id="workspace" class="workspace">
+      <section id="internalSmokePanel" class="panel" aria-labelledby="internalSmokeTitle" hidden>
+        <div class="panel__heading"><div><p class="eyebrow">Interne productietest</p><h2 id="internalSmokeTitle">Interne productietest</h2></div></div>
+        <p>Synthetic Smoke A — geen echte klantdata en geen bestandupload.</p>
+        <p><strong>Deze test maakt uitsluitend synthetic internal_e2e testdata.</strong></p>
+        <button id="internalSmokeRun" type="button" class="danger-action">Smoke A uitvoeren</button>
+        <p id="internalSmokeStatus" class="action-message action-message--dark" role="status" aria-live="polite"></p>
+        <pre id="internalSmokeResult" aria-live="polite"></pre>
+      </section>
       <section id="personalQueueWorkspace" class="personal-queue-workspace" aria-labelledby="personalQueueTitle" hidden>
         <div class="project-heading"><div><p class="eyebrow">Operatorworkspace</p><h1 id="personalQueueTitle">Mijn dossiers</h1><p>De dossiers die momenteel aan jou zijn toegewezen.</p></div><button id="personalQueueRefresh" type="button" class="secondary-action">Vernieuwen</button></div>
         <div class="personal-request-grid">
