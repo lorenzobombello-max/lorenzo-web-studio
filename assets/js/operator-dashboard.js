@@ -549,6 +549,16 @@ export function createInternalSmokeOneShotTrigger({ button, confirmSmoke, runSmo
 export async function runInternalSmokeA({ client, invoke, resolveCapability, randomUUID = ()=>crypto.randomUUID() }) {
   const result = internalSmokeResult();
   let capability = null;
+  let runId = null;
+  let customerRequestId = null;
+  let uploadRequestId = null;
+  let customerRequestRevision = null;
+  let revokeAttempted = false;
+  let cancelAttempted = false;
+  let finalizeAttempted = false;
+  let uploadLinkRevoked = false;
+  let customerRequestCancelled = false;
+  let runFinalized = false;
   let phase = "AUTH";
   const required = (condition) => {
     if (!condition) throw new Error("INTERNAL_SMOKE_FAILED");
@@ -566,8 +576,11 @@ export async function runInternalSmokeA({ client, invoke, resolveCapability, ran
     const fixture = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
     required(fixture?.replayed === false && fixture?.status === "NEW" && fixture?.revision === 0
       && UUID.test(String(fixture.run_id || "")) && UUID.test(String(fixture.request_id || "")));
-    result.run_id = fixture.run_id;
-    result.customer_request_id = fixture.request_id;
+    runId = fixture.run_id;
+    customerRequestId = fixture.request_id;
+    customerRequestRevision = fixture.revision;
+    result.run_id = runId;
+    result.customer_request_id = customerRequestId;
 
     phase = "FIXTURE_REPLAY";
     const replay = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
@@ -584,7 +597,8 @@ export async function runInternalSmokeA({ client, invoke, resolveCapability, ran
     });
     required(link?.state === "ACTIVE" && link?.was_created === true
       && UUID.test(String(link.upload_request_id || "")) && typeof link.upload_url === "string");
-    result.upload_request_id = link.upload_request_id;
+    uploadRequestId = link.upload_request_id;
+    result.upload_request_id = uploadRequestId;
     const capabilityUrl = new URL(link.upload_url);
     delete link.upload_url;
     capability = new URLSearchParams(capabilityUrl.hash.slice(1)).get("token");
@@ -601,13 +615,15 @@ export async function runInternalSmokeA({ client, invoke, resolveCapability, ran
     required(result.resolve_before_revoke === "PASS");
 
     phase = "REVOKE";
+    revokeAttempted = true;
     const revoked = await invoke({
       action: "revoke_customer_request_upload_link",
-      upload_request_id: link.upload_request_id,
+      upload_request_id: uploadRequestId,
       reason: "Synthetic internal Smoke A completed without file upload.",
       idempotency_key: randomUUID(),
     });
-    result.revoke = revoked?.state === "REVOKED" && revoked.upload_request_id === link.upload_request_id ? "PASS" : "FAIL";
+    uploadLinkRevoked = revoked?.state === "REVOKED" && revoked.upload_request_id === uploadRequestId;
+    result.revoke = uploadLinkRevoked ? "PASS" : "FAIL";
     required(result.revoke === "PASS");
 
     phase = "RESOLVE_AFTER_REVOKE";
@@ -618,29 +634,77 @@ export async function runInternalSmokeA({ client, invoke, resolveCapability, ran
     required(result.resolve_after_revoke === "DENIED");
 
     phase = "CANCEL";
+    cancelAttempted = true;
     const cancelled = await client.rpc("transition_customer_request_v1", {
-      p_request_id: fixture.request_id,
+      p_request_id: customerRequestId,
       p_command_type: "CANCEL",
-      p_expected_revision: fixture.revision,
+      p_expected_revision: customerRequestRevision,
       p_idempotency_key: randomUUID(),
       p_payload: {},
     });
     result.customer_request_final_status = cancelled.data?.status || null;
-    required(!cancelled.error && result.customer_request_final_status === "CANCELLED");
+    customerRequestCancelled = !cancelled.error && result.customer_request_final_status === "CANCELLED";
+    required(customerRequestCancelled);
 
     phase = "FINALIZE";
+    finalizeAttempted = true;
     const finalized = await invoke({
       action: "finalize_internal_e2e_run",
-      run_id: fixture.run_id,
+      run_id: runId,
       terminal_status: "PASSED",
       expected_revision: 0,
       idempotency_key: randomUUID(),
     });
     result.internal_e2e_final_status = finalized?.status || null;
-    required(result.internal_e2e_final_status === "PASSED");
+    runFinalized = result.internal_e2e_final_status === "PASSED";
+    required(runFinalized);
     result.SMOKE_STATUS = "PASS";
   } catch {
-    result.SMOKE_STATUS = `FAILED: ${phase}`;
+    const failurePhase = phase;
+    if (uploadRequestId) {
+      if (!revokeAttempted && !uploadLinkRevoked) {
+        try {
+          revokeAttempted = true;
+          const revoked = await invoke({
+            action: "revoke_customer_request_upload_link",
+            upload_request_id: uploadRequestId,
+            reason: "Synthetic internal Smoke A failed after Upload Link creation.",
+            idempotency_key: randomUUID(),
+          });
+          uploadLinkRevoked = revoked?.state === "REVOKED" && revoked.upload_request_id === uploadRequestId;
+          if (uploadLinkRevoked) result.revoke = "PASS";
+        } catch {}
+      }
+      if (!cancelAttempted && !customerRequestCancelled && customerRequestId) {
+        try {
+          cancelAttempted = true;
+          const cancelled = await client.rpc("transition_customer_request_v1", {
+            p_request_id: customerRequestId,
+            p_command_type: "CANCEL",
+            p_expected_revision: customerRequestRevision,
+            p_idempotency_key: randomUUID(),
+            p_payload: {},
+          });
+          customerRequestCancelled = !cancelled.error && cancelled.data?.status === "CANCELLED";
+          if (customerRequestCancelled) result.customer_request_final_status = "CANCELLED";
+        } catch {}
+      }
+      if (!finalizeAttempted && !runFinalized && runId && uploadLinkRevoked && customerRequestCancelled) {
+        try {
+          finalizeAttempted = true;
+          const finalized = await invoke({
+            action: "finalize_internal_e2e_run",
+            run_id: runId,
+            terminal_status: "FAILED",
+            expected_revision: 0,
+            idempotency_key: randomUUID(),
+          });
+          runFinalized = finalized?.status === "FAILED";
+          if (runFinalized) result.internal_e2e_final_status = "FAILED";
+        } catch {}
+      }
+    }
+    result.SMOKE_STATUS = `FAILED: ${failurePhase}`;
   } finally {
     capability = null;
   }

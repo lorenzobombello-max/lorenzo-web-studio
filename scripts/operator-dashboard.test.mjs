@@ -314,7 +314,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 1);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 2);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
   assert.doesNotMatch(script, /localStorage/);
 });
@@ -1532,6 +1532,157 @@ test("internal Smoke A runtime blocks a non-owner before fixture creation", asyn
   });
   assert.deepEqual(calls, ["get_current_operator_identity"]);
   assert.equal(result.SMOKE_STATUS, "FAILED: AUTH");
+});
+
+function createInternalSmokeFailureHarness({
+  linkCreateFails = false,
+  uploadUrl = "https://operator.example/pages/customer-request-upload.html#token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  resolveCapability = async ()=>{ throw new Error("primary-resolve-failure"); },
+  revokeFails = false,
+  cancelFails = false,
+  finalizeFails = false,
+} = {}) {
+  const fixture = { run_id: "a2000000-0000-4000-8000-000000000001", request_id: "a2000000-0000-4000-8000-000000000002", status: "NEW", revision: 0, replayed: false };
+  const uploadRequestId = "a2000000-0000-4000-8000-000000000003";
+  const calls = [];
+  const rpcCalls = [];
+  const client = {
+    auth: {
+      getSession: async ()=>({ data: { session: {} }, error: null }),
+      getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+    },
+    rpc: async (name, input) => {
+      rpcCalls.push({ name, input });
+      if (cancelFails) throw new Error("primary-cancel-failure");
+      return { data: { status: "CANCELLED" }, error: null };
+    },
+  };
+  const invoke = async (input) => {
+    calls.push(input);
+    if (input.action === "get_current_operator_identity") return { role: "owner", status: "ACTIVE" };
+    if (input.action === "create_customer_request_smoke_fixture") return calls.filter((call)=>call.action === input.action).length === 1 ? fixture : { ...fixture, replayed: true };
+    if (input.action === "create_customer_request_upload_link") {
+      if (linkCreateFails) throw new Error("link-create-failure");
+      return { state: "ACTIVE", was_created: true, upload_request_id: uploadRequestId, upload_url: uploadUrl };
+    }
+    if (input.action === "revoke_customer_request_upload_link") {
+      if (revokeFails) throw new Error("cleanup-revoke-secret");
+      return { state: "REVOKED", upload_request_id: uploadRequestId };
+    }
+    if (input.action === "finalize_internal_e2e_run") {
+      if (finalizeFails) throw new Error("cleanup-finalize-secret");
+      return { status: input.terminal_status };
+    }
+    throw new Error("UNEXPECTED_ACTION");
+  };
+  return {
+    calls,
+    rpcCalls,
+    fixture,
+    uploadRequestId,
+    run: ()=>runInternalSmokeA({ client, invoke, resolveCapability, randomUUID: ()=>crypto.randomUUID() }),
+  };
+}
+
+test("internal Smoke A cleans up a failure directly after Upload Link creation", async () => {
+  const harness = createInternalSmokeFailureHarness({ uploadUrl: "not-a-valid-url" });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: UPLOAD_LINK_CREATE");
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_smoke_fixture").length, 2);
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+  assert.deepEqual(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").map((call)=>call.upload_request_id), [harness.uploadRequestId]);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.rpcCalls[0].input.p_command_type, "CANCEL");
+  assert.equal(harness.rpcCalls[0].input.p_request_id, harness.fixture.request_id);
+  assert.deepEqual(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").map((call)=>call.terminal_status), ["FAILED"]);
+  assert.equal(result.revoke, "PASS");
+  assert.equal(result.customer_request_final_status, "CANCELLED");
+  assert.equal(result.internal_e2e_final_status, "FAILED");
+});
+
+test("internal Smoke A cleans up when positive capability resolution fails", async () => {
+  const harness = createInternalSmokeFailureHarness();
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: RESOLVE_BEFORE_REVOKE");
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_smoke_fixture").length, 2);
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 1);
+  assert.equal(result.internal_e2e_final_status, "FAILED");
+});
+
+test("internal Smoke A continues CANCEL but skips unsafe finalization when revoke fails", async () => {
+  const harness = createInternalSmokeFailureHarness({ revokeFails: true });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: RESOLVE_BEFORE_REVOKE");
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 0);
+  assert.equal(result.revoke, "FAIL");
+  assert.equal(result.customer_request_final_status, "CANCELLED");
+  assert.equal(result.internal_e2e_final_status, null);
+  assert.doesNotMatch(JSON.stringify(result), /secret|token|capability/i);
+});
+
+test("internal Smoke A performs no terminal cleanup before Upload Link creation succeeds", async () => {
+  const harness = createInternalSmokeFailureHarness({
+    linkCreateFails: true,
+    resolveCapability: async ()=>assert.fail("resolve must not run"),
+  });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: UPLOAD_LINK_CREATE");
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_smoke_fixture").length, 2);
+  assert.equal(harness.calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 0);
+  assert.equal(harness.rpcCalls.length, 0);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 0);
+});
+
+function createSuccessfulResolveSequence() {
+  let resolveCount = 0;
+  return async () => {
+    resolveCount += 1;
+    return resolveCount === 1
+      ? { status: 200, body: { ok: true, state: "ACTIVE", title: "LWS-SMOKE-TEST-UPLOAD-LINK-20260827", file_count: 0 } }
+      : { status: 200, body: { ok: true, state: "INVALID_OR_EXPIRED_LINK" } };
+  };
+}
+
+test("internal Smoke A does not retry a primary revoke exception", async () => {
+  const harness = createInternalSmokeFailureHarness({
+    resolveCapability: createSuccessfulResolveSequence(),
+    revokeFails: true,
+  });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: REVOKE");
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 0);
+});
+
+test("internal Smoke A does not retry a primary CANCEL exception", async () => {
+  const harness = createInternalSmokeFailureHarness({
+    resolveCapability: createSuccessfulResolveSequence(),
+    cancelFails: true,
+  });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: CANCEL");
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 0);
+});
+
+test("internal Smoke A does not replace a failed PASSED finalization with FAILED", async () => {
+  const harness = createInternalSmokeFailureHarness({
+    resolveCapability: createSuccessfulResolveSequence(),
+    finalizeFails: true,
+  });
+  const result = await harness.run();
+  assert.equal(result.SMOKE_STATUS, "FAILED: FINALIZE");
+  assert.equal(harness.calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(harness.rpcCalls.length, 1);
+  assert.equal(harness.calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 1);
 });
 
 test("internal Smoke A runs one synthetic lifecycle and returns only sanitized evidence", async () => {
