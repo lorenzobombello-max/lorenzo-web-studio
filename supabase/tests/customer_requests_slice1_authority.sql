@@ -47,22 +47,38 @@ select ok(
     where namespace.nspname = 'public'
       and procedure.proname like '%customer_request%'
   ) = array[
+    'cleanup_expired_customer_request_uploads_v1(integer,uuid)',
+    'complete_customer_request_upload_request_v1(text,uuid)',
+    'create_customer_request_smoke_fixture_v1(uuid,uuid)',
+    'create_customer_request_smoke_fixture_v1(uuid)',
+    'create_customer_request_upload_request_v1(uuid,text,timestamp with time zone,uuid)',
+    'finalize_customer_request_uploaded_file_v1(text,uuid,text,bigint,text,boolean,uuid)',
     'get_customer_request_v1(uuid)',
     'get_customer_requests_for_dossier_v1(text,text,integer)',
+    'list_customer_request_uploaded_files_v1(text)',
+    'prepare_customer_request_upload_v1(text,text,text,bigint,uuid)',
     'resolve_customer_request_authorization_v1(uuid,text)',
+    'resolve_customer_request_upload_capability_v1(text)',
+    'revoke_customer_request_upload_request_v1(uuid,text,uuid)',
     'transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)'
   ]::text[]
   and has_function_privilege('authenticated', 'public.get_customer_request_v1(uuid)', 'execute')
   and has_function_privilege('authenticated', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and has_function_privilege('authenticated', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and has_function_privilege('authenticated', 'public.create_customer_request_smoke_fixture_v1(uuid)', 'execute')
+  and not has_function_privilege('authenticated', 'public.create_customer_request_smoke_fixture_v1(uuid,uuid)', 'execute')
   and not has_function_privilege('authenticated', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
   and not has_function_privilege('anon', 'public.get_customer_request_v1(uuid)', 'execute')
   and not has_function_privilege('anon', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and not has_function_privilege('anon', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.create_customer_request_smoke_fixture_v1(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.create_customer_request_smoke_fixture_v1(uuid,uuid)', 'execute')
   and not has_function_privilege('anon', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute')
   and not has_function_privilege('service_role', 'public.get_customer_request_v1(uuid)', 'execute')
   and not has_function_privilege('service_role', 'public.get_customer_requests_for_dossier_v1(text,text,integer)', 'execute')
   and not has_function_privilege('service_role', 'public.transition_customer_request_v1(uuid,text,bigint,uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'public.create_customer_request_smoke_fixture_v1(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.create_customer_request_smoke_fixture_v1(uuid,uuid)', 'execute')
   and not has_function_privilege('service_role', 'public.resolve_customer_request_authorization_v1(uuid,text)', 'execute'),
   'public Customer Request functions and runtime execution match the exact capability allowlist'
 );

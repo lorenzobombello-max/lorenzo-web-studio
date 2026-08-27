@@ -154,6 +154,18 @@ export async function executeCallerJwtCustomerRequestAction(
   return await executeCustomerRequestTransport(clientFor(jwt), input);
 }
 
+export async function executeCallerJwtCustomerRequestSmokeFixtureAction(
+  jwt: string,
+  idempotencyKey: string,
+  clientFor: (jwt: string)=>DossierAssignmentClient
+): Promise<unknown> {
+  const { data, error } = await clientFor(jwt).rpc("create_customer_request_smoke_fixture_v1", {
+    p_idempotency_key: idempotencyKey,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function executeCallerJwtCustomerRequestUploadAction(
   jwt: string,
   input: CustomerRequestUploadOperatorActionInput,
@@ -355,6 +367,9 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
         });
         if (error) throw new Error(error.message);
         return { ...data, intake_token: intakeToken, admin_intake_token: adminToken };
+      }
+      if (input.action === "create_customer_request_smoke_fixture") {
+        return await executeCallerJwtCustomerRequestSmokeFixtureAction(jwt, input.idempotency_key, clientFor);
       }
       if (input.action === "finalize_internal_e2e_run") {
         const { data, error } = await client.rpc("finalize_internal_e2e_run_v1", {
