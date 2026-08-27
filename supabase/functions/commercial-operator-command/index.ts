@@ -8,6 +8,7 @@ import {
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
+  type InternalE2EAcceptedFileCleanupActionInput,
   type CustomerRequestActionInput,
   type CustomerRequestUploadOperatorActionInput,
   withCommercialOperatorCors
@@ -27,6 +28,8 @@ import {
   type OperatorCursorPosition,
   type OperatorCursorRequest,
 } from "../_shared/operator-cursor.ts";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type OperatorApplicationCursorInput = Readonly<{
   zone: OperatorCursorRequest["zone"];
@@ -80,7 +83,9 @@ type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   application_reference: string | null;
   dossier_reference: string;
   assignee_operator_id: string;
+  request_id: string;
   upload_request_id: string;
+  uploaded_file_id: string;
 }>;
 type ValidatedDossierLifecycleActionInput = ValidatedApplicationActionInput & Readonly<{
   action: "archive_dossier" | "reactivate_dossier" | "trash_dossier" | "restore_dossier";
@@ -193,6 +198,57 @@ export async function executeCallerJwtCustomerRequestUploadAction(
     throw new Error(error?.message || "INVALID_UPLOAD_REQUEST_RESPONSE");
   }
   return { ...(data as Record<string, unknown>), upload_url: buildCustomerRequestUploadUrl(token) };
+}
+
+type InternalE2ECleanupStorageClient = Readonly<{
+  storage: Readonly<{
+    from(bucket: string): Readonly<{
+      remove(paths: string[]): PromiseLike<Readonly<{
+        data: unknown;
+        error: Readonly<{ message: string }> | null;
+      }>>;
+    }>;
+  }>;
+}>;
+
+export async function executeCallerJwtInternalE2EAcceptedFileCleanupAction(
+  jwt: string,
+  input: InternalE2EAcceptedFileCleanupActionInput,
+  clientFor: (jwt: string)=>DossierAssignmentClient,
+  serviceClient: ()=>InternalE2ECleanupStorageClient
+): Promise<unknown> {
+  const client = clientFor(jwt);
+  const authorization = await client.rpc("authorize_internal_e2e_accepted_file_cleanup_v1", {
+    p_run_id: input.run_id,
+    p_request_id: input.request_id,
+    p_upload_request_id: input.upload_request_id,
+    p_uploaded_file_id: input.uploaded_file_id,
+    p_idempotency_key: input.idempotency_key,
+  });
+  if (authorization.error || !authorization.data || typeof authorization.data !== "object" || Array.isArray(authorization.data)) {
+    throw new Error(authorization.error?.message || "INVALID_INTERNAL_E2E_CLEANUP_AUTHORIZATION_RESPONSE");
+  }
+  const authorized = authorization.data as Record<string, unknown>;
+  const cleanupAuthorizationId = String(authorized.cleanup_authorization_id || "");
+  const bucket = String(authorized.storage_bucket_id || "");
+  const path = String(authorized.storage_object_path || "");
+  const expectedPath = new RegExp(
+    `^requests/${input.request_id}/uploads/${input.upload_request_id}/files/${input.uploaded_file_id}\\.(?:pdf|png|jpg|jpeg)$`
+  );
+  if (authorized.state !== "AUTHORIZED" || !UUID.test(cleanupAuthorizationId)
+      || bucket !== "customer-request-quarantine" || !expectedPath.test(path)) {
+    throw new Error("INVALID_INTERNAL_E2E_CLEANUP_AUTHORIZATION_RESPONSE");
+  }
+
+  const removal = await serviceClient().storage.from(bucket).remove([path]);
+  if (removal.error) throw new Error(removal.error.message);
+
+  const finalization = await client.rpc("finalize_internal_e2e_accepted_file_cleanup_v1", {
+    p_cleanup_authorization_id: cleanupAuthorizationId,
+    p_idempotency_key: input.idempotency_key,
+  });
+  if (finalization.error) throw new Error(finalization.error.message);
+  return finalization.data;
 }
 
 if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, ()=>{
@@ -370,6 +426,14 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       }
       if (input.action === "create_customer_request_smoke_fixture") {
         return await executeCallerJwtCustomerRequestSmokeFixtureAction(jwt, input.idempotency_key, clientFor);
+      }
+      if (input.action === "cleanup_internal_e2e_accepted_file") {
+        return await executeCallerJwtInternalE2EAcceptedFileCleanupAction(
+          jwt,
+          input as InternalE2EAcceptedFileCleanupActionInput,
+          clientFor,
+          serviceClient
+        );
       }
       if (input.action === "finalize_internal_e2e_run") {
         const { data, error } = await client.rpc("finalize_internal_e2e_run_v1", {

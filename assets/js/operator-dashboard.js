@@ -711,6 +711,271 @@ export async function runInternalSmokeA({ client, invoke, resolveCapability, ran
   return Object.fromEntries(INTERNAL_SMOKE_FIELDS.map((field)=>[field, result[field]]));
 }
 
+const INTERNAL_SMOKE_B_FIELDS = Object.freeze([
+  "SMOKE_STATUS",
+  "run_id",
+  "customer_request_id",
+  "replay_same_request",
+  "upload_request_id",
+  "uploaded_file_id",
+  "accepted_file_count",
+  "upload_complete",
+  "cleanup",
+  "customer_request_final_status",
+  "internal_e2e_final_status",
+]);
+
+export function createInternalSmokeBSyntheticPng() {
+  const encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const binary = atob(encoded);
+  const bytes = Uint8Array.from(binary, (character)=>character.charCodeAt(0));
+  return {
+    name: "lws-smoke-b-synthetic.png",
+    blob: new Blob([bytes], { type: "image/png" }),
+  };
+}
+
+export async function runInternalSmokeB({
+  client,
+  invoke,
+  uploadRequest,
+  putSignedBlob,
+  randomUUID = ()=>crypto.randomUUID(),
+}) {
+  const result = {
+    SMOKE_STATUS: "FAILED: AUTH",
+    run_id: null,
+    customer_request_id: null,
+    replay_same_request: false,
+    upload_request_id: null,
+    uploaded_file_id: null,
+    accepted_file_count: 0,
+    upload_complete: "FAIL",
+    cleanup: "FAIL",
+    customer_request_final_status: null,
+    internal_e2e_final_status: null,
+  };
+  let capability = null;
+  let syntheticFile = null;
+  let uploadAccepted = false;
+  let uploadCompleted = false;
+  let cleanupAttempted = false;
+  let cleanupCompleted = false;
+  let revokeAttempted = false;
+  let uploadRevoked = false;
+  let cancelAttempted = false;
+  let requestCancelled = false;
+  let finalizeAttempted = false;
+  let phase = "AUTH";
+  const required = (condition) => {
+    if (!condition) throw new Error("INTERNAL_SMOKE_FAILED");
+  };
+  try {
+    const session = await client.auth.getSession();
+    required(!session.error && session.data.session);
+    const user = await client.auth.getUser();
+    required(!user.error && user.data.user?.id);
+    const identity = await invoke({ action: "get_current_operator_identity" });
+    required(identity?.status === "ACTIVE" && identity?.role === "owner");
+
+    phase = "FIXTURE_CREATE";
+    const fixtureKey = randomUUID();
+    const fixture = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
+    required(fixture?.replayed === false && fixture?.status === "NEW" && fixture?.revision === 0
+      && UUID.test(String(fixture.run_id || "")) && UUID.test(String(fixture.request_id || "")));
+    result.run_id = fixture.run_id;
+    result.customer_request_id = fixture.request_id;
+
+    phase = "FIXTURE_REPLAY";
+    const replay = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
+    result.replay_same_request = replay?.replayed === true
+      && replay.run_id === fixture.run_id
+      && replay.request_id === fixture.request_id;
+    required(result.replay_same_request);
+
+    phase = "UPLOAD_LINK_CREATE";
+    const link = await invoke({
+      action: "create_customer_request_upload_link",
+      request_id: fixture.request_id,
+      idempotency_key: randomUUID(),
+    });
+    required(link?.state === "ACTIVE" && link?.was_created === true
+      && UUID.test(String(link.upload_request_id || "")) && typeof link.upload_url === "string");
+    result.upload_request_id = link.upload_request_id;
+    const capabilityUrl = new URL(link.upload_url);
+    delete link.upload_url;
+    capability = new URLSearchParams(capabilityUrl.hash.slice(1)).get("token");
+    capabilityUrl.hash = "";
+    required(/^[A-Za-z0-9_-]{43}$/.test(capability || ""));
+
+    phase = "RESOLVE";
+    const resolved = await uploadRequest(capability, { method: "GET" });
+    required(resolved?.state === "ACTIVE"
+      && resolved?.title === "LWS-SMOKE-TEST-UPLOAD-LINK-20260827"
+      && resolved?.file_count === 0);
+
+    phase = "PREPARE";
+    syntheticFile = createInternalSmokeBSyntheticPng();
+    required(syntheticFile.blob.size < 16 * 1024);
+    const prepared = await uploadRequest(capability, {
+      action: "prepare",
+      payload: {
+        file_name: syntheticFile.name,
+        content_type: syntheticFile.blob.type,
+        byte_count: syntheticFile.blob.size,
+      },
+      idempotencyKey: randomUUID(),
+    });
+    required(prepared?.state === "PREPARED"
+      && UUID.test(String(prepared.file_id || ""))
+      && typeof prepared.signed_upload_url === "string");
+    result.uploaded_file_id = prepared.file_id;
+    const signedUploadUrl = prepared.signed_upload_url;
+    delete prepared.signed_upload_url;
+
+    phase = "SIGNED_PUT";
+    await putSignedBlob(signedUploadUrl, syntheticFile.blob);
+
+    phase = "UPLOAD_FINALIZE";
+    const finalizedUpload = await uploadRequest(capability, {
+      action: "finalize",
+      payload: { file_id: result.uploaded_file_id },
+      idempotencyKey: randomUUID(),
+    });
+    required(finalizedUpload?.state === "ACTIVE");
+    uploadAccepted = true;
+
+    phase = "LIST_ACCEPTED";
+    const listed = await uploadRequest(capability, { method: "GET" });
+    const accepted = Array.isArray(listed?.files)
+      ? listed.files.filter((file)=>file?.status === "ACCEPTED" && file?.file_id === result.uploaded_file_id)
+      : [];
+    result.accepted_file_count = accepted.length;
+    required(listed?.state === "ACTIVE" && listed?.accepted_file_count === 1
+      && listed.files.length === 1 && accepted.length === 1);
+
+    phase = "UPLOAD_COMPLETE";
+    const completed = await uploadRequest(capability, {
+      action: "complete",
+      payload: {},
+      idempotencyKey: randomUUID(),
+    });
+    result.upload_complete = completed?.state === "COMPLETED" ? "PASS" : "FAIL";
+    required(result.upload_complete === "PASS");
+    uploadCompleted = true;
+
+    phase = "CLEANUP";
+    cleanupAttempted = true;
+    const cleaned = await invoke({
+      action: "cleanup_internal_e2e_accepted_file",
+      run_id: result.run_id,
+      request_id: result.customer_request_id,
+      upload_request_id: result.upload_request_id,
+      uploaded_file_id: result.uploaded_file_id,
+      idempotency_key: randomUUID(),
+    });
+    result.cleanup = cleaned?.state === "DELETED"
+      && cleaned.run_id === result.run_id
+      && cleaned.request_id === result.customer_request_id
+      && cleaned.upload_request_id === result.upload_request_id
+      && cleaned.uploaded_file_id === result.uploaded_file_id ? "DELETED" : "FAIL";
+    required(result.cleanup === "DELETED");
+    cleanupCompleted = true;
+
+    phase = "CANCEL";
+    cancelAttempted = true;
+    const cancelled = await client.rpc("transition_customer_request_v1", {
+      p_request_id: result.customer_request_id,
+      p_command_type: "CANCEL",
+      p_expected_revision: fixture.revision,
+      p_idempotency_key: randomUUID(),
+      p_payload: {},
+    });
+    result.customer_request_final_status = cancelled.data?.status || null;
+    required(!cancelled.error && result.customer_request_final_status === "CANCELLED");
+    requestCancelled = true;
+
+    phase = "FINALIZE";
+    finalizeAttempted = true;
+    const finalizedRun = await invoke({
+      action: "finalize_internal_e2e_run",
+      run_id: result.run_id,
+      terminal_status: "PASSED",
+      expected_revision: 0,
+      idempotency_key: randomUUID(),
+    });
+    result.internal_e2e_final_status = finalizedRun?.status || null;
+    required(result.internal_e2e_final_status === "PASSED");
+    result.SMOKE_STATUS = "PASS";
+  } catch {
+    const failurePhase = phase;
+    if (result.upload_request_id && !uploadCompleted && !revokeAttempted && !uploadRevoked) {
+      try {
+        revokeAttempted = true;
+        const revoked = await invoke({
+          action: "revoke_customer_request_upload_link",
+          upload_request_id: result.upload_request_id,
+          reason: "Synthetic internal Smoke B stopped before upload completion.",
+          idempotency_key: randomUUID(),
+        });
+        uploadRevoked = revoked?.state === "REVOKED" && revoked.upload_request_id === result.upload_request_id;
+      } catch {}
+    }
+    if (uploadAccepted && (uploadCompleted || uploadRevoked) && !cleanupAttempted && !cleanupCompleted) {
+      try {
+        cleanupAttempted = true;
+        const cleaned = await invoke({
+          action: "cleanup_internal_e2e_accepted_file",
+          run_id: result.run_id,
+          request_id: result.customer_request_id,
+          upload_request_id: result.upload_request_id,
+          uploaded_file_id: result.uploaded_file_id,
+          idempotency_key: randomUUID(),
+        });
+        cleanupCompleted = cleaned?.state === "DELETED"
+          && cleaned.run_id === result.run_id
+          && cleaned.request_id === result.customer_request_id
+          && cleaned.upload_request_id === result.upload_request_id
+          && cleaned.uploaded_file_id === result.uploaded_file_id;
+        if (cleanupCompleted) result.cleanup = "DELETED";
+      } catch {}
+    }
+    if (result.customer_request_id && !cancelAttempted && !requestCancelled) {
+      try {
+        cancelAttempted = true;
+        const cancelled = await client.rpc("transition_customer_request_v1", {
+          p_request_id: result.customer_request_id,
+          p_command_type: "CANCEL",
+          p_expected_revision: 0,
+          p_idempotency_key: randomUUID(),
+          p_payload: {},
+        });
+        requestCancelled = !cancelled.error && cancelled.data?.status === "CANCELLED";
+        if (requestCancelled) result.customer_request_final_status = "CANCELLED";
+      } catch {}
+    }
+    if (result.run_id && !finalizeAttempted && requestCancelled && cleanupCompleted
+        && (uploadCompleted || uploadRevoked)) {
+      try {
+        finalizeAttempted = true;
+        const finalizedRun = await invoke({
+          action: "finalize_internal_e2e_run",
+          run_id: result.run_id,
+          terminal_status: "FAILED",
+          expected_revision: 0,
+          idempotency_key: randomUUID(),
+        });
+        if (finalizedRun?.status === "FAILED") result.internal_e2e_final_status = "FAILED";
+      } catch {}
+    }
+    result.SMOKE_STATUS = `FAILED: ${failurePhase}`;
+  } finally {
+    capability = null;
+    syntheticFile = null;
+  }
+  return Object.fromEntries(INTERNAL_SMOKE_B_FIELDS.map((field)=>[field, result[field]]));
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const roleBadges = Array.from(document.querySelectorAll("[data-operator-role-badge]"));
   const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
@@ -744,6 +1009,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const internalSmokeRun = document.getElementById("internalSmokeRun");
   const internalSmokeStatus = document.getElementById("internalSmokeStatus");
   const internalSmokeResultElement = document.getElementById("internalSmokeResult");
+  const internalSmokeBPanel = document.getElementById("internalSmokeBPanel");
+  const internalSmokeBRun = document.getElementById("internalSmokeBRun");
+  const internalSmokeBStatus = document.getElementById("internalSmokeBStatus");
+  const internalSmokeBResultElement = document.getElementById("internalSmokeBResult");
   const managerWorkspace = document.getElementById("managerWorkspace");
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -844,6 +1113,55 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       },
     });
     internalSmokeRun.addEventListener("click", triggerInternalSmoke);
+  }
+  if (internalSmokeBPanel && internalSmokeAvailable(window.location.href, currentIdentity)) {
+    internalSmokeBPanel.hidden = false;
+    const confirmationMessage = "Smoke B uitvoeren?\nEr wordt exact één synthetic PNG via één tijdelijke Upload Link geüpload en daarna aantoonbaar verwijderd. Er wordt geen echte klantdata gebruikt.";
+    const triggerInternalSmokeB = createInternalSmokeOneShotTrigger({
+      button: internalSmokeBRun,
+      confirmSmoke: ()=>window.confirm(confirmationMessage),
+      runSmoke: async ()=>{
+        internalSmokeBStatus.textContent = "Test wordt uitgevoerd…";
+        internalSmokeBResultElement.textContent = "";
+        const endpoint = `${functionsBaseUrl.replace(/\/$/, "")}/customer-request-upload`;
+        const result = await runInternalSmokeB({
+          client,
+          invoke,
+          uploadRequest: async (capability, request) => {
+            const isRead = request.method === "GET";
+            const response = await fetch(endpoint, {
+              method: isRead ? "GET" : "POST",
+              headers: isRead
+                ? { Authorization: `Bearer ${capability}`, Accept: "application/json" }
+                : {
+                  Authorization: `Bearer ${capability}`,
+                  "Content-Type": "application/json",
+                  "Idempotency-Key": request.idempotencyKey,
+                },
+              body: isRead ? undefined : JSON.stringify({ action: request.action, ...request.payload }),
+              cache: "no-store",
+              referrerPolicy: "no-referrer",
+            });
+            const body = await response.json().catch(()=>null);
+            if (!response.ok || !body?.ok) throw new Error("UPLOAD_REQUEST_FAILED");
+            return body;
+          },
+          putSignedBlob: async (url, blob) => {
+            const response = await fetch(url, {
+              method: "PUT",
+              headers: { "Content-Type": blob.type, "x-upsert": "false" },
+              body: blob,
+              referrerPolicy: "no-referrer",
+            });
+            if (!response.ok) throw new Error("UPLOAD_FAILED");
+          },
+        });
+        internalSmokeBStatus.textContent = result.SMOKE_STATUS === "PASS" ? "Test voltooid." : "Test gestopt.";
+        internalSmokeBResultElement.textContent = JSON.stringify(result, null, 2);
+        return result;
+      },
+    });
+    internalSmokeBRun.addEventListener("click", triggerInternalSmokeB);
   }
 
   function renderPersonalQueue(items) {
