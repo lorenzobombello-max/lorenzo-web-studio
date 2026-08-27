@@ -5,7 +5,8 @@ import { applicationIdentityPresentation, applicationLocatorFromUrl, application
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
+const OPERATOR_ASSET_RELEASE = "20260827-owner-smoke-a-ui";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
@@ -25,7 +26,10 @@ test("operator dashboard assets share one versioned Pages-compatible release ide
   for (const url of [cssUrl, guardUrl, dashboardUrl]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), OPERATOR_ASSET_RELEASE);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
+    assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
   }
+  assert.match(guardUrl, /^\/assets\/js\/operator-dashboard-guard\.mjs\?v=/);
+  assert.match(dashboardUrl, /^\.\/operator-dashboard\.js\?v=/);
   assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard\.js"/);
