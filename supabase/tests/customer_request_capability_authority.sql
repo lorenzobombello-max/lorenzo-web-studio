@@ -145,9 +145,14 @@ select is(
   public.get_customer_request_v1('d9200000-0000-4000-8000-000000000002')->>'request_reference',
   'LWS-VRZ-2099-0902', 'owner has global VIEW authority'
 );
-select is(
-  (select count(*)::integer from jsonb_object_keys(public.get_customer_request_v1('d9200000-0000-4000-8000-000000000002'))),
-  11, 'read projection exposes exactly eleven operational fields'
+select ok(
+  (select count(*) = 12
+     and array_agg(key order by key) = array[
+       'description','priority','request_id','request_reference','request_type','revision',
+       'source','status','submitted_at','title','updated_at','upload_request'
+     ]::text[]
+   from jsonb_object_keys(public.get_customer_request_v1('d9200000-0000-4000-8000-000000000002')) as projected(key)),
+  'read projection exposes exactly twelve expected operational fields including upload_request'
 );
 select ok(
   not (public.get_customer_request_v1('d9200000-0000-4000-8000-000000000002') ?| array['customer_id','project_id','quote_request_id','linked_change_order_id']),

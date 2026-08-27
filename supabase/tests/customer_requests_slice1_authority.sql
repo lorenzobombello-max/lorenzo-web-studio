@@ -647,7 +647,9 @@ select throws_ok(
 select is(
   extensions.dblink_connect(
     'customer_request_concurrency_setup',
-    'host=host.docker.internal port=54322 dbname=' || current_database() || ' user=postgres password=postgres application_name=customer_request_concurrency_setup'
+    'host=' || host(inet_server_addr()) || ' port=' || current_setting('port')
+      || ' dbname=' || current_database()
+      || ' user=postgres password=postgres application_name=customer_request_concurrency_setup'
   ),
   'OK', 'concurrency setup connection opens'
 );
@@ -671,8 +673,8 @@ select lives_ok(
   )$test$,
   'committed concurrency fixture is created outside the pgTAP transaction'
 );
-select is(extensions.dblink_connect('customer_request_race_a', 'host=host.docker.internal port=54322 dbname=' || current_database() || ' user=postgres password=postgres application_name=customer_request_race_a'), 'OK', 'first race connection opens');
-select is(extensions.dblink_connect('customer_request_race_b', 'host=host.docker.internal port=54322 dbname=' || current_database() || ' user=postgres password=postgres application_name=customer_request_race_b'), 'OK', 'second race connection opens');
+select is(extensions.dblink_connect('customer_request_race_a', 'host=' || host(inet_server_addr()) || ' port=' || current_setting('port') || ' dbname=' || current_database() || ' user=postgres password=postgres application_name=customer_request_race_a'), 'OK', 'first race connection opens');
+select is(extensions.dblink_connect('customer_request_race_b', 'host=' || host(inet_server_addr()) || ' port=' || current_setting('port') || ' dbname=' || current_database() || ' user=postgres password=postgres application_name=customer_request_race_b'), 'OK', 'second race connection opens');
 create temporary table customer_request_race_pids(backend_pid integer not null) on commit drop;
 insert into customer_request_race_pids
 select backend_pid from extensions.dblink('customer_request_race_b', 'select pg_backend_pid()') as connection(backend_pid integer);
