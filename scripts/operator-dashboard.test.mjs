@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -314,7 +314,8 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.doesNotMatch(script, /\.rpc\(/);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 1);
+  assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
   assert.doesNotMatch(script, /localStorage/);
 });
 
@@ -563,6 +564,7 @@ test("assignment errors refresh server authority without mutation retry", () => 
 test("assignment UI is bounded, accessible, stale-safe, and Edge-only", async () => {
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   const managerWorkspace = html.split('<div id="managerWorkspace" hidden>')[1] || "";
+  const assignmentHandler = script.match(/assignmentForm\.addEventListener\("submit"[\s\S]*?promote\.addEventListener/)?.[0] || "";
   assert.match(html, /id="applicationDetail"[\s\S]*id="assignmentDossier"[\s\S]*id="dossierLifecycleDossier"/);
   assert.match(html, /<label for="assignmentOperator">[\s\S]*<select id="assignmentOperator"/);
   assert.match(html, /<label id="assignmentReasonField" for="assignmentReason" hidden>[\s\S]*maxlength="500"/);
@@ -578,7 +580,7 @@ test("assignment UI is bounded, accessible, stale-safe, and Edge-only", async ()
   assert.match(script, /if \(outcome\.refresh\) await loadAssignment\(selectedDetail, requestId, outcome\.message\)/);
   assert.match(script, /requestId !== detailRequestId \|\| dossierReference !== dossierReferenceFromDetail\(selectedDetail\)/);
   assert.match(script, /selectedDetail = null;\s*resetAssignment\(\)/);
-  assert.doesNotMatch(script, /client\.rpc\(/);
+  assert.doesNotMatch(assignmentHandler, /client\.rpc\(/);
   assert.doesNotMatch(script, /assignmentState\.revision\s*(?:\+\+|\+=|=\s*assignmentState\.revision\s*\+)/);
 });
 
@@ -1448,4 +1450,176 @@ test("dashboard resolves identity before routing and contains no contradictory s
   assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("resolveDashboardAuthority({"));
   assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("personalQueueWorkspace.hidden = false"));
   assert.match(script, /for \(const roleBadge of roleBadges\) roleBadge\.textContent = identity\.roleLabel/);
+});
+
+test("internal Smoke A UI requires the explicit URL flag and an ACTIVE owner", () => {
+  const owner = { display_name: "Owner", role: "owner", status: "ACTIVE" };
+  assert.equal(internalSmokeAvailable("https://operator.example/operator/dashboard/", owner), false);
+  assert.equal(internalSmokeAvailable("https://operator.example/operator/dashboard/?internalSmoke=1", { ...owner, role: "operator" }), false);
+  assert.equal(internalSmokeAvailable("https://operator.example/operator/dashboard/?internalSmoke=1", { ...owner, status: "REVOKED" }), false);
+  assert.equal(internalSmokeAvailable("https://operator.example/operator/dashboard/?internalSmoke=1", owner), true);
+});
+
+test("internal Smoke A confirmation cancellation performs zero calls", async () => {
+  const button = { disabled: false };
+  let calls = 0;
+  const trigger = createInternalSmokeOneShotTrigger({
+    button,
+    confirmSmoke: ()=>false,
+    runSmoke: async ()=>{ calls += 1; },
+  });
+  assert.equal(await trigger(), null);
+  assert.equal(calls, 0);
+  assert.equal(button.disabled, false);
+});
+
+test("internal Smoke A trigger stays disabled after PASS", async () => {
+  const button = { disabled: false };
+  let runnerCalls = 0;
+  const trigger = createInternalSmokeOneShotTrigger({
+    button,
+    confirmSmoke: ()=>true,
+    runSmoke: async ()=>{
+      runnerCalls += 1;
+      return { SMOKE_STATUS: "PASS" };
+    },
+  });
+  assert.equal((await trigger()).SMOKE_STATUS, "PASS");
+  assert.equal(await trigger(), null);
+  assert.equal(runnerCalls, 1);
+  assert.equal(button.disabled, true);
+});
+
+test("internal Smoke A trigger stays one-shot after partial-state failure", async () => {
+  const button = { disabled: false };
+  let runnerCalls = 0;
+  let fixtureCalls = 0;
+  let uploadLinkCalls = 0;
+  const trigger = createInternalSmokeOneShotTrigger({
+    button,
+    confirmSmoke: ()=>true,
+    runSmoke: async ()=>{
+      runnerCalls += 1;
+      fixtureCalls += 2;
+      uploadLinkCalls += 1;
+      return { SMOKE_STATUS: "FAILED: RESOLVE_BEFORE_REVOKE" };
+    },
+  });
+
+  assert.equal((await trigger()).SMOKE_STATUS, "FAILED: RESOLVE_BEFORE_REVOKE");
+  assert.equal(await trigger(), null);
+  assert.equal(runnerCalls, 1);
+  assert.equal(fixtureCalls, 2);
+  assert.equal(uploadLinkCalls, 1);
+  assert.equal(button.disabled, true);
+});
+
+test("internal Smoke A runtime blocks a non-owner before fixture creation", async () => {
+  const calls = [];
+  const result = await runInternalSmokeA({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "operator" } }, error: null }),
+      },
+      rpc: async ()=>assert.fail("RPC must not run"),
+    },
+    invoke: async (input)=>{
+      calls.push(input.action);
+      return { role: "operator", status: "ACTIVE" };
+    },
+    resolveCapability: async ()=>assert.fail("resolve must not run"),
+  });
+  assert.deepEqual(calls, ["get_current_operator_identity"]);
+  assert.equal(result.SMOKE_STATUS, "FAILED: AUTH");
+});
+
+test("internal Smoke A runs one synthetic lifecycle and returns only sanitized evidence", async () => {
+  const fixture = { run_id: "a1000000-0000-4000-8000-000000000001", request_id: "a1000000-0000-4000-8000-000000000002", status: "NEW", revision: 0, replayed: false };
+  const uploadRequestId = "a1000000-0000-4000-8000-000000000003";
+  const calls = [];
+  let resolveCount = 0;
+  const result = await runInternalSmokeA({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+      },
+      rpc: async (name, input) => {
+        calls.push({ name, input });
+        return { data: { status: "CANCELLED" }, error: null };
+      },
+    },
+    invoke: async (input) => {
+      calls.push(input);
+      if (input.action === "get_current_operator_identity") return { display_name: "Owner", role: "owner", status: "ACTIVE" };
+      if (input.action === "create_customer_request_smoke_fixture") return calls.filter((call)=>call.action === input.action).length === 1 ? fixture : { ...fixture, replayed: true };
+      if (input.action === "create_customer_request_upload_link") return { state: "ACTIVE", was_created: true, upload_request_id: uploadRequestId, upload_url: "https://operator.example/pages/customer-request-upload.html#token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" };
+      if (input.action === "revoke_customer_request_upload_link") return { state: "REVOKED", upload_request_id: uploadRequestId };
+      if (input.action === "finalize_internal_e2e_run") return { status: "PASSED" };
+      throw new Error("UNEXPECTED_ACTION");
+    },
+    resolveCapability: async (capability) => {
+      assert.equal(capability, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+      resolveCount += 1;
+      return resolveCount === 1
+        ? { status: 200, body: { ok: true, state: "ACTIVE", title: "LWS-SMOKE-TEST-UPLOAD-LINK-20260827", file_count: 0 } }
+        : { status: 200, body: { ok: true, state: "INVALID_OR_EXPIRED_LINK" } };
+    },
+    randomUUID: (()=>{ let value = 0; return ()=>`b1000000-0000-4000-8000-${String(++value).padStart(12, "0")}`; })(),
+  });
+  assert.deepEqual(result, {
+    SMOKE_STATUS: "PASS",
+    run_id: fixture.run_id,
+    customer_request_id: fixture.request_id,
+    replay_same_request: true,
+    upload_request_id: uploadRequestId,
+    resolve_before_revoke: "PASS",
+    revoke: "PASS",
+    resolve_after_revoke: "DENIED",
+    customer_request_final_status: "CANCELLED",
+    internal_e2e_final_status: "PASSED",
+  });
+  assert.equal(calls.filter((call)=>call.action === "create_customer_request_smoke_fixture").length, 2);
+  assert.equal(calls.filter((call)=>call.action === "create_customer_request_upload_link").length, 1);
+  assert.equal(calls.filter((call)=>call.action === "revoke_customer_request_upload_link").length, 1);
+  assert.equal(calls.filter((call)=>call.name === "transition_customer_request_v1").length, 1);
+  assert.equal(calls.filter((call)=>call.action === "finalize_internal_e2e_run").length, 1);
+  assert.equal(resolveCount, 2);
+  assert.deepEqual(Object.keys(result).sort(), ["SMOKE_STATUS", "customer_request_final_status", "customer_request_id", "internal_e2e_final_status", "replay_same_request", "resolve_after_revoke", "resolve_before_revoke", "revoke", "run_id", "upload_request_id"].sort());
+  assert.doesNotMatch(JSON.stringify(result), /token|upload_url|Authorization|AAAA/);
+});
+
+test("internal Smoke A fails closed without retries or raw error leakage", async () => {
+  const calls = [];
+  const result = await runInternalSmokeA({
+    client: {
+      auth: {
+        getSession: async ()=>({ data: { session: {} }, error: null }),
+        getUser: async ()=>({ data: { user: { id: "owner" } }, error: null }),
+      },
+      rpc: async ()=>assert.fail("CANCEL must not run after fixture failure"),
+    },
+    invoke: async (input) => {
+      calls.push(input.action);
+      if (input.action === "get_current_operator_identity") return { role: "owner", status: "ACTIVE" };
+      throw new Error("secret-token-must-not-render");
+    },
+    resolveCapability: async ()=>assert.fail("resolve must not run"),
+    randomUUID: ()=>crypto.randomUUID(),
+  });
+  assert.deepEqual(calls, ["get_current_operator_identity", "create_customer_request_smoke_fixture"]);
+  assert.equal(result.SMOKE_STATUS, "FAILED: FIXTURE_CREATE");
+  assert.doesNotMatch(JSON.stringify(result), /secret|token/);
+});
+
+test("internal Smoke A static UI has confirmation and no upload surface", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="internalSmokePanel"[^>]* hidden/);
+  assert.match(html, /id="internalSmokeRun"/);
+  assert.match(html, /id="internalSmokeResult"/);
+  assert.doesNotMatch(html.match(/id="internalSmokePanel"[\s\S]*?<\/section>/)?.[0] || "", /type="file"|drop|drag/i);
+  assert.match(script, /Smoke A uitvoeren\?/);
+  assert.doesNotMatch(script, /console\.(?:log|error|warn)/);
+  assert.doesNotMatch(script, /prepare_customer_request_upload|finalize_customer_request_uploaded_file|signed_upload_url/);
 });

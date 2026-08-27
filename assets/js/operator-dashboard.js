@@ -502,6 +502,151 @@ export function sdfM1InvoiceCandidatePresentation(application) {
   };
 }
 
+const INTERNAL_SMOKE_FIELDS = Object.freeze([
+  "SMOKE_STATUS",
+  "run_id",
+  "customer_request_id",
+  "replay_same_request",
+  "upload_request_id",
+  "resolve_before_revoke",
+  "revoke",
+  "resolve_after_revoke",
+  "customer_request_final_status",
+  "internal_e2e_final_status",
+]);
+
+function internalSmokeResult() {
+  return {
+    SMOKE_STATUS: "FAILED: AUTH",
+    run_id: null,
+    customer_request_id: null,
+    replay_same_request: false,
+    upload_request_id: null,
+    resolve_before_revoke: "FAIL",
+    revoke: "FAIL",
+    resolve_after_revoke: "FAIL",
+    customer_request_final_status: null,
+    internal_e2e_final_status: null,
+  };
+}
+
+export function internalSmokeAvailable(url, identity) {
+  return new URL(url).searchParams.get("internalSmoke") === "1"
+    && identity?.status === "ACTIVE"
+    && identity?.role === "owner";
+}
+
+export function createInternalSmokeOneShotTrigger({ button, confirmSmoke, runSmoke }) {
+  let started = false;
+  return async () => {
+    if (started || !confirmSmoke()) return null;
+    started = true;
+    button.disabled = true;
+    return await runSmoke();
+  };
+}
+
+export async function runInternalSmokeA({ client, invoke, resolveCapability, randomUUID = ()=>crypto.randomUUID() }) {
+  const result = internalSmokeResult();
+  let capability = null;
+  let phase = "AUTH";
+  const required = (condition) => {
+    if (!condition) throw new Error("INTERNAL_SMOKE_FAILED");
+  };
+  try {
+    const session = await client.auth.getSession();
+    required(!session.error && session.data.session);
+    const user = await client.auth.getUser();
+    required(!user.error && user.data.user?.id);
+    const identity = await invoke({ action: "get_current_operator_identity" });
+    required(identity?.status === "ACTIVE" && identity?.role === "owner");
+
+    phase = "FIXTURE_CREATE";
+    const fixtureKey = randomUUID();
+    const fixture = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
+    required(fixture?.replayed === false && fixture?.status === "NEW" && fixture?.revision === 0
+      && UUID.test(String(fixture.run_id || "")) && UUID.test(String(fixture.request_id || "")));
+    result.run_id = fixture.run_id;
+    result.customer_request_id = fixture.request_id;
+
+    phase = "FIXTURE_REPLAY";
+    const replay = await invoke({ action: "create_customer_request_smoke_fixture", idempotency_key: fixtureKey });
+    result.replay_same_request = replay?.replayed === true
+      && replay.run_id === fixture.run_id
+      && replay.request_id === fixture.request_id;
+    required(result.replay_same_request);
+
+    phase = "UPLOAD_LINK_CREATE";
+    const link = await invoke({
+      action: "create_customer_request_upload_link",
+      request_id: fixture.request_id,
+      idempotency_key: randomUUID(),
+    });
+    required(link?.state === "ACTIVE" && link?.was_created === true
+      && UUID.test(String(link.upload_request_id || "")) && typeof link.upload_url === "string");
+    result.upload_request_id = link.upload_request_id;
+    const capabilityUrl = new URL(link.upload_url);
+    delete link.upload_url;
+    capability = new URLSearchParams(capabilityUrl.hash.slice(1)).get("token");
+    capabilityUrl.hash = "";
+    required(/^[A-Za-z0-9_-]{43}$/.test(capability || ""));
+
+    phase = "RESOLVE_BEFORE_REVOKE";
+    const before = await resolveCapability(capability);
+    result.resolve_before_revoke = before?.status === 200
+      && before.body?.ok === true
+      && before.body?.state === "ACTIVE"
+      && before.body?.title === "LWS-SMOKE-TEST-UPLOAD-LINK-20260827"
+      && before.body?.file_count === 0 ? "PASS" : "FAIL";
+    required(result.resolve_before_revoke === "PASS");
+
+    phase = "REVOKE";
+    const revoked = await invoke({
+      action: "revoke_customer_request_upload_link",
+      upload_request_id: link.upload_request_id,
+      reason: "Synthetic internal Smoke A completed without file upload.",
+      idempotency_key: randomUUID(),
+    });
+    result.revoke = revoked?.state === "REVOKED" && revoked.upload_request_id === link.upload_request_id ? "PASS" : "FAIL";
+    required(result.revoke === "PASS");
+
+    phase = "RESOLVE_AFTER_REVOKE";
+    const after = await resolveCapability(capability);
+    result.resolve_after_revoke = after?.status === 200
+      && after.body?.ok === true
+      && after.body?.state === "INVALID_OR_EXPIRED_LINK" ? "DENIED" : "FAIL";
+    required(result.resolve_after_revoke === "DENIED");
+
+    phase = "CANCEL";
+    const cancelled = await client.rpc("transition_customer_request_v1", {
+      p_request_id: fixture.request_id,
+      p_command_type: "CANCEL",
+      p_expected_revision: fixture.revision,
+      p_idempotency_key: randomUUID(),
+      p_payload: {},
+    });
+    result.customer_request_final_status = cancelled.data?.status || null;
+    required(!cancelled.error && result.customer_request_final_status === "CANCELLED");
+
+    phase = "FINALIZE";
+    const finalized = await invoke({
+      action: "finalize_internal_e2e_run",
+      run_id: fixture.run_id,
+      terminal_status: "PASSED",
+      expected_revision: 0,
+      idempotency_key: randomUUID(),
+    });
+    result.internal_e2e_final_status = finalized?.status || null;
+    required(result.internal_e2e_final_status === "PASSED");
+    result.SMOKE_STATUS = "PASS";
+  } catch {
+    result.SMOKE_STATUS = `FAILED: ${phase}`;
+  } finally {
+    capability = null;
+  }
+  return Object.fromEntries(INTERNAL_SMOKE_FIELDS.map((field)=>[field, result[field]]));
+}
+
 export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
   const roleBadges = Array.from(document.querySelectorAll("[data-operator-role-badge]"));
   const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
@@ -531,6 +676,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const customerRequestUploadCreate = document.getElementById("customerRequestUploadCreate");
   const customerRequestUploadCopy = document.getElementById("customerRequestUploadCopy");
   const customerRequestUploadRevoke = document.getElementById("customerRequestUploadRevoke");
+  const internalSmokePanel = document.getElementById("internalSmokePanel");
+  const internalSmokeRun = document.getElementById("internalSmokeRun");
+  const internalSmokeStatus = document.getElementById("internalSmokeStatus");
+  const internalSmokeResultElement = document.getElementById("internalSmokeResult");
   const managerWorkspace = document.getElementById("managerWorkspace");
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -600,8 +749,38 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     return response.body.result;
   }
 
-  const identity = currentOperatorIdentityPresentation(await invoke({ action: "get_current_operator_identity" }));
+  const currentIdentity = await invoke({ action: "get_current_operator_identity" });
+  const identity = currentOperatorIdentityPresentation(currentIdentity);
   for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
+  if (internalSmokePanel && internalSmokeAvailable(window.location.href, currentIdentity)) {
+    internalSmokePanel.hidden = false;
+    const confirmationMessage = "Smoke A uitvoeren?\nEr wordt exact één synthetic Customer Request en één tijdelijke Upload Link gemaakt. Er wordt geen bestand geüpload en geen echte klantdata gebruikt.";
+    const triggerInternalSmoke = createInternalSmokeOneShotTrigger({
+      button: internalSmokeRun,
+      confirmSmoke: ()=>window.confirm(confirmationMessage),
+      runSmoke: async ()=>{
+        internalSmokeStatus.textContent = "Test wordt uitgevoerd…";
+        internalSmokeResultElement.textContent = "";
+        const result = await runInternalSmokeA({
+          client,
+          invoke,
+          resolveCapability: async (capability) => {
+            const response = await fetch(`${functionsBaseUrl.replace(/\/$/, "")}/customer-request-upload`, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${capability}`, Accept: "application/json" },
+              cache: "no-store",
+              referrerPolicy: "no-referrer",
+            });
+            return { status: response.status, body: await response.json().catch(()=>null) };
+          },
+        });
+        internalSmokeStatus.textContent = result.SMOKE_STATUS === "PASS" ? "Test voltooid." : "Test gestopt.";
+        internalSmokeResultElement.textContent = JSON.stringify(result, null, 2);
+        return result;
+      },
+    });
+    internalSmokeRun.addEventListener("click", triggerInternalSmoke);
+  }
 
   function renderPersonalQueue(items) {
     personalQueueList.replaceChildren();
