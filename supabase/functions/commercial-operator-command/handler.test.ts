@@ -12,7 +12,8 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction } from "./index.ts";
+import { createQuotationApprovalIntegrity, verifyQuotationApprovalIntegrity } from "../_shared/quotation-approval-integrity.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
@@ -90,6 +91,35 @@ const v2Input = {
   request_kind: "website",
   search: "Example",
   limit: 1,
+};
+
+const quotationBusinessInput = {
+  commercial_lines: [{ rule_id: "fixed-rule", quantity: 1, description_context: "Approved scope" }],
+  discount: { discount_type: null, discount_value_minor: 0, discount_reason: null },
+  scope: {
+    project_title: "Project", project_type: "website", scope_summary: "Approved scope",
+    requested_languages: ["nl"], included_page_count: 1, features: [], copywriting: {},
+    seo: {}, hosting: {}, maintenance: {}, exclusions: [], assumptions: [], indicative_timing: {}
+  },
+  payment_schedule: { milestones: [] },
+  validity_days: null
+};
+const quotationBusinessRequest = {
+  action: "upsert_quotation_business_draft" as const,
+  intake_id: "a1800000-0000-4000-8000-000000000083",
+  expected_revision: 0,
+  idempotency_key: "a1800000-0000-4000-8000-000000000084",
+  input: quotationBusinessInput
+};
+const quotationPromotionRequest = {
+  action: "promote_quotation_business_draft_to_approval" as const,
+  intake_id: quotationBusinessRequest.intake_id,
+  expected_revision: 1,
+  idempotency_key: "a1800000-0000-4000-8000-000000000086",
+};
+const quotationIssuanceRequest = {
+  action: "issue_and_deliver_approved_quotation" as const,
+  quote_request_id: "a1800000-0000-4000-8000-000000000090",
 };
 
 Deno.test("allowed production preflight returns the complete CORS contract without side effects", async ()=>{
@@ -1468,5 +1498,351 @@ Deno.test("current operator identity errors use stable authorization envelopes",
     const response = await handleCommercialOperator(request({ action: "get_current_operator_identity" }), harness.deps);
     assertEquals(response.status, 403);
     assertEquals(await response.json(), { ok: false, code: "OPERATOR_NOT_AUTHORIZED" });
+  }
+});
+
+Deno.test("quotation business draft accepts only the exact authority-minimal request", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request(quotationBusinessRequest), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls, [{ jwt, input: quotationBusinessRequest }]);
+
+  for (const invalid of [
+    { ...quotationBusinessRequest, intake_id: undefined },
+    { ...quotationBusinessRequest, intake_id: "bad" },
+    { ...quotationBusinessRequest, expected_revision: undefined },
+    { ...quotationBusinessRequest, expected_revision: -1 },
+    { ...quotationBusinessRequest, idempotency_key: undefined },
+    { ...quotationBusinessRequest, idempotency_key: "bad" },
+    { ...quotationBusinessRequest, input: null },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, commercial_lines: [] } },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, validity_days: 366 } },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, payment_schedule: { milestones: null } } },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, discount: { discount_type: {}, discount_value_minor: 0, discount_reason: null } } },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, seller_authority: {} } },
+    { ...quotationBusinessRequest, input: { ...quotationBusinessInput, approval_hmac: "injected" } },
+    { ...quotationBusinessRequest, actor_auth_user_id: userId },
+    { ...quotationBusinessRequest, operator_id: userId },
+  ]) {
+    const invalidHarness = dependencies();
+    const invalidResponse = await handleCommercialOperator(request(invalid), invalidHarness.deps);
+    assertEquals(invalidResponse.status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("quotation business draft rejects caller-selected terms authority", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({
+    ...quotationBusinessRequest,
+    input: {
+      ...quotationBusinessInput,
+      terms_authority_id: "a1800000-0000-4000-8000-000000000099",
+    },
+  }), harness.deps);
+  assertEquals(response.status, 400);
+  assertEquals(harness.calls.length, 0);
+});
+
+Deno.test("quotation business draft rejects caller-selected VAT authority", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({
+    ...quotationBusinessRequest,
+    input: {
+      ...quotationBusinessInput,
+      vat_decision_authority_id: "a1800000-0000-4000-8000-000000000098",
+    },
+  }), harness.deps);
+  assertEquals(response.status, 400);
+  assertEquals(harness.calls.length, 0);
+});
+
+Deno.test("quotation business draft transport uses verified actor and only its service RPC", async ()=>{
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const canonicalPayload = { contract_version: 1, totals: { total_gross_minor: 12100 } };
+  const result = await executeQuotationBusinessDraftAction(userId, quotationBusinessRequest, {
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      rpcCalls.push({ name, args });
+      return Promise.resolve({
+        data: {
+          approval_draft_id: "a1800000-0000-4000-8000-000000000085",
+          business_revision: 1,
+          canonical_payload: canonicalPayload,
+          canonical_payload_sha256: "internal-hash",
+          bindings: { internal: true },
+          prepared_by_actor: "internal-actor",
+          prepared_at: "2099-01-01T00:00:00Z",
+          replayed: false,
+        },
+        error: null,
+      });
+    }
+  });
+  assertEquals(rpcCalls, [{
+    name: "upsert_quotation_business_draft_v2",
+    args: {
+      p_actor_auth_user_id: userId,
+      p_intake_id: quotationBusinessRequest.intake_id,
+      p_expected_revision: 0,
+      p_idempotency_key: quotationBusinessRequest.idempotency_key,
+      p_input: quotationBusinessInput,
+    }
+  }]);
+  assertEquals(result, {
+    approval_draft_id: "a1800000-0000-4000-8000-000000000085",
+    business_revision: 1,
+    canonical_payload: canonicalPayload,
+    prepared_at: "2099-01-01T00:00:00Z",
+    replayed: false,
+  });
+});
+
+Deno.test("quotation business draft retries reuse the same validated route", async ()=>{
+  const harness = dependencies();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await handleCommercialOperator(request(quotationBusinessRequest), harness.deps);
+    assertEquals(response.status, 200);
+  }
+  assertEquals(harness.calls, [
+    { jwt, input: quotationBusinessRequest },
+    { jwt, input: quotationBusinessRequest },
+  ]);
+});
+
+Deno.test("quotation business draft preserves auth boundary and stable authority errors", async ()=>{
+  const serviceJwt = createUnsignedTestJwt({ sub: userId, role: "service_role", exp: 4102444800 });
+  const serviceHarness = dependencies();
+  const serviceResponse = await handleCommercialOperator(request(quotationBusinessRequest, serviceJwt), serviceHarness.deps);
+  assertEquals(serviceResponse.status, 401);
+  assertEquals((await serviceResponse.json()).code, "HUMAN_JWT_REQUIRED");
+  assertEquals(serviceHarness.calls.length, 0);
+
+  for (const [databaseCode, status, responseCode] of [
+    ["QUOTATION_BUSINESS_SCOPE_DENIED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["STALE_BUSINESS_REVISION", 409, "STALE_BUSINESS_REVISION"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["PRICING_INTEGRITY_INVALID", 409, "COMMAND_REJECTED"],
+    ["UNEXPECTED_QUOTATION_FAILURE", 500, "INTERNAL_ERROR"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request(quotationBusinessRequest), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals(await response.json(), { ok: false, code: responseCode });
+  }
+});
+
+Deno.test("quotation business approval promotion accepts only authority-minimal input", async ()=>{
+  const harness = dependencies();
+  assertEquals((await handleCommercialOperator(request(quotationPromotionRequest), harness.deps)).status, 200);
+  assertEquals(harness.calls, [{ jwt, input: quotationPromotionRequest }]);
+
+  for (const authoritativeField of [
+    "business_draft_id", "approval_id", "approval_payload", "payload_hash", "hmac",
+    "integrity", "integrity_root", "terms", "vat", "seller", "pricing_authority",
+  ]) {
+    const invalidHarness = dependencies();
+    const invalid = { ...quotationPromotionRequest, [authoritativeField]: "injected" };
+    assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("approved quotation issuance accepts only the dossier locator", async ()=>{
+  const harness = dependencies();
+  assertEquals((await handleCommercialOperator(request(quotationIssuanceRequest), harness.deps)).status, 200);
+  assertEquals(harness.calls, [{ jwt, input: quotationIssuanceRequest }]);
+
+  for (const invalid of [
+    { action: quotationIssuanceRequest.action },
+    { ...quotationIssuanceRequest, quote_request_id: "bad" },
+    { ...quotationIssuanceRequest, approval_id: userId },
+    { ...quotationIssuanceRequest, recipient_email: "injected@example.test" },
+    { ...quotationIssuanceRequest, template_id: "injected" },
+    { ...quotationIssuanceRequest, total_gross_minor: 1 },
+    { ...quotationIssuanceRequest, status: "SENT" },
+    { ...quotationIssuanceRequest, idempotency_key: userId },
+    { ...quotationIssuanceRequest, operator_id: userId },
+  ]) {
+    const invalidHarness = dependencies();
+    assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("approved quotation issuance exposes stable stage errors", async ()=>{
+  for (const [internalCode, status, publicCode] of [
+    ["QUOTATION_ORCHESTRATION_SCOPE_DENIED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["APPROVAL_NOT_FOUND", 404, "QUOTATION_APPROVAL_NOT_FOUND"],
+    ["QUOTATION_ADMIN_CAPABILITY_UNAVAILABLE", 409, "QUOTATION_NOT_ISSUABLE"],
+    ["APPROVAL_INTEGRITY_INVALID", 409, "QUOTATION_NOT_ISSUABLE"],
+    ["QUOTATION_VAT_BINDING_REQUIRED", 409, "QUOTATION_NOT_ISSUABLE"],
+    ["QUOTATION_TEMPLATE_HASH_INVALID", 500, "QUOTATION_GENERATION_FAILED"],
+    ["QUOTATION_RENDER_INVALID", 500, "QUOTATION_GENERATION_FAILED"],
+    ["QUOTATION_ARTIFACT_UPLOAD_FAILED", 500, "QUOTATION_ARCHIVE_FAILED"],
+    ["QUOTATION_ARTIFACT_ARCHIVE_INVALID", 500, "QUOTATION_ARCHIVE_FAILED"],
+    ["QUOTATION_DELIVERY_FAILED", 502, "QUOTATION_DELIVERY_FAILED"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(internalCode); } });
+    const response = await handleCommercialOperator(request(quotationIssuanceRequest), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals(await response.json(), { ok: false, code: publicCode });
+  }
+});
+
+Deno.test("quotation business approval CREATE signs resolved authority and calls only promotion RPCs", async ()=>{
+  const approvalId = "a1800000-0000-4000-8000-000000000087";
+  const secret = "create-secret-that-is-at-least-32-bytes";
+  const context = {
+    mode: "CREATE", business_draft_id: "a1800000-0000-4000-8000-000000000088",
+    business_revision: 1, approval_draft_id: "a1800000-0000-4000-8000-000000000089",
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    intake_id: quotationPromotionRequest.intake_id,
+    pricing_snapshot_id: "a1800000-0000-4000-8000-000000000091",
+    contract_version: 1, payload_sha256: "a".repeat(64),
+  };
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeQuotationBusinessApprovalPromotionAction(userId, quotationPromotionRequest, {
+    rpc: async (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return name === "resolve_quotation_business_approval_promotion_context_v1"
+        ? { data: context, error: null }
+        : { data: {
+          business_draft_id: context.business_draft_id, business_revision: 1,
+          approval_id: approvalId, approval_version: 1, status: "APPROVED",
+          approved_at: "2099-01-01T00:00:00Z", was_created: true,
+          integrity: "must-not-leak",
+        }, error: null };
+    },
+  }, {
+    createApprovalId: ()=>approvalId,
+    getEnv: (name: string)=>name === "QUOTATION_APPROVAL_INTEGRITY_ACTIVE_KEY_ID" ? "v1"
+      : name === "QUOTATION_APPROVAL_INTEGRITY_KEY_V1" ? secret : undefined,
+  });
+  assertEquals(calls.map((call)=>call.name), [
+    "resolve_quotation_business_approval_promotion_context_v1",
+    "promote_quotation_business_draft_to_approval_v1",
+  ]);
+  const integrity = calls[1].args.p_integrity as Parameters<typeof verifyQuotationApprovalIntegrity>[0];
+  assertEquals(await verifyQuotationApprovalIntegrity(integrity, secret), true);
+  assertEquals(calls[1].args, {
+    p_actor_auth_user_id: userId, p_intake_id: quotationPromotionRequest.intake_id,
+    p_expected_revision: 1, p_idempotency_key: quotationPromotionRequest.idempotency_key,
+    p_approval_id: approvalId, p_integrity: integrity,
+  });
+  assertEquals(result, {
+    business_draft_id: context.business_draft_id, business_revision: 1,
+    approval_id: approvalId, approval_version: 1, status: "APPROVED",
+    approved_at: "2099-01-01T00:00:00Z", was_created: true,
+  });
+});
+
+Deno.test("quotation business approval ADOPT verifies its historical key before writing", async ()=>{
+  const approvalId = "a1800000-0000-4000-8000-000000000092";
+  const secret = "historical-secret-that-is-at-least-32-bytes";
+  const dbRoot = {
+    intakeId: quotationPromotionRequest.intake_id,
+    approvalId,
+    payloadSha256: "b".repeat(64),
+    quoteRequestId: "a1800000-0000-4000-8000-000000000094",
+    contractVersion: 1,
+    pricingSnapshotId: "a1800000-0000-4000-8000-000000000093",
+    integrityRootVersion: 1 as const,
+  };
+  const integrity = await createQuotationApprovalIntegrity(dbRoot, "v2", secret);
+  let writes = 0;
+  const client = { rpc: async (name: string, _args: Record<string, unknown>)=>{
+    if (name === "resolve_quotation_business_approval_promotion_context_v1") return { data: {
+      mode: "ADOPT", business_draft_id: "a1800000-0000-4000-8000-000000000095",
+      business_revision: 1, approval_draft_id: "a1800000-0000-4000-8000-000000000096",
+      approval_id: approvalId, quote_request_id: dbRoot.quoteRequestId, intake_id: dbRoot.intakeId,
+      pricing_snapshot_id: dbRoot.pricingSnapshotId, contract_version: 1,
+      payload_sha256: dbRoot.payloadSha256, integrity,
+    }, error: null };
+    writes += 1;
+    return { data: {
+      business_draft_id: "a1800000-0000-4000-8000-000000000095", business_revision: 1,
+      approval_id: approvalId, approval_version: 1, status: "APPROVED",
+      approved_at: "2099-01-01T00:00:00Z", was_created: false,
+    }, error: null };
+  } };
+  const options = { createApprovalId: crypto.randomUUID, getEnv: (name: string)=>
+    name === "QUOTATION_APPROVAL_INTEGRITY_KEY_V2" ? secret : undefined };
+  await executeQuotationBusinessApprovalPromotionAction(userId, quotationPromotionRequest, client, options);
+  assertEquals(writes, 1);
+
+  integrity.root = {
+    ...dbRoot,
+    quoteRequestId: "a1800000-0000-4000-8000-000000000097",
+  };
+  let error: Error | null = null;
+  try {
+    await executeQuotationBusinessApprovalPromotionAction(userId, quotationPromotionRequest, client, options);
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "APPROVAL_CONFLICT");
+  assertEquals(writes, 1);
+
+  integrity.root = dbRoot;
+  integrity.mac = "0".repeat(64);
+  error = null;
+  try {
+    await executeQuotationBusinessApprovalPromotionAction(userId, quotationPromotionRequest, client, options);
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "APPROVAL_CONFLICT");
+  assertEquals(writes, 1);
+});
+
+Deno.test("quotation business approval promotion fails closed for missing active or historical keys", async ()=>{
+  const base = {
+    business_draft_id: "a1800000-0000-4000-8000-000000000095", business_revision: 1,
+    approval_draft_id: "a1800000-0000-4000-8000-000000000096",
+    quote_request_id: "a1800000-0000-4000-8000-000000000094",
+    intake_id: quotationPromotionRequest.intake_id,
+    pricing_snapshot_id: "a1800000-0000-4000-8000-000000000093",
+    contract_version: 1, payload_sha256: "b".repeat(64),
+  };
+  const approvalId = "a1800000-0000-4000-8000-000000000092";
+  const integrity = await createQuotationApprovalIntegrity({
+    approvalId, contractVersion: 1, intakeId: base.intake_id, integrityRootVersion: 1,
+    payloadSha256: base.payload_sha256, pricingSnapshotId: base.pricing_snapshot_id,
+    quoteRequestId: base.quote_request_id,
+  }, "v2", "historical-secret-that-is-at-least-32-bytes");
+  for (const context of [
+    { ...base, mode: "CREATE" },
+    { ...base, mode: "ADOPT", approval_id: approvalId, integrity },
+  ]) {
+    let writerCalls = 0;
+    let error: Error | null = null;
+    try {
+      await executeQuotationBusinessApprovalPromotionAction(userId, quotationPromotionRequest, {
+        rpc: async (name: string)=>{
+          if (name === "resolve_quotation_business_approval_promotion_context_v1") return { data: context, error: null };
+          writerCalls += 1;
+          return { data: null, error: null };
+        },
+      }, { createApprovalId: ()=>approvalId, getEnv: ()=>undefined });
+    } catch (caught) {
+      error = caught as Error;
+    }
+    assertEquals(error?.message, "SERVER_CONFIGURATION_ERROR");
+    assertEquals(writerCalls, 0);
+  }
+});
+
+Deno.test("quotation business approval promotion exposes only stable public errors", async ()=>{
+  for (const [databaseCode, status, responseCode] of [
+    ["QUOTATION_BUSINESS_SCOPE_DENIED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["STALE_BUSINESS_REVISION", 409, "STALE_BUSINESS_REVISION"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["APPROVAL_CONFLICT", 409, "APPROVAL_CONFLICT"],
+    ["SERVER_CONFIGURATION_ERROR", 500, "SERVER_CONFIGURATION_ERROR"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request(quotationPromotionRequest), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals(await response.json(), { ok: false, code: responseCode });
   }
 });

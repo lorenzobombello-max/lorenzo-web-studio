@@ -36,3 +36,4 @@ verify_jwt = false
 
 [functions.commercial-operator-command]
 verify_jwt = true
+static_files = ["./functions/commercial-operator-command/assets/*.docx"]

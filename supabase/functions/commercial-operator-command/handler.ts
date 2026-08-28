@@ -22,6 +22,9 @@ const COMMANDS = new Set([
 ]);
 const APPLICATION_ACTIONS = new Set([
   "get_current_operator_identity",
+  "upsert_quotation_business_draft",
+  "promote_quotation_business_draft_to_approval",
+  "issue_and_deliver_approved_quotation",
   "list_applications",
   "list_applications_v2",
   "get_application_facets_v2",
@@ -150,6 +153,10 @@ export type InternalE2EAcceptedFileCleanupActionInput = Readonly<{
   uploaded_file_id: string;
   idempotency_key: string;
 }>;
+export type QuotationIssuanceActionInput = Readonly<{
+  action: "issue_and_deliver_approved_quotation";
+  quote_request_id: string;
+}>;
 type DossierLifecycleTransportInput = Readonly<{
   quote_request_id: string;
   event_type: string;
@@ -172,6 +179,20 @@ type UnvalidatedInput = Record<string, unknown> & Readonly<{
   cursor?: string | null;
   reason?: unknown;
   payload?: unknown;
+  input?: unknown;
+}>;
+export type QuotationBusinessDraftActionInput = Readonly<{
+  action: "upsert_quotation_business_draft";
+  intake_id: string;
+  expected_revision: number;
+  idempotency_key: string;
+  input: Record<string, unknown>;
+}>;
+export type QuotationBusinessApprovalPromotionActionInput = Readonly<{
+  action: "promote_quotation_business_draft_to_approval";
+  intake_id: string;
+  expected_revision: number;
+  idempotency_key: string;
 }>;
 type CommercialCommandInput = Readonly<{
   project_id: string;
@@ -273,6 +294,62 @@ function normalizeDossierReference(value: unknown) {
   if (SUPPORT_REFERENCE.test(reference)) return `#${reference.replace(/^#/, "")}`;
   throw new RequestError(400, "INVALID_REQUEST");
 }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key)=>key in value);
+}
+function validateQuotationBusinessInput(value: unknown): Record<string, unknown> {
+  const keys = [
+    "commercial_lines", "discount", "scope", "payment_schedule", "validity_days"
+  ];
+  if (!isRecord(value) || !hasExactKeys(value, keys)
+    || !Array.isArray(value.commercial_lines) || value.commercial_lines.length < 1
+    || !isRecord(value.discount) || !isRecord(value.scope)
+    || !isRecord(value.payment_schedule)) {
+    throw new RequestError(400, "INVALID_REQUEST");
+  }
+  const lineKeys = ["rule_id", "quantity", "description_context"];
+  if (value.commercial_lines.some((line)=>!isRecord(line) || !hasExactKeys(line, lineKeys)
+    || typeof line.rule_id !== "string" || line.rule_id.trim().length < 1 || line.rule_id.length > 200
+    || typeof line.quantity !== "number" || !Number.isFinite(line.quantity) || line.quantity <= 0
+    || typeof line.description_context !== "string" || line.description_context.trim().length < 1
+    || line.description_context.length > 2000)) {
+    throw new RequestError(400, "INVALID_REQUEST");
+  }
+  if (!hasExactKeys(value.discount, ["discount_type", "discount_value_minor", "discount_reason"])
+    || !Number.isSafeInteger(value.discount.discount_value_minor)
+    || Number(value.discount.discount_value_minor) < 0
+    || (value.discount.discount_type !== null && typeof value.discount.discount_type !== "string")
+    || (value.discount.discount_reason !== null && typeof value.discount.discount_reason !== "string")
+    || (Number(value.discount.discount_value_minor) > 0
+      && (typeof value.discount.discount_type !== "string" || value.discount.discount_type.trim().length < 1
+        || typeof value.discount.discount_reason !== "string" || value.discount.discount_reason.trim().length < 1))) {
+    throw new RequestError(400, "INVALID_REQUEST");
+  }
+  const scopeKeys = [
+    "project_title", "project_type", "scope_summary", "requested_languages",
+    "included_page_count", "features", "copywriting", "seo", "hosting",
+    "maintenance", "exclusions", "assumptions", "indicative_timing"
+  ];
+  if (!hasExactKeys(value.scope, scopeKeys)
+    || typeof value.scope.project_title !== "string" || value.scope.project_title.trim().length < 1
+    || typeof value.scope.project_type !== "string" || value.scope.project_type.trim().length < 1
+    || typeof value.scope.scope_summary !== "string" || value.scope.scope_summary.trim().length < 1
+    || !Array.isArray(value.scope.requested_languages)
+    || !Number.isSafeInteger(value.scope.included_page_count) || Number(value.scope.included_page_count) < 0
+    || !Array.isArray(value.scope.features) || !Array.isArray(value.scope.exclusions)
+    || !Array.isArray(value.scope.assumptions)
+    || !hasExactKeys(value.payment_schedule, ["milestones"])
+    || !Array.isArray(value.payment_schedule.milestones)
+    || (value.validity_days !== null
+      && (!Number.isSafeInteger(value.validity_days) || Number(value.validity_days) < 1
+        || Number(value.validity_days) > 365))) {
+    throw new RequestError(400, "INVALID_REQUEST");
+  }
+  return value;
+}
 function validateApplicationAction(value: UnvalidatedInput) {
   for (const key of FORBIDDEN_IDENTITY_FIELDS)if (key in value) throw new RequestError(400, "IDENTITY_FIELD_FORBIDDEN");
   const action = String(value.action || "");
@@ -283,6 +360,12 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "zone", "operational_status", "year", "quarter", "request_kind", "search", "cursor", "limit"])
     : action === "get_application_facets_v2"
     ? new Set(["action", "zone", "operational_status", "request_kind", "search"])
+    : action === "upsert_quotation_business_draft"
+    ? new Set(["action", "intake_id", "expected_revision", "idempotency_key", "input"])
+    : action === "promote_quotation_business_draft_to_approval"
+    ? new Set(["action", "intake_id", "expected_revision", "idempotency_key"])
+    : action === "issue_and_deliver_approved_quotation"
+    ? new Set(["action", "quote_request_id"])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "create_customer_request_smoke_fixture"
@@ -323,6 +406,42 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "expected_revision", "idempotency_key", "reason"])
     : new Set(["action", "quote_request_id", "application_reference", "idempotency_key"]);
   if (Object.keys(value).some((key)=>!allowed.has(key))) throw new RequestError(400, "INVALID_REQUEST");
+  if (action === "upsert_quotation_business_draft") {
+    const intakeId = String(value.intake_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    if (!UUID.test(intakeId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      intake_id: intakeId,
+      expected_revision: expectedRevision as number,
+      idempotency_key: idempotencyKey,
+      input: validateQuotationBusinessInput(value.input)
+    };
+  }
+  if (action === "promote_quotation_business_draft_to_approval") {
+    const intakeId = String(value.intake_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedRevision = value.expected_revision;
+    if (!UUID.test(intakeId) || !UUID.test(idempotencyKey)
+      || !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 1) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      intake_id: intakeId,
+      expected_revision: expectedRevision as number,
+      idempotency_key: idempotencyKey,
+    };
+  }
+  if (action === "issue_and_deliver_approved_quotation") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId };
+  }
   if (action === "get_assignment_operator_roster" || action === "get_current_operator_identity") return { action };
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
@@ -574,6 +693,8 @@ function mapDatabaseError(error: unknown) {
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
     "APPLICATION_SCOPE_DENIED",
+    "QUOTATION_BUSINESS_SCOPE_DENIED",
+    "QUOTATION_ORCHESTRATION_SCOPE_DENIED",
     "EDGE_DOSSIER_CAPABILITY_REQUIRED",
     "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
     "DOSSIER_ASSIGNMENT_READER_REQUIRED",
@@ -590,8 +711,11 @@ function mapDatabaseError(error: unknown) {
     "COMMAND_PERMISSION_DENIED"
   ].includes(code)) return response(403, "INSUFFICIENT_PERMISSIONS");
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
+  if (code === "STALE_BUSINESS_REVISION") return response(409, code);
+  if (code === "APPROVAL_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "APPROVAL_NOT_FOUND") return response(404, "QUOTATION_APPROVAL_NOT_FOUND");
   if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
   if (code === "DOSSIER_NOT_FOUND") return response(404, code);
@@ -644,6 +768,27 @@ function mapDatabaseError(error: unknown) {
     return response(500, "SERVER_CONFIGURATION_ERROR");
   }
   if ([
+    "QUOTATION_ADMIN_CAPABILITY_UNAVAILABLE",
+    "APPROVAL_INTEGRITY_INVALID",
+    "QUOTATION_TEMPLATE_NOT_APPROVED",
+    "QUOTATION_VAT_BINDING_REQUIRED",
+    "SELLER_IDENTITY_INVALID"
+  ].includes(code)) return response(409, "QUOTATION_NOT_ISSUABLE");
+  if ([
+    "QUOTATION_ORCHESTRATION_CONTEXT_INVALID",
+    "QUOTATION_ISSUANCE_PREPARATION_INVALID",
+    "QUOTATION_ISSUE_PAYLOAD_INVALID",
+    "QUOTATION_TEMPLATE_HASH_INVALID",
+    "QUOTATION_RENDER_INVALID",
+    "QUOTATION_ARTIFACT_HASH_MISMATCH",
+    "QUOTATION_ARTIFACT_COMMIT_INVALID"
+  ].includes(code)) return response(500, "QUOTATION_GENERATION_FAILED");
+  if ([
+    "QUOTATION_ARTIFACT_UPLOAD_FAILED",
+    "QUOTATION_ARTIFACT_ARCHIVE_INVALID"
+  ].includes(code)) return response(500, "QUOTATION_ARCHIVE_FAILED");
+  if (code === "QUOTATION_DELIVERY_FAILED") return response(502, code);
+  if ([
     "INVALID_STATE",
     "PAYMENT_NOT_MATCHED",
     "ACCESS_DENIED",
@@ -653,6 +798,15 @@ function mapDatabaseError(error: unknown) {
     "TRASHED_DOSSIER_BLOCKER_CREATION_DENIED"
     ,"INVALID_CUSTOMER_REQUEST_TRANSITION"
     ,"CUSTOMER_REQUEST_TERMINAL"
+    ,"QUOTATION_INTAKE_NOT_AVAILABLE"
+    ,"PRICING_INTEGRITY_INVALID"
+    ,"QUOTATION_TERMS_NOT_APPROVED"
+    ,"QUOTATION_VAT_DECISION_NOT_APPROVED"
+    ,"PRICING_RULE_NOT_FOUND"
+    ,"PRICING_RULE_NOT_EXACT"
+    ,"PRICING_RULE_QUANTITY_MISMATCH"
+    ,"PRICING_RULE_AMOUNT_MISMATCH"
+    ,"QUOTATION_BUSINESS_PAYLOAD_INVALID"
   ].includes(code)) return response(409, "COMMAND_REJECTED");
   if (code.startsWith("LEGACY_TEST_CLEANUP_")) return response(409, "COMMAND_REJECTED");
   return response(500, "INTERNAL_ERROR");

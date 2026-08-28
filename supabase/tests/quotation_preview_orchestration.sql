@@ -32,7 +32,7 @@ select jsonb_build_object(
   'project',jsonb_build_object('project_id',null,'project_title','Website','project_type','website','scope_summary','Scope','requested_languages',jsonb_build_array('nl'),'included_page_count',1,'features','[]'::jsonb,'copywriting',null,'seo',null,'hosting',null,'maintenance',null,'exclusions','[]'::jsonb,'assumptions','[]'::jsonb,'indicative_timing',null),
   'lines',jsonb_build_array(jsonb_build_object('line_id','line-1','sequence',1,'product_or_service_code','WEB','description','Website','quantity',1,'unit','project','unit_price_minor',10000,'discount_minor',0,'vat_treatment','STANDARD','vat_rate',21,'line_net_amount_minor',10000,'cost_type','ONE_TIME')),
   'totals',jsonb_build_object('subtotal_net_minor',10000,'one_time_subtotal_minor',10000,'recurring_subtotal_minor',0,'discount_total_minor',0,'vat_base_minor',10000,'vat_amount_minor',2100,'total_gross_minor',12100),
-  'vat',jsonb_build_object('vat_treatment','STANDARD','vat_rate',21,'vat_decision_source','accountant'),
+  'vat',jsonb_build_object('vat_treatment','STANDARD','rate_semantics','PERCENT','vat_rate',21,'invoice_literal',null,'vat_decision_source','accountant'),
   'payment_schedule',jsonb_build_object('schedule_id','schedule-1','milestones',jsonb_build_array(jsonb_build_object('sequence',1,'label','Volledig','percentage',100,'amount_minor',null,'trigger','invoice','due_terms_days',30,'recurring_cycle',null))),
   'validity',jsonb_build_object('valid_from','2026-08-15','valid_until','2026-09-14','validity_days',30),
   'legal_references',jsonb_build_object('terms_reference','terms-v1','terms_version','1.0.0','agreement_reference',null,'agreement_version',null),

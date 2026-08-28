@@ -11,8 +11,18 @@ import {
   type InternalE2EAcceptedFileCleanupActionInput,
   type CustomerRequestActionInput,
   type CustomerRequestUploadOperatorActionInput,
+  type QuotationBusinessApprovalPromotionActionInput,
+  type QuotationBusinessDraftActionInput,
+  type QuotationIssuanceActionInput,
   withCommercialOperatorCors
 } from "./handler.ts";
+import { deliverIssuedQuotation } from "../_shared/quotation-email-orchestration.ts";
+import { orchestrateApprovedQuotation } from "./quotation-orchestrator.ts";
+import {
+  createQuotationRuntimeDependencies,
+  type QuotationRuntimeOptions,
+} from "./quotation-runtime.ts";
+import { renderQuotationDocxBytes } from "./quotation-renderer-edge.ts";
 import { buildCustomerRequestUploadUrl, deriveCustomerRequestUploadCapabilityToken, hashCustomerRequestUploadCapabilityToken } from "../_shared/customer-request-upload-capability.ts";
 import {
   createApprovalTokenForIdempotencyKey,
@@ -28,6 +38,13 @@ import {
   type OperatorCursorPosition,
   type OperatorCursorRequest,
 } from "../_shared/operator-cursor.ts";
+import {
+  createQuotationApprovalIntegrity,
+  QUOTATION_APPROVAL_INTEGRITY_VERSION,
+  verifyQuotationApprovalIntegrity,
+  type QuotationApprovalIntegrity,
+  type QuotationApprovalIntegrityRoot,
+} from "../_shared/quotation-approval-integrity.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -86,6 +103,7 @@ type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   request_id: string;
   upload_request_id: string;
   uploaded_file_id: string;
+  input: Record<string, unknown>;
 }>;
 type ValidatedDossierLifecycleActionInput = ValidatedApplicationActionInput & Readonly<{
   action: "archive_dossier" | "reactivate_dossier" | "trash_dossier" | "restore_dossier";
@@ -149,6 +167,213 @@ export async function executeCallerJwtCurrentOperatorIdentityAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeCurrentOperatorIdentityTransport(clientFor(jwt));
+}
+
+type QuotationBusinessDraftRpcClient = Readonly<{
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<Readonly<{
+    data: unknown;
+    error: Readonly<{ message: string }> | null;
+  }>>;
+}>;
+
+type QuotationIssuanceRuntimeOptions = Omit<QuotationRuntimeOptions, "actorAuthUserId">;
+
+export async function executeApprovedQuotationIssuanceAction(
+  actorAuthUserId: string,
+  input: QuotationIssuanceActionInput,
+  options: QuotationIssuanceRuntimeOptions,
+): Promise<unknown> {
+  return await orchestrateApprovedQuotation(
+    { actorAuthUserId, quoteRequestId: input.quote_request_id },
+    createQuotationRuntimeDependencies({ actorAuthUserId, ...options }),
+  );
+}
+
+export async function executeQuotationBusinessDraftAction(
+  actorAuthUserId: string,
+  input: QuotationBusinessDraftActionInput,
+  client: QuotationBusinessDraftRpcClient
+): Promise<unknown> {
+  const { data, error } = await client.rpc("upsert_quotation_business_draft_v2", {
+    p_actor_auth_user_id: actorAuthUserId,
+    p_intake_id: input.intake_id,
+    p_expected_revision: input.expected_revision,
+    p_idempotency_key: input.idempotency_key,
+    p_input: input.input,
+  });
+  if (error) throw new Error(error.message);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("INVALID_QUOTATION_BUSINESS_DRAFT_RESPONSE");
+  }
+  const result = data as Record<string, unknown>;
+  if (!UUID.test(String(result.approval_draft_id || ""))
+    || !Number.isSafeInteger(result.business_revision) || Number(result.business_revision) < 1
+    || !result.canonical_payload || typeof result.canonical_payload !== "object" || Array.isArray(result.canonical_payload)
+    || typeof result.prepared_at !== "string" || typeof result.replayed !== "boolean") {
+    throw new Error("INVALID_QUOTATION_BUSINESS_DRAFT_RESPONSE");
+  }
+  return {
+    approval_draft_id: result.approval_draft_id,
+    business_revision: result.business_revision,
+    canonical_payload: result.canonical_payload,
+    prepared_at: result.prepared_at,
+    replayed: result.replayed,
+  };
+}
+
+type QuotationBusinessApprovalPromotionOptions = Readonly<{
+  createApprovalId(): string;
+  getEnv(name: string): string | undefined;
+}>;
+
+const quotationBusinessApprovalPromotionDefaults: QuotationBusinessApprovalPromotionOptions = {
+  createApprovalId: ()=>crypto.randomUUID(),
+  getEnv: (name: string)=>Deno.env.get(name),
+};
+
+function promotionConfigurationError(): Error {
+  return new Error("SERVER_CONFIGURATION_ERROR");
+}
+
+function promotionIntegritySecret(
+  keyId: string,
+  options: QuotationBusinessApprovalPromotionOptions,
+): string {
+  if (!/^v[1-9][0-9]*$/.test(keyId)) throw promotionConfigurationError();
+  const secret = options.getEnv(`QUOTATION_APPROVAL_INTEGRITY_KEY_${keyId.toUpperCase()}`);
+  if (!secret || new TextEncoder().encode(secret).byteLength < 32) throw promotionConfigurationError();
+  return secret;
+}
+
+function requiredPromotionContext(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("APPROVAL_CONFLICT");
+  const context = value as Record<string, unknown>;
+  if (!new Set(["CREATE", "ADOPT"]).has(String(context.mode))
+    || !UUID.test(String(context.business_draft_id || ""))
+    || !Number.isSafeInteger(context.business_revision) || Number(context.business_revision) < 1
+    || !UUID.test(String(context.approval_draft_id || ""))
+    || !UUID.test(String(context.quote_request_id || ""))
+    || !UUID.test(String(context.intake_id || ""))
+    || !UUID.test(String(context.pricing_snapshot_id || ""))
+    || context.contract_version !== 1
+    || !/^[0-9a-f]{64}$/.test(String(context.payload_sha256 || ""))) {
+    throw new Error("APPROVAL_CONFLICT");
+  }
+  return context;
+}
+
+function promotionRoot(context: Record<string, unknown>, approvalId: string): QuotationApprovalIntegrityRoot {
+  return {
+    approvalId,
+    contractVersion: 1,
+    intakeId: String(context.intake_id),
+    integrityRootVersion: 1,
+    payloadSha256: String(context.payload_sha256),
+    pricingSnapshotId: String(context.pricing_snapshot_id),
+    quoteRequestId: String(context.quote_request_id),
+  };
+}
+
+function isExactPromotionRoot(
+  value: unknown,
+  expected: QuotationApprovalIntegrityRoot,
+): value is QuotationApprovalIntegrityRoot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const root = value as Record<string, unknown>;
+  const keys = [
+    "approvalId", "contractVersion", "intakeId", "integrityRootVersion",
+    "payloadSha256", "pricingSnapshotId", "quoteRequestId",
+  ];
+  return Object.keys(root).length === keys.length
+    && keys.every((key)=>key in root)
+    && typeof root.approvalId === "string" && root.approvalId === expected.approvalId
+    && typeof root.contractVersion === "number" && root.contractVersion === expected.contractVersion
+    && typeof root.intakeId === "string" && root.intakeId === expected.intakeId
+    && typeof root.integrityRootVersion === "number"
+    && root.integrityRootVersion === expected.integrityRootVersion
+    && typeof root.payloadSha256 === "string" && root.payloadSha256 === expected.payloadSha256
+    && typeof root.pricingSnapshotId === "string"
+    && root.pricingSnapshotId === expected.pricingSnapshotId
+    && typeof root.quoteRequestId === "string" && root.quoteRequestId === expected.quoteRequestId;
+}
+
+function promotionResult(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("APPROVAL_CONFLICT");
+  const result = value as Record<string, unknown>;
+  if (!UUID.test(String(result.business_draft_id || ""))
+    || !Number.isSafeInteger(result.business_revision) || Number(result.business_revision) < 1
+    || !UUID.test(String(result.approval_id || ""))
+    || !Number.isSafeInteger(result.approval_version) || Number(result.approval_version) < 1
+    || result.status !== "APPROVED" || typeof result.approved_at !== "string"
+    || typeof result.was_created !== "boolean") {
+    throw new Error("APPROVAL_CONFLICT");
+  }
+  return {
+    business_draft_id: result.business_draft_id,
+    business_revision: result.business_revision,
+    approval_id: result.approval_id,
+    approval_version: result.approval_version,
+    status: result.status,
+    approved_at: result.approved_at,
+    was_created: result.was_created,
+  };
+}
+
+export async function executeQuotationBusinessApprovalPromotionAction(
+  actorAuthUserId: string,
+  input: QuotationBusinessApprovalPromotionActionInput,
+  client: QuotationBusinessDraftRpcClient,
+  options: QuotationBusinessApprovalPromotionOptions = quotationBusinessApprovalPromotionDefaults,
+): Promise<unknown> {
+  const resolved = await client.rpc("resolve_quotation_business_approval_promotion_context_v1", {
+    p_actor_auth_user_id: actorAuthUserId,
+    p_intake_id: input.intake_id,
+    p_expected_revision: input.expected_revision,
+  });
+  if (resolved.error) throw new Error(resolved.error.message);
+  const context = requiredPromotionContext(resolved.data);
+
+  let approvalId: string;
+  let integrity: QuotationApprovalIntegrity;
+  if (context.mode === "CREATE") {
+    approvalId = options.createApprovalId();
+    if (!UUID.test(approvalId)) throw promotionConfigurationError();
+    const keyId = options.getEnv("QUOTATION_APPROVAL_INTEGRITY_ACTIVE_KEY_ID") || "v1";
+    try {
+      integrity = await createQuotationApprovalIntegrity(
+        promotionRoot(context, approvalId), keyId, promotionIntegritySecret(keyId, options),
+      );
+    } catch {
+      throw promotionConfigurationError();
+    }
+  } else {
+    approvalId = String(context.approval_id || "");
+    const candidate = context.integrity;
+    if (!UUID.test(approvalId) || !candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new Error("APPROVAL_CONFLICT");
+    }
+    integrity = candidate as QuotationApprovalIntegrity;
+    if (integrity.algorithmVersion !== QUOTATION_APPROVAL_INTEGRITY_VERSION
+      || !/^v[1-9][0-9]*$/.test(String(integrity.keyId || ""))
+      || !/^[0-9a-f]{64}$/.test(String(integrity.mac || ""))
+      || !isExactPromotionRoot(integrity.root, promotionRoot(context, approvalId))) {
+      throw new Error("APPROVAL_CONFLICT");
+    }
+    if (!await verifyQuotationApprovalIntegrity(
+      integrity, promotionIntegritySecret(integrity.keyId, options),
+    )) throw new Error("APPROVAL_CONFLICT");
+  }
+
+  const promoted = await client.rpc("promote_quotation_business_draft_to_approval_v1", {
+    p_actor_auth_user_id: actorAuthUserId,
+    p_intake_id: input.intake_id,
+    p_expected_revision: input.expected_revision,
+    p_idempotency_key: input.idempotency_key,
+    p_approval_id: approvalId,
+    p_integrity: integrity,
+  });
+  if (promoted.error) throw new Error(promoted.error.message);
+  return promotionResult(promoted.data);
 }
 
 export async function executeCallerJwtCustomerRequestAction(
@@ -349,6 +574,44 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       }
       if (input.action === "get_assignment_operator_roster") {
         return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
+      }
+      if (input.action === "upsert_quotation_business_draft") {
+        return await executeQuotationBusinessDraftAction(
+          actorAuthUserId,
+          input as QuotationBusinessDraftActionInput,
+          serviceClient()
+        );
+      }
+      if (input.action === "promote_quotation_business_draft_to_approval") {
+        return await executeQuotationBusinessApprovalPromotionAction(
+          actorAuthUserId,
+          input as QuotationBusinessApprovalPromotionActionInput,
+          serviceClient()
+        );
+      }
+      if (input.action === "issue_and_deliver_approved_quotation") {
+        const from = Deno.env.get("FROM_EMAIL") || "";
+        const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+        if (!from || !resendApiKey) throw new Error("SERVER_CONFIGURATION_ERROR");
+        const quotationClient = serviceClient();
+        const templateBytes = await Deno.readFile(new URL(
+          "./assets/LWS_QUOTATION_NL_BE_TECHNICAL_v1.docx",
+          import.meta.url,
+        ));
+        return await executeApprovedQuotationIssuanceAction(
+          actorAuthUserId,
+          input as QuotationIssuanceActionInput,
+          {
+            serviceClient: quotationClient,
+            templateBytes,
+            renderDocx: renderQuotationDocxBytes,
+            deliver: (deliveryInput)=>deliverIssuedQuotation({
+              supabase: quotationClient,
+              ...deliveryInput,
+            }),
+            email: { from, resendApiKey },
+          },
+        );
       }
       if (input.action === "get_my_assigned_dossiers") {
         return await executeCallerJwtOperatorPersonalQueueAction(jwt, {

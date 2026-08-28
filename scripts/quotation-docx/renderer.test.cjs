@@ -8,6 +8,7 @@ const {
   buildRenderModel,
   formatMinor,
   renderQuotationDocx,
+  renderQuotationDocxBytes,
 } = require("./renderer.cjs");
 
 const templatePath = path.resolve(__dirname, "../../assets/docs/quotation/LWS_QUOTATION_NL_BE_TECHNICAL_v1.docx");
@@ -24,7 +25,7 @@ function fixture(overrides = {}) {
     project: { project_id: null, project_title: "Zakelijke website", project_type: "website", scope_summary: "Ontwerp en ontwikkeling van een professionele website.", requested_languages: ["nl"], included_page_count: 5, features: ["Contactformulier"], copywriting: null, seo: null, hosting: null, maintenance: null, exclusions: [], assumptions: [], indicative_timing: null },
     lines: [{ line_id: "website", sequence: 1, product_or_service_code: "WEBSITE", description: "Websiteontwikkeling", quantity: 1, unit: "project", unit_price_minor: 100000, discount_minor: 0, vat_treatment: "STANDARD", vat_rate: 21, line_net_amount_minor: 100000, cost_type: "ONE_TIME" }],
     totals: { subtotal_net_minor: 100000, one_time_subtotal_minor: 100000, recurring_subtotal_minor: 0, discount_total_minor: 0, vat_base_minor: 100000, vat_amount_minor: 21000, total_gross_minor: 121000 },
-    vat: { vat_treatment: "STANDARD", vat_rate: 21, vat_decision_source: "accountant" },
+    vat: { vat_treatment: "STANDARD", rate_semantics: "PERCENT", vat_rate: 21, invoice_literal: null, vat_decision_source: "accountant" },
     payment_schedule: { schedule_id: "schedule-1", milestones: [{ sequence: 1, label: "Volledige betaling", percentage: 100, amount_minor: null, trigger: "factuur", due_terms_days: 30, recurring_cycle: null }] },
     validity: { valid_from: "2026-08-15", valid_until: "2026-09-14", validity_days: 30 },
     legal_references: { terms_reference: "Algemene voorwaarden", terms_version: "1.0.0", agreement_reference: null, agreement_version: null },
@@ -105,6 +106,21 @@ test("renderer output is byte-deterministic", () => {
   assert.deepEqual(first.buffer, second.buffer);
 });
 
+test("in-memory template rendering matches the filesystem adapter", () => {
+  const rendererPackage = fixture();
+  const fromFile = renderQuotationDocx({
+    templatePath,
+    outputPath: path.join(tempRoot, "filesystem-adapter.docx"),
+    rendererPackage,
+  });
+  const fromBytes = renderQuotationDocxBytes({
+    templateBytes: fs.readFileSync(templatePath),
+    rendererPackage,
+  });
+  assert.equal(fromBytes.sha256, fromFile.sha256);
+  assert.deepEqual(fromBytes.buffer, fromFile.buffer);
+});
+
 test("canonical ISSUE identity validation is strict and side-effect free", () => {
   const base = fixture().generation_payload.quotation;
   const issue = (quotationNumber, issuanceId = "d3e66000-0000-4000-8000-000000000001") => fixture({
@@ -162,4 +178,21 @@ test.after(() => {
   } else {
     process.stdout.write(`D3E6_OUTPUT=${tempRoot}\n`);
   }
+});
+
+test("renderer uses exemption semantics instead of a zero-percent label", () => {
+  const rendererPackage = fixture();
+  rendererPackage.generation_payload.lines[0].vat_treatment = "EXEMPT";
+  rendererPackage.generation_payload.lines[0].vat_rate = 0;
+  rendererPackage.generation_payload.vat = {
+    vat_treatment: "EXEMPT",
+    rate_semantics: "NOT_APPLICABLE",
+    vat_rate: 0,
+    invoice_literal: "Bijzondere vrijstellingsregeling van belasting",
+    vat_decision_source: "FOD_FINANCIEN:0cb8f71e-6522-47c2-9134-8c15300d3507:PAGE_15",
+  };
+  const model = buildRenderModel(rendererPackage);
+  assert.equal(model.lines[0].vat, "Bijzondere vrijstellingsregeling van belasting");
+  assert.equal(model.vat.rate_display, "Bijzondere vrijstellingsregeling van belasting");
+  assert.doesNotMatch(model.lines[0].vat, /0%/);
 });

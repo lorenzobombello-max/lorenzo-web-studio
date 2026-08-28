@@ -13,6 +13,22 @@ select has_function('public','allocate_sdf_invoice_number_v1',array['smallint'],
 select has_function('public','register_sdf_invoice_template_authority_v1',array['text','text','text','text','uuid'],'template binding RPC exists');
 select has_function('public','prepare_sdf_m1_invoice_candidate_v1',array['uuid','uuid','uuid'],'candidate preparation RPC exists');
 select has_function('public','issue_sdf_m1_invoice_v1',array['uuid','smallint','uuid'],'fail-closed issuance boundary exists');
+select has_function(
+  'public','resolve_sdf_m1_invoice_vat_authority_v1',array['uuid','date'],
+  'invoice VAT authority preflight exists'
+);
+select has_function(
+  'public','bind_sdf_quotation_vat_authority_v1',array['uuid','date'],
+  'accepted quotation VAT authority binding RPC exists'
+);
+select has_function(
+  'public','issue_sdf_m1_invoice_v2',array['uuid','smallint','uuid','text','bigint','text','bigint'],
+  'artifact-aware guarded invoice issuance RPC exists'
+);
+select has_column('public','sdf_m1_invoice_issuances','vat_decision_authority_id','issuance freezes VAT authority ID');
+select has_column('public','sdf_m1_invoice_issuances','vat_authority_sha256','issuance freezes VAT authority hash');
+select has_column('public','sdf_m1_invoice_issuances','rate_semantics','issuance distinguishes exemption from zero-rate');
+select has_column('public','sdf_m1_invoice_issuances','invoice_literal','issuance freezes the official literal');
 
 select ok(
   (select bool_and(relrowsecurity and relforcerowsecurity)
@@ -304,7 +320,7 @@ select throws_ok(
     (select candidate_id from public.sdf_m1_invoice_candidates),2099::smallint,
     'f7000000-0000-4000-8000-000000000001'
   )$$,
-  'P0001','SDF_VAT_AUTHORITY_NOT_ACTIVE','production issuance deterministically fails closed without VAT authority'
+  'P0001','QUOTATION_VAT_CONTEXT_REQUIRED','invoice authority mismatch fails before number allocation'
 );
 select is((select count(*)::integer from public.sdf_invoice_number_counters),0,'failed fiscal gate consumes no invoice number');
 select is((select count(*)::integer from public.sdf_m1_invoice_issuances),0,'failed fiscal gate creates no issuance evidence');
@@ -347,6 +363,189 @@ select throws_ok(
   )$$,
   '42501','SDF_INVOICE_AUTHORITY_DENIED','non-admin Operator cannot prepare invoice candidates'
 );
+
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+insert into public.quotation_vat_transaction_classifications (
+  classification_id, quote_request_id, context_sha256, classification_code,
+  source_reference, source_sha256, classified_by, classified_at
+) values (
+  'f8000000-0000-4000-8000-000000000001',
+  'f2000000-0000-4000-8000-000000000001',
+  public.quotation_vat_context_sha256_v1('f2000000-0000-4000-8000-000000000001'),
+  'SUPPORTED_BELGIAN_DOMESTIC_EXEMPT_TRANSACTION',
+  'TEST_ONLY:SDF_CLASSIFICATION', repeat('8',64), 'TEST', clock_timestamp()
+);
+insert into public.quotation_vat_turnover_snapshots (
+  turnover_snapshot_id, vat_decision_authority_id, threshold_year,
+  measurement_watermark, governed_turnover_minor, currency, state,
+  source_reference, source_sha256, predecessor_snapshot_id, recorded_by, recorded_at
+) values (
+  'f8100000-0000-4000-8000-000000000001',
+  'b1030000-0000-4000-8000-000000000001', 2026,
+  (clock_timestamp() at time zone 'Europe/Brussels')::date,
+  1000000, 'EUR', 'BELOW_OR_AT_THRESHOLD',
+  'TEST_ONLY:SDF_TURNOVER:CURRENT', repeat('9',64), null, 'TEST', clock_timestamp()
+);
+select lives_ok(
+  $$select public.bind_sdf_quotation_vat_authority_v1(
+    'f3000000-0000-4000-8000-000000000001',
+    (clock_timestamp() at time zone 'Europe/Brussels')::date
+  )$$,
+  'accepted quotation freezes the current canonical VAT authority'
+);
+select is(
+  public.resolve_sdf_m1_invoice_vat_authority_v1(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    (clock_timestamp() at time zone 'Europe/Brussels')::date
+  )->>'authority_sha256',
+  (select rtrim(authority_sha256) from public.quotation_vat_decision_authorities
+   where vat_decision_authority_id='b1030000-0000-4000-8000-000000000001'),
+  'invoice preflight matches frozen quotation authority ID, version, hash, context, and turnover'
+);
+select lives_ok(
+  $$select public.issue_sdf_m1_invoice_v2(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    extract(year from clock_timestamp())::smallint,
+    'f7000000-0000-4000-8000-000000000002',
+    repeat('a',64), 4096, repeat('b',64), 2048
+  )$$,
+  'guarded issuance succeeds only after frozen authority and artifact evidence match'
+);
+select ok(
+  (select vat_decision_authority_id='b1030000-0000-4000-8000-000000000001'
+      and vat_authority_version='1.0.0'
+      and vat_authority_sha256=(select authority_sha256 from public.quotation_vat_decision_authorities
+        where vat_decision_authority_id='b1030000-0000-4000-8000-000000000001')
+      and vat_treatment='EXEMPT'
+      and rate_semantics='NOT_APPLICABLE'
+      and vat_rate_basis_points=0
+      and invoice_literal='Bijzondere vrijstellingsregeling van belasting'
+      and vat_amount_minor=0
+      and gross_amount_minor=net_amount_minor
+   from public.sdf_m1_invoice_issuances),
+  'issuance freezes strict exemption authority and computes zero VAT without zero-rate semantics'
+);
+select is(
+  (public.issue_sdf_m1_invoice_v2(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    extract(year from clock_timestamp())::smallint,
+    'f7000000-0000-4000-8000-000000000002',
+    repeat('a',64), 4096, repeat('b',64), 2048
+  )->>'was_created')::boolean,
+  false,
+  'identical issuance replays without allocating another number'
+);
+select is((select next_sequence from public.sdf_invoice_number_counters),2,'one successful issuance allocates exactly one number');
+
+insert into public.quotation_vat_turnover_snapshots (
+  turnover_snapshot_id, vat_decision_authority_id, threshold_year,
+  measurement_watermark, governed_turnover_minor, currency, state,
+  source_reference, source_sha256, predecessor_snapshot_id, recorded_by, recorded_at
+) values (
+  'f8100000-0000-4000-8000-000000000002',
+  'b1030000-0000-4000-8000-000000000001', 2026,
+  (clock_timestamp() at time zone 'Europe/Brussels')::date + 1,
+  1000000, 'EUR', 'BELOW_OR_AT_THRESHOLD',
+  'TEST_ONLY:SDF_TURNOVER:NEXT', repeat('c',64),
+  'f8100000-0000-4000-8000-000000000001', 'TEST', clock_timestamp()
+);
+select throws_ok(
+  $$select public.resolve_sdf_m1_invoice_vat_authority_v1(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    (clock_timestamp() at time zone 'Europe/Brussels')::date + 1
+  )$$,
+  'P0001','SDF_VAT_AUTHORITY_MISMATCH',
+  'changed governed turnover snapshot cannot silently upgrade the frozen quotation binding'
+);
+set local session_replication_role = replica;
+update public.sdf_quotation_vat_authority_bindings
+set turnover_snapshot_id='f8100000-0000-4000-8000-000000000002'
+where quotation_id='f3000000-0000-4000-8000-000000000001';
+set local session_replication_role = origin;
+select throws_ok(
+  $$select public.issue_sdf_m1_invoice_v2(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    extract(year from clock_timestamp())::smallint,
+    'f7000000-0000-4000-8000-000000000003',
+    repeat('a',64), 4096, repeat('b',64), 2048
+  )$$,
+  'P0001','SDF_VAT_AUTHORITY_MISMATCH',
+  'issuance rejects frozen quotation authority mismatch before number allocation'
+);
+set local session_replication_role = replica;
+update public.sdf_quotation_vat_authority_bindings
+set turnover_snapshot_id='f8100000-0000-4000-8000-000000000001'
+where quotation_id='f3000000-0000-4000-8000-000000000001';
+set local session_replication_role = origin;
+insert into public.quotation_vat_turnover_snapshots (
+  turnover_snapshot_id, vat_decision_authority_id, threshold_year,
+  measurement_watermark, governed_turnover_minor, currency, state,
+  source_reference, source_sha256, predecessor_snapshot_id, recorded_by, recorded_at
+) values (
+  'f8100000-0000-4000-8000-000000000003',
+  'b1030000-0000-4000-8000-000000000001', 2026,
+  (clock_timestamp() at time zone 'Europe/Brussels')::date + 2,
+  1000001, 'EUR', 'AUTHORITY_REVIEW_REQUIRED',
+  'TEST_ONLY:SDF_TURNOVER:REVIEW', repeat('d',64),
+  'f8100000-0000-4000-8000-000000000002', 'TEST', clock_timestamp()
+);
+select throws_ok(
+  $$select public.resolve_sdf_m1_invoice_vat_authority_v1(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    (clock_timestamp() at time zone 'Europe/Brussels')::date + 2
+  )$$,
+  'P0001','AUTHORITY_REVIEW_REQUIRED',
+  'turnover above EUR 10,000 blocks invoice authority without grace'
+);
+insert into public.quotation_vat_turnover_snapshots (
+  turnover_snapshot_id, vat_decision_authority_id, threshold_year,
+  measurement_watermark, governed_turnover_minor, currency, state,
+  source_reference, source_sha256, predecessor_snapshot_id, recorded_by, recorded_at
+) values (
+  'f8100000-0000-4000-8000-000000000004',
+  'b1030000-0000-4000-8000-000000000001', 2026,
+  (clock_timestamp() at time zone 'Europe/Brussels')::date,
+  1000001, 'EUR', 'AUTHORITY_REVIEW_REQUIRED',
+  'TEST_ONLY:SDF_TURNOVER:CURRENT_REVIEW', repeat('e',64),
+  null, 'TEST', clock_timestamp()
+);
+select throws_ok(
+  $$select public.issue_sdf_m1_invoice_v2(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    extract(year from clock_timestamp())::smallint,
+    'f7000000-0000-4000-8000-000000000004',
+    repeat('a',64), 4096, repeat('b',64), 2048
+  )$$,
+  'P0001','QUOTATION_VAT_THRESHOLD_AUTHORITY_REVIEW_REQUIRED',
+  'issuance rejects conflicting threshold-review state before number allocation'
+);
+select is((select next_sequence from public.sdf_invoice_number_counters),2,'mismatch and threshold review allocate no number');
+
+select set_config('lws.quotation_business_authority_transition','ACTIVATE_VERSION',true);
+update public.quotation_vat_decision_authorities
+set status='RETIRED', retired_by='TEST', retired_at=clock_timestamp(),
+    retirement_reason='TEST_ONLY_INACTIVE_AUTHORITY'
+where vat_decision_authority_id='b1030000-0000-4000-8000-000000000001';
+select set_config('lws.quotation_business_authority_transition','',true);
+select throws_ok(
+  $$select public.resolve_sdf_m1_invoice_vat_authority_v1(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    (clock_timestamp() at time zone 'Europe/Brussels')::date
+  )$$,
+  'P0001','QUOTATION_VAT_DECISION_NOT_APPROVED',
+  'retired authority blocks invoice preflight'
+);
+select throws_ok(
+  $$select public.issue_sdf_m1_invoice_v2(
+    (select candidate_id from public.sdf_m1_invoice_candidates),
+    extract(year from clock_timestamp())::smallint,
+    'f7000000-0000-4000-8000-000000000005',
+    repeat('a',64), 4096, repeat('b',64), 2048
+  )$$,
+  'P0001','QUOTATION_VAT_DECISION_NOT_APPROVED',
+  'issuance rejects retired authority before number allocation'
+);
+select is((select next_sequence from public.sdf_invoice_number_counters),2,'inactive authority allocates no number');
 
 select * from finish();
 rollback;

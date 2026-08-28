@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260827-owner-smoke-b-remediation";
+const OPERATOR_ASSET_RELEASE = "20260828-quotation-orchestration";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -100,6 +100,59 @@ test("production dashboard uses real application data and no synthetic state", a
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
   assert.match(css, /\.dashboard-grid/);
   assert.match(css, /\.application-list/);
+});
+
+test("quotation issuance control is owner-admin gated and sends no client authority", async () => {
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000002";
+  const approvalId = "a1800000-0000-4000-8000-000000000003";
+  const detail = {
+    request_kind: "website",
+    quote_request_id: quoteRequestId,
+    quotation: { approval_id: approvalId, issuance_status: null },
+    acceptance: null,
+  };
+  assert.equal(canIssueApprovedQuotation(detail, { role: "owner", status: "ACTIVE" }), true);
+  assert.equal(canIssueApprovedQuotation(detail, { role: "admin", status: "ACTIVE" }), true);
+  assert.equal(canIssueApprovedQuotation({ ...detail, quotation: { ...detail.quotation, issuance_status: "ISSUED" } }, { role: "owner", status: "ACTIVE" }), true);
+  assert.equal(canIssueApprovedQuotation(detail, { role: "operator", status: "ACTIVE" }), false);
+  assert.equal(canIssueApprovedQuotation({ ...detail, acceptance: { acceptance_id: approvalId } }, { role: "owner", status: "ACTIVE" }), false);
+  assert.deepEqual(quotationIssuanceRequest(detail), {
+    action: "issue_and_deliver_approved_quotation",
+    quote_request_id: quoteRequestId,
+  });
+  assert.equal(quotationIssuanceRequest({ ...detail, quote_request_id: "bad" }), null);
+
+  const [html, script] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard.js"),
+  ]);
+  assert.match(html, /id="quotationIssueAndDeliver"[^>]*hidden/);
+  assert.match(html, /id="quotationActionMessage"[^>]*role="status"/);
+  assert.match(script, /quotationIssuanceRequest\(selectedDetail\)/);
+  assert.doesNotMatch(script, /issue_and_deliver_approved_quotation[\s\S]{0,160}idempotency_key/);
+});
+
+test("quotation delivery presentation preserves persisted and action status semantics", async () => {
+  assert.deepEqual(quotationDeliveryPresentation({ status: "sent" }), {
+    status: "sent", label: "Offerte verzonden", tone: "green",
+  });
+  assert.deepEqual(quotationDeliveryPresentation({ status: "retry_wait" }), {
+    status: "retry_wait", label: "Verzending tijdelijk mislukt — nieuwe poging mogelijk", tone: "amber",
+  });
+  assert.deepEqual(quotationDeliveryPresentation({ status: "failed" }), {
+    status: "failed", label: "Verzending mislukt — manuele controle vereist", tone: "red",
+  });
+  assert.equal(quotationDeliveryPresentation(null), null);
+  assert.doesNotMatch(quotationDeliveryPresentation({ status: "retry_wait" }).label, /manuele controle/i);
+  assert.doesNotMatch(quotationDeliveryPresentation({ status: "failed" }).label, /nieuwe poging/i);
+
+  const [html, script] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard.js"),
+  ]);
+  assert.match(html, /id="detailQuotationDelivery"/);
+  assert.match(script, /quotationDeliveryPresentation\(application\.quotation\?\.delivery\)/);
+  assert.match(script, /quotationDeliveryPresentation\(\{ status: result\.delivery_status \}\)/);
 });
 
 const personalQueueItem = (reference, revision = 1) => ({

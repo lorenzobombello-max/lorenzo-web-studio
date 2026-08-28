@@ -45,6 +45,18 @@ const DOSSIER_LIFECYCLE_ACTIONS = Object.freeze({
   trash_dossier: Object.freeze({ label: "Naar prullenbak", title: "Dossier naar prullenbak verplaatsen", description: "Het dossier wordt naar de prullenbak verplaatst en niet permanent verwijderd. Bestaande gegevens, documenten en evidence worden niet hard gedeletet. Herstellen blijft mogelijk via ‘Herstellen uit prullenbak’." }),
   restore_dossier: Object.freeze({ label: "Herstellen uit prullenbak", title: "Dossier herstellen uit prullenbak", description: "Het dossier wordt hersteld naar de server-authoritatieve staat van vóór de prullenbak." }),
 });
+const QUOTATION_DELIVERY_PRESENTATION = Object.freeze({
+  pending: Object.freeze({ status: "pending", label: "Verzending wacht op verwerking", tone: "amber" }),
+  processing: Object.freeze({ status: "processing", label: "Offerte wordt verzonden", tone: "amber" }),
+  sent: Object.freeze({ status: "sent", label: "Offerte verzonden", tone: "green" }),
+  retry_wait: Object.freeze({ status: "retry_wait", label: "Verzending tijdelijk mislukt — nieuwe poging mogelijk", tone: "amber" }),
+  failed: Object.freeze({ status: "failed", label: "Verzending mislukt — manuele controle vereist", tone: "red" }),
+});
+
+export function quotationDeliveryPresentation(delivery) {
+  const status = String(delivery?.status || "");
+  return QUOTATION_DELIVERY_PRESENTATION[status] || null;
+}
 
 export function currentOperatorIdentityPresentation(identity) {
   if (!identity || typeof identity !== "object" || Array.isArray(identity)
@@ -155,6 +167,24 @@ export function applicationIdentityPresentation(application) {
 
 export function canPromoteApplication(detail) {
   return Boolean(detail?.request_kind === "website" && detail.acceptance && !detail.project);
+}
+
+export function canIssueApprovedQuotation(detail, identity) {
+  return Boolean(identity?.status === "ACTIVE"
+    && ["owner", "admin"].includes(identity.role)
+    && detail?.request_kind === "website"
+    && UUID.test(String(detail?.quote_request_id || ""))
+    && UUID.test(String(detail?.quotation?.approval_id || ""))
+    && !detail.acceptance);
+}
+
+export function quotationIssuanceRequest(detail) {
+  const quoteRequestId = String(detail?.quote_request_id || "");
+  if (!UUID.test(quoteRequestId)) return null;
+  return {
+    action: "issue_and_deliver_approved_quotation",
+    quote_request_id: quoteRequestId,
+  };
 }
 
 export function intakeLifecyclePresentation(lifecycle) {
@@ -1027,6 +1057,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const detailEmpty = document.getElementById("applicationDetailEmpty");
   const detailMessage = document.getElementById("applicationDetailMessage");
   const promote = document.getElementById("promoteApplication");
+  const quotationActionButton = document.getElementById("quotationIssueAndDeliver");
+  const quotationActionMessage = document.getElementById("quotationActionMessage");
   const assignmentDossier = document.getElementById("assignmentDossier");
   const assignmentCurrent = document.getElementById("assignmentCurrent");
   const assignmentForm = document.getElementById("assignmentForm");
@@ -1081,6 +1113,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
   let selectedDossierReference = null;
+  let quotationActionBusy = false;
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
@@ -1368,6 +1401,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     detailMessage.textContent = "";
     dossierLifecycleMessage.textContent = "";
     lifecycleMessage.textContent = "";
+    quotationActionButton.hidden = true;
+    quotationActionMessage.textContent = "";
     updateLocation(null);
   }
 
@@ -1676,7 +1711,11 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     setText("detailAcceptedAt", formatDate(application.acceptance?.accepted_at));
     setText("detailQuotationTotal", formatMoney(application.quotation?.approved_total_minor));
     setText("detailQuotationTemplate", application.quotation?.template_id ? `${application.quotation.template_id} · ${application.quotation.template_version}` : "Niet beschikbaar");
+    const quotationDelivery = quotationDeliveryPresentation(application.quotation?.delivery);
+    setBadge("detailQuotationDelivery", quotationDelivery?.label || "Nog niet gestart", quotationDelivery?.tone);
     setBadge("quotationStateBadge", application.acceptance ? "ACCEPTED" : application.quotation?.issuance_status || "NOT ISSUED", application.acceptance ? "green" : "amber");
+    quotationActionButton.hidden = !canIssueApprovedQuotation(application, currentIdentity);
+    quotationActionButton.disabled = quotationActionBusy;
     promote.hidden = !canPromoteApplication(application);
     renderProjectDossier(null);
   }
@@ -1868,6 +1907,37 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       detailMessage.textContent = "Het project kon niet worden aangemaakt.";
     } finally {
       promote.disabled = false;
+    }
+  });
+
+  quotationActionButton.addEventListener("click", async ()=>{
+    const input = quotationIssuanceRequest(selectedDetail);
+    if (quotationActionBusy || !input || !canIssueApprovedQuotation(selectedDetail, currentIdentity)
+      || !selectedLocator || !window.confirm("Goedgekeurde offerte uitgeven en naar de vastgelegde ontvanger sturen?")) return;
+    const locator = { ...selectedLocator };
+    const selectionRequestId = detailRequestId;
+    quotationActionBusy = true;
+    quotationActionButton.disabled = true;
+    quotationActionMessage.textContent = "Offerte wordt uitgegeven en gearchiveerd.";
+    try {
+      const result = await invoke(input);
+      const refresh = await refreshMutationDetail(locator, selectionRequestId);
+      if (refresh.status !== "refreshed") return;
+      const delivery = quotationDeliveryPresentation({ status: result.delivery_status });
+      quotationActionMessage.textContent = delivery?.label || "Offerte is uitgegeven en gearchiveerd. Controleer de leveringsstatus.";
+    } catch (error) {
+      if (selectionRequestId !== detailRequestId) return;
+      const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+      quotationActionMessage.textContent = code === "QUOTATION_NOT_ISSUABLE"
+        ? "Deze offerte is niet uitgifteklaar. Controleer de approval en authoritystatus."
+        : code === "QUOTATION_ARCHIVE_FAILED"
+        ? "De offerte is niet afgeleverd omdat archivering niet kon worden bevestigd."
+        : code === "QUOTATION_DELIVERY_FAILED"
+        ? "De offerte is uitgegeven en gearchiveerd, maar de aflevering vereist manuele controle."
+        : "De offerte kon niet veilig worden uitgegeven. Probeer later opnieuw.";
+    } finally {
+      quotationActionBusy = false;
+      if (selectionRequestId === detailRequestId) quotationActionButton.disabled = false;
     }
   });
 

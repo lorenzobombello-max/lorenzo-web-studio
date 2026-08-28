@@ -49,6 +49,21 @@ function listSection(items) {
     : [];
 }
 
+function formatVat(vat) {
+  if (vat.vat_treatment === "EXEMPT"
+    && vat.rate_semantics === "NOT_APPLICABLE"
+    && vat.vat_rate === 0
+    && vat.invoice_literal === "Bijzondere vrijstellingsregeling van belasting") {
+    return vat.invoice_literal;
+  }
+  if (vat.vat_treatment !== "EXEMPT"
+    && vat.rate_semantics === "PERCENT"
+    && vat.invoice_literal === null) {
+    return `${vat.vat_rate}%`;
+  }
+  throw new Error("INVALID_RENDER_VAT_SEMANTICS");
+}
+
 function buildRenderModel(rendererPackage) {
   assertNoForbiddenData(rendererPackage);
   const payload = rendererPackage.generation_payload;
@@ -71,11 +86,12 @@ function buildRenderModel(rendererPackage) {
   }
 
   const currency = payload.locale.currency;
+  const vatDisplay = formatVat(payload.vat);
   const lines = payload.lines.map((line) => ({
     ...line,
     unit_price: formatMinor(line.unit_price_minor, currency),
     discount: formatMinor(line.discount_minor, currency),
-    vat: `${line.vat_rate}%`,
+    vat: payload.vat.vat_treatment === "EXEMPT" ? vatDisplay : `${line.vat_rate}%`,
     line_net_amount: formatMinor(line.line_net_amount_minor, currency),
   }));
   const milestones = payload.payment_schedule.milestones.map((milestone) => ({
@@ -129,7 +145,7 @@ function buildRenderModel(rendererPackage) {
       vat_amount: formatMinor(payload.totals.vat_amount_minor, currency),
       total_gross: formatMinor(payload.totals.total_gross_minor, currency),
     },
-    vat: { rate_display: `${payload.vat.vat_rate}%` },
+    vat: { rate_display: vatDisplay },
     payment_milestones: milestones,
     validity: {
       valid_from: formatDate(payload.validity.valid_from),
@@ -148,9 +164,8 @@ function buildRenderModel(rendererPackage) {
   };
 }
 
-function renderQuotationDocx({ templatePath, outputPath, rendererPackage }) {
-  const template = fs.readFileSync(templatePath);
-  const zip = new PizZip(template);
+function renderQuotationDocxBytes({ templateBytes, rendererPackage }) {
+  const zip = new PizZip(templateBytes);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
@@ -167,8 +182,23 @@ function renderQuotationDocx({ templatePath, outputPath, rendererPackage }) {
   const fixedDate = new Date("2000-01-01T00:00:00.000Z");
   for (const entry of Object.values(renderedZip.files)) entry.date = fixedDate;
   const buffer = renderedZip.generate({ type: "nodebuffer", compression: "DEFLATE" });
-  fs.writeFileSync(outputPath, buffer);
   return { buffer, sha256: crypto.createHash("sha256").update(buffer).digest("hex") };
 }
 
-module.exports = { assertNoForbiddenData, buildRenderModel, formatDate, formatMinor, renderQuotationDocx };
+function renderQuotationDocx({ templatePath, outputPath, rendererPackage }) {
+  const result = renderQuotationDocxBytes({
+    templateBytes: fs.readFileSync(templatePath),
+    rendererPackage,
+  });
+  fs.writeFileSync(outputPath, result.buffer);
+  return result;
+}
+
+module.exports = {
+  assertNoForbiddenData,
+  buildRenderModel,
+  formatDate,
+  formatMinor,
+  renderQuotationDocx,
+  renderQuotationDocxBytes,
+};

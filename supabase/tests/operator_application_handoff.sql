@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(118);
+select plan(122);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -94,6 +94,46 @@ insert into public.quote_request_quotation_issuances (
   repeat('4',64),repeat('5',64),repeat('6',64),12345,
   'a1600000-0000-4000-8000-000000000002',repeat('7',64),'a1600000-0000-4000-8000-000000000003',repeat('8',64)
 );
+
+select set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001',null)->'quotation'->'delivery',
+  'null'::jsonb,
+  'quotation without a delivery job exposes no fabricated delivery state'
+);
+insert into public.quote_request_quotation_acceptance_capabilities(
+  id,issuance_id,token_digest,capability_version,status,expires_at,created_by
+) values (
+  'a1610000-0000-4000-8000-000000000001','a1600000-0000-4000-8000-000000000001',repeat('9',64),1,'ACTIVE','2099-01-03T00:00:00Z','test'
+);
+insert into public.quote_request_email_jobs(id,quote_request_id,kind,status)
+values('a1620000-0000-4000-8000-000000000001',null,'quotation_delivery','retry_wait');
+insert into public.quote_request_quotation_email_orchestrations(
+  id,email_job_id,email_type,issuance_id,capability_id,recipient_email,
+  content_version,request_fingerprint,idempotency_key,created_by
+) values (
+  'a1630000-0000-4000-8000-000000000001','a1620000-0000-4000-8000-000000000001','QUOTATION_DELIVERY',
+  'a1600000-0000-4000-8000-000000000001','a1610000-0000-4000-8000-000000000001','accepted@example.test',
+  'QUOTATION_DELIVERY_NL_BE_v1',repeat('a',64),'a1630000-0000-4000-8000-000000000002','test'
+);
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001',null)->'quotation'->'delivery',
+  '{"status":"retry_wait","retryable":true,"manual_review_required":false}'::jsonb,
+  'operator detail persists retryable quotation delivery state'
+);
+update public.quote_request_email_jobs set status='failed' where id='a1620000-0000-4000-8000-000000000001';
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001',null)->'quotation'->'delivery',
+  '{"status":"failed","retryable":false,"manual_review_required":true}'::jsonb,
+  'operator detail persists terminal quotation delivery state'
+);
+update public.quote_request_email_jobs set status='sent' where id='a1620000-0000-4000-8000-000000000001';
+select is(
+  public.get_operator_application_v1('a1100000-0000-4000-8000-000000000001',null)->'quotation'->'delivery',
+  '{"status":"sent","retryable":false,"manual_review_required":false}'::jsonb,
+  'operator detail persists sent quotation delivery state'
+);
+select set_config('request.jwt.claim.sub','',true);
 
 create temporary table handoff_acceptance_payload as
 select jsonb_build_object(
