@@ -21,6 +21,7 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   admin: "ADMIN",
 });
 const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "recruitment", "messages", "calendar"]);
+const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "owner"]);
 
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
@@ -29,6 +30,65 @@ export function operatorModuleFromUrl(url, role) {
   }
   const module = parsed.searchParams.get("module") || "dossiers";
   return OPERATOR_MODULES.has(module) ? module : "dossiers";
+}
+
+export function financeTabFromUrl(url, role) {
+  const parsed = new URL(url, "https://operator.invalid");
+  if (operatorModuleFromUrl(parsed, role) !== "finance") return "overview";
+  const tab = parsed.searchParams.get("financeTab") || "overview";
+  return FINANCE_TABS.has(tab) ? tab : "overview";
+}
+
+const FINANCE_UNAVAILABLE_FLAGS = Object.freeze([
+  "invoice_projection_available",
+  "outstanding_projection_available",
+  "overdue_projection_available",
+  "upcoming_projection_available",
+  "recurring_amount_projection_available",
+  "bank_actuals_projection_available",
+]);
+
+export function websiteFinancePortfolioPresentation(portfolio) {
+  const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
+  const validCurrency = (value)=>typeof value === "string" && /^[A-Z]{3}$/.test(value);
+  if (!portfolio || typeof portfolio !== "object" || Array.isArray(portfolio)
+      || portfolio.scope !== "website"
+      || !Array.isArray(portfolio.currency_totals)
+      || !Array.isArray(portfolio.projects)
+      || portfolio.bank_actuals !== null
+      || FINANCE_UNAVAILABLE_FLAGS.some((flag)=>portfolio[flag] !== false)) {
+    throw new Error("INVALID_WEBSITE_FINANCE_PORTFOLIO");
+  }
+  for (const total of portfolio.currency_totals) {
+    if (!validCurrency(total?.currency)
+        || !validMoney(total?.total_commitment_minor)
+        || !validMoney(total?.total_expected_minor)
+        || !validMoney(total?.total_confirmed_received_minor)) throw new Error("INVALID_WEBSITE_FINANCE_PORTFOLIO");
+  }
+  for (const project of portfolio.projects) {
+    if (!UUID.test(String(project?.project_id || ""))
+        || project?.request_kind !== "website"
+        || (project?.application_reference !== null && typeof project?.application_reference !== "string")
+        || !validCurrency(project?.currency)
+        || !validMoney(project?.accepted_total_minor)
+        || !validMoney(project?.expected_minor)
+        || !validMoney(project?.confirmed_received_minor)
+        || !Array.isArray(project?.milestones)) throw new Error("INVALID_WEBSITE_FINANCE_PORTFOLIO");
+  }
+  return portfolio;
+}
+
+export function formatFinanceMoney(minor, currency) {
+  return new Intl.NumberFormat("nl-BE", { style: "currency", currency }).format(minor / 100);
+}
+
+export function financeMilestoneStatus(project) {
+  const statuses = new Set((project?.milestones || []).map((milestone)=>milestone?.payment_status));
+  if (statuses.has("MATCHED_AWAITING_CONFIRMATION")) return "Afstemming wacht op bevestiging";
+  if (statuses.has("EVIDENCE_RECORDED")) return "Betalingsbewijs geregistreerd";
+  if (statuses.has("EXPECTED")) return "Betaling verwacht";
+  if (statuses.size && [...statuses].every((status)=>status === "CONFIRMED")) return "Bevestigd ontvangen";
+  return "Nog geen betaalstatus beschikbaar";
 }
 const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
@@ -1184,6 +1244,88 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     else link.removeAttribute("aria-current");
   }
   for (const panel of modulePanels) panel.hidden = panel.dataset.modulePanel !== activeModule;
+  if (activeModule === "finance") {
+    const activeFinanceTab = financeTabFromUrl(window.location.href, currentIdentity.role);
+    const financeTabLinks = Array.from(document.querySelectorAll("[data-finance-tab]"));
+    const financeTabPanels = Array.from(document.querySelectorAll("[data-finance-tab-panel]"));
+    for (const link of financeTabLinks) {
+      if (link.dataset.financeTab === activeFinanceTab) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    }
+    for (const panel of financeTabPanels) panel.hidden = panel.dataset.financeTabPanel !== activeFinanceTab;
+    if (activeFinanceTab === "websites") {
+      const status = document.getElementById("financeWebsiteStatus");
+      const count = document.getElementById("financeWebsiteCount");
+      const content = document.getElementById("financeWebsiteContent");
+      const totals = document.getElementById("financeCurrencyTotals");
+      const projects = document.getElementById("financeProjectList");
+      const empty = document.getElementById("financeProjectEmpty");
+      try {
+        const response = await client.rpc("get_website_finance_portfolio_v1");
+        if (response.error) throw response.error;
+        const portfolio = websiteFinancePortfolioPresentation(response.data);
+        totals.replaceChildren();
+        projects.replaceChildren();
+        for (const currencyTotal of portfolio.currency_totals) {
+          const group = document.createElement("section");
+          const heading = document.createElement("h3");
+          const metrics = document.createElement("dl");
+          group.className = "finance-currency-group";
+          heading.textContent = currencyTotal.currency;
+          metrics.className = "finance-metrics";
+          for (const [label, field] of [
+            ["Totale commerciële waarde / commitment", "total_commitment_minor"],
+            ["Verwachte betalingen", "total_expected_minor"],
+            ["Bevestigd ontvangen", "total_confirmed_received_minor"],
+          ]) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const value = document.createElement("dd");
+            term.textContent = label;
+            value.textContent = formatFinanceMoney(currencyTotal[field], currencyTotal.currency);
+            metric.append(term, value);
+            metrics.append(metric);
+          }
+          group.append(heading, metrics);
+          totals.append(group);
+        }
+        for (const project of portfolio.projects) {
+          const item = document.createElement("li");
+          const heading = document.createElement("div");
+          const reference = document.createElement("strong");
+          const currency = document.createElement("span");
+          const metrics = document.createElement("dl");
+          const paymentStatus = document.createElement("p");
+          reference.textContent = project.application_reference || project.project_id;
+          currency.textContent = project.currency;
+          heading.className = "finance-project-heading";
+          metrics.className = "finance-project-metrics";
+          paymentStatus.className = "finance-payment-status";
+          paymentStatus.textContent = financeMilestoneStatus(project);
+          heading.append(reference, currency);
+          for (const [label, field] of [["Commitment", "accepted_total_minor"], ["Verwacht", "expected_minor"], ["Bevestigd ontvangen", "confirmed_received_minor"]]) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const value = document.createElement("dd");
+            term.textContent = label;
+            value.textContent = formatFinanceMoney(project[field], project.currency);
+            metric.append(term, value);
+            metrics.append(metric);
+          }
+          item.append(heading, metrics, paymentStatus);
+          projects.append(item);
+        }
+        count.textContent = `${portfolio.projects.length} ${portfolio.projects.length === 1 ? "project" : "projecten"}`;
+        empty.hidden = portfolio.projects.length !== 0;
+        status.textContent = portfolio.projects.length ? "Websiteportfolio beschikbaar." : "";
+        content.hidden = false;
+      } catch {
+        count.textContent = "Niet beschikbaar";
+        status.textContent = "De financiële Websiteportfolio kon niet veilig worden geladen.";
+        content.hidden = true;
+      }
+    }
+  }
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;
