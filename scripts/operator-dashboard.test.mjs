@@ -5,7 +5,7 @@ import { applicationIdentityPresentation, applicationLocatorFromUrl, application
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260828-module-motion";
+const OPERATOR_ASSET_RELEASE = "20260828-recruitment-shell";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -2286,12 +2286,15 @@ test("internal Smoke B static UI is separate, hidden, confirmed, and has no capa
   assert.doesNotMatch(script, /localStorage|sessionStorage|console\.(?:log|error|warn)/);
 });
 
-test("owner module shell exposes five accessible query-routed modules without mock data", async () => {
+test("owner module shell exposes six accessible query-routed modules without mock data", async () => {
   const [html, css] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css")]);
-  for (const [module, label] of [["dossiers", "Dossiers"], ["finance", "Financieel"], ["workforce", "Personeel"], ["messages", "Berichten"], ["calendar", "Kalender"]]) {
+  const modules = [["dossiers", "Dossiers"], ["finance", "Financieel"], ["workforce", "Personeel"], ["recruitment", "Rekrutering"], ["messages", "Berichten"], ["calendar", "Kalender"]];
+  for (const [module, label] of modules) {
     assert.match(html, new RegExp(`href="/operator/dashboard/\\?module=${module}"[^>]*data-operator-module="${module}"[^>]*>${label}</a>`));
   }
-  for (const [module, title] of [["finance", "Financieel"], ["workforce", "Personeel"], ["messages", "Berichten"], ["calendar", "Kalender"]]) {
+  const navigation = html.match(/<nav id="operatorModuleNavigation"[\s\S]*?<\/nav>/)?.[0] || "";
+  assert.deepEqual([...navigation.matchAll(/data-operator-module="([^"]+)"/g)].map((match) => match[1]), modules.map(([module]) => module));
+  for (const [module, title] of modules.slice(1)) {
     assert.match(html, new RegExp(`data-module-panel="${module}"[\\s\\S]{0,180}<h1[^>]*>${title}</h1>`));
   }
   assert.match(html, /id="operatorModuleNavigation"[^>]*aria-label="Operatormodules"[^>]*hidden/);
@@ -2306,13 +2309,22 @@ test("module routing defaults and fails safe to dossiers", () => {
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "owner"), "finance");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=workforce", "owner"), "workforce");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "owner"), "recruitment");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages", "owner"), "messages");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar", "owner"), "calendar");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=unknown", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "operator"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "operator"), "dossiers");
 });
 
+test("recruitment route remains active when the URL is resolved after refresh", () => {
+  const url = "https://operator.example/operator/dashboard/?module=recruitment";
+  assert.equal(operatorModuleFromUrl(url, "owner"), "recruitment");
+  assert.equal(operatorModuleFromUrl(url, "owner"), "recruitment");
+});
+
 test("application and legacy dossier locators always activate dossiers", () => {
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment&application=LWS-AAN-2026-0003", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance&application=LWS-AAN-2026-0003", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar&request=19877689-7c72-4ad4-9a7c-7b9459b22ea1", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages&support=B4D5140C", "owner"), "dossiers");

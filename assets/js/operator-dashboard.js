@@ -20,7 +20,7 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   read_only: "READ ONLY",
   admin: "ADMIN",
 });
-const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "messages", "calendar"]);
+const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "recruitment", "messages", "calendar"]);
 
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
