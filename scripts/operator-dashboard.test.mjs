@@ -5,7 +5,7 @@ import { applicationIdentityPresentation, applicationLocatorFromUrl, application
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260828-module-shell";
+const OPERATOR_ASSET_RELEASE = "20260828-module-motion";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -2316,4 +2316,20 @@ test("application and legacy dossier locators always activate dossiers", () => {
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance&application=LWS-AAN-2026-0003", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar&request=19877689-7c72-4ad4-9a7c-7b9459b22ea1", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages&support=B4D5140C", "owner"), "dossiers");
+});
+
+test("module motion remains decorative, finite, and reduced-motion safe", async () => {
+  const [html, css] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css")]);
+  assert.match(html, /class="finance-visual" aria-hidden="true"/);
+  assert.match(html, /class="finance-visual__graph"[\s\S]*class="finance-visual__line"/);
+  assert.match(html, /class="finance-visual__laser"/);
+  const financeShell = html.match(/data-module-panel="finance"[\s\S]*?<\/section>/)?.[0] || "";
+  assert.doesNotMatch(financeShell, /€|EUR|omzet|openstaand|betaald/i);
+  assert.match(css, /@keyframes module-nav-reveal/);
+  assert.match(css, /@keyframes module-panel-enter/);
+  assert.match(css, /@keyframes module-title-sweep/);
+  assert.match(css, /@keyframes finance-line-draw/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+  assert.match(css, /prefers-reduced-motion:reduce[\s\S]*animation:none!important/);
+  assert.doesNotMatch(css, /infinite/);
 });
