@@ -94,7 +94,8 @@ for (const [state, tokenState] of [
       quote_request_intakes: { ...intake, ...tokenState },
       quote_requests: request,
       quote_request_pricing_snapshots: snapshot,
-      quote_request_pricing_snapshot_integrity: integrity,
+    }, {
+      get_pricing_snapshot_integrity_for_operator_v1: [integrity],
     });
     const verifiedContexts: string[] = [];
     const result = await loadSubmittedApplicationOutputForOperator(
@@ -109,7 +110,8 @@ for (const [state, tokenState] of [
     assertEquals(result?.requestId, requestId);
     assertEquals(result?.output.applicationReference, "LWS-AAN-2026-0042");
     assertEquals(verifiedContexts, [intakeId]);
-    assertEquals(service.calls.some((call) => call.startsWith("rpc:")), false);
+    assertEquals(service.calls.includes("rpc:get_pricing_snapshot_integrity_for_operator_v1"), true);
+    assertEquals(service.calls.includes("from:quote_request_pricing_snapshot_integrity"), false);
   });
 }
 
@@ -120,4 +122,42 @@ Deno.test("customer loader remains bound to token-protected inspection RPCs", as
   assertEquals(result, null);
   assertEquals(customer.calls.includes("rpc:inspect_quote_request_intake_details_v4"), true);
   assertEquals(customer.calls.includes("rpc:inspect_customer_pricing_read_v3"), true);
+});
+
+Deno.test("operator loader remains fail closed when the integrity RPC returns no record", async () => {
+  const service = client({
+    quote_request_intakes: intake,
+    quote_requests: request,
+    quote_request_pricing_snapshots: snapshot,
+  });
+  const failures: string[] = [];
+  const result = await loadSubmittedApplicationOutputForOperator(
+    service as never,
+    requestId,
+    async () => true,
+    (reason) => failures.push(reason),
+  );
+
+  assertEquals(result, null);
+  assertEquals(failures, ["integrity_record_unavailable"]);
+});
+
+Deno.test("operator loader rejects malformed or tampered integrity and remains fail closed", async () => {
+  const service = client({
+    quote_request_intakes: intake,
+    quote_requests: request,
+    quote_request_pricing_snapshots: snapshot,
+  }, {
+    get_pricing_snapshot_integrity_for_operator_v1: [integrity],
+  });
+  const failures: string[] = [];
+  const result = await loadSubmittedApplicationOutputForOperator(
+    service as never,
+    requestId,
+    async () => false,
+    (reason) => failures.push(reason),
+  );
+
+  assertEquals(result, null);
+  assertEquals(failures, ["integrity_verification_failed"]);
 });

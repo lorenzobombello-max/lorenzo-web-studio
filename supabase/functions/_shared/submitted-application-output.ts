@@ -33,6 +33,11 @@ const INTAKE_EVIDENCE_FIELDS = [
 const SNAPSHOT_FIELDS = "id, intake_id, snapshot_contract_version, config_version, config_hash, normalized_evidence, calculation, package_advice, budget_evaluation, package_definition, recurring_services";
 
 type SnapshotVerifier = (snapshot: object, context: string, integrity: unknown) => Promise<boolean>;
+type FailureReporter = (reason: string) => void;
+
+const reportOperatorOutputFailure: FailureReporter = (reason) => {
+  console.error(`[submitted-application-output] ${reason}`);
+};
 
 function validRequest(request: Record<string, unknown> | null, requestId: string): request is Record<string, unknown> {
   return Boolean(request && request.id === requestId &&
@@ -100,6 +105,7 @@ export async function loadSubmittedApplicationOutputForOperator(
   service: SupabaseClient,
   requestId: string,
   verifySnapshot: SnapshotVerifier = verifyPricingSnapshotIntegrity,
+  reportFailure: FailureReporter = reportOperatorOutputFailure,
 ): Promise<SubmittedApplicationOutputContext | null> {
   if (!isUuid(requestId)) return null;
   const [{ data: intakeData, error: intakeError }, { data: requestData, error: requestError }] = await Promise.all([
@@ -118,7 +124,10 @@ export async function loadSubmittedApplicationOutputForOperator(
     .eq("intake_id", intake.id)
     .maybeSingle();
   const snapshot = record(snapshotData);
-  if (snapshotError || !snapshot || !isUuid(snapshot.id) || snapshot.intake_id !== intake.id) return null;
+  if (snapshotError || !snapshot || !isUuid(snapshot.id) || snapshot.intake_id !== intake.id) {
+    reportFailure("snapshot_record_unavailable");
+    return null;
+  }
   const authoritativeSnapshot: Record<string, unknown> = {
     snapshotContractVersion: snapshot.snapshot_contract_version,
     pricingConfigVersion: snapshot.config_version,
@@ -130,17 +139,25 @@ export async function loadSubmittedApplicationOutputForOperator(
     ...(snapshot.snapshot_contract_version === 3 ? { packageDefinition: snapshot.package_definition } : {}),
     ...(snapshot.recurring_services === null ? {} : { recurringServices: snapshot.recurring_services }),
   };
-  const { data: integrityData, error: integrityError } = await service
-    .from("quote_request_pricing_snapshot_integrity")
-    .select("algorithm_version, key_id, mac")
-    .eq("snapshot_id", snapshot.id)
-    .maybeSingle();
-  const integrity = record(integrityData);
-  if (integrityError || !integrity || !await verifySnapshot(authoritativeSnapshot, intake.id, {
+  const { data: integrityData, error: integrityError } = await service.rpc(
+    "get_pricing_snapshot_integrity_for_operator_v1",
+    { p_snapshot_id: snapshot.id },
+  );
+  const integrity = record(Array.isArray(integrityData) ? integrityData[0] : null);
+  if (integrityError || !integrity) {
+    reportFailure("integrity_record_unavailable");
+    return null;
+  }
+  if (!await verifySnapshot(authoritativeSnapshot, intake.id, {
     algorithmVersion: integrity.algorithm_version,
     keyId: integrity.key_id,
     mac: integrity.mac,
-  })) return null;
+  })) {
+    reportFailure("integrity_verification_failed");
+    return null;
+  }
 
-  return buildOutputContext(request, intake, authoritativeSnapshot);
+  const context = buildOutputContext(request, intake, authoritativeSnapshot);
+  if (!context) reportFailure("output_build_failed");
+  return context;
 }
