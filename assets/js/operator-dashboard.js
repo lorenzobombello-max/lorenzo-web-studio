@@ -20,6 +20,16 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   read_only: "READ ONLY",
   admin: "ADMIN",
 });
+const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "messages", "calendar"]);
+
+export function operatorModuleFromUrl(url, role) {
+  const parsed = new URL(url, "https://operator.invalid");
+  if (role !== "owner" || parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
+    return "dossiers";
+  }
+  const module = parsed.searchParams.get("module") || "dossiers";
+  return OPERATOR_MODULES.has(module) ? module : "dossiers";
+}
 const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
@@ -1164,6 +1174,23 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const currentIdentity = await invoke({ action: "get_current_operator_identity" });
   const identity = currentOperatorIdentityPresentation(currentIdentity);
   for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
+  const moduleNavigation = document.getElementById("operatorModuleNavigation");
+  const moduleLinks = Array.from(document.querySelectorAll("[data-operator-module]"));
+  const modulePanels = Array.from(document.querySelectorAll("[data-module-panel]"));
+  const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
+  moduleNavigation.hidden = currentIdentity.role !== "owner";
+  for (const link of moduleLinks) {
+    if (link.dataset.operatorModule === activeModule) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  for (const panel of modulePanels) panel.hidden = panel.dataset.modulePanel !== activeModule;
+  if (activeModule !== "dossiers") {
+    internalSmokePanel.hidden = true;
+    internalSmokeBPanel.hidden = true;
+    personalQueueWorkspace.hidden = true;
+    managerWorkspace.hidden = true;
+    return;
+  }
   if (internalSmokePanel && internalSmokeAvailable(window.location.href, currentIdentity)) {
     internalSmokePanel.hidden = false;
     const confirmationMessage = "Smoke A uitvoeren?\nEr wordt exact één synthetic Customer Request en één tijdelijke Upload Link gemaakt. Er wordt geen bestand geüpload en geen echte klantdata gebruikt.";

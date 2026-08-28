@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260828-dossier-purge-ui";
+const OPERATOR_ASSET_RELEASE = "20260828-module-shell";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -2284,4 +2284,36 @@ test("internal Smoke B static UI is separate, hidden, confirmed, and has no capa
   assert.match(script, /Smoke B uitvoeren\?/);
   assert.match(script, /createInternalSmokeOneShotTrigger/);
   assert.doesNotMatch(script, /localStorage|sessionStorage|console\.(?:log|error|warn)/);
+});
+
+test("owner module shell exposes five accessible query-routed modules without mock data", async () => {
+  const [html, css] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css")]);
+  for (const [module, label] of [["dossiers", "Dossiers"], ["finance", "Financieel"], ["workforce", "Personeel"], ["messages", "Berichten"], ["calendar", "Kalender"]]) {
+    assert.match(html, new RegExp(`href="/operator/dashboard/\\?module=${module}"[^>]*data-operator-module="${module}"[^>]*>${label}</a>`));
+  }
+  for (const [module, title] of [["finance", "Financieel"], ["workforce", "Personeel"], ["messages", "Berichten"], ["calendar", "Kalender"]]) {
+    assert.match(html, new RegExp(`data-module-panel="${module}"[\\s\\S]{0,180}<h1[^>]*>${title}</h1>`));
+  }
+  assert.match(html, /id="operatorModuleNavigation"[^>]*aria-label="Operatormodules"[^>]*hidden/);
+  assert.doesNotMatch(html, /fictieve|testbedrag|ongelezen bericht/i);
+  assert.match(css, /\.module-navigation a\[aria-current="page"\]/);
+  assert.match(css, /@media \(max-width:1100px\)/);
+  assert.match(css, /\.module-navigation \{[^}]*flex-wrap:wrap/);
+  assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.topbar[^}]*grid-template-columns:1fr/);
+});
+
+test("module routing defaults and fails safe to dossiers", () => {
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "owner"), "finance");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=workforce", "owner"), "workforce");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages", "owner"), "messages");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar", "owner"), "calendar");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=unknown", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "operator"), "dossiers");
+});
+
+test("application and legacy dossier locators always activate dossiers", () => {
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance&application=LWS-AAN-2026-0003", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar&request=19877689-7c72-4ad4-9a7c-7b9459b22ea1", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages&support=B4D5140C", "owner"), "dossiers");
 });
