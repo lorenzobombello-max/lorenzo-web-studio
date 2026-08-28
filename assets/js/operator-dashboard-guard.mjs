@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
 import { getOperatorClient } from "./operator-auth-client.mjs";
-import { startOperatorDashboard } from "./operator-dashboard.js?v=20260828-quotation-orchestration";
+import { startOperatorDashboard } from "./operator-dashboard.js?v=20260828-dossier-purge-ui";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");

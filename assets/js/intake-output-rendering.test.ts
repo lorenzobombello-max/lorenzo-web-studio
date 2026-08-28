@@ -1,9 +1,15 @@
-import { assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
+import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
 
 const intakeSource = await Deno.readTextFile(new URL("./intake.js", import.meta.url));
 const adminSource = await Deno.readTextFile(new URL("./admin-intake.js", import.meta.url));
+const dossierSource = await Deno.readTextFile(new URL("./application-dossier-copy.js", import.meta.url));
+const operatorSource = await Deno.readTextFile(new URL("./operator-dashboard.js", import.meta.url));
+const operatorGuardSource = await Deno.readTextFile(new URL("./operator-dashboard-guard.mjs", import.meta.url));
 const intakeHtml = await Deno.readTextFile(new URL("../../pages/intake.html", import.meta.url));
 const adminHtml = await Deno.readTextFile(new URL("../../pages/admin-intake.html", import.meta.url));
+const operatorHtml = await Deno.readTextFile(new URL("../../operator/dashboard/index.html", import.meta.url));
+const operatorCss = await Deno.readTextFile(new URL("../css/operator-dashboard.css", import.meta.url));
+const operatorEdge = await Deno.readTextFile(new URL("../../supabase/functions/commercial-operator-command/index.ts", import.meta.url));
 
 function functionSource(source: string, name: string) {
   const start = source.indexOf(`function ${name}(`);
@@ -41,4 +47,60 @@ Deno.test("historical NULL references remain reviewable without fabricated appli
   assertStringIncludes(adminSource, "application?.applicationReference || legacyReference");
   assertStringIncludes(intakeSource, "reference.hidden = true");
   assertFalse(adminSource.includes("LWS-AAN-LEGACY"));
+});
+
+Deno.test("customer and authorized operator use one historical dossier copy module", () => {
+  for (const expected of ["intakeDossierDownload", "intakeDossierPrint", "intakeDossierCopy"]) assertStringIncludes(intakeHtml, expected);
+  for (const expected of ["applicationDossierDownload", "applicationDossierPrint", "applicationDossierCopyContent"]) assertStringIncludes(operatorHtml, expected);
+  assertStringIncludes(intakeSource, 'from "./application-dossier-copy.js?v=20260828-dossier-ux"');
+  assertStringIncludes(operatorSource, 'from "./application-dossier-copy.js?v=20260828-dossier-purge-ui"');
+  assertStringIncludes(dossierSource, "buildApplicationDossierPresentation(application)");
+});
+
+Deno.test("operator dossier output is built server-side after authorized detail lookup", () => {
+  const detailLookup = operatorEdge.indexOf('input.action === "get_application_detail"');
+  const sharedBuild = operatorEdge.indexOf("loadSubmittedApplicationOutputForOperator(service", detailLookup);
+  assertEquals(detailLookup >= 0, true);
+  assertEquals(sharedBuild > detailLookup, true);
+  assertStringIncludes(operatorEdge, "return { ...data, application: context.output }");
+  assertFalse(/access_token_hash|integrity_snapshot|pricingConfigHash/.test(operatorSource));
+  assertFalse(/access_token_hash|integrity_snapshot|pricingConfigHash/.test(dossierSource));
+});
+
+Deno.test("dossier assets use their current intake and operator cache identities", () => {
+  const intakeCssVersion = "20260828-dossier-copy-remediation";
+  const dossierVersion = "20260828-dossier-ux";
+  const operatorVersion = "20260828-dossier-purge-ui";
+  assertStringIncludes(intakeHtml, `intake.css?v=${intakeCssVersion}`);
+  assertStringIncludes(intakeHtml, `intake.js?v=${dossierVersion}`);
+  assertStringIncludes(operatorHtml, `operator-dashboard.css?v=${operatorVersion}`);
+  assertStringIncludes(operatorHtml, `operator-dashboard-guard.mjs?v=${operatorVersion}`);
+  assertStringIncludes(operatorGuardSource, `operator-dashboard.js?v=${operatorVersion}`);
+  assertStringIncludes(intakeSource, `application-dossier-copy.js?v=${dossierVersion}`);
+  assertStringIncludes(operatorSource, `application-dossier-copy.js?v=${operatorVersion}`);
+});
+
+Deno.test("operator dossier stays compact and opens the shared copy in a document dialog", () => {
+  const dossierIndex = operatorHtml.indexOf('id="applicationDossierCopy"');
+  const dashboardGridIndex = operatorHtml.indexOf('class="dashboard-grid"');
+  assertEquals(operatorHtml.match(/id="applicationDossierCopy"/g)?.length, 1);
+  assertEquals(dossierIndex > dashboardGridIndex, true);
+  assertStringIncludes(operatorHtml, 'id="applicationDossierActions"');
+  assertStringIncludes(operatorHtml, 'id="applicationDossierView"');
+  assertStringIncludes(operatorHtml, 'id="applicationDossierDownload"');
+  assertStringIncludes(operatorHtml, 'id="applicationDossierPrint"');
+  assertStringIncludes(operatorHtml, 'id="applicationDossierPreview"');
+  assertStringIncludes(operatorHtml, 'id="applicationDossierPreviewClose"');
+  assertFalse(operatorHtml.includes("operator-dossier-copy"));
+  assertStringIncludes(operatorSource, "applicationDossierPreview.showModal()");
+  assertStringIncludes(operatorSource, "downloadApplicationDossierPdf(dossierOutput)");
+  assertStringIncludes(operatorSource, "printApplicationDossier(dossierOutput)");
+  assertStringIncludes(operatorSource, "applicationDossierActions.hidden = true");
+  assertStringIncludes(operatorSource, "applicationDossierActions.hidden = false");
+  const hideActions = operatorSource.indexOf("applicationDossierActions.hidden = true", operatorSource.indexOf("function renderDetail("));
+  const renderCopy = operatorSource.indexOf("renderApplicationDossier", hideActions);
+  const showActions = operatorSource.indexOf("applicationDossierActions.hidden = false", renderCopy);
+  assertEquals(hideActions < renderCopy && renderCopy < showActions, true);
+  assertStringIncludes(operatorSource.slice(renderCopy, showActions + 200), "catch {");
+  assertStringIncludes(operatorCss, ".dossier-preview-dialog");
 });

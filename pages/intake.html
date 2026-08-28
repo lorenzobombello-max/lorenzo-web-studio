@@ -12,10 +12,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/intake.css?v=20260819-output2" />
+  <link rel="stylesheet" href="../assets/css/intake.css?v=20260828-dossier-copy-remediation" />
     <script defer src="../assets/js/cookie-consent.js"></script>
 <script defer src="../assets/js/pages.js"></script>
-  <script defer src="../assets/js/intake.js?v=20260819-output2"></script>
+  <script type="module" src="../assets/js/intake.js?v=20260828-dossier-ux"></script>
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
 </head>
 <body class="intake-page">
@@ -80,6 +80,11 @@
           </dl></section>
         </div>
         <p class="intake-success__disclaimer">Dit is een niet-bindende prijsindicatie op basis van de opgegeven informatie. De definitieve offerte volgt na controle van je aanvraag.</p>
+        <div id="intakeDossierActions" class="intake-dossier-actions" hidden>
+          <button id="intakeDossierDownload" class="btn btn--primary" type="button">Download PDF</button>
+          <button id="intakeDossierPrint" class="btn btn--ghost" type="button">Afdrukken</button>
+        </div>
+        <div id="intakeDossierCopy" class="application-dossier-copy" hidden></div>
         <p>Lorenzo controleert je aanvraag en neemt persoonlijk contact met je op om de scope te bespreken. Daarna ontvang je de definitieve offerte.</p>
       </div>
 

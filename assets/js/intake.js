@@ -1,3 +1,9 @@
+import {
+  downloadApplicationDossierPdf,
+  printApplicationDossier,
+  renderApplicationDossier,
+} from "./application-dossier-copy.js?v=20260828-dossier-ux";
+
 (function () {
   "use strict";
 
@@ -1874,6 +1880,13 @@
     setRow("recurring", recurring);
     setRow("deadline", application.servicePlanning?.deadline || application.servicePlanning?.timing);
     setRow("submitted", new Date(application.submittedAt).toLocaleString("nl-BE", { dateStyle: "long", timeStyle: "short", timeZone: "Europe/Brussels" }));
+    const dossierCopy = document.getElementById("intakeDossierCopy");
+    const dossierActions = document.getElementById("intakeDossierActions");
+    renderApplicationDossier(dossierCopy, application);
+    dossierCopy.hidden = false;
+    dossierActions.hidden = false;
+    document.getElementById("intakeDossierDownload").onclick = () => downloadApplicationDossierPdf(application);
+    document.getElementById("intakeDossierPrint").onclick = () => printApplicationDossier(application);
     summary.hidden = false;
   }
 

@@ -240,5 +240,35 @@ select ok(
   'reassignment removes the dossier from the previous operator current queue'
 );
 
+update lws_internal.operator_dossier_states
+set state = 'TRASHED',
+    revision = revision + 1,
+    state_before_trash = 'ACTIVE',
+    deletion_eligible_at = null,
+    updated_at = clock_timestamp() + interval '1 second'
+where quote_request_id = 'c2000027-0000-4000-8000-000000000027';
+
+select is(
+  (select zone from lws_internal.operator_application_readmodel_v2 where quote_request_id = 'c2000027-0000-4000-8000-000000000027'),
+  'TRASHED',
+  'trashed assignment remains visible to the explicit trash readmodel'
+);
+select ok(
+  not exists (
+    select 1 from jsonb_array_elements(public.get_operator_personal_dossier_queue_v1(null, 100)->'items') as item
+    where item->>'reference' = 'LWS-AAN-2099-7027'
+  ),
+  'trashed assignment stays out of the personal current queue after refresh'
+);
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000003', true);
+select ok(
+  not exists (
+    select 1 from jsonb_array_elements(public.get_operator_personal_dossier_queue_v1(null, 100)->'items') as item
+    where item->>'reference' = 'LWS-AAN-2099-7027'
+  ),
+  'trashed assignment stays out of a fresh authenticated operator session'
+);
+
 select * from finish();
 rollback;

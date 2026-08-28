@@ -1,4 +1,9 @@
 import { callCommercialOperator } from "./operator-auth-core.mjs";
+import {
+  downloadApplicationDossierPdf,
+  printApplicationDossier,
+  renderApplicationDossier,
+} from "./application-dossier-copy.js?v=20260828-dossier-purge-ui";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
@@ -67,6 +72,30 @@ export function currentOperatorIdentityPresentation(identity) {
     throw new Error("INVALID_OPERATOR_IDENTITY");
   }
   return { displayName: identity.display_name, roleLabel: OPERATOR_ROLE_LABELS[identity.role] };
+}
+
+export function canOfferDossierPurge(detail, identity, eligibility) {
+  return Boolean(identity?.status === "ACTIVE"
+    && identity.role === "owner"
+    && detail?.dossier_lifecycle?.state === "TRASHED"
+    && UUID.test(String(detail?.quote_request_id || ""))
+    && eligibility?.can_purge === true
+    && eligibility.reason === null);
+}
+
+export function dossierPurgeRequest(detail, reason, idempotencyKey) {
+  const quoteRequestId = String(detail?.quote_request_id || "");
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (detail?.dossier_lifecycle?.state !== "TRASHED"
+      || !UUID.test(quoteRequestId)
+      || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length < 1
+      || normalizedReason.length > 500) throw new Error("INVALID_DOSSIER_PURGE_REQUEST");
+  return {
+    p_quote_request_id: quoteRequestId,
+    p_reason: normalizedReason,
+    p_idempotency_key: idempotencyKey,
+  };
 }
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
@@ -1068,6 +1097,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const assignmentSubmit = document.getElementById("assignmentSubmit");
   const assignmentMessage = document.getElementById("assignmentMessage");
   const confirmation = document.getElementById("promotionDialog");
+  const applicationDossierActions = document.getElementById("applicationDossierActions");
+  const applicationDossierPreview = document.getElementById("applicationDossierPreview");
+  const applicationDossierPreviewClose = document.getElementById("applicationDossierPreviewClose");
   const dossierLifecycleDossier = document.getElementById("dossierLifecycleDossier");
   const dossierLifecycleTitle = document.getElementById("dossierLifecycleTitle");
   const dossierLifecycleMessage = document.getElementById("dossierLifecycleMessage");
@@ -1077,6 +1109,12 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const dossierLifecycleReason = document.getElementById("dossierLifecycleReason");
   const dossierLifecycleConfirm = document.getElementById("dossierLifecycleConfirm");
   const dossierLifecycleCancel = document.getElementById("dossierLifecycleCancel");
+  const dossierPurge = document.getElementById("dossierPurge");
+  const dossierPurgeDialog = document.getElementById("dossierPurgeDialog");
+  const dossierPurgeForm = document.getElementById("dossierPurgeForm");
+  const dossierPurgeReason = document.getElementById("dossierPurgeReason");
+  const dossierPurgeConfirm = document.getElementById("dossierPurgeConfirm");
+  const dossierPurgeCancel = document.getElementById("dossierPurgeCancel");
   const lifecycleDossier = document.getElementById("lifecycleDossier");
   const lifecycleDossierTitle = document.getElementById("lifecycleDossierTitle");
   const lifecycleMessage = document.getElementById("lifecycleActionMessage");
@@ -1110,6 +1148,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let assignmentSubmitting = false;
   let dossierLifecycleBusy = false;
   let pendingDossierLifecycleAction = null;
+  let dossierPurgeBusy = false;
+  let pendingDossierPurge = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
   let selectedDossierReference = null;
@@ -1400,9 +1440,12 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
     dossierLifecycleMessage.textContent = "";
+    dossierPurge.hidden = true;
     lifecycleMessage.textContent = "";
     quotationActionButton.hidden = true;
     quotationActionMessage.textContent = "";
+    applicationDossierActions.hidden = true;
+    if (applicationDossierPreview.open) applicationDossierPreview.close();
     updateLocation(null);
   }
 
@@ -1612,6 +1655,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   function renderDossierLifecycle(detailApplication) {
     const presentation = dossierLifecyclePresentation(detailApplication?.dossier_lifecycle);
     dossierLifecycleDossier.hidden = false;
+    dossierPurge.hidden = true;
     if (!presentation) {
       setBadge("dossierLifecycleStateBadge", "NIET BESCHIKBAAR", "amber");
       for (const button of dossierLifecycleButtons) button.hidden = true;
@@ -1623,6 +1667,21 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       button.hidden = !presentation.actions.includes(button.dataset.dossierLifecycleAction);
       button.disabled = dossierLifecycleBusy;
     }
+    void refreshDossierPurgeEligibility(detailApplication, detailRequestId);
+  }
+
+  async function refreshDossierPurgeEligibility(detailApplication, requestId) {
+    if (dossierPurgeBusy
+        || currentIdentity?.status !== "ACTIVE"
+        || currentIdentity.role !== "owner"
+        || detailApplication?.dossier_lifecycle?.state !== "TRASHED"
+        || !UUID.test(String(detailApplication?.quote_request_id || ""))) return;
+    const { data, error } = await client.rpc("can_purge_dossier_v1", {
+      p_quote_request_id: detailApplication.quote_request_id,
+    });
+    if (requestId !== detailRequestId || selectedDetail !== detailApplication) return;
+    dossierPurge.hidden = Boolean(error) || !canOfferDossierPurge(detailApplication, currentIdentity, data);
+    dossierPurge.disabled = false;
   }
 
   function setDossierLifecycleBusy(busy) {
@@ -1642,6 +1701,22 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
     applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
+    const dossierOutput = application.application;
+    applicationDossierActions.hidden = true;
+    if (isWebsite && dossierOutput) {
+      try {
+        renderApplicationDossier(document.getElementById("applicationDossierCopyContent"), dossierOutput);
+        setText("applicationDossierPreviewReference", dossierOutput.applicationReference);
+        document.getElementById("applicationDossierView").onclick = () => applicationDossierPreview.showModal();
+        document.getElementById("applicationDossierDownload").onclick = () => downloadApplicationDossierPdf(dossierOutput);
+        document.getElementById("applicationDossierPrint").onclick = () => printApplicationDossier(dossierOutput);
+        document.getElementById("applicationDossierPreviewDownload").onclick = () => downloadApplicationDossierPdf(dossierOutput);
+        document.getElementById("applicationDossierPreviewPrint").onclick = () => printApplicationDossier(dossierOutput);
+        applicationDossierActions.hidden = false;
+      } catch {
+        applicationDossierActions.hidden = true;
+      }
+    }
     setText("detailReference", applicationIdentityPresentation(application).visibleReference);
     setText("detailInternalReference", application.application_reference || "Niet beschikbaar");
     setText("detailSupportReference", application.support_reference || "Niet beschikbaar");
@@ -1892,6 +1967,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   });
 
+  applicationDossierPreviewClose.addEventListener("click", () => applicationDossierPreview.close());
   promote.addEventListener("click", ()=>confirmation.showModal());
   confirmation.addEventListener("close", async ()=>{
     if (confirmation.returnValue !== "confirm" || !canPromoteApplication(selectedDetail)) return;
@@ -2009,6 +2085,66 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       setDossierLifecycleBusy(false);
       if (selectedDetail) renderDossierLifecycle(selectedDetail);
       if (completed) focusDossierLifecycle(selectedDetail?.dossier_lifecycle, dossierLifecycleButtons, dossierLifecycleTitle);
+    }
+  });
+
+  dossierPurge.addEventListener("click", ()=>{
+    if (dossierPurgeBusy || dossierPurge.hidden || !selectedDetail) return;
+    pendingDossierPurge = {
+      detail: selectedDetail,
+      selectionRequestId: detailRequestId,
+    };
+    dossierPurgeReason.value = "";
+    dossierPurgeReason.setCustomValidity("");
+    dossierPurgeDialog.returnValue = "";
+    dossierPurgeDialog.showModal();
+    dossierPurgeReason.focus();
+  });
+  dossierPurgeReason.addEventListener("input", ()=>dossierPurgeReason.setCustomValidity(""));
+  dossierPurgeCancel.addEventListener("click", ()=>dossierPurgeDialog.close("cancel"));
+  dossierPurgeForm.addEventListener("submit", (event)=>{
+    const reason = dossierPurgeReason.value.trim();
+    if (reason.length >= 1 && reason.length <= 500) return;
+    event.preventDefault();
+    dossierPurgeReason.setCustomValidity("Vul een korte reden in.");
+    dossierPurgeReason.reportValidity();
+  });
+  dossierPurgeDialog.addEventListener("close", async ()=>{
+    const command = pendingDossierPurge;
+    pendingDossierPurge = null;
+    if (dossierPurgeDialog.returnValue !== "confirm" || !command || dossierPurgeBusy) return;
+    if (command.selectionRequestId !== detailRequestId || selectedDetail !== command.detail) {
+      dossierLifecycleMessage.textContent = "De dossierselectie is gewijzigd. Open de actie opnieuw vanuit het actuele dossier.";
+      return;
+    }
+    let input;
+    try {
+      input = dossierPurgeRequest(command.detail, dossierPurgeReason.value, crypto.randomUUID());
+    } catch {
+      dossierLifecycleMessage.textContent = "Vul een geldige reden in en probeer opnieuw.";
+      return;
+    }
+    dossierPurgeBusy = true;
+    dossierPurge.disabled = true;
+    dossierPurgeConfirm.disabled = true;
+    dossierLifecycleMessage.textContent = "Dossier wordt permanent verwijderd.";
+    try {
+      const { data, error } = await client.rpc("purge_dossier_v1", input);
+      if (error
+          || data?.quote_request_id !== command.detail.quote_request_id
+          || typeof data?.replayed !== "boolean") throw new Error(error?.message || "DOSSIER_PURGE_FAILED");
+      clearDetail();
+      await listController.refresh();
+      listMessage.textContent = "Dossier is permanent verwijderd.";
+    } catch (error) {
+      dossierLifecycleMessage.textContent = error instanceof Error && error.message.includes("OFFICIAL_QUOTATION_EXISTS")
+        ? "Dit dossier heeft een officiële offerte en kan niet permanent worden verwijderd."
+        : "Permanent verwijderen is niet uitgevoerd. Vernieuw het dossier en probeer opnieuw.";
+      if (selectedDetail) await refreshDossierPurgeEligibility(selectedDetail, detailRequestId);
+    } finally {
+      dossierPurgeBusy = false;
+      dossierPurgeConfirm.disabled = false;
+      if (selectedDetail) dossierPurge.disabled = false;
     }
   });
 

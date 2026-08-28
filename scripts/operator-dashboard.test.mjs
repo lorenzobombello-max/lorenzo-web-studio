@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, focusDossierLifecycle, focusIntakeLifecycle, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260828-quotation-orchestration";
+const OPERATOR_ASSET_RELEASE = "20260828-dossier-purge-ui";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -371,8 +371,10 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 4);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 6);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
+  assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
+  assert.match(script, /client\.rpc\("purge_dossier_v1"/);
   assert.doesNotMatch(script, /localStorage/);
 });
 
@@ -688,7 +690,7 @@ test("dossier lifecycle concurrency errors require refresh without automatic ret
   assert.doesNotMatch(dossierLifecycleError("internal SQL detail").message, /SQL|postgres|internal/i);
 });
 
-test("dossier lifecycle UI is minimal, non-destructive, and uses the Edge refresh flow", async () => {
+test("dossier lifecycle UI keeps reversible Edge actions separate from owner-only permanent deletion", async () => {
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   assert.match(html, /id="dossierLifecycleDossier"/);
   assert.match(html, /data-dossier-lifecycle-action="archive_dossier"[^>]*hidden>Archiveren</);
@@ -696,7 +698,10 @@ test("dossier lifecycle UI is minimal, non-destructive, and uses the Edge refres
   assert.match(html, /data-dossier-lifecycle-action="trash_dossier"[^>]*hidden>Naar prullenbak</);
   assert.match(html, /data-dossier-lifecycle-action="restore_dossier"[^>]*hidden>Herstellen uit prullenbak</);
   assert.match(html, /id="dossierLifecycleReason"[^>]*maxlength="500"[^>]*required/);
-  assert.doesNotMatch(html, /Permanent verwijderen|Definitief verwijderen|Hard delete|Purge/i);
+  assert.match(html, /id="dossierPurge"[^>]*hidden>Permanent verwijderen</);
+  assert.match(html, /id="dossierPurgeDialog"/);
+  assert.match(html, /id="dossierPurgeReason"[^>]*maxlength="500"[^>]*required/);
+  assert.match(html, /Dit kan niet ongedaan worden gemaakt/);
   assert.match(dossierLifecycleAction("trash_dossier").description, /niet permanent verwijderd/i);
   assert.match(dossierLifecycleAction("trash_dossier").description, /niet hard gedeletet/i);
   assert.match(dossierLifecycleAction("trash_dossier").description, /Herstellen uit prullenbak/i);
@@ -706,8 +711,32 @@ test("dossier lifecycle UI is minimal, non-destructive, and uses the Edge refres
   assert.match(script, /command\.selectionRequestId !== detailRequestId \|\| !locatorMatchesApplication\(command\.locator, selectedDetail\)/);
   assert.match(script, /refreshAfterOperatorMutation\([\s\S]{0,300}\(\)=>invoke\(input\)[\s\S]{0,300}\(\)=>detailRequestId/);
   assert.match(script, /if \(outcome\.refresh\) await refreshMutationDetail\(command\.locator, command\.selectionRequestId\)/);
-  assert.doesNotMatch(script, /client\.rpc\([^)]*(?:dossier|lifecycle)/i);
-  assert.doesNotMatch(script, /service_role|hard_delete|purge_dossier|delete_dossier/i);
+  assert.match(script, /currentIdentity\?\.status !== "ACTIVE"[\s\S]{0,160}currentIdentity\.role !== "owner"/);
+  assert.match(script, /client\.rpc\("can_purge_dossier_v1", \{[\s\S]{0,100}p_quote_request_id: detailApplication\.quote_request_id/);
+  assert.match(script, /command\.selectionRequestId !== detailRequestId \|\| selectedDetail !== command\.detail/);
+  assert.match(script, /dossierPurgeRequest\(command\.detail, dossierPurgeReason\.value, crypto\.randomUUID\(\)\)/);
+  assert.match(script, /client\.rpc\("purge_dossier_v1", input\)/);
+  assert.match(script, /clearDetail\(\);[\s\S]{0,80}await listController\.refresh\(\)/);
+  assert.doesNotMatch(script, /service_role|hard_delete|delete_dossier/i);
+});
+
+test("permanent dossier deletion is trashed, owner, server eligibility, reason, and UUID bound", () => {
+  const detail = {
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+    dossier_lifecycle: { state: "TRASHED" },
+  };
+  const owner = { role: "owner", status: "ACTIVE" };
+  assert.equal(canOfferDossierPurge(detail, owner, { can_purge: true, reason: null }), true);
+  assert.equal(canOfferDossierPurge(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }), false);
+  assert.equal(canOfferDossierPurge({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }), false);
+  assert.equal(canOfferDossierPurge(detail, owner, { can_purge: false, reason: "OFFICIAL_QUOTATION_EXISTS" }), false);
+  assert.deepEqual(dossierPurgeRequest(detail, "  Lokale testdata opschonen  ", "a1800000-0000-4000-8000-000000000031"), {
+    p_quote_request_id: detail.quote_request_id,
+    p_reason: "Lokale testdata opschonen",
+    p_idempotency_key: "a1800000-0000-4000-8000-000000000031",
+  });
+  assert.throws(()=>dossierPurgeRequest(detail, "   ", "a1800000-0000-4000-8000-000000000031"), /INVALID_DOSSIER_PURGE_REQUEST/);
+  assert.throws(()=>dossierPurgeRequest(detail, "Reden", "geen-uuid"), /INVALID_DOSSIER_PURGE_REQUEST/);
 });
 
 test("successful dossier transition focuses only an action allowed by refreshed detail", () => {

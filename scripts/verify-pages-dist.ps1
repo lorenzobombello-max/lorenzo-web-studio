@@ -27,6 +27,11 @@ $requiredRootEntries = @(
   "site.webmanifest"
 )
 
+$requiredPublishedFiles = @(
+  "assets/css/application-dossier-print.css",
+  "assets/js/application-dossier-copy.js"
+)
+
 $forbiddenPublicPaths = @(
   "pages/404.html",
   "pages/project-1.html",
@@ -63,6 +68,13 @@ $missingRequired = @()
 foreach ($entry in $requiredRootEntries) {
   if (-not (Test-Path (Join-Path $distPath $entry))) {
     $missingRequired += $entry
+  }
+}
+
+$missingPublishedFiles = @()
+foreach ($entry in $requiredPublishedFiles) {
+  if (-not (Test-Path (Join-Path $distPath $entry) -PathType Leaf)) {
+    $missingPublishedFiles += $entry
   }
 }
 
@@ -273,6 +285,7 @@ $forbiddenUnique = @($forbidden | Sort-Object -Unique)
 $brokenLinksUnique = @($brokenLinks | Sort-Object -Unique)
 $functionMetaMismatchList = @($functionMetaMismatches)
 $missingRequiredList = @($missingRequired)
+$missingPublishedFileList = @($missingPublishedFiles)
 
 $report = [ordered]@{
   distPath = $distPath.ToString()
@@ -289,6 +302,7 @@ $report = [ordered]@{
   operatorAuthCheckCount = $operatorRequiredPaths.Count
   operatorAuthMismatches = @($operatorAuthMismatches)
   requiredRootMissing = $missingRequiredList
+  requiredPublishedFilesMissing = $missingPublishedFileList
   publishedLegacyPaths = $publishedLegacyPaths
 }
 
@@ -304,6 +318,7 @@ Write-Host "FUNCTION_META_MISMATCHES=$($functionMetaMismatchList.Count)"
 Write-Host "SOCIAL_META_MISMATCHES=$($socialMetaMismatches.Count)"
 Write-Host "OPERATOR_AUTH_MISMATCHES=$($operatorAuthMismatches.Count)"
 Write-Host "REQUIRED_MISSING=$($missingRequiredList.Count)"
+Write-Host "REQUIRED_PUBLISHED_FILES_MISSING=$($missingPublishedFileList.Count)"
 Write-Host "PUBLISHED_LEGACY_PATHS=$($publishedLegacyPaths.Count)"
 
 $hasFailures = $false
@@ -313,6 +328,7 @@ if ($functionMetaMismatchList.Count -ne 0) { $hasFailures = $true }
 if ($socialMetaMismatches.Count -ne 0) { $hasFailures = $true }
 if ($operatorAuthMismatches.Count -ne 0) { $hasFailures = $true }
 if ($missingRequiredList.Count -ne 0) { $hasFailures = $true }
+if ($missingPublishedFileList.Count -ne 0) { $hasFailures = $true }
 if ($publishedLegacyPaths.Count -ne 0) { $hasFailures = $true }
 
 if ($hasFailures) {

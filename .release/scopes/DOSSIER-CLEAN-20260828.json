@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "DOSSIER-CLEAN-20260828",
+  "baseRemoteMainSha": "08d48d6bdc1a202fb5966f031ada972bf3bf8f85",
+  "allowedPaths": [
+    ".release/scopes/DOSSIER-CLEAN-20260828.json",
+    "assets/css/application-dossier-print.css",
+    "assets/css/intake.css",
+    "assets/css/operator-dashboard.css",
+    "assets/js/application-dossier-copy.js",
+    "assets/js/application-dossier-copy.test.ts",
+    "assets/js/intake.js",
+    "assets/js/intake-output-rendering.test.ts",
+    "assets/js/operator-dashboard-guard.mjs",
+    "assets/js/operator-dashboard.js",
+    "operator/dashboard/index.html",
+    "pages/intake.html",
+    "scripts/dossier-hard-delete-concurrency.integration.cjs",
+    "scripts/operator-dashboard.test.mjs",
+    "scripts/prepare-pages-dist.ps1",
+    "scripts/verify-pages-dist.ps1",
+    "supabase/functions/_shared/submitted-application-output.test.ts",
+    "supabase/functions/_shared/submitted-application-output.ts",
+    "supabase/functions/commercial-operator-command/index.ts",
+    "supabase/migrations/20260828231000_add_application_intake_automation_foundation_v1.sql",
+    "supabase/migrations/20260828232000_add_application_intake_automation_claims_v1.sql",
+    "supabase/migrations/20260828233000_add_application_intake_automation_actions_v1.sql",
+    "supabase/migrations/20260828233500_expose_application_approval_mail_context.sql",
+    "supabase/migrations/20260828234000_add_application_intake_automation_scheduler_v1.sql",
+    "supabase/migrations/20260828235000_exclude_trashed_dossiers_from_personal_queue.sql",
+    "supabase/migrations/20260828235500_add_dossier_hard_delete_authority_v1.sql",
+    "supabase/tests/dossier_hard_delete_authority_v1.sql",
+    "supabase/tests/operator_personal_dossier_queue.sql"
+  ],
+  "protectedChanges": [
+    "assets/css/application-dossier-print.css",
+    "assets/css/intake.css",
+    "assets/css/operator-dashboard.css",
+    "assets/js/intake.js",
+    "assets/js/intake-output-rendering.test.ts",
+    "assets/js/operator-dashboard-guard.mjs",
+    "assets/js/operator-dashboard.js",
+    "operator/dashboard/index.html",
+    "pages/intake.html",
+    "scripts/operator-dashboard.test.mjs",
+    "scripts/prepare-pages-dist.ps1",
+    "scripts/verify-pages-dist.ps1"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": true,
+    "source": {
+      "approvedTrashCheckpoint": "5f122954e3e8685537ebff37fe36f9629d606446",
+      "approvedPurgeCheckpoint": "5c263209efb8e3887e3f2eab0f135ac50bcaceda",
+      "approvedOutputCheckpoint": "b669ac9fbc5cbf6fe866baf99f831a97f77f715c"
+    },
+    "forwardPortProof": "The release branch starts at the exact remote-main authority. Only the paths enumerated in allowedPaths are forward-ported; test-production-release.ps1 proves remote main remains the merge base and rejects every undeclared path."
+  },
+  "migrationPlan": {
+    "alreadyLiveSourceHistoryOnly": [
+      "20260828231000_add_application_intake_automation_foundation_v1.sql",
+      "20260828232000_add_application_intake_automation_claims_v1.sql",
+      "20260828233000_add_application_intake_automation_actions_v1.sql",
+      "20260828233500_expose_application_approval_mail_context.sql",
+      "20260828234000_add_application_intake_automation_scheduler_v1.sql"
+    ],
+    "alreadyLiveAction": "record-only-never-reapply",
+    "newOrderedMigrations": [
+      "20260828235000_exclude_trashed_dossiers_from_personal_queue.sql",
+      "20260828235500_add_dossier_hard_delete_authority_v1.sql"
+    ]
+  },
+  "edgeFunctionPlan": {
+    "deploy": [
+      "commercial-operator-command"
+    ],
+    "doNotDeploy": [
+      "application-intake-automation"
+    ],
+    "requiredSourceDependency": "supabase/functions/_shared/submitted-application-output.ts"
+  },
+  "pagesPlan": {
+    "requiredSharedAssets": [
+      "assets/js/application-dossier-copy.js",
+      "assets/css/application-dossier-print.css"
+    ],
+    "packagingFiles": [
+      "scripts/prepare-pages-dist.ps1",
+      "scripts/verify-pages-dist.ps1"
+    ]
+  },
+  "forbiddenActions": [
+    "push",
+    "deploy",
+    "production-migration",
+    "function-deployment",
+    "pages-publication",
+    "customer-data-mutation",
+    "purge"
+  ]
+}

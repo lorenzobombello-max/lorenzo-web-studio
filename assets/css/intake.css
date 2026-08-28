@@ -1,3 +1,11 @@
+.intake-dossier-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
+.application-dossier-copy { text-align: left; }
+.application-dossier-copy section { margin-top: 1.5rem; }
+.application-dossier-copy dl { margin: 0; }
+.application-dossier-copy dl div { display: grid; grid-template-columns: minmax(9rem, 14rem) 1fr; gap: 1rem; padding: .65rem 0; border-bottom: 1px solid rgba(31, 51, 43, .14); }
+.application-dossier-copy dt { font-weight: 700; }
+.application-dossier-copy dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .application-dossier-copy dl div { grid-template-columns: 1fr; gap: .2rem; } }
 .intake-page {
   --color-bg: #0b1118;
   --color-surface: #131d26;
