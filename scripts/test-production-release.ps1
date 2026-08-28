@@ -3,6 +3,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ScopeFile,
   [string]$ContractFile = ".release/production-preservation.json",
+  [ValidateSet("PrePublication", "PostPublication")]
+  [string]$AuthorityMode = "PrePublication",
   [switch]$SkipFetch
 )
 
@@ -51,17 +53,41 @@ try {
   if ($remoteSha -ne $trueRemoteSha) {
     throw "HARD STOP: fetched $remoteRef ($remoteSha) differs from true remote main ($trueRemoteSha)"
   }
-  if ($scope.baseRemoteMainSha -ne $remoteSha) {
-    throw "HARD STOP: scope base $($scope.baseRemoteMainSha) is not current remote main $remoteSha"
+
+  $baseSha = [string]$scope.baseRemoteMainSha
+  $releaseSha = if ($scope.PSObject.Properties.Name -contains "releaseSha") { [string]$scope.releaseSha } else { "" }
+  $authoritySha = $baseSha
+  $diffTarget = "HEAD"
+
+  if ($AuthorityMode -eq "PostPublication") {
+    if ([string]::IsNullOrWhiteSpace($releaseSha)) {
+      throw "HARD STOP: post-publication mode requires scope releaseSha"
+    }
+    Invoke-Git rev-parse --verify "$releaseSha^{commit}" | Out-Null
+    $releaseParent = ([string](Invoke-Git rev-parse "$releaseSha^" | Select-Object -First 1)).Trim()
+    $releaseMergeBase = ([string](Invoke-Git merge-base $baseSha $releaseSha | Select-Object -First 1)).Trim()
+    if ($releaseParent -ne $baseSha -or $releaseMergeBase -ne $baseSha) {
+      throw "HARD STOP: release $releaseSha is not the single forward commit from base $baseSha"
+    }
+    $headReleaseMergeBase = ([string](Invoke-Git merge-base HEAD $releaseSha | Select-Object -First 1)).Trim()
+    if ($headReleaseMergeBase -ne $releaseSha) {
+      throw "HARD STOP: HEAD does not contain published release $releaseSha"
+    }
+    $authoritySha = $releaseSha
+    $diffTarget = $releaseSha
   }
 
-  $mergeBase = ([string](Invoke-Git merge-base HEAD $remoteRef | Select-Object -First 1)).Trim()
+  if ($authoritySha -ne $remoteSha) {
+    throw "HARD STOP: $AuthorityMode authority $authoritySha is not current remote main $remoteSha"
+  }
+
+  $mergeBase = ([string](Invoke-Git merge-base $baseSha $diffTarget | Select-Object -First 1)).Trim()
   $behindCount = [int](Invoke-Git rev-list --count "HEAD..$remoteRef" | Select-Object -First 1)
-  if ($mergeBase -ne $remoteSha -or $behindCount -ne 0) {
-    throw "HARD STOP: release branch is not forward-only from current remote main $remoteSha"
+  if ($mergeBase -ne $baseSha -or $behindCount -ne 0) {
+    throw "HARD STOP: release is not forward-only from historical base $baseSha"
   }
 
-  $committed = Invoke-Git diff --name-only "$remoteRef...HEAD"
+  $committed = Invoke-Git diff --name-only "$baseSha..$diffTarget"
   $staged = Invoke-Git diff --cached --name-only
   $unstaged = Invoke-Git diff --name-only
   $untracked = Invoke-Git ls-files --others --exclude-standard
@@ -77,9 +103,12 @@ try {
   $generatedUnexpected = @($generatedChanged | Where-Object { -not (Test-PathPattern $_ @($scope.generatedArtifactChanges)) })
 
   Write-Host "PRODUCTION_AUTHORITY=$remoteSha"
+  Write-Host "AUTHORITY_MODE=$AuthorityMode"
+  Write-Host "HISTORICAL_RELEASE_BASE=$baseSha"
+  if ($releaseSha) { Write-Host "PUBLISHED_RELEASE=$releaseSha" }
   Write-Host "RELEASE_MERGE_BASE=$mergeBase"
   Write-Host "EXACT_DIFF_BEGIN"
-  & git diff --no-ext-diff $remoteRef --
+  & git diff --no-ext-diff "$baseSha..$diffTarget" --
   Write-Host "EXACT_DIFF_END"
   Write-Host "STAGED_FILES_BEGIN"
   $staged | ForEach-Object { Write-Host $_ }
@@ -91,7 +120,7 @@ try {
   Write-Host "PROTECTED_UNEXPECTED_CHANGES=$($protectedUnexpected.Count)"
   Write-Host "GENERATED_ARTIFACT_VIOLATIONS=$($generatedUnexpected.Count)"
 
-  & git diff --check $remoteRef
+  & git diff --check "$baseSha..$diffTarget"
   if ($LASTEXITCODE -ne 0) { throw "HARD STOP: git diff --check failed" }
 
   if ($scope.historicalSourceUse.used -and [string]::IsNullOrWhiteSpace($scope.historicalSourceUse.forwardPortProof)) {

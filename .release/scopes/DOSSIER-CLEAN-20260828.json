@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "releaseId": "DOSSIER-CLEAN-20260828",
   "baseRemoteMainSha": "08d48d6bdc1a202fb5966f031ada972bf3bf8f85",
+  "releaseSha": "6c3cf9f6bf2580adfa5de689c260a344be8e3fa3",
   "allowedPaths": [
     ".release/scopes/DOSSIER-CLEAN-20260828.json",
     "assets/css/application-dossier-print.css",
@@ -54,7 +55,7 @@
       "approvedPurgeCheckpoint": "5c263209efb8e3887e3f2eab0f135ac50bcaceda",
       "approvedOutputCheckpoint": "b669ac9fbc5cbf6fe866baf99f831a97f77f715c"
     },
-    "forwardPortProof": "The release branch starts at the exact remote-main authority. Only the paths enumerated in allowedPaths are forward-ported; test-production-release.ps1 proves remote main remains the merge base and rejects every undeclared path."
+    "forwardPortProof": "The immutable release is the single forward commit from baseRemoteMainSha to releaseSha. test-production-release.ps1 validates remote main against the phase authority while always checking the historical base-to-release diff against allowedPaths and protectedChanges."
   },
   "migrationPlan": {
     "alreadyLiveSourceHistoryOnly": [
