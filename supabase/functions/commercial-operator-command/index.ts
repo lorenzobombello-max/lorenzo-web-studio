@@ -23,7 +23,10 @@ import {
   type QuotationRuntimeOptions,
 } from "./quotation-runtime.ts";
 import { renderQuotationDocxBytes } from "./quotation-renderer-edge.ts";
-import { loadSubmittedApplicationOutputForOperator } from "../_shared/submitted-application-output.ts";
+import {
+  enrichOperatorApplicationDetailWithOutput,
+  loadSubmittedApplicationOutputForOperator,
+} from "../_shared/submitted-application-output.ts";
 import { buildCustomerRequestUploadUrl, deriveCustomerRequestUploadCapabilityToken, hashCustomerRequestUploadCapabilityToken } from "../_shared/customer-request-upload-capability.ts";
 import {
   createApprovalTokenForIdempotencyKey,
@@ -737,8 +740,7 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       if (input.action === "get_application_detail" && data?.request_kind === "website") {
         const service = serviceClient();
         const context = await loadSubmittedApplicationOutputForOperator(service, data.quote_request_id);
-        if (!context || context.requestId !== data.quote_request_id) throw new Error("APPLICATION_OUTPUT_UNAVAILABLE");
-        return { ...data, application: context.output };
+        return enrichOperatorApplicationDetailWithOutput(data, context);
       }
       return data;
     },

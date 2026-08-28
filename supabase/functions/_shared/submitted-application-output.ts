@@ -7,6 +7,19 @@ export interface SubmittedApplicationOutputContext {
   output: ApplicationOutput;
 }
 
+export function enrichOperatorApplicationDetailWithOutput(
+  detail: Record<string, unknown>,
+  context: SubmittedApplicationOutputContext | null,
+): Record<string, unknown> {
+  const requestId = detail.quote_request_id;
+  if (context && context.requestId === requestId) return { ...detail, application: context.output };
+
+  const lifecycle = record(detail.dossier_lifecycle);
+  if (lifecycle?.state === "TRASHED") return { ...detail, application: null };
+
+  throw new Error("APPLICATION_OUTPUT_UNAVAILABLE");
+}
+
 function isUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

@@ -739,6 +739,14 @@ test("permanent dossier deletion is trashed, owner, server eligibility, reason, 
   assert.throws(()=>dossierPurgeRequest(detail, "Reden", "geen-uuid"), /INVALID_DOSSIER_PURGE_REQUEST/);
 });
 
+test("legacy trash detail keeps lifecycle and purge eligibility reachable without output controls", async () => {
+  const script = await read("assets/js/operator-dashboard.js");
+  assert.match(script, /const dossierOutput = application\.application;\s*applicationDossierActions\.hidden = true;\s*if \(isWebsite && dossierOutput\)/);
+  assert.match(script, /renderDossierLifecycle\(application\);/);
+  assert.match(script, /void refreshDossierPurgeEligibility\(detailApplication, detailRequestId\);/);
+  assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
+});
+
 test("successful dossier transition focuses only an action allowed by refreshed detail", () => {
   const focused = [];
   const buttons = [

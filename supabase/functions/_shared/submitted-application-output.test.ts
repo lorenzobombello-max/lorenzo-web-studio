@@ -1,5 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import { assertRejects } from "jsr:@std/assert@1";
 import {
+  enrichOperatorApplicationDetailWithOutput,
   loadSubmittedApplicationOutput,
   loadSubmittedApplicationOutputForOperator,
 } from "./submitted-application-output.ts";
@@ -160,4 +162,44 @@ Deno.test("operator loader rejects malformed or tampered integrity and remains f
 
   assertEquals(result, null);
   assertEquals(failures, ["integrity_verification_failed"]);
+});
+
+Deno.test("legacy trashed detail remains available when modern submitted output is absent", () => {
+  const detail = {
+    quote_request_id: requestId,
+    request_kind: "website",
+    dossier_lifecycle: { state: "TRASHED", revision: 3 },
+  };
+
+  assertEquals(enrichOperatorApplicationDetailWithOutput(detail, null), {
+    ...detail,
+    application: null,
+  });
+});
+
+Deno.test("non-trashed detail remains fail closed when submitted output is absent", async () => {
+  await assertRejects(
+    async () => enrichOperatorApplicationDetailWithOutput({
+      quote_request_id: requestId,
+      request_kind: "website",
+      dossier_lifecycle: { state: "ACTIVE", revision: 3 },
+    }, null),
+    Error,
+    "APPLICATION_OUTPUT_UNAVAILABLE",
+  );
+});
+
+Deno.test("operator detail enrichment rejects output from another dossier", async () => {
+  await assertRejects(
+    async () => enrichOperatorApplicationDetailWithOutput({
+      quote_request_id: requestId,
+      request_kind: "website",
+      dossier_lifecycle: { state: "ACTIVE", revision: 3 },
+    }, {
+      requestId: "44444444-4444-4444-8444-444444444444",
+      output: {} as never,
+    }),
+    Error,
+    "APPLICATION_OUTPUT_UNAVAILABLE",
+  );
 });

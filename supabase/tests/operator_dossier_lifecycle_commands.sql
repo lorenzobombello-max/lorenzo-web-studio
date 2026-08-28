@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(53);
+select plan(57);
 
 select has_function(
   'public',
@@ -382,18 +382,51 @@ select throws_ok(
   $$select pg_temp.execute_operator_dossier_lifecycle_command_v1('d3752349-3489-4c19-bd03-f0cc076b5607','ARCHIVED',5,'f4400000-0000-4000-8000-000000000009','Invalid archive')$$,
   'P0001', 'INVALID_OPERATOR_DOSSIER_TRANSITION', 'invalid self-transition is rejected'
 );
-select throws_ok(
-  $$select pg_temp.execute_operator_dossier_lifecycle_command_v1('f4100000-0000-4000-8000-000000000001','TRASHED',2,'f4400000-0000-4000-8000-000000000010','Unauthorized trash')$$,
-  '42501', 'LEGACY_TEST_CLEANUP_AUTHORITY_REQUIRED', 'trash requires reviewed exact-11 authority'
+select is(
+  pg_temp.execute_operator_dossier_lifecycle_command_v1(
+    'f4100000-0000-4000-8000-000000000001', 'TRASHED', 2,
+    'f4400000-0000-4000-8000-000000000010', 'Trash current test dossier'
+  )->>'state',
+  'TRASHED',
+  'current production dossier moves to trash without legacy cleanup authority'
+);
+select is(
+  (select state from lws_internal.operator_dossier_states where quote_request_id = 'f4100000-0000-4000-8000-000000000001'),
+  'TRASHED',
+  'move-to-trash state remains durable after the command'
+);
+select is(
+  jsonb_array_length(public.list_operator_applications_v2(
+    p_actor_auth_user_id => 'f4000000-0000-4000-8000-000000000002',
+    p_zone => 'ACTIVE', p_search => 'LWS-AAN-2099-0401', p_limit => 10
+  )->'items'),
+  0,
+  'trashed dossier disappears from the active projection'
+);
+select is(
+  jsonb_array_length(public.list_operator_applications_v2(
+    p_actor_auth_user_id => 'f4000000-0000-4000-8000-000000000002',
+    p_zone => 'TRASHED', p_search => 'LWS-AAN-2099-0401', p_limit => 10
+  )->'items'),
+  1,
+  'trashed dossier appears in the trash projection'
 );
 select throws_ok(
-  $$select pg_temp.execute_operator_dossier_lifecycle_command_v1('0696171e-a315-4c03-b402-ba0b689abfbc','TRASHED',0,'f4400000-0000-4000-8000-000000000011','Blocked trash')$$,
-  '55000', 'LEGACY_TEST_CLEANUP_SDF_BLOCKER_PRESENT', 'trash reuses fail-closed commercial blocker authority'
+  $$select pg_temp.execute_operator_dossier_lifecycle_command_v1('f4100000-0000-4000-8000-000000000001','RESTORED',2,'f4400000-0000-4000-8000-000000000013','Stale restore')$$,
+  '40001', 'CONCURRENT_MODIFICATION', 'stale dossier revision remains fail closed after trash'
+);
+select is(
+  pg_temp.execute_operator_dossier_lifecycle_command_v1(
+    '0696171e-a315-4c03-b402-ba0b689abfbc', 'TRASHED', 0,
+    'f4400000-0000-4000-8000-000000000011', 'Trash dossier with protected dependency'
+  )->>'state',
+  'TRASHED',
+  'existing protected dependencies do not block reversible trash placement'
 );
 select is(
   (select state from lws_internal.operator_dossier_states where quote_request_id = '0696171e-a315-4c03-b402-ba0b689abfbc'),
-  'ACTIVE',
-  'blocked trash leaves dossier state unchanged'
+  'TRASHED',
+  'dependency-bearing dossier remains durably trashed while purge stays separate'
 );
 select throws_ok(
   $$select pg_temp.execute_operator_dossier_lifecycle_command_v1('f4100000-0000-4000-8000-000000000099','ARCHIVED',0,'f4400000-0000-4000-8000-000000000012','Missing dossier')$$,
