@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
 import { getOperatorClient } from "./operator-auth-client.mjs";
-import { createOperatorModuleNavigation, operatorModuleFromUrl, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260830-operator-nav-perf-2";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260830-finance-subnav-client-nav";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -9,9 +9,11 @@ const logout = document.querySelector("#operatorDashboardLogout");
 const activeLogout = document.querySelector("#operatorDashboardLogoutActive");
 const dashboard = document.querySelector("#operatorDashboard");
 let moduleNavigation = null;
+let financeNavigation = null;
 
 function redirectToLogin() {
   moduleNavigation?.invalidateIdentity();
+  financeNavigation?.invalidateIdentity();
   window.location.replace(OPERATOR_ROUTES.login);
 }
 
@@ -46,6 +48,7 @@ try {
     gate.hidden = true;
     dashboard.hidden = false;
     const moduleLinks = Array.from(document.querySelectorAll("[data-operator-module]"));
+    const financeLinks = Array.from(document.querySelectorAll("[data-finance-tab]"));
     const dossierWorkspaces = ["internalSmokePanel", "internalSmokeBPanel", "personalQueueWorkspace", "managerWorkspace"]
       .map((id)=>document.getElementById(id)).filter(Boolean);
     let activeModule = operatorModuleFromUrl(window.location.href, identity.role);
@@ -85,16 +88,48 @@ try {
         return true;
       },
     });
+    financeNavigation = createOperatorFinanceNavigation({
+      identity,
+      initialUrl: window.location.href,
+      activateTab: (tab)=>presentFinanceTab(document, tab),
+      pushUrl: (url)=>window.history.pushState(null, "", url),
+      loadTab: async (_tab, context)=>{
+        await startOperatorDashboard({
+          client,
+          functionsBaseUrl,
+          verifiedIdentity: context.identity,
+          isCurrent: context.isCurrent,
+          onAuthorizationFailure: redirectToLogin,
+        });
+        return true;
+      },
+    });
+
+    async function navigateModule(url, options) {
+      const navigated = await moduleNavigation.navigate(url, options);
+      if (operatorModuleFromUrl(url, identity.role) === "finance") {
+        await financeNavigation.navigate(url, { push: false });
+      }
+      return navigated;
+    }
 
     for (const link of moduleLinks) {
       link.addEventListener("click", (event)=>{
         const target = moduleNavigationTarget(event, link);
         if (!target) return;
         event.preventDefault();
-        void moduleNavigation.navigate(target);
+        void navigateModule(target);
       });
     }
-    window.addEventListener("popstate", ()=>void moduleNavigation.navigate(window.location.href, { push: false }));
+    for (const link of financeLinks) {
+      link.addEventListener("click", (event)=>{
+        const target = moduleNavigationTarget(event, link);
+        if (!target || financeTabFromUrl(target, identity.role) !== link.dataset.financeTab) return;
+        event.preventDefault();
+        void financeNavigation.navigate(target);
+      });
+    }
+    window.addEventListener("popstate", ()=>void navigateModule(window.location.href, { push: false }));
   }
   window.addEventListener("pagehide", stopWatching, { once: true });
 } catch {

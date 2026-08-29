@@ -48,36 +48,36 @@ export function financeTabFromUrl(url, role) {
   return FINANCE_TABS.has(tab) ? tab : "overview";
 }
 
-export function createOperatorModuleNavigation({ identity, initialUrl, activateModule, loadModule, pushUrl }) {
+function createOperatorNavigation({ identity, initialUrl, routeFromUrl, activateRoute, loadRoute, pushUrl }) {
   let verifiedIdentity = identity;
   let currentUrl = new URL(initialUrl, "https://operator.invalid");
-  let currentModule = operatorModuleFromUrl(currentUrl, identity?.role);
+  let currentRoute = routeFromUrl(currentUrl, identity?.role);
   let generation = 0;
-  const initialized = new Set([currentModule]);
+  const initialized = new Set([currentRoute]);
   const initializing = new Map();
 
   async function navigate(url, { push = true } = {}) {
     if (!verifiedIdentity) return false;
     const nextUrl = new URL(url, currentUrl);
-    const module = operatorModuleFromUrl(nextUrl, verifiedIdentity.role);
+    const route = routeFromUrl(nextUrl, verifiedIdentity.role);
     currentUrl = nextUrl;
-    currentModule = module;
+    currentRoute = route;
     const requestGeneration = ++generation;
     if (push) pushUrl(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
-    activateModule(module, nextUrl);
-    if (initialized.has(module)) return true;
-    if (!initializing.has(module)) {
-      const initialization = Promise.resolve(loadModule(module, {
+    activateRoute(route, nextUrl);
+    if (initialized.has(route)) return true;
+    if (!initializing.has(route)) {
+      const initialization = Promise.resolve(loadRoute(route, {
         identity: verifiedIdentity,
         url: nextUrl,
-        isCurrent: ()=>Boolean(verifiedIdentity) && currentModule === module,
+        isCurrent: ()=>Boolean(verifiedIdentity) && currentRoute === route,
       })).then((loaded)=>{
-        if (loaded !== false) initialized.add(module);
+        if (loaded !== false) initialized.add(route);
         return loaded;
-      }).finally(()=>initializing.delete(module));
-      initializing.set(module, initialization);
+      }).finally(()=>initializing.delete(route));
+      initializing.set(route, initialization);
     }
-    const loaded = await initializing.get(module);
+    const loaded = await initializing.get(route);
     return Boolean(verifiedIdentity) && requestGeneration === generation && loaded !== false;
   }
 
@@ -95,6 +95,28 @@ export function createOperatorModuleNavigation({ identity, initialUrl, activateM
   };
 }
 
+export function createOperatorModuleNavigation({ identity, initialUrl, activateModule, loadModule, pushUrl }) {
+  return createOperatorNavigation({
+    identity,
+    initialUrl,
+    routeFromUrl: operatorModuleFromUrl,
+    activateRoute: activateModule,
+    loadRoute: loadModule,
+    pushUrl,
+  });
+}
+
+export function createOperatorFinanceNavigation({ identity, initialUrl, activateTab, loadTab, pushUrl }) {
+  return createOperatorNavigation({
+    identity,
+    initialUrl,
+    routeFromUrl: financeTabFromUrl,
+    activateRoute: activateTab,
+    loadRoute: loadTab,
+    pushUrl,
+  });
+}
+
 export function presentOperatorModule(root, module) {
   for (const link of root.querySelectorAll("[data-operator-module]")) {
     if (link.dataset.operatorModule === module) link.setAttribute("aria-current", "page");
@@ -102,6 +124,16 @@ export function presentOperatorModule(root, module) {
   }
   for (const panel of root.querySelectorAll("[data-module-panel]")) {
     panel.hidden = panel.dataset.modulePanel !== module;
+  }
+}
+
+export function presentFinanceTab(root, tab) {
+  for (const link of root.querySelectorAll("[data-finance-tab]")) {
+    if (link.dataset.financeTab === tab) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  for (const panel of root.querySelectorAll("[data-finance-tab-panel]")) {
+    panel.hidden = panel.dataset.financeTabPanel !== tab;
   }
 }
 
@@ -2161,13 +2193,7 @@ export async function startOperatorDashboard({
   }
   if (activeModule === "finance") {
     const activeFinanceTab = financeTabFromUrl(window.location.href, currentIdentity.role);
-    const financeTabLinks = Array.from(document.querySelectorAll("[data-finance-tab]"));
-    const financeTabPanels = Array.from(document.querySelectorAll("[data-finance-tab-panel]"));
-    for (const link of financeTabLinks) {
-      if (link.dataset.financeTab === activeFinanceTab) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    }
-    for (const panel of financeTabPanels) panel.hidden = panel.dataset.financeTabPanel !== activeFinanceTab;
+    presentFinanceTab(document, activeFinanceTab);
     if (activeFinanceTab === "websites") {
       const status = document.getElementById("financeWebsiteStatus");
       const count = document.getElementById("financeWebsiteCount");
@@ -2177,6 +2203,7 @@ export async function startOperatorDashboard({
       const empty = document.getElementById("financeProjectEmpty");
       try {
         const response = await client.rpc("get_website_finance_portfolio_v1");
+        if (!isCurrent()) return currentIdentity;
         if (response.error) throw response.error;
         const portfolio = websiteFinancePortfolioPresentation(response.data);
         totals.replaceChildren();
@@ -2249,6 +2276,7 @@ export async function startOperatorDashboard({
       const empty = document.getElementById("financeSdfProjectEmpty");
       try {
         const response = await client.rpc("get_sdf_finance_portfolio_v1");
+        if (!isCurrent()) return currentIdentity;
         if (response.error) throw response.error;
         const portfolio = sdfFinancePortfolioPresentation(response.data);
         totals.replaceChildren();
@@ -2496,6 +2524,7 @@ export async function startOperatorDashboard({
       async function loadDocumentInbox(successMessage = "") {
         try {
           const response = await client.rpc("get_document_inbox_v1", { p_lifecycle_status: null, p_record_classification: "production" });
+          if (!isCurrent()) return;
           if (response.error) throw response.error;
           inboxItems = documentInboxReadPresentation(response.data).items;
           renderInboxList();
@@ -2753,6 +2782,7 @@ export async function startOperatorDashboard({
       const loadBusinessExpensePortfolio = async (successMessage = "")=>{
         try {
           const response = await client.rpc("get_business_expense_portfolio_v1");
+          if (!isCurrent()) return;
           if (response.error) throw response.error;
           const portfolio = businessExpenseFinancePortfolioPresentation(response.data);
           totals.replaceChildren();

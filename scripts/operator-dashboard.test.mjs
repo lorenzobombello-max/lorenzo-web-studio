@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createOperatorModuleNavigation, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
@@ -9,8 +9,8 @@ import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDo
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260830-operator-nav-perf-2";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-upload-ui";
+const OPERATOR_ASSET_RELEASE = "20260830-finance-subnav-client-nav";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-operator-nav-perf-2";
 
 test("all operator dialogs use one exclusive responsive modal type authority", async () => {
   const [html, css] = await Promise.all([
@@ -194,6 +194,54 @@ test("returning to an initializing module reuses one loader", async () => {
   assert.equal(intakeLoads, 1);
 });
 
+test("finance navigation routes every physical tab client-side with verified identity", async () => {
+  const identity = { role: "owner", status: "ACTIVE" };
+  const pushed = [];
+  const activated = [];
+  const loaded = [];
+  const navigation = createOperatorFinanceNavigation({
+    identity,
+    initialUrl: "https://operator.example/operator/dashboard/?module=finance",
+    pushUrl: (url)=>pushed.push(url),
+    activateTab: (tab)=>activated.push(tab),
+    loadTab: async (tab, context)=>loaded.push([tab, context.identity]),
+  });
+  for (const tab of ["websites", "sdf", "workforce", "expenses", "inbox", "owner", "overview"]) {
+    assert.equal(await navigation.navigate(`?module=finance&financeTab=${tab}`), true);
+  }
+  assert.deepEqual(activated, ["websites", "sdf", "workforce", "expenses", "inbox", "owner", "overview"]);
+  assert.deepEqual(loaded.map(([tab])=>tab), ["websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
+  assert.ok(loaded.every(([, cachedIdentity])=>cachedIdentity === identity));
+  assert.equal(pushed.length, 7);
+});
+
+test("finance history navigation does not push and late tab loads stay stale", async () => {
+  const releases = new Map();
+  const completed = [];
+  const pushed = [];
+  const navigation = createOperatorFinanceNavigation({
+    identity: { role: "owner" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=finance",
+    pushUrl: (url)=>pushed.push(url),
+    activateTab: ()=>{},
+    loadTab: (tab, context)=>new Promise((resolve)=>releases.set(tab, ()=>{
+      completed.push([tab, context.isCurrent()]);
+      resolve(true);
+    })),
+  });
+  const websites = navigation.navigate("?module=finance&financeTab=websites");
+  const sdf = navigation.navigate("?module=finance&financeTab=sdf");
+  const owner = navigation.navigate("?module=finance&financeTab=owner", { push: false });
+  releases.get("websites")();
+  releases.get("sdf")();
+  releases.get("owner")();
+  assert.equal(await websites, false);
+  assert.equal(await sdf, false);
+  assert.equal(await owner, true);
+  assert.deepEqual(completed, [["websites", false], ["sdf", false], ["owner", true]]);
+  assert.equal(pushed.length, 2);
+});
+
 test("dashboard guard intercepts local module links and supports browser history", async () => {
   const [html, guard] = await Promise.all([
     read("operator/dashboard/index.html"),
@@ -201,14 +249,28 @@ test("dashboard guard intercepts local module links and supports browser history
   ]);
   assert.match(html, /id="pendingIntakesEntry"[^>]*data-operator-module="intake"/);
   assert.match(html, /href="\/operator\/dashboard\/\?module=dossiers" data-operator-module="dossiers">Terug naar dossiers/);
-  assert.match(guard, /event\.preventDefault\(\);\s*void moduleNavigation\.navigate\(target\)/);
+  assert.match(guard, /event\.preventDefault\(\);\s*void navigateModule\(target\)/);
   assert.match(guard, /window\.history\.pushState\(null, "", url\)/);
-  assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void moduleNavigation\.navigate\(window\.location\.href, \{ push: false \}\)\)/);
+  assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void navigateModule\(window\.location\.href, \{ push: false \}\)\)/);
   assert.match(guard, /verifiedIdentity: context\.identity/);
-  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*window\.location\.replace/);
+  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*window\.location\.replace/);
   assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
   assert.equal((guard.match(/gate\.hidden = true/g) || []).length, 1);
   assert.doesNotMatch(guard, /gate\.hidden = false/);
+});
+
+test("dashboard guard intercepts every Finance tab without repeating auth bootstrap", async () => {
+  const [html, guard] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+  ]);
+  assert.equal((html.match(/data-finance-tab=/g) || []).length, 7);
+  assert.match(guard, /querySelectorAll\("\[data-finance-tab\]"\)/);
+  assert.match(guard, /financeTabFromUrl\(target, identity\.role\) !== link\.dataset\.financeTab/);
+  assert.match(guard, /event\.preventDefault\(\);\s*void financeNavigation\.navigate\(target\)/);
+  assert.match(guard, /verifiedIdentity: context\.identity/);
+  assert.match(guard, /financeNavigation\?\.invalidateIdentity\(\)/);
+  assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
 });
 
 test("dashboard remains hidden until the authorization guard succeeds", async () => {
