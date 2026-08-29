@@ -2838,11 +2838,13 @@ test("Finance expense modals share the fixed official company branding", async (
   assert.doesNotMatch(`${expenseDialog}${documentDialog}`, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
   assert.match(css, /\.finance-modal-brand \{ height:82px;[^}]*gap:1rem;/);
   assert.match(css, /\.finance-modal-brand img \{ width:58px; height:58px;[^}]*object-fit:contain;/);
-  assert.match(css, /@media \(min-width:901px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand img \{ width:82px; height:82px; \}/);
-  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand__name \{ font-size:clamp\(1\.625rem,1\.05vw,2rem\); \}/);
+  assert.match(css, /@media \(min-width:901px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand img \{ width:100px; height:100px; \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand img \{ width:clamp\(6\.875rem,5vw,7\.5rem\); height:clamp\(6\.875rem,5vw,7\.5rem\); \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand__name \{ font-size:clamp\(1\.8rem,1\.05vw,2rem\); \}/);
   assert.doesNotMatch(css, /\.operator-modal--work \.finance-modal-brand(?:\s|\{| img|__name)/);
   assert.match(css, /\.operator-modal--reading \.dossier-preview-dialog__header > div:first-child::before,\r?\n\.operator-modal--action-confirm \.confirmation::before \{/);
   assert.match(css, /\.operator-modal--action-confirm \.confirmation::before \{[^}]*background:url\("\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png"\)[^}]*font-size:clamp\(1\.35rem,1\.35vw,1\.9rem\)/);
+  assert.match(css, /@media \(min-width:901px\) \{ \.operator-modal--reading \.dossier-preview-dialog__header > div:first-child::before,\.operator-modal--action-confirm \.confirmation::before \{ min-height:clamp\(6\.25rem,6vw,7\.5rem\);[^}]*background-size:clamp\(6\.25rem,6vw,7\.5rem\) clamp\(6\.25rem,6vw,7\.5rem\); font-size:clamp\(1\.7rem,1\.2vw,2rem\); \}/);
   assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand \{ height:72px;/);
   assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand img \{ width:52px; height:52px;/);
   assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand__name \{ font-size:1\.05rem;/);

@@ -156,9 +156,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .document-inbox-upload-status { min-height:1.4rem; }
 .document-inbox-upload-actions { display:flex; justify-content:flex-end; gap:.65rem; }
 @media (min-width:901px) {
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:112px; padding:1.1rem clamp(2.5rem,4vw,5rem); gap:1.35rem; }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:82px; height:82px; }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:1.5rem; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:132px; padding:1rem clamp(2.5rem,4vw,5rem); gap:1.5rem; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:100px; height:100px; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:1.7rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading { padding:2rem clamp(2.5rem,4vw,5rem) 1.75rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading h2 { font-size:2rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-fields { padding:2.5rem clamp(2.5rem,4vw,5rem); gap:1.5rem 2.25rem; }
@@ -171,9 +171,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 @media (min-width:2000px) {
 	:is(.operator-modal--reading,.operator-modal--work) { font-size:clamp(1rem,.35vw + .55rem,1.125rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:clamp(7rem,6vw,9rem); padding:clamp(1.25rem,1.5vw,2rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.4rem,1.35vw,1.9rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:clamp(5.125rem,4.25vw,6.5rem); height:clamp(5.125rem,4.25vw,6.5rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:clamp(1.625rem,1.05vw,2rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:clamp(9.25rem,6.5vw,10.25rem); padding:clamp(1.15rem,1.35vw,1.75rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.5rem,1.35vw,2rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:clamp(6.875rem,5vw,7.5rem); height:clamp(6.875rem,5vw,7.5rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:clamp(1.8rem,1.05vw,2rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading { padding:clamp(2rem,2vw,2.75rem) clamp(4rem,4.5vw,6.5rem) clamp(1.75rem,1.8vw,2.4rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading h2 { font-size:clamp(2rem,1.55vw,2.4rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-fields { padding:clamp(2.5rem,3.2vw,4.5rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.5rem,1.5vw,2.15rem) clamp(2.25rem,2.25vw,3.25rem); }
@@ -417,6 +417,7 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 .operator-modal--action-confirm .confirmation { padding:clamp(2rem,3vw,4rem); border-top:clamp(.4rem,.5vw,.7rem) solid var(--turquoise); background:var(--turquoise-soft); }
 .operator-modal--reading .dossier-preview-dialog__header > div:first-child::before,
 .operator-modal--action-confirm .confirmation::before { min-height:clamp(4.5rem,5vw,6rem); margin-bottom:clamp(1rem,1.5vw,1.75rem); padding-left:clamp(5.25rem,5.75vw,7rem); display:flex; align-items:center; color:var(--navy); content:"Lorenzo Web Solutions"; background:url("/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png") left center/clamp(4.25rem,4.5vw,5.5rem) clamp(4.25rem,4.5vw,5.5rem) no-repeat; font-size:clamp(1.35rem,1.35vw,1.9rem); font-weight:900; line-height:1.1; }
+@media (min-width:901px) { .operator-modal--reading .dossier-preview-dialog__header > div:first-child::before,.operator-modal--action-confirm .confirmation::before { min-height:clamp(6.25rem,6vw,7.5rem); padding-left:clamp(7.25rem,7vw,8.75rem); background-size:clamp(6.25rem,6vw,7.5rem) clamp(6.25rem,6vw,7.5rem); font-size:clamp(1.7rem,1.2vw,2rem); } }
 .operator-modal--action-confirm .confirmation h2 { font-size:clamp(1.8rem,1.8vw,2.5rem); }
 .operator-modal--action-confirm .confirmation > p:not(.eyebrow) { font-size:clamp(1rem,.75vw,1.2rem); }
 .operator-modal--action-confirm .confirmation__field { margin-top:clamp(1.5rem,1.8vw,2.25rem); gap:clamp(.5rem,.6vw,.8rem); font-size:clamp(.95rem,.7vw,1.1rem); }
