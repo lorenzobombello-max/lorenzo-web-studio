@@ -984,6 +984,35 @@ export function buildIntakeLifecycleCommand(action, lifecycle, reason, idempoten
   };
 }
 
+export function pendingIntakesRequest() {
+  return { action: "list_pending_intakes" };
+}
+
+export function pendingIntakePresentation(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)
+      || !UUID.test(String(item.quote_request_id || ""))
+      || !UUID.test(String(item.intake_id || ""))
+      || typeof item.name !== "string" || !item.name
+      || item.request_kind !== "website"
+      || !["invited", "in_progress"].includes(item.intake_status)) return null;
+  const lifecycle = {
+    intake_id: item.intake_id,
+    effective_access: item.effective_access,
+    access_token_expires_at: item.access_token_expires_at,
+    lifecycle_revision: item.lifecycle_revision,
+  };
+  const access = intakeLifecyclePresentation(lifecycle);
+  if (!access || !item.invitation_created_at) return null;
+  return {
+    lifecycle,
+    access,
+    intake: item.intake_status === "invited"
+      ? { label: "Uitnodiging verstuurd", tone: "amber" }
+      : { label: "Intake gestart", tone: "green" },
+    invitedAt: item.invitation_sent_at || item.invitation_created_at,
+  };
+}
+
 export function dossierLifecyclePresentation(lifecycle) {
   const state = String(lifecycle?.state || "");
   const presentation = DOSSIER_LIFECYCLE_PRESENTATION[state];
@@ -1816,6 +1845,12 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const internalSmokeBStatus = document.getElementById("internalSmokeBStatus");
   const internalSmokeBResultElement = document.getElementById("internalSmokeBResult");
   const managerWorkspace = document.getElementById("managerWorkspace");
+  const pendingIntakesList = document.getElementById("pendingIntakesList");
+  const pendingIntakesEmpty = document.getElementById("pendingIntakesEmpty");
+  const pendingIntakesMessage = document.getElementById("pendingIntakesMessage");
+  const pendingIntakesRefresh = document.getElementById("pendingIntakesRefresh");
+  const pendingIntakeDetail = document.getElementById("pendingIntakeDetail");
+  const pendingLifecycleButtons = Array.from(document.querySelectorAll("[data-pending-lifecycle-action]"));
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
   const listMessage = document.getElementById("applicationListMessage");
@@ -1889,6 +1924,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let pendingDossierPurge = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
+  let pendingIntakeItems = [];
+  let selectedPendingIntake = null;
   let selectedDossierReference = null;
   let quotationActionBusy = false;
 
@@ -2994,6 +3031,93 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   personalQueueWorkspace.hidden = true;
   managerWorkspace.hidden = false;
 
+  function clearPendingIntakeDetail() {
+    selectedPendingIntake = null;
+    pendingIntakeDetail.hidden = true;
+    for (const button of pendingLifecycleButtons) button.hidden = true;
+  }
+
+  function renderPendingIntakeDetail(item) {
+    const presentation = pendingIntakePresentation(item);
+    if (!presentation) return clearPendingIntakeDetail();
+    selectedPendingIntake = item;
+    pendingIntakeDetail.hidden = false;
+    setText("pendingIntakeName", item.name);
+    setText("pendingIntakeOrganization", item.organization || "Niet opgegeven");
+    setText("pendingIntakeEmail", item.email);
+    setText("pendingIntakePhone", item.phone || "Niet opgegeven");
+    setText("pendingIntakeRequestKind", "Website");
+    setText("pendingIntakeWebsiteType", item.website_type);
+    setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
+    setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));
+    setText("pendingIntakeQuoteRequestId", item.quote_request_id);
+    setText("pendingIntakeId", item.intake_id);
+    setBadge("pendingIntakeStatus", presentation.intake.label, presentation.intake.tone);
+    setBadge("pendingIntakeAccess", `Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone);
+    for (const button of pendingLifecycleButtons) {
+      button.hidden = !presentation.access.actions.includes(button.dataset.pendingLifecycleAction);
+      button.disabled = lifecycleBusy;
+    }
+  }
+
+  function renderPendingIntakes(items) {
+    pendingIntakesList.replaceChildren();
+    pendingIntakesEmpty.hidden = items.length > 0;
+    for (const item of items) {
+      const presentation = pendingIntakePresentation(item);
+      if (!presentation) continue;
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "application-list__button";
+      const identity = document.createElement("span");
+      const name = document.createElement("strong");
+      const context = document.createElement("small");
+      name.textContent = item.organization || item.name;
+      context.textContent = `${item.name} · ${formatDate(presentation.invitedAt)} · ${item.website_type}`;
+      identity.append(name, context);
+      const statuses = document.createElement("span");
+      statuses.className = "application-list__statuses";
+      statuses.append(badge(presentation.intake.label, presentation.intake.tone));
+      statuses.append(badge(`Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone));
+      button.append(identity, statuses);
+      if (selectedPendingIntake?.intake_id === item.intake_id) button.setAttribute("aria-current", "true");
+      button.addEventListener("click", ()=>{
+        for (const candidate of pendingIntakesList.querySelectorAll("[aria-current]")) candidate.removeAttribute("aria-current");
+        button.setAttribute("aria-current", "true");
+        renderPendingIntakeDetail(item);
+      });
+      row.append(button);
+      pendingIntakesList.append(row);
+    }
+  }
+
+  async function loadPendingIntakes(message = "") {
+    pendingIntakesRefresh.disabled = true;
+    pendingIntakesMessage.textContent = "Wachtende intakes worden geladen.";
+    try {
+      const result = await invoke(pendingIntakesRequest());
+      pendingIntakeItems = Array.isArray(result?.items)
+        ? result.items.filter((item)=>pendingIntakePresentation(item))
+        : [];
+      const selectedId = selectedPendingIntake?.intake_id;
+      renderPendingIntakes(pendingIntakeItems);
+      const current = pendingIntakeItems.find((item)=>item.intake_id === selectedId);
+      if (current) renderPendingIntakeDetail(current);
+      else clearPendingIntakeDetail();
+      pendingIntakesMessage.textContent = message;
+      return true;
+    } catch {
+      pendingIntakesMessage.textContent = "Wachtende intakes konden niet worden geladen.";
+      return false;
+    } finally {
+      pendingIntakesRefresh.disabled = false;
+    }
+  }
+
+  pendingIntakesRefresh.addEventListener("click", ()=>loadPendingIntakes());
+  await loadPendingIntakes();
+
   function updateLocation(locator) {
     const url = new URL(window.location.href);
     url.searchParams.delete("application");
@@ -3268,6 +3392,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     lifecycleBusy = busy;
     lifecycleConfirm.disabled = busy;
     for (const button of lifecycleButtons) button.disabled = busy;
+    for (const button of pendingLifecycleButtons) button.disabled = busy;
   }
 
   function renderDetail(application) {
@@ -3730,9 +3855,35 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const actionPresentation = intakeLifecycleAction(action);
       if (lifecycleBusy || !presentation?.actions.includes(action) || !actionPresentation || !selectedLocator) return;
       pendingLifecycleAction = {
+        source: "dossier",
         action,
         lifecycle,
         locator: { ...selectedLocator },
+        presentation: actionPresentation,
+      };
+      setText("lifecycleDialogTitle", actionPresentation.title);
+      setText("lifecycleDialogDescription", actionPresentation.description);
+      lifecycleConfirm.textContent = actionPresentation.label;
+      lifecycleConfirm.className = action === "cancel_intake" ? "danger-action" : "primary-action primary-action--compact";
+      lifecycleReason.value = "";
+      lifecycleReason.setCustomValidity("");
+      lifecycleDialog.returnValue = "";
+      lifecycleDialog.showModal();
+      lifecycleReason.focus();
+    });
+  }
+
+  for (const button of pendingLifecycleButtons) {
+    button.addEventListener("click", ()=>{
+      const action = button.dataset.pendingLifecycleAction;
+      const presentation = pendingIntakePresentation(selectedPendingIntake);
+      const actionPresentation = intakeLifecycleAction(action);
+      if (lifecycleBusy || !presentation?.access.actions.includes(action) || !actionPresentation) return;
+      pendingLifecycleAction = {
+        source: "pending",
+        action,
+        lifecycle: presentation.lifecycle,
+        intakeId: selectedPendingIntake.intake_id,
         presentation: actionPresentation,
       };
       setText("lifecycleDialogTitle", actionPresentation.title);
@@ -3773,19 +3924,30 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     try {
       const refresh = await refreshAfterOperatorMutation(
         ()=>invoke(input),
-        (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
+        command.source === "pending"
+          ? async ()=>{
+            await Promise.all([loadPendingIntakes(`${command.presentation.label} is uitgevoerd.`), listController.refresh()]);
+            return { status: pendingIntakeItems.some((item)=>item.intake_id === command.intakeId) ? "refreshed" : "closed" };
+          }
+          : (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
         ()=>detailRequestId,
       );
       completed = refresh.status === "refreshed";
-      if (completed) lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
+      if (completed && command.source !== "pending") lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
     } catch (error) {
       const outcome = intakeLifecycleError(error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED");
-      if (outcome.refresh) await loadDetail(command.locator);
-      lifecycleMessage.textContent = outcome.message;
+      if (command.source === "pending") {
+        if (outcome.refresh) await loadPendingIntakes();
+        pendingIntakesMessage.textContent = outcome.message;
+      } else {
+        if (outcome.refresh) await loadDetail(command.locator);
+        lifecycleMessage.textContent = outcome.message;
+      }
     } finally {
       setLifecycleBusy(false);
       if (selectedDetail?.request_kind === "website") renderIntakeLifecycle(selectedDetail.intake_lifecycle);
-      if (completed) focusIntakeLifecycle(selectedDetail?.intake_lifecycle, lifecycleButtons, lifecycleDossierTitle);
+      if (selectedPendingIntake) renderPendingIntakeDetail(selectedPendingIntake);
+      if (completed && command.source !== "pending") focusIntakeLifecycle(selectedDetail?.intake_lifecycle, lifecycleButtons, lifecycleDossierTitle);
     }
   });
 

@@ -60,6 +60,27 @@ function dependencies(overrides: Record<string, unknown> = {}) {
           next_position: { dossier_date: "2099-01-02T10:20:30+00:00", quote_request_id: userId }
         };
       },
+      executePendingIntakes: async () => {
+        events.push("pending");
+        return {
+          items: [{
+            quote_request_id: "a1800000-0000-4000-8000-000000000091",
+            intake_id: "a1800000-0000-4000-8000-000000000092",
+            name: "Pending prospect",
+            organization: "Prospect BV",
+            email: "pending@example.test",
+            phone: null,
+            request_kind: "website",
+            website_type: "Website op maat",
+            invitation_created_at: "2099-01-01T10:00:00Z",
+            invitation_sent_at: "2099-01-01T10:01:00Z",
+            intake_status: "invited",
+            effective_access: "ACTIVE",
+            access_token_expires_at: "2099-01-08T10:00:00Z",
+            lifecycle_revision: 0,
+          }],
+        };
+      },
       signOperatorCursor: async (position: Record<string, string>, input: Record<string, unknown>)=>{
         events.push("sign");
         return await signOperatorCursor({
@@ -1845,4 +1866,56 @@ Deno.test("quotation business approval promotion exposes only stable public erro
     assertEquals(response.status, status);
     assertEquals(await response.json(), { ok: false, code: responseCode });
   }
+});
+
+Deno.test("pending-intake list uses preflight and returns only the safe DTO", async () => {
+  const harness = dependencies();
+  const response = await handleCommercialOperator(
+    request({ action: "list_pending_intakes" }),
+    harness.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(harness.events, ["preflight", "pending"]);
+  const body = await response.json();
+  assertEquals(body.result.items[0].intake_status, "invited");
+  assertEquals("access_token_hash" in body.result.items[0], false);
+  assertEquals("encrypted_payload" in body.result.items[0], false);
+});
+
+Deno.test("pending-intake list rejects extra input, unauthorized readers, and unsafe database responses", async () => {
+  const invalid = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes", limit: 1 }),
+      invalid.deps,
+    )).status,
+    400,
+  );
+  assertEquals(invalid.events, ["preflight"]);
+
+  const unauthorized = dependencies({
+    authorizeApplicationReader: async () => {
+      throw new Error("APPLICATION_SCOPE_DENIED");
+    },
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes" }),
+      unauthorized.deps,
+    )).status,
+    403,
+  );
+
+  const unsafe = dependencies({
+    executePendingIntakes: async () => ({
+      items: [{ access_token_hash: "forbidden" }],
+    }),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes" }),
+      unsafe.deps,
+    )).status,
+    500,
+  );
 });

@@ -27,6 +27,7 @@ const APPLICATION_ACTIONS = new Set([
   "issue_and_deliver_approved_quotation",
   "list_applications",
   "list_applications_v2",
+  "list_pending_intakes",
   "get_application_facets_v2",
   "get_application_detail",
   "get_assignment_operator_roster",
@@ -213,6 +214,7 @@ type CommercialOperatorDependencies = Readonly<{
   authorizeApplicationReader(jwt: string): PromiseLike<unknown>;
   verifyOperatorCursor(cursor: string, input: Record<string, unknown>): PromiseLike<unknown>;
   executeApplicationListV2(actorAuthUserId: string, input: Record<string, unknown>, position: unknown): PromiseLike<OperatorListCoreResult>;
+  executePendingIntakes(actorAuthUserId: string): PromiseLike<unknown>;
   signOperatorCursor(position: Record<string, string>, input: Record<string, unknown>): PromiseLike<string>;
   executeApplicationFacetsV2(actorAuthUserId: string, input: Record<string, unknown>): PromiseLike<unknown>;
   executeApplicationAction(jwt: string, input: Record<string, unknown>, actorAuthUserId: string): PromiseLike<unknown>;
@@ -300,6 +302,58 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every((key)=>key in value);
 }
+function validatePendingIntakesResult(value: unknown) {
+  const fields = [
+    "quote_request_id",
+    "intake_id",
+    "name",
+    "organization",
+    "email",
+    "phone",
+    "request_kind",
+    "website_type",
+    "invitation_created_at",
+    "invitation_sent_at",
+    "intake_status",
+    "effective_access",
+    "access_token_expires_at",
+    "lifecycle_revision",
+  ];
+  if (
+    !isRecord(value) || !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
+    throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+  }
+  for (const item of value.items) {
+    if (
+      !isRecord(item) || !hasExactKeys(item, fields) ||
+      !UUID.test(String(item.quote_request_id || "")) ||
+      !UUID.test(String(item.intake_id || "")) ||
+      typeof item.name !== "string" || !item.name ||
+      (item.organization !== null && typeof item.organization !== "string") ||
+      typeof item.email !== "string" || !item.email ||
+      (item.phone !== null && typeof item.phone !== "string") ||
+      item.request_kind !== "website" ||
+      typeof item.website_type !== "string" || !item.website_type ||
+      typeof item.invitation_created_at !== "string" ||
+      !item.invitation_created_at ||
+      (item.invitation_sent_at !== null &&
+        typeof item.invitation_sent_at !== "string") ||
+      !["invited", "in_progress"].includes(String(item.intake_status)) ||
+      !["ACTIVE", "INTERRUPTED", "EXPIRED", "CANCELLED"].includes(
+        String(item.effective_access),
+      ) ||
+      typeof item.access_token_expires_at !== "string" ||
+      !item.access_token_expires_at ||
+      !Number.isSafeInteger(item.lifecycle_revision) ||
+      Number(item.lifecycle_revision) < 0
+    ) {
+      throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+    }
+  }
+  return value as { items: Record<string, unknown>[] };
+}
 function validateQuotationBusinessInput(value: unknown): Record<string, unknown> {
   const keys = [
     "commercial_lines", "discount", "scope", "payment_schedule", "validity_days"
@@ -356,6 +410,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
   if (!APPLICATION_ACTIONS.has(action)) throw new RequestError(400, "INVALID_REQUEST");
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
+    : action === "list_pending_intakes"
+    ? new Set(["action"])
     : action === "list_applications_v2"
     ? new Set(["action", "zone", "operational_status", "year", "quarter", "request_kind", "search", "cursor", "limit"])
     : action === "get_application_facets_v2"
@@ -442,7 +498,11 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, quote_request_id: quoteRequestId };
   }
-  if (action === "get_assignment_operator_roster" || action === "get_current_operator_identity") return { action };
+  if (
+    action === "get_assignment_operator_roster" ||
+    action === "get_current_operator_identity" ||
+    action === "list_pending_intakes"
+  ) return { action };
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
     const limit = value.limit === undefined ? 25 : value.limit;
@@ -896,10 +956,22 @@ export async function handleCommercialOperator(request: Request, deps: Commercia
     if (!user || user.id !== sub) throw new RequestError(401, "INVALID_JWT");
     const parsed = await body(request);
     if ("action" in parsed) {
-      if (parsed.action === "list_applications_v2" || parsed.action === "get_application_facets_v2") {
+      if (
+        [
+          "list_applications_v2",
+          "get_application_facets_v2",
+          "list_pending_intakes",
+        ].includes(String(parsed.action))
+      ) {
         await deps.authorizeApplicationReader(jwt);
       }
       const input = validateApplicationAction(parsed);
+      if (input.action === "list_pending_intakes") {
+        const result = validatePendingIntakesResult(
+          await deps.executePendingIntakes(user.id),
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
       if (input.action === "list_applications_v2") {
         const cursorPosition = typeof input.cursor === "string"
           ? await deps.verifyOperatorCursor(input.cursor, input)

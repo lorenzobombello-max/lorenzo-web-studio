@@ -552,6 +552,16 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       if (error) throw new Error(error.message);
       return data;
     },
+        executePendingIntakes: async (actorAuthUserId: string) => {
+          const { data, error } = await serviceClient().rpc(
+            "list_operator_pending_intakes_v1",
+            {
+              p_actor_auth_user_id: actorAuthUserId,
+            },
+          );
+          if (error) throw new Error(error.message);
+          return data;
+        },
     executeApplicationFacetsV2: async (actorAuthUserId: string, input: OperatorApplicationFacetsV2Input)=>{
       const { data, error } = await serviceClient().rpc("get_operator_dossier_facets_v2", {
         p_actor_auth_user_id: actorAuthUserId,
