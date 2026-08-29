@@ -2607,6 +2607,25 @@ test("Finance expense modals share the fixed official company branding", async (
   assert.deepEqual([...documentDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
 });
 
+test("operator dashboard exposes one CSS-only reduced-motion-safe LWS motion system", async () => {
+  const [html, css, script] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css"), read("assets/js/operator-dashboard.js"),
+  ]);
+  for (const token of ["--motion-duration-fast", "--motion-duration-normal", "--motion-duration-slow", "--motion-ease", "--motion-glow", "--motion-distance"]) assert.match(css, new RegExp(`${token}:`));
+  assert.match(css, /@keyframes lws-energy-flow/);
+  assert.match(css, /\.finance-modal-header::after[^}]*animation:lws-energy-flow/);
+  assert.match(css, /\.finance-section-heading::after[^}]*animation:lws-energy-flow/);
+  assert.match(css, /\.business-expense-dialog\[open\][^}]*animation:modal-enter/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+  assert.equal((html.match(/data-finance-tab=/g) || []).length, 6);
+  assert.match(html, /module=finance&amp;financeTab=expenses/);
+  assert.match(html, /id="businessExpenseDialog"/);
+  assert.match(html, /id="supplierDocumentDialog"/);
+  assert.match(script, /client\.rpc\("create_business_expense_v1"/);
+  assert.match(script, /client\.rpc\("create_supplier_document_v1"/);
+  assert.match(script, /client\.rpc\("link_business_expense_document_v1"/);
+});
+
 test("business expense entry UI exposes only the approved authority and create flow", async () => {
   const [html, script, css] = await Promise.all([
     read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
