@@ -1,3 +1,15 @@
+insert into auth.users(id, email) values
+  ('fa000000-0000-4000-8000-000000000099', 'inbox-readonly-owner@example.test')
+on conflict (id) do nothing;
+insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
+  ('fa010000-0000-4000-8000-000000000099', 'fa000000-0000-4000-8000-000000000099', 'Inbox Readonly Owner', 'owner', 'ACTIVE')
+on conflict (operator_id) do nothing;
+
+begin transaction read only;
+select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000099', true);
+select public.get_document_inbox_v1(null, 'production');
+rollback;
+
 begin;
 
 create extension if not exists pgtap with schema extensions;
@@ -77,6 +89,19 @@ select ok(
   and position('for update' in lower(pg_get_functiondef('public.process_document_inbox_item_v1(uuid,bigint)'::regprocedure))) > 0,
   'processing row-locks the item and reuses all three existing authorities'
 );
+select ok(
+  position('for share' in lower(pg_get_functiondef('public.require_document_inbox_owner_v1()'::regprocedure))) = 0
+  and position('for update' in lower(pg_get_functiondef('public.require_document_inbox_owner_v1()'::regprocedure))) = 0
+  and position('for share' in lower(pg_get_functiondef('public.get_document_inbox_v1(text,text)'::regprocedure))) = 0
+  and position('for update' in lower(pg_get_functiondef('public.get_document_inbox_v1(text,text)'::regprocedure))) = 0,
+  'owner authorization and inbox read path require no row lock'
+);
+select ok(
+  position('for update' in lower(pg_get_functiondef('public.approve_document_inbox_item_v1(uuid,bigint,boolean)'::regprocedure))) > 0
+  and position('for update' in lower(pg_get_functiondef('public.reject_document_inbox_item_v1(uuid,bigint,text)'::regprocedure))) > 0
+  and position('for update' in lower(pg_get_functiondef('public.process_document_inbox_item_v1(uuid,bigint)'::regprocedure))) > 0,
+  'approve reject and process retain mutation row locking'
+);
 
 insert into auth.users(id, email) values
   ('fa000000-0000-4000-8000-000000000001', 'inbox-owner@example.test'),
@@ -107,6 +132,10 @@ select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000002
 select throws_ok(
   $$select public.receive_document_inbox_item_v1(repeat('a',64),'invoice.pdf','application/pdf',101)$$,
   '42501', 'DOCUMENT_INBOX_OWNER_REQUIRED', 'active non-owner receive is denied'
+);
+select throws_ok(
+  $$select public.get_document_inbox_v1(null,'production')$$,
+  '42501', 'DOCUMENT_INBOX_OWNER_REQUIRED', 'active non-owner inbox read is denied'
 );
 select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000003', true);
 select throws_ok(
@@ -276,6 +305,8 @@ select throws_ok(
 select public.receive_document_inbox_item_v1(repeat('1',64),'internal-separate.pdf','application/pdf',106,'MANUAL_UPLOAD',null,null,'internal_e2e');
 select is(jsonb_array_length(public.get_document_inbox_v1(null,'production')->'items'), 4, 'production inbox read excludes internal E2E items');
 select is(jsonb_array_length(public.get_document_inbox_v1(null,'internal_e2e')->'items'), 2, 'internal E2E inbox records remain separately readable');
+select is(public.get_document_inbox_v1(null,'production')->>'scope', 'document_inbox', 'inbox read preserves its scope contract');
+select ok(jsonb_typeof(public.get_document_inbox_v1(null,'production')->'items') = 'array', 'inbox read preserves its items array contract');
 
 select * from finish();
 rollback;
