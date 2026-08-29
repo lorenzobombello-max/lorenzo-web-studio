@@ -120,9 +120,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-modal-form { padding:0; }
 .finance-modal-header { position:sticky; z-index:1; top:0; overflow:hidden; background:linear-gradient(145deg,var(--white),var(--turquoise-soft)); border-bottom:1px solid var(--line); }
 .finance-modal-header::after { position:absolute; right:0; bottom:0; left:0; height:2px; content:""; pointer-events:none; background:linear-gradient(90deg,transparent,var(--turquoise),#d9fffb,var(--turquoise),transparent); background-size:220% 100%; box-shadow:0 0 10px var(--motion-glow); animation:lws-energy-flow 1.25s 100ms var(--motion-ease) both; }
-.finance-modal-brand { height:68px; padding:.65rem 2rem; display:flex; align-items:center; gap:.75rem; overflow:hidden; border-bottom:1px solid rgba(194,206,212,.7); background:rgba(255,255,255,.72); }
-.finance-modal-brand img { width:48px; height:48px; flex:0 0 auto; object-fit:contain; }
-.finance-modal-brand__name { color:var(--navy); font-size:1rem; font-weight:800; line-height:1; }
+.finance-modal-brand { height:82px; padding:.75rem 2rem; display:flex; align-items:center; gap:1rem; overflow:hidden; border-bottom:1px solid rgba(194,206,212,.7); background:rgba(255,255,255,.72); }
+.finance-modal-brand img { width:58px; height:58px; flex:0 0 auto; object-fit:contain; }
+.finance-modal-brand__name { color:var(--navy); font-size:1.125rem; font-weight:800; line-height:1.1; }
 .finance-modal-brand__name strong { color:var(--turquoise-deep); font-weight:900; }
 .finance-modal-heading { padding:1.35rem 2rem 1.25rem; }
 .finance-modal-heading h2 { margin:.2rem 0 .35rem; font-size:1.55rem; line-height:1.2; }
@@ -156,9 +156,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .document-inbox-upload-status { min-height:1.4rem; }
 .document-inbox-upload-actions { display:flex; justify-content:flex-end; gap:.65rem; }
 @media (min-width:901px) {
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:96px; padding:1rem clamp(2.5rem,4vw,5rem); gap:1.15rem; }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:68px; height:68px; }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:1.25rem; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:112px; padding:1.1rem clamp(2.5rem,4vw,5rem); gap:1.35rem; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:82px; height:82px; }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:1.5rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading { padding:2rem clamp(2.5rem,4vw,5rem) 1.75rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading h2 { font-size:2rem; }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-fields { padding:2.5rem clamp(2.5rem,4vw,5rem); gap:1.5rem 2.25rem; }
@@ -171,12 +171,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 }
 @media (min-width:2000px) {
 	:is(.operator-modal--reading,.operator-modal--work) { font-size:clamp(1rem,.35vw + .55rem,1.125rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:clamp(6rem,5vw,7.5rem); padding:clamp(1rem,1.2vw,1.5rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.15rem,1.1vw,1.6rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:clamp(4.25rem,3.5vw,5rem); height:clamp(4.25rem,3.5vw,5rem); }
-	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:clamp(1.25rem,.75vw,1.5rem); }
-	.operator-modal--work .finance-modal-brand { height:clamp(7rem,6vw,8.5rem); padding-block:clamp(1.25rem,1.5vw,2rem); gap:clamp(1.4rem,1.35vw,1.9rem); }
-	.operator-modal--work .finance-modal-brand img { width:clamp(5rem,4vw,6rem); height:clamp(5rem,4vw,6rem); }
-	.operator-modal--work .finance-modal-brand__name { font-size:clamp(1.5rem,1vw,1.85rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:clamp(7rem,6vw,9rem); padding:clamp(1.25rem,1.5vw,2rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.4rem,1.35vw,1.9rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:clamp(5.125rem,4.25vw,6.5rem); height:clamp(5.125rem,4.25vw,6.5rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:clamp(1.625rem,1.05vw,2rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading { padding:clamp(2rem,2vw,2.75rem) clamp(4rem,4.5vw,6.5rem) clamp(1.75rem,1.8vw,2.4rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading h2 { font-size:clamp(2rem,1.55vw,2.4rem); }
 	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-fields { padding:clamp(2.5rem,3.2vw,4.5rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.5rem,1.5vw,2.15rem) clamp(2.25rem,2.25vw,3.25rem); }
@@ -418,7 +415,8 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 .confirmation__field textarea { width:100%; min-width:0; resize:vertical; padding:.7rem .75rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:#fbfcfc; }
 .confirmation__actions { margin-top:1.4rem; display:flex; justify-content:flex-end; gap:.6rem; }
 .operator-modal--action-confirm .confirmation { padding:clamp(2rem,3vw,4rem); border-top:clamp(.4rem,.5vw,.7rem) solid var(--turquoise); background:var(--turquoise-soft); }
-.operator-modal--action-confirm .confirmation::before { display:block; margin-bottom:clamp(1rem,1.5vw,1.75rem); color:var(--navy); content:"Lorenzo Web Solutions"; font-size:clamp(1.2rem,1.25vw,1.75rem); font-weight:900; }
+.operator-modal--reading .dossier-preview-dialog__header > div:first-child::before,
+.operator-modal--action-confirm .confirmation::before { min-height:clamp(4.5rem,5vw,6rem); margin-bottom:clamp(1rem,1.5vw,1.75rem); padding-left:clamp(5.25rem,5.75vw,7rem); display:flex; align-items:center; color:var(--navy); content:"Lorenzo Web Solutions"; background:url("/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png") left center/clamp(4.25rem,4.5vw,5.5rem) clamp(4.25rem,4.5vw,5.5rem) no-repeat; font-size:clamp(1.35rem,1.35vw,1.9rem); font-weight:900; line-height:1.1; }
 .operator-modal--action-confirm .confirmation h2 { font-size:clamp(1.8rem,1.8vw,2.5rem); }
 .operator-modal--action-confirm .confirmation > p:not(.eyebrow) { font-size:clamp(1rem,.75vw,1.2rem); }
 .operator-modal--action-confirm .confirmation__field { margin-top:clamp(1.5rem,1.8vw,2.25rem); gap:clamp(.5rem,.6vw,.8rem); font-size:clamp(.95rem,.7vw,1.1rem); }
@@ -446,5 +444,6 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (max-width:900px) { .document-inbox-filters { grid-template-columns:repeat(3,minmax(0,1fr)); } .document-inbox-filter--search { grid-column:span 2; } .document-inbox-item { grid-template-columns:minmax(0,1fr) auto; } .document-inbox-item__facts { grid-column:1/-1; grid-row:2; } .document-inbox-item__attention { text-align:left; } .document-inbox-review-grid { grid-template-columns:1fr; } .document-inbox-metadata { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:540px) { .finance-tabs { margin-inline:-.75rem; padding-inline:.75rem; } .finance-tabs a { padding-inline:.65rem; } .finance-section-heading { align-items:flex-start; flex-direction:column; } .finance-availability,.finance-project-metrics { grid-template-columns:1fr; } .business-expense-form__fields { grid-template-columns:1fr; } .supplier-document-file { grid-column:auto; } .finance-expense-actions .secondary-action { width:100%; } .business-expense-dialog { overflow:auto; } .finance-modal-brand { height:58px; padding:.45rem 1rem; gap:.6rem; } .finance-modal-brand img { width:42px; height:42px; } .finance-modal-brand__name { font-size:.9rem; } .finance-modal-heading { padding:1.1rem 1rem 1rem; } .finance-modal-fields { padding:1.15rem 1rem; gap:.9rem; } .supplier-document-upload { padding:.9rem; grid-template-columns:38px minmax(0,1fr); } .supplier-document-upload__icon { width:38px; height:38px; } .finance-modal-status { padding-inline:1rem; } .finance-modal-actions { padding:1rem; } .supplier-document-dialog .business-expense-form__actions { flex-direction:column-reverse; } .supplier-document-dialog .business-expense-form__actions button { width:100%; } .finance-metrics dd { font-size:1.15rem; } .document-inbox-filters { margin-inline:-.75rem; padding-inline:.75rem; grid-template-columns:1fr; } .document-inbox-filter--search { grid-column:auto; } .document-inbox-item { padding:.8rem; grid-template-columns:1fr; gap:.45rem; } .document-inbox-item__facts { grid-column:auto; grid-row:auto; } .document-inbox-item__attention { text-align:left; } .document-inbox-dialog { overflow:hidden; } .document-inbox-review { max-height:calc(100dvh - 1rem); } .document-inbox-dialog-heading { display:grid; } .document-inbox-review__body { padding:1rem; } .document-inbox-metadata,.document-inbox-values--proposed dl,.document-inbox-result dl,.document-inbox-confirmed-form { grid-template-columns:1fr; } .document-inbox-field--wide { grid-column:auto; } .document-inbox-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .document-inbox-actions button,.document-inbox-actions button:first-child { width:100%; margin:0; } .document-inbox-actions #documentInboxSaveProposal,.document-inbox-actions #documentInboxSaveConfirmed,.document-inbox-actions #documentInboxApprove,.document-inbox-actions #documentInboxProcess { grid-column:1/-1; } }
 @media (max-width:900px) { dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal--action-confirm { width:calc(100vw - 1.5rem); max-width:none; } }
+@media (max-width:540px) { .finance-modal-brand { height:72px; padding:.6rem 1rem; gap:.75rem; } .finance-modal-brand img { width:52px; height:52px; } .finance-modal-brand__name { font-size:1.05rem; } .operator-modal--reading .dossier-preview-dialog__header > div:first-child::before,.operator-modal--action-confirm .confirmation::before { min-height:3.75rem; padding-left:4.5rem; background-size:3.75rem 3.75rem; font-size:1.2rem; } }
 @media (max-width:540px) { dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal--compact,dialog.operator-modal--action-confirm { width:calc(100vw - 1rem); max-width:none; max-height:calc(100dvh - 1rem); } .operator-modal--action-confirm .confirmation { padding:1.5rem; } }
 @media (max-width:540px) { .document-inbox-heading__actions { width:100%; justify-content:space-between; } .document-inbox-upload-zone { min-height:165px; padding:1rem; } .document-inbox-upload-actions { flex-direction:column-reverse; } .document-inbox-upload-actions button { width:100%; } }

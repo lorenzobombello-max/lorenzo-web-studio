@@ -42,7 +42,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
   assert.match(css, /dialog\.operator-modal--action-confirm \{ width:68vw; \}/);
   assert.doesNotMatch(css, /dialog\.operator-modal--action-confirm \{[^}]*92rem/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--reading \{ width:min\(90vw,128rem\); \}/);
-  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?\.operator-modal--work \.finance-modal-brand img \{ width:clamp/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand img \{ width:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) :is\(input,select,textarea\) \{ min-height:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?#documentInboxUploadDialog \.document-inbox-upload-zone \{ min-height:clamp/);
   assert.match(css, /\.operator-modal--action-confirm \.confirmation__field textarea \{ min-height:clamp/);
@@ -2825,7 +2825,10 @@ test("supplier document expense UI preserves the exact frontend-only production 
 });
 
 test("Finance expense modals share the fixed official company branding", async () => {
-  const html = await read("operator/dashboard/index.html");
+  const [html, css] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/css/operator-dashboard.css"),
+  ]);
   const expenseDialog = html.match(/<dialog id="businessExpenseDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
   const documentDialog = html.match(/<dialog id="supplierDocumentDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
   const branding = /<div class="finance-modal-brand"><img src="\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png" alt=""[^>]*><span class="finance-modal-brand__name">Lorenzo <strong>Web Solutions<\/strong><\/span><\/div>/;
@@ -2833,6 +2836,17 @@ test("Finance expense modals share the fixed official company branding", async (
   assert.match(documentDialog, branding);
   assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 4);
   assert.doesNotMatch(`${expenseDialog}${documentDialog}`, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
+  assert.match(css, /\.finance-modal-brand \{ height:82px;[^}]*gap:1rem;/);
+  assert.match(css, /\.finance-modal-brand img \{ width:58px; height:58px;[^}]*object-fit:contain;/);
+  assert.match(css, /@media \(min-width:901px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand img \{ width:82px; height:82px; \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) \.finance-modal-brand__name \{ font-size:clamp\(1\.625rem,1\.05vw,2rem\); \}/);
+  assert.doesNotMatch(css, /\.operator-modal--work \.finance-modal-brand(?:\s|\{| img|__name)/);
+  assert.match(css, /\.operator-modal--reading \.dossier-preview-dialog__header > div:first-child::before,\r?\n\.operator-modal--action-confirm \.confirmation::before \{/);
+  assert.match(css, /\.operator-modal--action-confirm \.confirmation::before \{[^}]*background:url\("\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png"\)[^}]*font-size:clamp\(1\.35rem,1\.35vw,1\.9rem\)/);
+  assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand \{ height:72px;/);
+  assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand img \{ width:52px; height:52px;/);
+  assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.finance-modal-brand__name \{ font-size:1\.05rem;/);
+  assert.match(css, /@media \(max-width:540px\) \{[^\n]*\.operator-modal--reading \.dossier-preview-dialog__header > div:first-child::before,\.operator-modal--action-confirm \.confirmation::before \{ min-height:3\.75rem; padding-left:4\.5rem; background-size:3\.75rem 3\.75rem; font-size:1\.2rem; \}/);
   assert.deepEqual([...expenseDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["supplier_name", "description", "category", "amount", "currency", "expense_date"]);
   assert.deepEqual([...documentDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
 });
