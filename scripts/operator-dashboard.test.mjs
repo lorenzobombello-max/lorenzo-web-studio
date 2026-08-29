@@ -2579,6 +2579,15 @@ test("supplier document expense UI preserves the exact frontend-only production 
   assert.match(script, /documentController\.retryStage/);
   assert.doesNotMatch(script, /document_count\s*(?:\+\+|\+=)|relation_types\.(?:push|splice)/);
   assert.doesNotMatch(dialog, /record_classification|internal_e2e|PAYMENT_EVIDENCE|paid|unpaid|payment|vat|btw|iban|bank|kbc|gocardless|enable banking|download|signed.?url|preview|ocr|gmail|drive|peppol|titeca|james|yuki|exact|billit/i);
+  assert.match(dialog, /src="\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png"/);
+  assert.doesNotMatch(dialog, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
+  assert.match(dialog, /Maximaal 10 MiB · PDF, PNG, JPEG/);
+  assert.doesNotMatch(dialog, /25\s*(?:MB|MiB)|DOCX/i);
+  assert.match(dialog, /id="supplierDocumentCancel"[^>]*>Annuleren<\/button>/);
+  assert.match(dialog, /id="supplierDocumentSubmit"[^>]*>Document opslaan en koppelen<\/button>/);
+  assert.match(dialog, /aria-labelledby="supplierDocumentDialogTitle"/);
+  assert.match(dialog, /aria-describedby="supplierDocumentExpense"/);
+  assert.equal((dialog.match(/<label\b/g) || []).length, 6);
   assert.match(css, /\.supplier-document-dialog \{ overflow:auto; \}/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[\s\S]*?\.supplier-document-file \{ grid-column:auto; \}/);
   assert.equal((html.match(/data-finance-tab=/g) || []).length, 6);
