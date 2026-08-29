@@ -48,6 +48,20 @@ const FINANCE_UNAVAILABLE_FLAGS = Object.freeze([
   "bank_actuals_projection_available",
 ]);
 
+const SDF_FINANCE_UNAVAILABLE_FLAGS = Object.freeze([
+  "expected_payment_available",
+  "payment_evidence_available",
+  "confirmed_received_available",
+  "outstanding_projection_available",
+  "overdue_projection_available",
+  "upcoming_projection_available",
+  "recurring_amount_projection_available",
+]);
+const SDF_FINANCE_PROJECT_PII = Object.freeze([
+  "name", "company", "email", "phone", "address", "billing_address",
+  "customer_snapshot", "seller_snapshot", "bank_snapshot",
+]);
+
 export function websiteFinancePortfolioPresentation(portfolio) {
   const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
   const validCurrency = (value)=>typeof value === "string" && /^[A-Z]{3}$/.test(value);
@@ -74,6 +88,60 @@ export function websiteFinancePortfolioPresentation(portfolio) {
         || !validMoney(project?.expected_minor)
         || !validMoney(project?.confirmed_received_minor)
         || !Array.isArray(project?.milestones)) throw new Error("INVALID_WEBSITE_FINANCE_PORTFOLIO");
+  }
+  return portfolio;
+}
+
+export function sdfFinancePortfolioPresentation(portfolio) {
+  const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
+  const validCurrency = (value)=>typeof value === "string" && /^[A-Z]{3}$/.test(value);
+  const validTimestamp = (value)=>typeof value === "string" && !Number.isNaN(Date.parse(value));
+  if (!portfolio || typeof portfolio !== "object" || Array.isArray(portfolio)
+      || portfolio.scope !== "sdf"
+      || !Number.isSafeInteger(portfolio.project_count)
+      || portfolio.project_count < 0
+      || !Array.isArray(portfolio.currency_totals)
+      || !Array.isArray(portfolio.projects)
+      || portfolio.project_count !== portfolio.projects.length
+      || portfolio.invoice_projection_available !== true
+      || SDF_FINANCE_UNAVAILABLE_FLAGS.some((flag)=>portfolio[flag] !== false)) {
+    throw new Error("INVALID_SDF_FINANCE_PORTFOLIO");
+  }
+  for (const total of portfolio.currency_totals) {
+    if (!validCurrency(total?.currency)
+        || !validMoney(total?.commitment_minor)
+        || !validMoney(total?.m1_obligation_minor)
+        || !validMoney(total?.issued_invoice_minor)) throw new Error("INVALID_SDF_FINANCE_PORTFOLIO");
+  }
+  for (const project of portfolio.projects) {
+    const hasCandidate = project?.invoice_candidate_state === "PREPARED";
+    const hasIssuance = project?.invoice_issuance_state === "ISSUED";
+    if (!UUID.test(String(project?.quote_request_id || ""))
+        || !UUID.test(String(project?.quotation_id || ""))
+        || (project?.sdf_project_id !== null && !UUID.test(String(project?.sdf_project_id || "")))
+        || (project?.application_reference !== null && !APPLICATION_REFERENCE.test(project.application_reference || ""))
+        || !Object.hasOwn(SDF_PACKAGE_LABELS, project?.sdf_package)
+        || !validCurrency(project?.currency)
+        || !validMoney(project?.commitment_minor)
+        || !validMoney(project?.m1_obligation_minor)
+        || project?.m1_obligation_status !== "EXPECTED"
+        || !validTimestamp(project?.accepted_at)
+        || !validTimestamp(project?.accepted_terms_created_at)
+        || !validTimestamp(project?.m1_obligation_created_at)
+        || SDF_FINANCE_PROJECT_PII.some((field)=>Object.hasOwn(project, field))
+        || (!hasCandidate && project?.invoice_candidate_state !== null)
+        || (hasCandidate && (!validMoney(project?.invoice_candidate_net_amount_minor) || !validTimestamp(project?.prepared_at)))
+        || (!hasCandidate && (project?.invoice_candidate_net_amount_minor !== null || project?.prepared_at !== null))
+        || (!hasIssuance && project?.invoice_issuance_state !== null)
+        || (hasIssuance && (!hasCandidate
+          || typeof project?.invoice_number !== "string" || !project.invoice_number
+          || !validMoney(project?.issued_net_amount_minor)
+          || !validMoney(project?.issued_gross_amount_minor)
+          || !validTimestamp(project?.issued_at)))
+        || (!hasIssuance && (project?.invoice_number !== null
+          || project?.issued_net_amount_minor !== null
+          || project?.issued_gross_amount_minor !== null
+          || project?.issued_at !== null))) throw new Error("INVALID_SDF_FINANCE_PORTFOLIO");
   }
   return portfolio;
 }
@@ -1322,6 +1390,88 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       } catch {
         count.textContent = "Niet beschikbaar";
         status.textContent = "De financiële Websiteportfolio kon niet veilig worden geladen.";
+        content.hidden = true;
+      }
+    }
+    if (activeFinanceTab === "sdf") {
+      const status = document.getElementById("financeSdfStatus");
+      const count = document.getElementById("financeSdfCount");
+      const content = document.getElementById("financeSdfContent");
+      const totals = document.getElementById("financeSdfCurrencyTotals");
+      const projects = document.getElementById("financeSdfProjectList");
+      const empty = document.getElementById("financeSdfProjectEmpty");
+      try {
+        const response = await client.rpc("get_sdf_finance_portfolio_v1");
+        if (response.error) throw response.error;
+        const portfolio = sdfFinancePortfolioPresentation(response.data);
+        totals.replaceChildren();
+        projects.replaceChildren();
+        for (const currencyTotal of portfolio.currency_totals) {
+          const group = document.createElement("section");
+          const heading = document.createElement("h3");
+          const metrics = document.createElement("dl");
+          group.className = "finance-currency-group";
+          heading.textContent = currencyTotal.currency;
+          metrics.className = "finance-metrics";
+          for (const [label, field] of [
+            ["Commerciële waarde", "commitment_minor"],
+            ["M1-verplichtingen", "m1_obligation_minor"],
+            ["Uitgereikte facturen", "issued_invoice_minor"],
+          ]) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const value = document.createElement("dd");
+            term.textContent = label;
+            value.textContent = formatFinanceMoney(currencyTotal[field], currencyTotal.currency);
+            metric.append(term, value);
+            metrics.append(metric);
+          }
+          group.append(heading, metrics);
+          totals.append(group);
+        }
+        for (const project of portfolio.projects) {
+          const item = document.createElement("li");
+          const heading = document.createElement("div");
+          const reference = document.createElement("strong");
+          const packageLabel = document.createElement("span");
+          const metrics = document.createElement("dl");
+          const detail = document.createElement("p");
+          reference.textContent = project.application_reference || project.quotation_id;
+          packageLabel.textContent = sdfPackageLabel(project.sdf_package);
+          heading.className = "finance-project-heading";
+          metrics.className = "finance-project-metrics finance-project-metrics--sdf";
+          detail.className = "finance-payment-status";
+          heading.append(reference, packageLabel);
+          for (const [label, value] of [
+            ["Commerciële waarde", formatFinanceMoney(project.commitment_minor, project.currency)],
+            ["M1-verplichting", formatFinanceMoney(project.m1_obligation_minor, project.currency)],
+            ["M1-status", "Verwacht"],
+            ["Factuurvoorbereiding", project.invoice_candidate_state === "PREPARED" ? "Voorbereid" : "Niet voorbereid"],
+            ["Factuurstatus", project.invoice_issuance_state === "ISSUED" ? "Uitgereikt" : "Niet uitgereikt"],
+            ["Factuurreferentie", project.invoice_number || "Niet toegewezen"],
+          ]) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const description = document.createElement("dd");
+            term.textContent = label;
+            description.textContent = value;
+            metric.append(term, description);
+            metrics.append(metric);
+          }
+          const dates = [];
+          if (project.prepared_at) dates.push(`Voorbereid ${formatDate(project.prepared_at)}`);
+          if (project.issued_at) dates.push(`Uitgereikt ${formatDate(project.issued_at)}`);
+          detail.textContent = dates.length ? dates.join(" · ") : "Nog geen factuurdatums beschikbaar.";
+          item.append(heading, metrics, detail);
+          projects.append(item);
+        }
+        count.textContent = `${portfolio.project_count} ${portfolio.project_count === 1 ? "project" : "projecten"}`;
+        empty.hidden = portfolio.project_count !== 0;
+        status.textContent = portfolio.project_count ? "SDF-portfolio beschikbaar." : "";
+        content.hidden = false;
+      } catch {
+        count.textContent = "Niet beschikbaar";
+        status.textContent = "SDF-financiële gegevens konden niet worden geladen.";
         content.hidden = true;
       }
     }

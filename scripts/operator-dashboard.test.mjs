@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260828-finance-websites-ui";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260825-personal-queue-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260828-finance-websites-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
@@ -371,8 +371,9 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 7);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 8);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
+  assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
   assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
   assert.match(script, /client\.rpc\("purge_dossier_v1"/);
@@ -2350,6 +2351,7 @@ test("module motion remains decorative, finite, and reduced-motion safe", async 
 test("finance tab routing is closed, persistent, and cannot override application deeplinks", () => {
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance", "owner"), "overview");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites", "owner"), "websites");
+  assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=sdf", "owner"), "sdf");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=unknown", "owner"), "overview");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "overview");
   assert.equal(operatorModuleFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "dossiers");
@@ -2403,6 +2405,74 @@ test("Website finance projection keeps commitment expected and confirmed receive
   assert.throws(()=>websiteFinancePortfolioPresentation({ ...portfolio, projects: [{ ...portfolio.projects[0], request_kind: "slimme_documentenflow" }] }), /INVALID_WEBSITE_FINANCE_PORTFOLIO/);
 });
 
+const emptySdfFinancePortfolio = () => ({
+  scope: "sdf",
+  project_count: 0,
+  invoice_projection_available: true,
+  expected_payment_available: false,
+  payment_evidence_available: false,
+  confirmed_received_available: false,
+  outstanding_projection_available: false,
+  overdue_projection_available: false,
+  upcoming_projection_available: false,
+  recurring_amount_projection_available: false,
+  currency_totals: [],
+  projects: [],
+});
+
+test("SDF finance projection accepts only the bounded authority payload", () => {
+  const portfolio = emptySdfFinancePortfolio();
+  portfolio.project_count = 1;
+  portfolio.currency_totals.push({ currency: "EUR", commitment_minor: 1000000, m1_obligation_minor: 400000, issued_invoice_minor: 400000 });
+  portfolio.projects.push({
+    quote_request_id: "fa200001-0000-4000-8000-000000000001",
+    application_reference: "LWS-AAN-2099-7001",
+    quotation_id: "fa300000-0000-4000-8000-000000000001",
+    sdf_project_id: null,
+    sdf_package: "start",
+    currency: "EUR",
+    commitment_minor: 1000000,
+    accepted_at: "2099-01-05T10:00:00+00:00",
+    accepted_terms_created_at: "2099-01-05T10:01:00+00:00",
+    m1_obligation_minor: 400000,
+    m1_obligation_status: "EXPECTED",
+    m1_obligation_created_at: "2099-01-05T10:02:00+00:00",
+    invoice_candidate_state: "PREPARED",
+    invoice_candidate_net_amount_minor: 400000,
+    prepared_at: "2099-01-06T10:00:00+00:00",
+    invoice_issuance_state: "ISSUED",
+    issued_at: "2099-01-07T10:00:00+00:00",
+    invoice_number: "LWS-2099-0001",
+    issued_net_amount_minor: 400000,
+    issued_gross_amount_minor: 400000,
+    vat_authority_version: "1.0.0",
+  });
+  assert.equal(sdfFinancePortfolioPresentation(emptySdfFinancePortfolio()).project_count, 0);
+  assert.equal(sdfFinancePortfolioPresentation(portfolio), portfolio);
+  assert.throws(()=>sdfFinancePortfolioPresentation({ ...portfolio, scope: "all" }), /INVALID_SDF_FINANCE_PORTFOLIO/);
+  assert.throws(()=>sdfFinancePortfolioPresentation({ ...portfolio, project_count: 2 }), /INVALID_SDF_FINANCE_PORTFOLIO/);
+  assert.throws(()=>sdfFinancePortfolioPresentation({ ...portfolio, expected_payment_available: true }), /INVALID_SDF_FINANCE_PORTFOLIO/);
+  assert.throws(()=>sdfFinancePortfolioPresentation({ ...portfolio, currency_totals: [{ ...portfolio.currency_totals[0], commitment_minor: 1.5 }] }), /INVALID_SDF_FINANCE_PORTFOLIO/);
+  assert.throws(()=>sdfFinancePortfolioPresentation({ ...portfolio, projects: [{ ...portfolio.projects[0], email: "hidden@example.test" }] }), /INVALID_SDF_FINANCE_PORTFOLIO/);
+});
+
+test("SDF Finance uses only its portfolio RPC and preserves unavailable payment layers", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
+  assert.doesNotMatch(script, /client\.from\(|from\(["'](?:sdf_|payment_|recurring_)/);
+  assert.match(script, /\["Commerciële waarde", "commitment_minor"\]/);
+  assert.match(script, /\["M1-verplichtingen", "m1_obligation_minor"\]/);
+  assert.match(script, /\["Uitgereikte facturen", "issued_invoice_minor"\]/);
+  assert.doesNotMatch(script, /commitment_minor\s*\+|m1_obligation_minor\s*\+|issued_invoice_minor\s*\+/);
+  const sdfPanel = html.split('data-finance-tab-panel="sdf"')[1]?.split('data-finance-tab-panel="workforce"')[0] || "";
+  for (const label of ["Verwachte betaling", "Betalingsbewijs", "Bevestigd ontvangen", "Openstaand", "Vervallen", "Upcoming", "Recurring amount"]) {
+    assert.match(sdfPanel, new RegExp(`${label}[\\s\\S]*?Niet beschikbaar`, "i"));
+  }
+  assert.match(sdfPanel, /Nog geen SDF-projecten/);
+  assert.match(script, /SDF-financiële gegevens konden niet worden geladen\./);
+  assert.doesNotMatch(sdfPanel, /€0(?:,00)?|voorbeeldbedrag|demo-data|omzet|inkomsten|e-mail|telefoon|adres/i);
+});
+
 test("Websites uses only the portfolio RPC and exposes safe loading empty and read-error states", async () => {
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
@@ -2420,7 +2490,7 @@ test("finance labels unavailable metrics and leaves inactive domains data-free",
   for (const label of ["Factuurprojectie", "Openstaand", "Vervallen", "Upcoming", "Recurring amount", "Bankactuals"]) assert.match(finance, new RegExp(label, "i"));
   assert.match(finance, /Bankrekening<\/dt><dd>Niet gekoppeld/);
   assert.match(finance, /Banksaldo en transacties<\/dt><dd>Niet beschikbaar/);
-  for (const tab of ["sdf", "workforce", "expenses", "owner"]) {
+  for (const tab of ["workforce", "expenses", "owner"]) {
     const panel = finance.match(new RegExp(`data-finance-tab-panel="${tab}"[\\s\\S]*?<\\/section>`))?.[0] || "";
     assert.match(panel, /nog niet beschikbaar/i);
     assert.doesNotMatch(panel, /€|EUR|[0-9]+[,.][0-9]{2}|payroll|loon|omzet/i);

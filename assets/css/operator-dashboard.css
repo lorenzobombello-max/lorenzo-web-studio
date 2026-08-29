@@ -94,6 +94,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-project-metrics div { min-width:0; }
 .finance-project-metrics dd { margin:.18rem 0 0; color:var(--navy); font-weight:850; overflow-wrap:anywhere; }
 .finance-payment-status { margin:.85rem 0 0; padding-top:.75rem; color:var(--muted); border-top:1px solid var(--line); font-size:.78rem; font-weight:750; }
+.finance-project-metrics--sdf { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.finance-layer-note { margin:1.25rem 0 0; padding:.85rem 1rem; color:var(--muted); border-left:3px solid var(--turquoise); background:rgba(232,246,244,.55); font-size:.86rem; }
+.finance-empty strong { display:block; margin-bottom:.35rem; color:var(--navy); }
+.finance-empty p { margin:0; }
 .finance-empty,.finance-unavailable { margin:0; padding:1.4rem; color:var(--muted); border:1px dashed var(--line-strong); border-radius:var(--radius); background:rgba(255,255,255,.55); }
 .finance-unavailable h2 { margin:.2rem 0 .35rem; color:var(--navy); font-size:1.35rem; }
 .finance-unavailable p:last-child { margin-bottom:0; }
