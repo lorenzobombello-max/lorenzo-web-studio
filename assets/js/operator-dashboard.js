@@ -61,6 +61,28 @@ const SDF_FINANCE_PROJECT_PII = Object.freeze([
   "name", "company", "email", "phone", "address", "billing_address",
   "customer_snapshot", "seller_snapshot", "bank_snapshot",
 ]);
+const BUSINESS_EXPENSE_AVAILABILITY_FLAGS = Object.freeze([
+  "payment_state_available", "paid_amount_available", "paid_date_available",
+  "confirmed_cash_out_available", "outstanding_available", "overdue_available",
+  "upcoming_available", "vat_available", "deductible_vat_available",
+  "bank_actuals_available", "recurring_available",
+]);
+const BUSINESS_EXPENSE_FIELDS = new Set([
+  "id", "supplier_name", "description", "category", "amount_minor", "currency",
+  "expense_date", "status", "document_count", "relation_types",
+]);
+const BUSINESS_EXPENSE_ROOT_FIELDS = new Set([
+  "scope", "expense_count", "currency_totals", "expenses", "availability", "bank_actuals",
+]);
+const BUSINESS_EXPENSE_CATEGORY_LABELS = Object.freeze({
+  software: "Software", hosting: "Hosting", telecom: "Telecom", accounting: "Boekhouding",
+  hardware: "Hardware", marketing: "Marketing", insurance: "Verzekering", education: "Opleiding",
+  office: "Kantoor", transport: "Transport", other: "Overig",
+});
+const BUSINESS_EXPENSE_RELATION_LABELS = Object.freeze({
+  INVOICE: "Factuur", CREDIT_NOTE: "Creditnota", RECEIPT: "Kassaticket / ontvangstbewijs",
+  CONTRACT: "Contract", OTHER: "Overig",
+});
 
 export function websiteFinancePortfolioPresentation(portfolio) {
   const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
@@ -144,6 +166,52 @@ export function sdfFinancePortfolioPresentation(portfolio) {
           || project?.issued_at !== null))) throw new Error("INVALID_SDF_FINANCE_PORTFOLIO");
   }
   return portfolio;
+}
+
+export function businessExpenseFinancePortfolioPresentation(portfolio) {
+  const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
+  const validCurrency = (value)=>typeof value === "string" && /^[A-Z]{3}$/.test(value);
+  if (!portfolio || typeof portfolio !== "object" || Array.isArray(portfolio)
+      || Object.keys(portfolio).some((field)=>!BUSINESS_EXPENSE_ROOT_FIELDS.has(field))
+      || portfolio.scope !== "business_expenses"
+      || !Number.isSafeInteger(portfolio.expense_count) || portfolio.expense_count < 0
+      || !Array.isArray(portfolio.currency_totals) || !Array.isArray(portfolio.expenses)
+      || portfolio.expense_count !== portfolio.expenses.length
+      || !portfolio.availability || typeof portfolio.availability !== "object"
+      || Object.keys(portfolio.availability).length !== BUSINESS_EXPENSE_AVAILABILITY_FLAGS.length
+      || Object.keys(portfolio.availability).some((flag)=>!BUSINESS_EXPENSE_AVAILABILITY_FLAGS.includes(flag))
+      || BUSINESS_EXPENSE_AVAILABILITY_FLAGS.some((flag)=>portfolio.availability[flag] !== false)
+      || portfolio.bank_actuals !== null) throw new Error("INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO");
+  for (const total of portfolio.currency_totals) {
+    if (Object.keys(total || {}).length !== 2
+        || Object.keys(total || {}).some((field)=>!["currency", "active_expense_minor"].includes(field))
+        || !validCurrency(total?.currency) || !validMoney(total?.active_expense_minor)) {
+      throw new Error("INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO");
+    }
+  }
+  for (const expense of portfolio.expenses) {
+    if (Object.keys(expense || {}).some((field)=>!BUSINESS_EXPENSE_FIELDS.has(field))
+        || !UUID.test(String(expense?.id || ""))
+        || typeof expense?.supplier_name !== "string" || !expense.supplier_name
+        || typeof expense?.description !== "string" || typeof expense?.category !== "string"
+        || !validMoney(expense?.amount_minor) || !validCurrency(expense?.currency)
+        || typeof expense?.expense_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(expense.expense_date)
+        || !["RECORDED", "CANCELLED"].includes(expense?.status)
+        || !Number.isSafeInteger(expense?.document_count) || expense.document_count < 0
+        || !Array.isArray(expense?.relation_types)
+        || expense.relation_types.some((type)=>!Object.hasOwn(BUSINESS_EXPENSE_RELATION_LABELS, type))) {
+      throw new Error("INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO");
+    }
+  }
+  return portfolio;
+}
+
+export function businessExpenseCategoryLabel(category) {
+  return BUSINESS_EXPENSE_CATEGORY_LABELS[category] || category;
+}
+
+export function businessExpenseRelationLabel(relationType) {
+  return BUSINESS_EXPENSE_RELATION_LABELS[relationType] || relationType;
 }
 
 export function formatFinanceMoney(minor, currency) {
@@ -1472,6 +1540,87 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       } catch {
         count.textContent = "Niet beschikbaar";
         status.textContent = "SDF-financiële gegevens konden niet worden geladen.";
+        content.hidden = true;
+      }
+    }
+    if (activeFinanceTab === "expenses") {
+      const status = document.getElementById("financeExpenseStatus");
+      const count = document.getElementById("financeExpenseCount");
+      const content = document.getElementById("financeExpenseContent");
+      const totals = document.getElementById("financeExpenseCurrencyTotals");
+      const expenses = document.getElementById("financeExpenseList");
+      const empty = document.getElementById("financeExpenseEmpty");
+      try {
+        const response = await client.rpc("get_business_expense_portfolio_v1");
+        if (response.error) throw response.error;
+        const portfolio = businessExpenseFinancePortfolioPresentation(response.data);
+        totals.replaceChildren();
+        expenses.replaceChildren();
+        for (const currencyTotal of portfolio.currency_totals) {
+          const group = document.createElement("section");
+          const heading = document.createElement("h3");
+          const metrics = document.createElement("dl");
+          const metric = document.createElement("div");
+          const term = document.createElement("dt");
+          const value = document.createElement("dd");
+          group.className = "finance-currency-group";
+          heading.textContent = currencyTotal.currency;
+          metrics.className = "finance-metrics finance-metrics--expense";
+          term.textContent = "Geregistreerde kosten";
+          value.textContent = formatFinanceMoney(currencyTotal.active_expense_minor, currencyTotal.currency);
+          metric.append(term, value);
+          metrics.append(metric);
+          group.append(heading, metrics);
+          totals.append(group);
+        }
+        for (const expense of portfolio.expenses) {
+          const item = document.createElement("li");
+          const heading = document.createElement("div");
+          const supplier = document.createElement("strong");
+          const lifecycle = document.createElement("span");
+          const metrics = document.createElement("dl");
+          const relations = document.createElement("p");
+          supplier.textContent = expense.supplier_name;
+          lifecycle.textContent = expense.status === "CANCELLED" ? "Geannuleerd" : "Geregistreerd";
+          item.dataset.expenseStatus = expense.status;
+          heading.className = "finance-project-heading";
+          metrics.className = "finance-project-metrics finance-expense-metrics";
+          relations.className = "finance-payment-status";
+          heading.append(supplier, lifecycle);
+          for (const [label, value] of [
+            ["Omschrijving", expense.description || "Geen omschrijving"],
+            ["Categorie", businessExpenseCategoryLabel(expense.category)],
+            ["Bedrag", formatFinanceMoney(expense.amount_minor, expense.currency)],
+            ["Datum", expense.expense_date],
+            ["Documenten", `${expense.document_count} ${expense.document_count === 1 ? "document" : "documenten"}`],
+          ]) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const description = document.createElement("dd");
+            term.textContent = label;
+            description.textContent = value;
+            metric.append(term, description);
+            metrics.append(metric);
+          }
+          relations.textContent = expense.relation_types.length
+            ? expense.relation_types.map(businessExpenseRelationLabel).join(" · ")
+            : "Geen documenttypes geregistreerd.";
+          item.append(heading, metrics, relations);
+          expenses.append(item);
+        }
+        for (const availability of document.querySelectorAll("[data-expense-availability]")) {
+          availability.textContent = portfolio.availability[availability.dataset.expenseAvailability]
+            ? "Beschikbaar" : "Niet beschikbaar";
+        }
+        document.getElementById("financeExpenseBankAccount").textContent =
+          portfolio.availability.bank_actuals_available || portfolio.bank_actuals !== null ? "Beschikbaar" : "Niet gekoppeld";
+        count.textContent = `${portfolio.expense_count} ${portfolio.expense_count === 1 ? "kost" : "kosten"}`;
+        empty.hidden = portfolio.expense_count !== 0;
+        status.textContent = portfolio.expense_count ? "Bedrijfskosten beschikbaar." : "";
+        content.hidden = false;
+      } catch {
+        count.textContent = "Niet beschikbaar";
+        status.textContent = "Bedrijfskosten konden niet worden geladen.";
         content.hidden = true;
       }
     }

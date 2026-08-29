@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
 import { getOperatorClient } from "./operator-auth-client.mjs";
-import { startOperatorDashboard } from "./operator-dashboard.js?v=20260829-finance-sdf-ui";
+import { startOperatorDashboard } from "./operator-dashboard.js?v=20260829-finance-expenses-ui";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");

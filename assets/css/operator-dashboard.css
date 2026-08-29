@@ -95,6 +95,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-project-metrics dd { margin:.18rem 0 0; color:var(--navy); font-weight:850; overflow-wrap:anywhere; }
 .finance-payment-status { margin:.85rem 0 0; padding-top:.75rem; color:var(--muted); border-top:1px solid var(--line); font-size:.78rem; font-weight:750; }
 .finance-project-metrics--sdf { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.finance-metrics--expense { grid-template-columns:minmax(0,1fr); }
+.finance-expense-list li[data-expense-status="CANCELLED"] { border-left:4px solid var(--red); background:#fffafa; }
+.finance-expense-list li[data-expense-status="CANCELLED"] .finance-project-heading span { color:var(--red); }
+.finance-expense-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .finance-layer-note { margin:1.25rem 0 0; padding:.85rem 1rem; color:var(--muted); border-left:3px solid var(--turquoise); background:rgba(232,246,244,.55); font-size:.86rem; }
 .finance-empty strong { display:block; margin-bottom:.35rem; color:var(--navy); }
 .finance-empty p { margin:0; }
@@ -273,4 +277,5 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (max-width:390px) { .metrics { grid-template-columns:1fr; } .topbar__status { gap:.4rem; } .badge { font-size:.62rem; } .confirmation__actions { flex-direction:column-reverse; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } .module-navigation a[aria-current="page"]::after,.module-shell__title::after { opacity:1; transform:none; } .finance-visual__line,.finance-visual__trail { stroke-dashoffset:0; } .finance-visual__laser { opacity:1; transform:none; } }
 @media (max-width:900px) { .finance-availability { grid-template-columns:repeat(2,minmax(0,1fr)); } .finance-metrics { grid-template-columns:1fr; } }
+@media (max-width:900px) { .finance-expense-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:540px) { .finance-tabs { margin-inline:-.75rem; padding-inline:.75rem; } .finance-tabs a { padding-inline:.65rem; } .finance-section-heading { align-items:flex-start; flex-direction:column; } .finance-availability,.finance-project-metrics { grid-template-columns:1fr; } .finance-metrics dd { font-size:1.15rem; } }

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseCategoryLabel, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260828-finance-websites-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-expenses-ui";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
@@ -371,7 +371,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 8);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 9);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
@@ -2352,6 +2352,7 @@ test("finance tab routing is closed, persistent, and cannot override application
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance", "owner"), "overview");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites", "owner"), "websites");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=sdf", "owner"), "sdf");
+  assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=expenses", "owner"), "expenses");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=unknown", "owner"), "overview");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "overview");
   assert.equal(operatorModuleFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "dossiers");
@@ -2368,7 +2369,67 @@ test("finance contains exactly six internal query-routed tabs and defaults to ov
   assert.deepEqual([...navigation.matchAll(/data-finance-tab="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((match)=>[match[1], match[2]]), expected);
   assert.match(navigation, /href="\/operator\/dashboard\/\?module=finance" data-finance-tab="overview"/);
   assert.match(navigation, /module=finance&amp;financeTab=websites/);
+  assert.match(navigation, /module=finance&amp;financeTab=expenses/);
   assert.equal((html.match(/data-finance-tab-panel=/g) || []).length, 6);
+});
+
+const emptyBusinessExpensePortfolio = () => ({
+  scope: "business_expenses",
+  expense_count: 0,
+  currency_totals: [],
+  expenses: [],
+  availability: {
+    payment_state_available: false, paid_amount_available: false, paid_date_available: false,
+    confirmed_cash_out_available: false, outstanding_available: false, overdue_available: false,
+    upcoming_available: false, vat_available: false, deductible_vat_available: false,
+    bank_actuals_available: false, recurring_available: false,
+  },
+  bank_actuals: null,
+});
+
+test("business expense finance presentation preserves authority, cancellation, currencies, and safe document summaries", () => {
+  const portfolio = emptyBusinessExpensePortfolio();
+  portfolio.expense_count = 3;
+  portfolio.currency_totals.push(
+    { currency: "EUR", active_expense_minor: 3000 },
+    { currency: "USD", active_expense_minor: 2500 },
+  );
+  portfolio.expenses.push(
+    { id: "f6e00000-0000-4000-8000-000000000001", supplier_name: "Hosting BV", description: "Platform", category: "hosting", amount_minor: 1000, currency: "EUR", expense_date: "2026-08-29", status: "RECORDED", document_count: 3, relation_types: ["INVOICE", "CONTRACT", "OTHER"] },
+    { id: "f6e00000-0000-4000-8000-000000000002", supplier_name: "Kantoor BV", description: "Materiaal", category: "office", amount_minor: 2000, currency: "EUR", expense_date: "2026-08-28", status: "RECORDED", document_count: 1, relation_types: ["RECEIPT"] },
+    { id: "f6e00000-0000-4000-8000-000000000003", supplier_name: "Tools Inc", description: "Geannuleerd", category: "software", amount_minor: 9000, currency: "USD", expense_date: "2026-08-27", status: "CANCELLED", document_count: 2, relation_types: ["CREDIT_NOTE"] },
+  );
+  assert.equal(businessExpenseFinancePortfolioPresentation(portfolio), portfolio);
+  assert.deepEqual(portfolio.currency_totals.map((total)=>total.active_expense_minor), [3000, 2500]);
+  assert.equal(businessExpenseCategoryLabel("accounting"), "Boekhouding");
+  assert.equal(businessExpenseRelationLabel("RECEIPT"), "Kassaticket / ontvangstbewijs");
+  assert.match(formatFinanceMoney(3000, "EUR"), /30,00/);
+  assert.throws(()=>businessExpenseFinancePortfolioPresentation({ ...portfolio, expense_count: 4 }), /INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO/);
+  assert.throws(()=>businessExpenseFinancePortfolioPresentation({ ...portfolio, bank_actuals: [] }), /INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO/);
+  assert.throws(()=>businessExpenseFinancePortfolioPresentation({ ...portfolio, availability: { ...portfolio.availability, payment_state_available: true } }), /INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO/);
+  assert.throws(()=>businessExpenseFinancePortfolioPresentation({ ...portfolio, expenses: [{ ...portfolio.expenses[0], storage_object_path: "private/file.pdf" }], expense_count: 1 }), /INVALID_BUSINESS_EXPENSE_FINANCE_PORTFOLIO/);
+});
+
+test("business expense tab uses one RPC, explicit states, unavailable semantics, and no direct authority access", async () => {
+  const [html, script, css] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
+  ]);
+  const panel = html.match(/<section class="finance-tab-panel" data-finance-tab-panel="expenses"[\s\S]*?<\/section><\/div><\/section>/)?.[0] || "";
+  assert.match(panel, /financeExpenseCount[^>]*>Laden</);
+  assert.match(panel, /Bedrijfskosten laden\./);
+  assert.match(panel, /Nog geen bedrijfskosten[\s\S]*0 kosten/);
+  assert.match(panel, /Betaalstatus[\s\S]*Betaald bedrag[\s\S]*Betaaldatum[\s\S]*Bevestigde kasuitstroom[\s\S]*Openstaand[\s\S]*Achterstallig[\s\S]*Komend[\s\S]*BTW[\s\S]*Aftrekbare BTW[\s\S]*Bankrekening[\s\S]*Terugkerende kosten/);
+  assert.match(script, /client\.rpc\("get_business_expense_portfolio_v1"\)/);
+  assert.doesNotMatch(script, /client\.from\("(?:business_expenses|supplier_documents|business_expense_documents)"\)/);
+  assert.match(script, /Bedrijfskosten konden niet worden geladen\./);
+  assert.match(script, /expense\.status === "CANCELLED" \? "Geannuleerd" : "Geregistreerd"/);
+  assert.match(script, /currencyTotal\.active_expense_minor/);
+  assert.doesNotMatch(script, /amount_minor\s*\*\s*(?:expense\.)?document_count|document_count\s*\*\s*(?:expense\.)?amount_minor/);
+  assert.doesNotMatch(panel, /Onbetaald|€0 openstaand|€0 achterstallig|€0 btw|0% btw/i);
+  assert.doesNotMatch(panel, /storage|bucket|sha256|signed_url|download/i);
+  assert.match(css, /\.finance-expense-metrics/);
+  assert.match(css, /@media \(max-width:900px\)[^{]*\{[^}]*\.finance-expense-metrics/);
+  assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.finance-tabs/);
 });
 
 const emptyWebsiteFinancePortfolio = () => ({
@@ -2490,7 +2551,7 @@ test("finance labels unavailable metrics and leaves inactive domains data-free",
   for (const label of ["Factuurprojectie", "Openstaand", "Vervallen", "Upcoming", "Recurring amount", "Bankactuals"]) assert.match(finance, new RegExp(label, "i"));
   assert.match(finance, /Bankrekening<\/dt><dd>Niet gekoppeld/);
   assert.match(finance, /Banksaldo en transacties<\/dt><dd>Niet beschikbaar/);
-  for (const tab of ["workforce", "expenses", "owner"]) {
+  for (const tab of ["workforce", "owner"]) {
     const panel = finance.match(new RegExp(`data-finance-tab-panel="${tab}"[\\s\\S]*?<\\/section>`))?.[0] || "";
     assert.match(panel, /nog niet beschikbaar/i);
     assert.doesNotMatch(panel, /€|EUR|[0-9]+[,.][0-9]{2}|payroll|loon|omzet/i);
