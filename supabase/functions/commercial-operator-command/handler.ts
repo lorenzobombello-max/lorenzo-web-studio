@@ -28,6 +28,10 @@ const APPLICATION_ACTIONS = new Set([
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
+  "count_pending_intakes",
+  "archive_pending_intake",
+  "restore_pending_intake",
+  "permanently_delete_pending_intake",
   "get_application_facets_v2",
   "get_application_detail",
   "get_assignment_operator_roster",
@@ -68,6 +72,10 @@ const INTAKE_LIFECYCLE_ACTIONS = new Map([
   ["resume_intake", "RESUMED"],
   ["cancel_intake", "CANCELLED"],
   ["reactivate_intake", "REACTIVATED"]
+]);
+const PENDING_INTAKE_RETENTION_ACTIONS = new Map([
+  ["archive_pending_intake", "ARCHIVED"],
+  ["restore_pending_intake", "RESTORED"],
 ]);
 const DOSSIER_LIFECYCLE_ACTIONS = new Map([
   ["archive_dossier", "ARCHIVED"],
@@ -214,7 +222,11 @@ type CommercialOperatorDependencies = Readonly<{
   authorizeApplicationReader(jwt: string): PromiseLike<unknown>;
   verifyOperatorCursor(cursor: string, input: Record<string, unknown>): PromiseLike<unknown>;
   executeApplicationListV2(actorAuthUserId: string, input: Record<string, unknown>, position: unknown): PromiseLike<OperatorListCoreResult>;
-  executePendingIntakes(actorAuthUserId: string): PromiseLike<unknown>;
+  executePendingIntakes(
+    actorAuthUserId: string,
+    retentionState: string,
+  ): PromiseLike<unknown>;
+  executePendingIntakeCount(actorAuthUserId: string): PromiseLike<unknown>;
   signOperatorCursor(position: Record<string, string>, input: Record<string, unknown>): PromiseLike<string>;
   executeApplicationFacetsV2(actorAuthUserId: string, input: Record<string, unknown>): PromiseLike<unknown>;
   executeApplicationAction(jwt: string, input: Record<string, unknown>, actorAuthUserId: string): PromiseLike<unknown>;
@@ -318,6 +330,11 @@ function validatePendingIntakesResult(value: unknown) {
     "effective_access",
     "access_token_expires_at",
     "lifecycle_revision",
+    "retention_state",
+    "archived_at",
+    "retention_revision",
+    "can_permanently_delete",
+    "delete_block_reason",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, ["items"]) ||
@@ -347,12 +364,37 @@ function validatePendingIntakesResult(value: unknown) {
       typeof item.access_token_expires_at !== "string" ||
       !item.access_token_expires_at ||
       !Number.isSafeInteger(item.lifecycle_revision) ||
-      Number(item.lifecycle_revision) < 0
+      Number(item.lifecycle_revision) < 0 ||
+      !["ACTIVE", "ARCHIVED"].includes(String(item.retention_state)) ||
+      (item.archived_at !== null && typeof item.archived_at !== "string") ||
+      !Number.isSafeInteger(item.retention_revision) ||
+      Number(item.retention_revision) < 0 ||
+      typeof item.can_permanently_delete !== "boolean" ||
+      (item.delete_block_reason !== null &&
+        ![
+          "NOT_FOUND",
+          "INTAKE_SUBMITTED",
+          "COMMERCIAL_FOLLOW_UP_EXISTS",
+          "QUOTATION_EXISTS",
+          "PROJECT_EXISTS",
+          "INVOICE_EXISTS",
+          "CUSTOMER_REQUEST_EXISTS",
+          "FINANCIAL_DEPENDENCY_EXISTS",
+        ].includes(String(item.delete_block_reason)))
     ) {
       throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
     }
   }
   return value as { items: Record<string, unknown>[] };
+}
+function validatePendingIntakeCountResult(value: unknown) {
+  if (
+    !isRecord(value) || !hasExactKeys(value, ["active_count"]) ||
+    !Number.isSafeInteger(value.active_count) || Number(value.active_count) < 0
+  ) {
+    throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
+  }
+  return value as { active_count: number };
 }
 function validateQuotationBusinessInput(value: unknown): Record<string, unknown> {
   const keys = [
@@ -411,7 +453,25 @@ function validateApplicationAction(value: UnvalidatedInput) {
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
     : action === "list_pending_intakes"
+    ? new Set(["action", "retention_state"])
+    : action === "count_pending_intakes"
     ? new Set(["action"])
+    : PENDING_INTAKE_RETENTION_ACTIONS.has(action)
+    ? new Set([
+      "action",
+      "intake_id",
+      "expected_revision",
+      "idempotency_key",
+      "reason",
+    ])
+    : action === "permanently_delete_pending_intake"
+    ? new Set([
+      "action",
+      "intake_id",
+      "quote_request_id",
+      "idempotency_key",
+      "reason",
+    ])
     : action === "list_applications_v2"
     ? new Set(["action", "zone", "operational_status", "year", "quarter", "request_kind", "search", "cursor", "limit"])
     : action === "get_application_facets_v2"
@@ -498,10 +558,57 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, quote_request_id: quoteRequestId };
   }
+  if (action === "list_pending_intakes") {
+    const retentionState = value.retention_state ?? "ACTIVE";
+    if (!["ACTIVE", "ARCHIVED"].includes(String(retentionState))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, retention_state: String(retentionState) };
+  }
+  if (PENDING_INTAKE_RETENTION_ACTIONS.has(action)) {
+    const intakeId = String(value.intake_id || "");
+    const expectedRevision = value.expected_revision;
+    const idempotencyKey = String(value.idempotency_key || "");
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (
+      !UUID.test(intakeId) || !UUID.test(idempotencyKey) ||
+      !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0 ||
+      reason.length < 1 || reason.length > 500
+    ) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      intake_id: intakeId,
+      event_type: PENDING_INTAKE_RETENTION_ACTIONS.get(action),
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+      reason,
+    };
+  }
+  if (action === "permanently_delete_pending_intake") {
+    const intakeId = String(value.intake_id || "");
+    const quoteRequestId = String(value.quote_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (
+      !UUID.test(intakeId) || !UUID.test(quoteRequestId) ||
+      !UUID.test(idempotencyKey) || reason.length < 1 || reason.length > 500
+    ) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      intake_id: intakeId,
+      quote_request_id: quoteRequestId,
+      idempotency_key: idempotencyKey,
+      reason,
+    };
+  }
   if (
     action === "get_assignment_operator_roster" ||
     action === "get_current_operator_identity" ||
-    action === "list_pending_intakes"
+    action === "count_pending_intakes"
   ) return { action };
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
@@ -778,6 +885,19 @@ function mapDatabaseError(error: unknown) {
   if (code === "APPROVAL_NOT_FOUND") return response(404, "QUOTATION_APPROVAL_NOT_FOUND");
   if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
+  if (code === "PENDING_INTAKE_NOT_FOUND") return response(404, code);
+  if (code === "STALE_PENDING_INTAKE_RETENTION_REVISION") {
+    return response(409, "CONCURRENT_MODIFICATION");
+  }
+  if (
+    [
+      "PENDING_INTAKE_DELETE_BLOCKED",
+      "PENDING_INTAKE_REQUIRED",
+      "INVALID_PENDING_INTAKE_RETENTION_TRANSITION",
+    ].includes(code)
+  ) {
+    return response(409, "COMMAND_REJECTED");
+  }
   if (code === "DOSSIER_NOT_FOUND") return response(404, code);
   if (code === "AMBIGUOUS_DOSSIER_REFERENCE") return response(409, code);
   if (code === "ASSIGNEE_OPERATOR_NOT_FOUND") return response(404, code);
@@ -961,6 +1081,10 @@ export async function handleCommercialOperator(request: Request, deps: Commercia
           "list_applications_v2",
           "get_application_facets_v2",
           "list_pending_intakes",
+          "count_pending_intakes",
+          "archive_pending_intake",
+          "restore_pending_intake",
+          "permanently_delete_pending_intake",
         ].includes(String(parsed.action))
       ) {
         await deps.authorizeApplicationReader(jwt);
@@ -968,7 +1092,16 @@ export async function handleCommercialOperator(request: Request, deps: Commercia
       const input = validateApplicationAction(parsed);
       if (input.action === "list_pending_intakes") {
         const result = validatePendingIntakesResult(
-          await deps.executePendingIntakes(user.id),
+          await deps.executePendingIntakes(
+            user.id,
+            String(input.retention_state),
+          ),
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "count_pending_intakes") {
+        const result = validatePendingIntakeCountResult(
+          await deps.executePendingIntakeCount(user.id),
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }

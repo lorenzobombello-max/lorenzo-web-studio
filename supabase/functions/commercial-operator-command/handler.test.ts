@@ -60,8 +60,9 @@ function dependencies(overrides: Record<string, unknown> = {}) {
           next_position: { dossier_date: "2099-01-02T10:20:30+00:00", quote_request_id: userId }
         };
       },
-      executePendingIntakes: async () => {
+      executePendingIntakes: async (_actorAuthUserId: string, retentionState: string) => {
         events.push("pending");
+        events.push(retentionState);
         return {
           items: [{
             quote_request_id: "a1800000-0000-4000-8000-000000000091",
@@ -78,8 +79,17 @@ function dependencies(overrides: Record<string, unknown> = {}) {
             effective_access: "ACTIVE",
             access_token_expires_at: "2099-01-08T10:00:00Z",
             lifecycle_revision: 0,
+            retention_state: "ACTIVE",
+            archived_at: null,
+            retention_revision: 0,
+            can_permanently_delete: true,
+            delete_block_reason: null,
           }],
         };
+      },
+      executePendingIntakeCount: async () => {
+        events.push("pending-count");
+        return { active_count: 3 };
       },
       signOperatorCursor: async (position: Record<string, string>, input: Record<string, unknown>)=>{
         events.push("sign");
@@ -1875,7 +1885,7 @@ Deno.test("pending-intake list uses preflight and returns only the safe DTO", as
     harness.deps,
   );
   assertEquals(response.status, 200);
-  assertEquals(harness.events, ["preflight", "pending"]);
+  assertEquals(harness.events, ["preflight", "pending", "ACTIVE"]);
   const body = await response.json();
   assertEquals(body.result.items[0].intake_status, "invited");
   assertEquals("access_token_hash" in body.result.items[0], false);
@@ -1918,4 +1928,123 @@ Deno.test("pending-intake list rejects extra input, unauthorized readers, and un
     )).status,
     500,
   );
+});
+
+Deno.test("pending-intake list and retention actions use fixed validated state", async () => {
+  const archived = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes", retention_state: "ARCHIVED" }),
+      archived.deps,
+    )).status,
+    200,
+  );
+  assertEquals(archived.events, ["preflight", "pending", "ARCHIVED"]);
+
+  for (
+    const [action, eventType] of [
+      ["archive_pending_intake", "ARCHIVED"],
+      ["restore_pending_intake", "RESTORED"],
+    ] as const
+  ) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(
+      request({
+        action,
+        intake_id: "a1800000-0000-4000-8000-000000000092",
+        expected_revision: 0,
+        idempotency_key: "a1800000-0000-4000-8000-000000000093",
+        reason: "Workspace retention",
+      }),
+      harness.deps,
+    );
+    assertEquals(response.status, 200);
+    assertEquals(harness.events, ["preflight"]);
+    assertEquals(harness.calls[0].input, {
+      action,
+      intake_id: "a1800000-0000-4000-8000-000000000092",
+      event_type: eventType,
+      expected_revision: 0,
+      idempotency_key: "a1800000-0000-4000-8000-000000000093",
+      reason: "Workspace retention",
+    });
+  }
+});
+
+Deno.test("pending permanent delete requires exact identifiers and explicit reason", async () => {
+  const harness = dependencies();
+  const response = await handleCommercialOperator(
+    request({
+      action: "permanently_delete_pending_intake",
+      intake_id: "a1800000-0000-4000-8000-000000000092",
+      quote_request_id: "a1800000-0000-4000-8000-000000000091",
+      idempotency_key: "a1800000-0000-4000-8000-000000000094",
+      reason: "Confirmed disposable pre-submission record",
+    }),
+    harness.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(harness.events, ["preflight"]);
+  assertEquals(harness.calls[0].input, {
+    action: "permanently_delete_pending_intake",
+    intake_id: "a1800000-0000-4000-8000-000000000092",
+    quote_request_id: "a1800000-0000-4000-8000-000000000091",
+    idempotency_key: "a1800000-0000-4000-8000-000000000094",
+    reason: "Confirmed disposable pre-submission record",
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({
+        action: "permanently_delete_pending_intake",
+        intake_id: "a1800000-0000-4000-8000-000000000092",
+        quote_request_id: "a1800000-0000-4000-8000-000000000091",
+        idempotency_key: "a1800000-0000-4000-8000-000000000094",
+      }),
+      dependencies().deps,
+    )).status,
+    400,
+  );
+});
+
+Deno.test("pending workspace mutations expose safe conflict envelopes", async () => {
+  for (
+    const [databaseCode, responseCode] of [
+      ["PENDING_INTAKE_DELETE_BLOCKED", "COMMAND_REJECTED"],
+      ["PENDING_INTAKE_REQUIRED", "COMMAND_REJECTED"],
+      ["STALE_PENDING_INTAKE_RETENTION_REVISION", "CONCURRENT_MODIFICATION"],
+    ] as const
+  ) {
+    const harness = dependencies({
+      executeApplicationAction: async () => {
+        throw new Error(databaseCode);
+      },
+    });
+    const response = await handleCommercialOperator(
+      request({
+        action: "archive_pending_intake",
+        intake_id: "a1800000-0000-4000-8000-000000000092",
+        expected_revision: 0,
+        idempotency_key: "a1800000-0000-4000-8000-000000000093",
+        reason: "Workspace retention",
+      }),
+      harness.deps,
+    );
+    assertEquals(response.status, 409);
+    assertEquals((await response.json()).code, responseCode);
+  }
+});
+
+Deno.test("pending-intake count returns only active aggregate metadata", async () => {
+  const harness = dependencies();
+  const response = await handleCommercialOperator(
+    request({ action: "count_pending_intakes" }),
+    harness.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result: { active_count: 3 },
+  });
+  assertEquals(harness.events, ["preflight", "pending-count"]);
 });

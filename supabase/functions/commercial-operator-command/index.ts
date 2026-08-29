@@ -552,12 +552,21 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       if (error) throw new Error(error.message);
       return data;
     },
-        executePendingIntakes: async (actorAuthUserId: string) => {
+        executePendingIntakes: async (actorAuthUserId: string, retentionState: string) => {
           const { data, error } = await serviceClient().rpc(
             "list_operator_pending_intakes_v1",
             {
               p_actor_auth_user_id: actorAuthUserId,
+              p_retention_state: retentionState,
             },
+          );
+          if (error) throw new Error(error.message);
+          return data;
+        },
+        executePendingIntakeCount: async (actorAuthUserId: string) => {
+          const { data, error } = await serviceClient().rpc(
+            "count_operator_active_pending_intakes_v1",
+            { p_actor_auth_user_id: actorAuthUserId },
           );
           if (error) throw new Error(error.message);
           return data;
@@ -648,6 +657,39 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
         return await executeCallerJwtDossierAssignmentAction(jwt, input as DossierAssignmentActionInput, clientFor);
       }
       const client = clientFor(jwt);
+          if (
+            ["archive_pending_intake", "restore_pending_intake"].includes(
+              input.action,
+            )
+          ) {
+            const { data, error } = await serviceClient().rpc(
+              "execute_operator_pending_intake_retention_v1",
+              {
+                p_actor_auth_user_id: actorAuthUserId,
+                p_intake_id: input.intake_id,
+                p_event_type: input.event_type,
+                p_expected_revision: input.expected_revision,
+                p_idempotency_key: input.idempotency_key,
+                p_reason: input.reason,
+              },
+            );
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "permanently_delete_pending_intake") {
+            const { data, error } = await serviceClient().rpc(
+              "permanently_delete_pending_intake_v1",
+              {
+                p_actor_auth_user_id: actorAuthUserId,
+                p_intake_id: input.intake_id,
+                p_quote_request_id: input.quote_request_id,
+                p_idempotency_key: input.idempotency_key,
+                p_reason: input.reason,
+              },
+            );
+            if (error) throw new Error(error.message);
+            return data;
+          }
       if (["interrupt_intake", "resume_intake", "cancel_intake", "reactivate_intake"].includes(input.action)) {
         const { data, error } = await client.rpc("execute_operator_intake_lifecycle_command_v1", {
           p_intake_id: input.intake_id,

@@ -20,7 +20,7 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   read_only: "READ ONLY",
   admin: "ADMIN",
 });
-const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "recruitment", "messages", "calendar"]);
+const OPERATOR_MODULES = new Set(["dossiers", "intake", "finance", "workforce", "recruitment", "messages", "calendar"]);
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 
 function localDateInputValue(date = new Date()) {
@@ -32,10 +32,12 @@ function localDateInputValue(date = new Date()) {
 
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
-  if (role !== "owner" || parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
+  if (parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
     return "dossiers";
   }
   const module = parsed.searchParams.get("module") || "dossiers";
+  if (module === "intake" && ["owner", "admin"].includes(role)) return module;
+  if (role !== "owner") return "dossiers";
   return OPERATOR_MODULES.has(module) ? module : "dossiers";
 }
 
@@ -984,8 +986,13 @@ export function buildIntakeLifecycleCommand(action, lifecycle, reason, idempoten
   };
 }
 
-export function pendingIntakesRequest() {
-  return { action: "list_pending_intakes" };
+export function pendingIntakesRequest(retentionState = "ACTIVE") {
+  if (!["ACTIVE", "ARCHIVED"].includes(retentionState)) throw new Error("INVALID_RETENTION_STATE");
+  return { action: "list_pending_intakes", retention_state: retentionState };
+}
+
+export function pendingIntakeCountRequest() {
+  return { action: "count_pending_intakes" };
 }
 
 export function pendingIntakePresentation(item) {
@@ -1002,7 +1009,10 @@ export function pendingIntakePresentation(item) {
     lifecycle_revision: item.lifecycle_revision,
   };
   const access = intakeLifecyclePresentation(lifecycle);
-  if (!access || !item.invitation_created_at) return null;
+  if (!access || !item.invitation_created_at
+      || !["ACTIVE", "ARCHIVED"].includes(item.retention_state)
+      || !Number.isSafeInteger(item.retention_revision) || item.retention_revision < 0
+      || typeof item.can_permanently_delete !== "boolean") return null;
   return {
     lifecycle,
     access,
@@ -1010,6 +1020,61 @@ export function pendingIntakePresentation(item) {
       ? { label: "Uitnodiging verstuurd", tone: "amber" }
       : { label: "Intake gestart", tone: "green" },
     invitedAt: item.invitation_sent_at || item.invitation_created_at,
+  };
+}
+
+export function pendingIntakeWorkspaceItems(items, { search = "", filter = "ALL", sort = "NEWEST" } = {}) {
+  const normalizedSearch = String(search).trim().toLocaleLowerCase("nl-BE");
+  const allowedFilters = new Set(["ALL", "INVITED", "IN_PROGRESS", "ACTIVE", "INTERRUPTED", "EXPIRED", "CANCELLED"]);
+  const allowedSorts = new Set(["NEWEST", "OLDEST", "EXPIRY", "STATUS"]);
+  if (!allowedFilters.has(filter) || !allowedSorts.has(sort)) throw new Error("INVALID_PENDING_WORKSPACE_QUERY");
+  const result = items.filter((item)=>{
+    if (!pendingIntakePresentation(item)) return false;
+    if (normalizedSearch && ![item.name, item.organization, item.email]
+      .filter(Boolean).some((value)=>String(value).toLocaleLowerCase("nl-BE").includes(normalizedSearch))) return false;
+    if (filter === "INVITED" && item.intake_status !== "invited") return false;
+    if (filter === "IN_PROGRESS" && item.intake_status !== "in_progress") return false;
+    if (["ACTIVE", "INTERRUPTED", "EXPIRED", "CANCELLED"].includes(filter) && item.effective_access !== filter) return false;
+    return true;
+  });
+  return result.sort((left, right)=>{
+    if (sort === "OLDEST") return Date.parse(left.invitation_sent_at || left.invitation_created_at) - Date.parse(right.invitation_sent_at || right.invitation_created_at);
+    if (sort === "EXPIRY") return Date.parse(left.access_token_expires_at) - Date.parse(right.access_token_expires_at);
+    if (sort === "STATUS") return `${left.intake_status}|${left.effective_access}|${left.name}`.localeCompare(`${right.intake_status}|${right.effective_access}|${right.name}`, "nl-BE");
+    return Date.parse(right.invitation_sent_at || right.invitation_created_at) - Date.parse(left.invitation_sent_at || left.invitation_created_at);
+  });
+}
+
+export function buildPendingIntakeRetentionCommand(action, item, reason, idempotencyKey) {
+  const target = action === "archive_pending_intake" ? "ACTIVE" : action === "restore_pending_intake" ? "ARCHIVED" : null;
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (!target || item?.retention_state !== target || !UUID.test(String(item?.intake_id || ""))
+      || !Number.isSafeInteger(item?.retention_revision) || item.retention_revision < 0
+      || !UUID.test(String(idempotencyKey || "")) || normalizedReason.length < 1 || normalizedReason.length > 500) {
+    throw new Error("INVALID_PENDING_RETENTION_COMMAND");
+  }
+  return {
+    action,
+    intake_id: item.intake_id,
+    expected_revision: item.retention_revision,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
+  };
+}
+
+export function buildPendingIntakeDeleteCommand(item, reason, idempotencyKey) {
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (!item?.can_permanently_delete || !UUID.test(String(item.intake_id || ""))
+      || !UUID.test(String(item.quote_request_id || "")) || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length < 1 || normalizedReason.length > 500) {
+    throw new Error("INVALID_PENDING_DELETE_COMMAND");
+  }
+  return {
+    action: "permanently_delete_pending_intake",
+    intake_id: item.intake_id,
+    quote_request_id: item.quote_request_id,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
   };
 }
 
@@ -1850,6 +1915,24 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   const pendingIntakesMessage = document.getElementById("pendingIntakesMessage");
   const pendingIntakesRefresh = document.getElementById("pendingIntakesRefresh");
   const pendingIntakeDetail = document.getElementById("pendingIntakeDetail");
+  const pendingIntakeDetailEmpty = document.getElementById("pendingIntakeDetailEmpty");
+  const pendingIntakesEntry = document.getElementById("pendingIntakesEntry");
+  const pendingIntakesCount = document.getElementById("pendingIntakesCount");
+  const pendingWorkspaceCount = document.getElementById("pendingWorkspaceCount");
+  const pendingRetentionButtons = Array.from(document.querySelectorAll("[data-pending-retention-state]"));
+  const pendingIntakeSearch = document.getElementById("pendingIntakeSearch");
+  const pendingIntakeStatusFilter = document.getElementById("pendingIntakeStatusFilter");
+  const pendingIntakeSort = document.getElementById("pendingIntakeSort");
+  const pendingIntakeClearFilters = document.getElementById("pendingIntakeClearFilters");
+  const pendingIntakeRetentionAction = document.getElementById("pendingIntakeRetentionAction");
+  const pendingIntakeDangerZone = document.getElementById("pendingIntakeDangerZone");
+  const pendingIntakeDelete = document.getElementById("pendingIntakeDelete");
+  const pendingIntakeDeleteUnavailable = document.getElementById("pendingIntakeDeleteUnavailable");
+  const pendingIntakeCommandDialog = document.getElementById("pendingIntakeCommandDialog");
+  const pendingIntakeCommandForm = document.getElementById("pendingIntakeCommandForm");
+  const pendingIntakeCommandReason = document.getElementById("pendingIntakeCommandReason");
+  const pendingIntakeCommandCancel = document.getElementById("pendingIntakeCommandCancel");
+  const pendingIntakeCommandConfirm = document.getElementById("pendingIntakeCommandConfirm");
   const pendingLifecycleButtons = Array.from(document.querySelectorAll("[data-pending-lifecycle-action]"));
   const list = document.getElementById("applicationList");
   const empty = document.getElementById("applicationEmpty");
@@ -1926,6 +2009,9 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   let pendingLifecycleAction = null;
   let pendingIntakeItems = [];
   let selectedPendingIntake = null;
+  let pendingRetentionState = "ACTIVE";
+  let pendingWorkspaceBusy = false;
+  let pendingWorkspaceCommand = null;
   let selectedDossierReference = null;
   let quotationActionBusy = false;
 
@@ -2768,6 +2854,255 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       });
     }
   }
+  const canManagePendingIntakes = ["owner", "admin"].includes(currentIdentity.role);
+  if (pendingIntakesEntry) pendingIntakesEntry.hidden = !canManagePendingIntakes;
+
+  async function loadPendingIntakeCount() {
+    if (!canManagePendingIntakes || !pendingIntakesCount) return;
+    try {
+      const result = await invoke(pendingIntakeCountRequest());
+      pendingIntakesCount.textContent = String(result.active_count);
+      pendingIntakesCount.setAttribute("aria-label", `${result.active_count} actieve intakes`);
+    } catch {
+      pendingIntakesCount.textContent = "–";
+      pendingIntakesCount.setAttribute("aria-label", "Actieve intakes niet beschikbaar");
+    }
+  }
+
+  if (activeModule === "dossiers") await loadPendingIntakeCount();
+
+  if (activeModule === "intake") {
+    const clearPendingWorkspaceDetail = ()=>{
+      selectedPendingIntake = null;
+      setText("pendingIntakeName", "Intakedetail");
+      pendingIntakeDetail.hidden = true;
+      pendingIntakeDetailEmpty.hidden = false;
+      pendingIntakeDangerZone.hidden = true;
+      for (const button of pendingLifecycleButtons) button.hidden = true;
+    };
+    const renderPendingWorkspaceDetail = (item)=>{
+      const presentation = pendingIntakePresentation(item);
+      if (!presentation) return clearPendingWorkspaceDetail();
+      selectedPendingIntake = item;
+      pendingIntakeDetail.hidden = false;
+      pendingIntakeDetailEmpty.hidden = true;
+      setText("pendingIntakeName", item.name);
+      setText("pendingIntakeOrganization", item.organization || "Niet opgegeven");
+      setText("pendingIntakeEmail", item.email);
+      setText("pendingIntakePhone", item.phone || "Niet opgegeven");
+      setText("pendingIntakeRequestKind", "Website");
+      setText("pendingIntakeWebsiteType", item.website_type);
+      setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
+      setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));
+      setText("pendingIntakeQuoteRequestId", item.quote_request_id);
+      setText("pendingIntakeId", item.intake_id);
+      setBadge("pendingIntakeStatus", presentation.intake.label, presentation.intake.tone);
+      setBadge("pendingIntakeAccess", `Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone);
+      setBadge("pendingIntakeRetention", item.retention_state === "ARCHIVED" ? "Gearchiveerd" : "Actief", item.retention_state === "ARCHIVED" ? "gray" : "green");
+      for (const button of pendingLifecycleButtons) {
+        button.hidden = !presentation.access.actions.includes(button.dataset.pendingLifecycleAction);
+        button.disabled = pendingWorkspaceBusy;
+      }
+      const archived = item.retention_state === "ARCHIVED";
+      pendingIntakeRetentionAction.textContent = archived ? "Terugzetten naar actief" : "Archiveren";
+      pendingIntakeRetentionAction.dataset.action = archived ? "restore" : "archive";
+      pendingIntakeRetentionAction.disabled = pendingWorkspaceBusy;
+      pendingIntakeDangerZone.hidden = item.can_permanently_delete !== true;
+      pendingIntakeDeleteUnavailable.textContent = item.can_permanently_delete === true
+        ? "Definitief verwijderen is voor dit dependency-vrije historie-item toegestaan."
+        : "Definitief verwijderen is beschermd zolang commerciële of dossierafhankelijkheden bestaan.";
+    };
+    const renderPendingWorkspaceList = ()=>{
+      const items = pendingIntakeWorkspaceItems(pendingIntakeItems, {
+        search: pendingIntakeSearch.value,
+        filter: pendingIntakeStatusFilter.value,
+        sort: pendingIntakeSort.value,
+      });
+      pendingIntakesList.replaceChildren();
+      pendingIntakesEmpty.hidden = items.length > 0;
+      pendingIntakesEmpty.textContent = pendingIntakeItems.length === 0
+        ? (pendingRetentionState === "ARCHIVED" ? "Er zijn geen gearchiveerde intakes." : "Niemand wacht momenteel op intake.")
+        : "Geen intakes voldoen aan deze zoekopdracht en filters.";
+      pendingWorkspaceCount.textContent = `${items.length} van ${pendingIntakeItems.length}`;
+      for (const item of items) {
+        const presentation = pendingIntakePresentation(item);
+        const row = document.createElement("li");
+        const button = document.createElement("button");
+        const identity = document.createElement("span");
+        const name = document.createElement("strong");
+        const context = document.createElement("small");
+        const statuses = document.createElement("span");
+        button.type = "button";
+        button.className = "application-list__button";
+        if (selectedPendingIntake?.intake_id === item.intake_id) button.setAttribute("aria-current", "true");
+        name.textContent = item.organization || item.name;
+        context.textContent = `${item.name} · ${formatDate(presentation.invitedAt)} · ${item.website_type}`;
+        identity.append(name, context);
+        statuses.className = "application-list__statuses";
+        statuses.append(badge(presentation.intake.label, presentation.intake.tone));
+        statuses.append(badge(`Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone));
+        button.append(identity, statuses);
+        button.addEventListener("click", ()=>{
+          renderPendingWorkspaceDetail(item);
+          renderPendingWorkspaceList();
+        });
+        row.append(button);
+        pendingIntakesList.append(row);
+      }
+    };
+    const loadPendingWorkspace = async (message = "")=>{
+      pendingIntakesRefresh.disabled = true;
+      pendingIntakesMessage.textContent = "Intakes worden geladen.";
+      try {
+        const result = await invoke(pendingIntakesRequest(pendingRetentionState));
+        pendingIntakeItems = Array.isArray(result?.items) ? result.items.filter((item)=>pendingIntakePresentation(item)) : [];
+        const selectedId = selectedPendingIntake?.intake_id;
+        renderPendingWorkspaceList();
+        renderPendingWorkspaceDetail(pendingIntakeItems.find((item)=>item.intake_id === selectedId) || null);
+        pendingIntakesMessage.textContent = message;
+      } catch {
+        pendingIntakesMessage.textContent = "Intakes konden niet worden geladen.";
+      } finally {
+        pendingIntakesRefresh.disabled = false;
+      }
+    };
+    const setPendingWorkspaceBusy = (busy)=>{
+      pendingWorkspaceBusy = busy;
+      pendingIntakesRefresh.disabled = busy;
+      pendingIntakeRetentionAction.disabled = busy;
+      pendingIntakeDelete.disabled = busy;
+      for (const button of pendingLifecycleButtons) button.disabled = busy;
+    };
+
+    for (const button of pendingRetentionButtons) {
+      button.addEventListener("click", async ()=>{
+        const state = button.dataset.pendingRetentionState;
+        if (pendingWorkspaceBusy || state === pendingRetentionState) return;
+        pendingRetentionState = state;
+        for (const candidate of pendingRetentionButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
+        clearPendingWorkspaceDetail();
+        await loadPendingWorkspace();
+      });
+    }
+    for (const control of [pendingIntakeSearch, pendingIntakeStatusFilter, pendingIntakeSort]) {
+      control.addEventListener(control === pendingIntakeSearch ? "input" : "change", renderPendingWorkspaceList);
+    }
+    pendingIntakeClearFilters.addEventListener("click", ()=>{
+      pendingIntakeSearch.value = "";
+      pendingIntakeStatusFilter.value = "ALL";
+      pendingIntakeSort.value = "NEWEST";
+      renderPendingWorkspaceList();
+      pendingIntakeSearch.focus();
+    });
+    pendingIntakesRefresh.addEventListener("click", ()=>loadPendingWorkspace());
+    pendingIntakeRetentionAction.addEventListener("click", ()=>{
+      const item = selectedPendingIntake;
+      if (!item || pendingWorkspaceBusy) return;
+      const archive = pendingIntakeRetentionAction.dataset.action === "archive";
+      pendingWorkspaceCommand = { type: archive ? "archive" : "restore", item };
+      setText("pendingIntakeCommandEyebrow", "Bevestiging vereist");
+      setText("pendingIntakeCommandTitle", archive ? "Intake archiveren" : "Intake terugzetten naar actief");
+      setText("pendingIntakeCommandDescription", archive
+        ? "De intake verdwijnt uit de actieve opvolging en blijft beschikbaar in het archief."
+        : "De intake wordt opnieuw zichtbaar in de actieve opvolging.");
+      pendingIntakeCommandConfirm.textContent = archive ? "Archiveren" : "Terugzetten";
+      pendingIntakeCommandConfirm.className = "primary-action primary-action--compact";
+      pendingIntakeCommandReason.value = "";
+      pendingIntakeCommandDialog.showModal();
+      pendingIntakeCommandReason.focus();
+    });
+    pendingIntakeDelete.addEventListener("click", ()=>{
+      const item = selectedPendingIntake;
+      if (!item?.can_permanently_delete || pendingWorkspaceBusy) return;
+      pendingWorkspaceCommand = { type: "delete", item };
+      setText("pendingIntakeCommandEyebrow", "Onomkeerbare actie");
+      setText("pendingIntakeCommandTitle", "Intake definitief verwijderen");
+      setText("pendingIntakeCommandDescription", `${item.name} en de bijbehorende nog niet ingediende intake worden definitief verwijderd. Dit kan niet ongedaan worden gemaakt.`);
+      pendingIntakeCommandConfirm.textContent = "Definitief verwijderen";
+      pendingIntakeCommandConfirm.className = "danger-action";
+      pendingIntakeCommandReason.value = "";
+      pendingIntakeCommandDialog.showModal();
+      pendingIntakeCommandReason.focus();
+    });
+    pendingIntakeCommandReason.addEventListener("input", ()=>pendingIntakeCommandReason.setCustomValidity(""));
+    pendingIntakeCommandCancel.addEventListener("click", ()=>pendingIntakeCommandDialog.close("cancel"));
+    pendingIntakeCommandForm.addEventListener("submit", (event)=>{
+      const reason = pendingIntakeCommandReason.value.trim();
+      if (reason.length >= 1 && reason.length <= 500) return;
+      event.preventDefault();
+      pendingIntakeCommandReason.setCustomValidity("Vul een korte reden in.");
+      pendingIntakeCommandReason.reportValidity();
+    });
+    pendingIntakeCommandDialog.addEventListener("close", async ()=>{
+      const command = pendingWorkspaceCommand;
+      pendingWorkspaceCommand = null;
+      if (pendingIntakeCommandDialog.returnValue !== "confirm" || !command || pendingWorkspaceBusy) return;
+      setPendingWorkspaceBusy(true);
+      try {
+        if (command.type === "delete") {
+          await invoke(buildPendingIntakeDeleteCommand(command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
+        } else {
+          await invoke(buildPendingIntakeRetentionCommand(command.type === "archive" ? "archive_pending_intake" : "restore_pending_intake", command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
+        }
+        const successMessage = command.type === "delete" ? "Intake is definitief verwijderd."
+          : command.type === "archive" ? "Intake is gearchiveerd." : "Intake is teruggezet naar actief.";
+        await Promise.all([loadPendingWorkspace(successMessage), loadPendingIntakeCount()]);
+      } catch {
+        const errorMessage = command.type === "delete"
+          ? "Definitief verwijderen is niet uitgevoerd. De serverbescherming blijft van kracht."
+          : "De werkruimtestatus kon niet worden gewijzigd. De actuele status is opnieuw geladen.";
+        await loadPendingWorkspace(errorMessage);
+      } finally {
+        setPendingWorkspaceBusy(false);
+      }
+    });
+    for (const button of pendingLifecycleButtons) {
+      button.addEventListener("click", ()=>{
+        const presentation = pendingIntakePresentation(selectedPendingIntake);
+        const action = button.dataset.pendingLifecycleAction;
+        const actionPresentation = intakeLifecycleAction(action);
+        if (pendingWorkspaceBusy || !presentation?.access.actions.includes(action) || !actionPresentation) return;
+        pendingLifecycleAction = { action, lifecycle: presentation.lifecycle, presentation: actionPresentation };
+        setText("lifecycleDialogTitle", actionPresentation.title);
+        setText("lifecycleDialogDescription", actionPresentation.description);
+        lifecycleConfirm.textContent = actionPresentation.label;
+        lifecycleConfirm.className = action === "cancel_intake" ? "danger-action" : "primary-action primary-action--compact";
+        lifecycleReason.value = "";
+        lifecycleDialog.showModal();
+        lifecycleReason.focus();
+      });
+    }
+    lifecycleReason.addEventListener("input", ()=>lifecycleReason.setCustomValidity(""));
+    lifecycleCancel.addEventListener("click", ()=>lifecycleDialog.close("cancel"));
+    lifecycleForm.addEventListener("submit", (event)=>{
+      const reason = lifecycleReason.value.trim();
+      if (reason.length >= 1 && reason.length <= 500) return;
+      event.preventDefault();
+      lifecycleReason.setCustomValidity("Vul een korte reden in.");
+      lifecycleReason.reportValidity();
+    });
+    lifecycleDialog.addEventListener("close", async ()=>{
+      const command = pendingLifecycleAction;
+      pendingLifecycleAction = null;
+      if (lifecycleDialog.returnValue !== "confirm" || !command || pendingWorkspaceBusy) return;
+      setPendingWorkspaceBusy(true);
+      try {
+        await invoke(buildIntakeLifecycleCommand(command.action, command.lifecycle, lifecycleReason.value, crypto.randomUUID()));
+        await loadPendingWorkspace(`${command.presentation.label} is uitgevoerd.`);
+      } catch {
+        pendingIntakesMessage.textContent = "De lifecycleactie kon niet worden uitgevoerd. De actuele status is opnieuw geladen.";
+        await loadPendingWorkspace(pendingIntakesMessage.textContent);
+      } finally {
+        setPendingWorkspaceBusy(false);
+      }
+    });
+    internalSmokePanel.hidden = true;
+    internalSmokeBPanel.hidden = true;
+    personalQueueWorkspace.hidden = true;
+    managerWorkspace.hidden = true;
+    await Promise.all([loadPendingWorkspace(), loadPendingIntakeCount()]);
+    return;
+  }
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;
@@ -3030,93 +3365,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
   if (dashboardRoute !== "manager") return;
   personalQueueWorkspace.hidden = true;
   managerWorkspace.hidden = false;
-
-  function clearPendingIntakeDetail() {
-    selectedPendingIntake = null;
-    pendingIntakeDetail.hidden = true;
-    for (const button of pendingLifecycleButtons) button.hidden = true;
-  }
-
-  function renderPendingIntakeDetail(item) {
-    const presentation = pendingIntakePresentation(item);
-    if (!presentation) return clearPendingIntakeDetail();
-    selectedPendingIntake = item;
-    pendingIntakeDetail.hidden = false;
-    setText("pendingIntakeName", item.name);
-    setText("pendingIntakeOrganization", item.organization || "Niet opgegeven");
-    setText("pendingIntakeEmail", item.email);
-    setText("pendingIntakePhone", item.phone || "Niet opgegeven");
-    setText("pendingIntakeRequestKind", "Website");
-    setText("pendingIntakeWebsiteType", item.website_type);
-    setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
-    setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));
-    setText("pendingIntakeQuoteRequestId", item.quote_request_id);
-    setText("pendingIntakeId", item.intake_id);
-    setBadge("pendingIntakeStatus", presentation.intake.label, presentation.intake.tone);
-    setBadge("pendingIntakeAccess", `Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone);
-    for (const button of pendingLifecycleButtons) {
-      button.hidden = !presentation.access.actions.includes(button.dataset.pendingLifecycleAction);
-      button.disabled = lifecycleBusy;
-    }
-  }
-
-  function renderPendingIntakes(items) {
-    pendingIntakesList.replaceChildren();
-    pendingIntakesEmpty.hidden = items.length > 0;
-    for (const item of items) {
-      const presentation = pendingIntakePresentation(item);
-      if (!presentation) continue;
-      const row = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "application-list__button";
-      const identity = document.createElement("span");
-      const name = document.createElement("strong");
-      const context = document.createElement("small");
-      name.textContent = item.organization || item.name;
-      context.textContent = `${item.name} · ${formatDate(presentation.invitedAt)} · ${item.website_type}`;
-      identity.append(name, context);
-      const statuses = document.createElement("span");
-      statuses.className = "application-list__statuses";
-      statuses.append(badge(presentation.intake.label, presentation.intake.tone));
-      statuses.append(badge(`Toegang ${presentation.access.label.toLowerCase()}`, presentation.access.tone));
-      button.append(identity, statuses);
-      if (selectedPendingIntake?.intake_id === item.intake_id) button.setAttribute("aria-current", "true");
-      button.addEventListener("click", ()=>{
-        for (const candidate of pendingIntakesList.querySelectorAll("[aria-current]")) candidate.removeAttribute("aria-current");
-        button.setAttribute("aria-current", "true");
-        renderPendingIntakeDetail(item);
-      });
-      row.append(button);
-      pendingIntakesList.append(row);
-    }
-  }
-
-  async function loadPendingIntakes(message = "") {
-    pendingIntakesRefresh.disabled = true;
-    pendingIntakesMessage.textContent = "Wachtende intakes worden geladen.";
-    try {
-      const result = await invoke(pendingIntakesRequest());
-      pendingIntakeItems = Array.isArray(result?.items)
-        ? result.items.filter((item)=>pendingIntakePresentation(item))
-        : [];
-      const selectedId = selectedPendingIntake?.intake_id;
-      renderPendingIntakes(pendingIntakeItems);
-      const current = pendingIntakeItems.find((item)=>item.intake_id === selectedId);
-      if (current) renderPendingIntakeDetail(current);
-      else clearPendingIntakeDetail();
-      pendingIntakesMessage.textContent = message;
-      return true;
-    } catch {
-      pendingIntakesMessage.textContent = "Wachtende intakes konden niet worden geladen.";
-      return false;
-    } finally {
-      pendingIntakesRefresh.disabled = false;
-    }
-  }
-
-  pendingIntakesRefresh.addEventListener("click", ()=>loadPendingIntakes());
-  await loadPendingIntakes();
 
   function updateLocation(locator) {
     const url = new URL(window.location.href);
@@ -3873,31 +4121,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     });
   }
 
-  for (const button of pendingLifecycleButtons) {
-    button.addEventListener("click", ()=>{
-      const action = button.dataset.pendingLifecycleAction;
-      const presentation = pendingIntakePresentation(selectedPendingIntake);
-      const actionPresentation = intakeLifecycleAction(action);
-      if (lifecycleBusy || !presentation?.access.actions.includes(action) || !actionPresentation) return;
-      pendingLifecycleAction = {
-        source: "pending",
-        action,
-        lifecycle: presentation.lifecycle,
-        intakeId: selectedPendingIntake.intake_id,
-        presentation: actionPresentation,
-      };
-      setText("lifecycleDialogTitle", actionPresentation.title);
-      setText("lifecycleDialogDescription", actionPresentation.description);
-      lifecycleConfirm.textContent = actionPresentation.label;
-      lifecycleConfirm.className = action === "cancel_intake" ? "danger-action" : "primary-action primary-action--compact";
-      lifecycleReason.value = "";
-      lifecycleReason.setCustomValidity("");
-      lifecycleDialog.returnValue = "";
-      lifecycleDialog.showModal();
-      lifecycleReason.focus();
-    });
-  }
-
   lifecycleReason.addEventListener("input", ()=>lifecycleReason.setCustomValidity(""));
   lifecycleCancel.addEventListener("click", ()=>lifecycleDialog.close("cancel"));
   lifecycleForm.addEventListener("submit", (event)=>{
@@ -3924,30 +4147,19 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     try {
       const refresh = await refreshAfterOperatorMutation(
         ()=>invoke(input),
-        command.source === "pending"
-          ? async ()=>{
-            await Promise.all([loadPendingIntakes(`${command.presentation.label} is uitgevoerd.`), listController.refresh()]);
-            return { status: pendingIntakeItems.some((item)=>item.intake_id === command.intakeId) ? "refreshed" : "closed" };
-          }
-          : (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
+        (selectionRequestId)=>refreshMutationDetail(command.locator, selectionRequestId),
         ()=>detailRequestId,
       );
       completed = refresh.status === "refreshed";
-      if (completed && command.source !== "pending") lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
+      if (completed) lifecycleMessage.textContent = `${command.presentation.label} is uitgevoerd. De actuele status is geladen.`;
     } catch (error) {
       const outcome = intakeLifecycleError(error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED");
-      if (command.source === "pending") {
-        if (outcome.refresh) await loadPendingIntakes();
-        pendingIntakesMessage.textContent = outcome.message;
-      } else {
-        if (outcome.refresh) await loadDetail(command.locator);
-        lifecycleMessage.textContent = outcome.message;
-      }
+      if (outcome.refresh) await loadDetail(command.locator);
+      lifecycleMessage.textContent = outcome.message;
     } finally {
       setLifecycleBusy(false);
       if (selectedDetail?.request_kind === "website") renderIntakeLifecycle(selectedDetail.intake_lifecycle);
-      if (selectedPendingIntake) renderPendingIntakeDetail(selectedPendingIntake);
-      if (completed && command.source !== "pending") focusIntakeLifecycle(selectedDetail?.intake_lifecycle, lifecycleButtons, lifecycleDossierTitle);
+      if (completed) focusIntakeLifecycle(selectedDetail?.intake_lifecycle, lifecycleButtons, lifecycleDossierTitle);
     }
   });
 

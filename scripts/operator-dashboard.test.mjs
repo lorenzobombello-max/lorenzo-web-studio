@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
-import { pendingIntakePresentation, pendingIntakesRequest } from "../assets/js/operator-dashboard.js";
+import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -23,6 +23,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     ["supplierDocumentDialog", "operator-modal--work"],
     ["promotionDialog", "operator-modal--compact"],
     ["lifecycleDialog", "operator-modal--action-confirm"],
+    ["pendingIntakeCommandDialog", "operator-modal--action-confirm"],
     ["dossierLifecycleDialog", "operator-modal--action-confirm"],
     ["dossierPurgeDialog", "operator-modal--action-confirm"],
   ]);
@@ -2365,6 +2366,8 @@ test("module routing defaults and fails safe to dossiers", () => {
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "owner"), "recruitment");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=messages", "owner"), "messages");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=calendar", "owner"), "calendar");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=intake", "owner"), "intake");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=intake", "admin"), "intake");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=unknown", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "operator"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "operator"), "dossiers");
@@ -3196,12 +3199,19 @@ function pendingIntake(overrides = {}) {
     effective_access: "ACTIVE",
     access_token_expires_at: "2099-01-08T10:00:00Z",
     lifecycle_revision: 0,
+    retention_state: "ACTIVE",
+    archived_at: null,
+    retention_revision: 0,
+    can_permanently_delete: true,
+    delete_block_reason: null,
     ...overrides,
   };
 }
 
 test("pending intake request and status presentation remain authority-minimal", () => {
-  assert.deepEqual(pendingIntakesRequest(), { action: "list_pending_intakes" });
+  assert.deepEqual(pendingIntakesRequest(), { action: "list_pending_intakes", retention_state: "ACTIVE" });
+  assert.deepEqual(pendingIntakesRequest("ARCHIVED"), { action: "list_pending_intakes", retention_state: "ARCHIVED" });
+  assert.deepEqual(pendingIntakeCountRequest(), { action: "count_pending_intakes" });
   const invited = pendingIntakePresentation(pendingIntake());
   assert.equal(invited.intake.label, "Uitnodiging verstuurd");
   assert.equal(invited.invitedAt, "2099-01-01T10:01:00Z");
@@ -3215,13 +3225,56 @@ test("pending intake request and status presentation remain authority-minimal", 
   assert.equal(pendingIntakePresentation(pendingIntake({ intake_status: "reviewed" })), null);
 });
 
-test("Wacht op intake is isolated, safe, refreshable, and preserves dossier list", async () => {
-  const [html, script] = await Promise.all([
+test("pending workspace search filters and sorting are deterministic", () => {
+  const items = [
+    pendingIntake({ name: "Lindsay Test", organization: "Studio Een", invitation_sent_at: "2099-01-03T10:00:00Z", access_token_expires_at: "2099-01-09T10:00:00Z" }),
+    pendingIntake({ intake_id: "a1800000-0000-4000-8000-000000000093", quote_request_id: "a1800000-0000-4000-8000-000000000094", name: "Lorenzo Bombello", organization: null, email: "LORENZO@example.test", intake_status: "in_progress", effective_access: "INTERRUPTED", invitation_sent_at: "2099-01-01T10:00:00Z", access_token_expires_at: "2099-01-05T10:00:00Z" }),
+  ];
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { search: "lorenzo" }).map((item)=>item.name), ["Lorenzo Bombello"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { filter: "IN_PROGRESS" }).map((item)=>item.name), ["Lorenzo Bombello"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { filter: "INTERRUPTED" }).map((item)=>item.name), ["Lorenzo Bombello"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "NEWEST" }).map((item)=>item.name), ["Lindsay Test", "Lorenzo Bombello"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "OLDEST" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "EXPIRY" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
+  assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "STATUS" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
+});
+
+test("pending retention and delete commands remain authority-minimal", () => {
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000095";
+  const active = pendingIntake();
+  assert.deepEqual(buildPendingIntakeRetentionCommand("archive_pending_intake", active, "Workspace cleanup", idempotencyKey), {
+    action: "archive_pending_intake",
+    intake_id: active.intake_id,
+    expected_revision: 0,
+    idempotency_key: idempotencyKey,
+    reason: "Workspace cleanup",
+  });
+  const archived = { ...active, retention_state: "ARCHIVED", retention_revision: 1 };
+  assert.equal(buildPendingIntakeRetentionCommand("restore_pending_intake", archived, "Restore follow-up", idempotencyKey).action, "restore_pending_intake");
+  assert.equal(buildPendingIntakeDeleteCommand(active, "Confirmed disposable record", idempotencyKey).action, "permanently_delete_pending_intake");
+  assert.throws(()=>buildPendingIntakeDeleteCommand({ ...active, can_permanently_delete: false }, "No", idempotencyKey), /INVALID_PENDING_DELETE_COMMAND/);
+});
+
+test("Intake opvolging is a lazy dedicated workspace with guarded cleanup", async () => {
+  const [html, script, css] = await Promise.all([
     read("operator/dashboard/index.html"),
     read("assets/js/operator-dashboard.js"),
+    read("assets/css/operator-dashboard.css"),
   ]);
-  const pendingSection = html.match(/<section id="pendingIntakes"[\s\S]*?<\/section>/)?.[0] || "";
-  assert.match(pendingSection, /<h2 id="pendingIntakesTitle">Wacht op intake<\/h2>/);
+  const pendingSection = html.match(/<section id="pendingIntakes"[\s\S]*?<\/section>\s*<\/div>\s*<\/section>/)?.[0] || "";
+  assert.match(pendingSection, /data-module-panel="intake"/);
+  assert.match(pendingSection, /<h1 id="pendingIntakesTitle"[^>]*>Intake opvolging<\/h1>/);
+  assert.match(html, /id="pendingIntakesEntry"[^>]*href="\/operator\/dashboard\/?\?module=intake"[^>]*hidden/);
+  assert.match(html, /id="pendingIntakesCount"/);
+  assert.match(pendingSection, /data-pending-retention-state="ACTIVE"/);
+  assert.match(pendingSection, /data-pending-retention-state="ARCHIVED"/);
+  assert.match(pendingSection, /id="pendingIntakeSearch"/);
+  assert.match(pendingSection, /id="pendingIntakeStatusFilter"/);
+  assert.match(pendingSection, /id="pendingIntakeSort"/);
+  assert.match(pendingSection, /<details class="pending-intake-technical">/);
+  assert.match(pendingSection, /id="pendingIntakeDangerZone"[^>]*hidden/);
+  assert.match(html, /id="pendingIntakeCommandDialog"/);
+  assert.match(html, /id="pendingIntakeCommandReason"[^>]*maxlength="500"[^>]*required/);
   for (const id of [
     "pendingIntakeName", "pendingIntakeOrganization", "pendingIntakeEmail", "pendingIntakePhone",
     "pendingIntakeRequestKind", "pendingIntakeWebsiteType", "pendingIntakeInvitedAt",
@@ -3234,7 +3287,14 @@ test("Wacht op intake is isolated, safe, refreshable, and preserves dossier list
   assert.doesNotMatch(pendingSection, /resend|opnieuw verzenden|token|encrypted|service.role/i);
   assert.match(html, /id="applicationList"/);
   assert.match(html, /id="applicationsTitle">Dossiers<\/h2>/);
-  assert.match(script, /result\.items\.filter\(\(item\)=>pendingIntakePresentation\(item\)\)/);
-  assert.match(script, /Promise\.all\(\[loadPendingIntakes[\s\S]*?listController\.refresh\(\)/);
-  assert.match(script, /buildIntakeLifecycleCommand\(command\.action, command\.lifecycle/);
+  assert.match(script, /if \(activeModule === "dossiers"\) await loadPendingIntakeCount\(\)/);
+  assert.match(script, /if \(activeModule === "intake"\) \{[\s\S]*?pendingIntakesRequest\(pendingRetentionState\)/);
+  assert.match(script, /pendingIntakeWorkspaceItems\(pendingIntakeItems/);
+  assert.match(script, /buildPendingIntakeRetentionCommand\(/);
+  assert.match(script, /item\?\.can_permanently_delete/);
+  assert.match(script, /pendingIntakeCommandDialog\.showModal\(\)/);
+  assert.match(script, /pendingIntakeCommandDialog\.returnValue !== "confirm"/);
+  assert.doesNotMatch(script, /window\.prompt\((?:archive|"Reden voor definitief verwijderen)/);
+  assert.doesNotMatch(script, /pendingIntakesRefresh\.addEventListener\("click", \(\)=>loadPendingIntakes\(\)\);\s*await loadPendingIntakes\(\);/);
+  assert.match(css, /@media \(max-width:1000px\) \{ \.pending-intake-grid \{ grid-template-columns:1fr; \} \.pending-intake-grid > \.panel \{ min-height:0; \}/);
 });
