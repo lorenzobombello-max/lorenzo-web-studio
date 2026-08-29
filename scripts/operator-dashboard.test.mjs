@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createSupplierDocumentExpenseLinkController, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-ui";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
@@ -372,7 +372,8 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 12);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 14);
+  assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("create_supplier_document_v1", request\)/);
@@ -2356,24 +2357,127 @@ test("finance tab routing is closed, persistent, and cannot override application
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites", "owner"), "websites");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=sdf", "owner"), "sdf");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=expenses", "owner"), "expenses");
+  assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=inbox", "owner"), "inbox");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=unknown", "owner"), "overview");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "overview");
   assert.equal(operatorModuleFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites&application=LWS-AAN-2099-0001", "owner"), "dossiers");
   assert.equal(financeTabFromUrl("https://example.test/operator/dashboard/?module=finance&financeTab=websites", "operator"), "overview");
 });
 
-test("finance contains exactly six internal query-routed tabs and defaults to overview", async () => {
+const inboxItem = (overrides = {}) => ({
+  id: "f6d00000-0000-4000-8000-000000000001", lifecycle_status: "REVIEW_REQUIRED", revision: 2,
+  received_at: "2026-08-29T09:00:00Z", record_classification: "internal_e2e", warnings: [],
+  proposed_supplier_name: "Proposed BV", proposed_document_reference: "P-100", proposed_document_type: "INVOICE",
+  confirmed_supplier_name: null, confirmed_document_reference: null, confirmed_document_type: null,
+  ...overrides,
+});
+const inboxValues = () => ({
+  supplier_name: " Leverancier BV ", document_type: "INVOICE", document_reference: " INV-100 ",
+  document_date: "2026-08-28", amount: "121,00", currency: "EUR", description: " Hosting ",
+  category: "hosting", expense_date: "2026-08-29", relation_type: "INVOICE",
+});
+
+test("document inbox presentation supports exactly five authoritative statuses", () => {
+  assert.deepEqual(DOCUMENT_INBOX_STATUSES, ["RECEIVED", "REVIEW_REQUIRED", "APPROVED", "PROCESSED", "REJECTED"]);
+  assert.deepEqual(DOCUMENT_INBOX_STATUSES.map((status)=>documentInboxStatusPresentation(status).label), ["Ontvangen", "Te beoordelen", "Goedgekeurd", "Verwerkt", "Afgewezen"]);
+  assert.deepEqual(DOCUMENT_INBOX_DOCUMENT_TYPES, ["INVOICE", "CREDIT_NOTE", "RECEIPT", "CONTRACT", "OTHER"]);
+  assert.deepEqual(DOCUMENT_INBOX_CATEGORIES, ["software", "hosting", "telecom", "accounting", "hardware", "marketing", "insurance", "education", "office", "transport", "other"]);
+  assert.throws(()=>documentInboxStatusPresentation("FAILED"), /INVALID_DOCUMENT_INBOX_STATUS/);
+  assert.equal(documentInboxReadPresentation({ scope: "document_inbox", items: [inboxItem()] }).items.length, 1);
+  assert.throws(()=>documentInboxReadPresentation({ scope: "document_inbox", items: [inboxItem({ warnings: null })] }), /INVALID_DOCUMENT_INBOX_ITEM/);
+});
+
+test("document inbox filters are view-only and cover search status type date and ordering", () => {
+  const items = [
+    inboxItem(),
+    inboxItem({ id: "f6d00000-0000-4000-8000-000000000002", lifecycle_status: "PROCESSED", revision: 4, received_at: "2026-08-28T09:00:00Z", confirmed_supplier_name: "Confirmed NV", confirmed_document_reference: "C-200", confirmed_document_type: "RECEIPT" }),
+  ];
+  assert.deepEqual(documentInboxFilter(items, { search: "confirmed", status: "PROCESSED", documentType: "RECEIPT", from: "2026-08-28", to: "2026-08-28" }).map(({ id })=>id), [items[1].id]);
+  assert.deepEqual(documentInboxFilter(items, { sort: "oldest" }).map(({ id })=>id), [items[1].id, items[0].id]);
+  assert.equal(items.length, 2);
+});
+
+test("document inbox commands expose only exact RPC parameters and lifecycle steps", () => {
+  const review = inboxItem({ warnings: [{ code: "CHECK_TOTAL" }] });
+  const proposed = documentInboxProposalRequest(review, inboxValues());
+  const confirmed = documentInboxConfirmRequest(review, inboxValues());
+  assert.deepEqual(Object.keys(proposed), [...Object.keys(confirmed), "p_warnings"]);
+  assert.deepEqual(confirmed, {
+    p_inbox_item_id: review.id, p_expected_revision: 2, p_supplier_name: "Leverancier BV",
+    p_document_type: "INVOICE", p_document_reference: "INV-100", p_document_date: "2026-08-28",
+    p_amount_minor: 12100, p_currency: "EUR", p_description: "Hosting", p_category: "hosting",
+    p_expense_date: "2026-08-29", p_relation_type: "INVOICE",
+  });
+  assert.deepEqual(documentInboxApproveRequest(review, true), { p_inbox_item_id: review.id, p_expected_revision: 2, p_acknowledge_warnings: true });
+  assert.deepEqual(documentInboxRejectRequest(review, " Onjuist document "), { p_inbox_item_id: review.id, p_expected_revision: 2, p_reason: "Onjuist document" });
+  assert.deepEqual(documentInboxProcessRequest(inboxItem({ lifecycle_status: "APPROVED" })), { p_inbox_item_id: review.id, p_expected_revision: 2 });
+  assert.throws(()=>documentInboxConfirmRequest(inboxItem({ lifecycle_status: "RECEIVED" }), inboxValues()), /NOT_CONFIRMABLE/);
+  assert.throws(()=>documentInboxProcessRequest(review), /NOT_PROCESSABLE/);
+  assert.throws(()=>documentInboxConfirmRequest(review, { ...inboxValues(), currency: "USD" }), /INVALID_DOCUMENT_INBOX_VALUES/);
+});
+
+test("document inbox command controller prevents overlap and reloads authoritative state", async () => {
+  const calls = [];
+  let release;
+  const controller = createDocumentInboxCommandController({
+    execute: async (rpc, request)=>{ calls.push(["execute", rpc, request]); await new Promise((resolve)=>{ release = resolve; }); return { ok: true }; },
+    reload: async ()=>calls.push(["reload"]), onBusy: (busy)=>calls.push(["busy", busy]),
+    onSuccess: ()=>calls.push(["success"]), onFailure: ()=>calls.push(["failure"]),
+  });
+  const first = controller.submit("confirm_document_inbox_values_v1", { id: "request" });
+  assert.equal(await controller.submit("approve_document_inbox_item_v1", {}), false);
+  release();
+  assert.equal(await first, true);
+  assert.deepEqual(calls.map(([kind])=>kind), ["busy", "execute", "reload", "success", "busy"]);
+});
+
+test("document inbox UI preserves backend authority lifecycle and responsive review semantics", async () => {
+  const [html, script, css] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
+  ]);
+  const panel = html.match(/<section class="finance-tab-panel document-inbox"[\s\S]*?<\/section>/)?.[0] || "";
+  const dialog = html.match(/<dialog id="documentInboxDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  assert.match(panel, /data-finance-tab-panel="inbox"/);
+  for (const label of ["Ontvangen", "Te beoordelen", "Goedgekeurd", "Verwerkt", "Afgewezen"]) assert.match(`${panel}${script}`, new RegExp(label));
+  for (const control of ["documentInboxSearch", "documentInboxStatusFilter", "documentInboxTypeFilter", "documentInboxFrom", "documentInboxTo", "documentInboxSort", "documentInboxClearFilters"]) assert.match(panel, new RegExp(`id="${control}"`));
+  assert.match(dialog, /id="documentInboxProposedTitle">Voorgesteld/);
+  assert.match(dialog, /id="documentInboxConfirmedTitle">Bevestigd/);
+  assert.match(dialog, /id="documentInboxWarnings"/);
+  assert.match(dialog, /id="documentInboxProcessedResult"/);
+  for (const action of ["documentInboxSaveProposal", "documentInboxSaveConfirmed", "documentInboxApprove", "documentInboxReject", "documentInboxProcess"]) assert.match(dialog, new RegExp(`id="${action}"`));
+  assert.equal((script.match(/client\.rpc\("get_document_inbox_v1"/g) || []).length, 1);
+  assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
+  assert.doesNotMatch(script, /\.from\(["']document_inbox_items["']\)/);
+  for (const rpc of ["update_document_inbox_proposal_v1", "confirm_document_inbox_values_v1", "approve_document_inbox_item_v1", "reject_document_inbox_item_v1", "process_document_inbox_item_v1"]) assert.match(script, new RegExp(`"${rpc}"`));
+  assert.match(script, /filters\.addEventListener\("(?:input|change)", renderInboxList\)/);
+  assert.match(script, /processedResult\.hidden = item\.lifecycle_status !== "PROCESSED"/);
+  assert.match(script, /reject\.hidden = !\["RECEIVED", "REVIEW_REQUIRED"\]\.includes/);
+  assert.match(script, /const editable = \["RECEIVED", "REVIEW_REQUIRED"\]\.includes/);
+  assert.match(script, /inboxItems\.find\(\(item\)=>item\.id === selectedInboxItem\.id\)/);
+  assert.match(script, /form\.addEventListener\("input", \(\)=>\{ confirmedFormDirty = true; approve\.disabled = true; \}\)/);
+  assert.match(script, /process\.textContent = item\.processing_error_code \? "Opnieuw proberen" : "Verwerken"/);
+  assert.doesNotMatch(`${html}${script}`, /Proposed BV|Confirmed NV|INV-100/);
+  assert.match(css, /\.document-inbox-values--proposed[^}]*border-left:4px solid #b67b10/);
+  assert.match(css, /\.document-inbox-values--confirmed[^}]*border-left:4px solid var\(--turquoise-deep\)/);
+  assert.match(css, /\.document-inbox-review__body[^}]*overflow:auto/);
+  assert.match(css, /@media \(max-width:900px\)[^{]*\{[^}]*\.document-inbox-filters/);
+  assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-filters/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+});
+
+test("finance contains exactly seven internal query-routed tabs and defaults to overview", async () => {
   const html = await read("operator/dashboard/index.html");
   const navigation = html.match(/<nav class="finance-tabs"[\s\S]*?<\/nav>/)?.[0] || "";
   const expected = [
     ["overview", "Overzicht / Budgetbeheer"], ["websites", "Websites"], ["sdf", "SDF"],
-    ["workforce", "Werknemers"], ["expenses", "Bedrijfskosten"], ["owner", "Eigenaar"],
+    ["workforce", "Werknemers"], ["expenses", "Bedrijfskosten"], ["inbox", "Documenten"], ["owner", "Eigenaar"],
   ];
   assert.deepEqual([...navigation.matchAll(/data-finance-tab="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((match)=>[match[1], match[2]]), expected);
   assert.match(navigation, /href="\/operator\/dashboard\/\?module=finance" data-finance-tab="overview"/);
   assert.match(navigation, /module=finance&amp;financeTab=websites/);
   assert.match(navigation, /module=finance&amp;financeTab=expenses/);
-  assert.equal((html.match(/data-finance-tab-panel=/g) || []).length, 6);
+  assert.match(navigation, /module=finance&amp;financeTab=inbox/);
+  assert.equal((html.match(/data-finance-tab-panel=/g) || []).length, 7);
 });
 
 const emptyBusinessExpensePortfolio = () => ({
@@ -2590,7 +2694,8 @@ test("supplier document expense UI preserves the exact frontend-only production 
   assert.equal((dialog.match(/<label\b/g) || []).length, 6);
   assert.match(css, /\.supplier-document-dialog \{ overflow:auto; \}/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[\s\S]*?\.supplier-document-file \{ grid-column:auto; \}/);
-  assert.equal((html.match(/data-finance-tab=/g) || []).length, 6);
+  assert.equal((html.match(/data-finance-tab=/g) || []).length, 7);
+  assert.match(html, /module=finance&amp;financeTab=inbox/);
   assert.match(html, /module=finance&amp;financeTab=expenses/);
 });
 
@@ -2601,7 +2706,7 @@ test("Finance expense modals share the fixed official company branding", async (
   const branding = /<div class="finance-modal-brand"><img src="\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png" alt=""[^>]*><span class="finance-modal-brand__name">Lorenzo <strong>Web Solutions<\/strong><\/span><\/div>/;
   assert.match(expenseDialog, branding);
   assert.match(documentDialog, branding);
-  assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 2);
+  assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 3);
   assert.doesNotMatch(`${expenseDialog}${documentDialog}`, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
   assert.deepEqual([...expenseDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["supplier_name", "description", "category", "amount", "currency", "expense_date"]);
   assert.deepEqual([...documentDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
@@ -2617,7 +2722,8 @@ test("operator dashboard exposes one CSS-only reduced-motion-safe LWS motion sys
   assert.match(css, /\.finance-section-heading::after[^}]*animation:lws-energy-flow/);
   assert.match(css, /\.business-expense-dialog\[open\][^}]*animation:modal-enter/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
-  assert.equal((html.match(/data-finance-tab=/g) || []).length, 6);
+  assert.equal((html.match(/data-finance-tab=/g) || []).length, 7);
+  assert.match(html, /module=finance&amp;financeTab=inbox/);
   assert.match(html, /module=finance&amp;financeTab=expenses/);
   assert.match(html, /id="businessExpenseDialog"/);
   assert.match(html, /id="supplierDocumentDialog"/);

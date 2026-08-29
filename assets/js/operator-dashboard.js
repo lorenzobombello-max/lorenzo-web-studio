@@ -21,7 +21,7 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   admin: "ADMIN",
 });
 const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "recruitment", "messages", "calendar"]);
-const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "owner"]);
+const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 
 function localDateInputValue(date = new Date()) {
   const year = date.getFullYear();
@@ -94,6 +94,175 @@ export const SUPPLIER_DOCUMENT_TYPES = Object.freeze(["INVOICE", "CREDIT_NOTE", 
 export const SUPPLIER_DOCUMENT_RELATION_TYPES = Object.freeze([...SUPPLIER_DOCUMENT_TYPES]);
 export const SUPPLIER_DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
 export const SUPPLIER_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+export const DOCUMENT_INBOX_STATUSES = Object.freeze(["RECEIVED", "REVIEW_REQUIRED", "APPROVED", "PROCESSED", "REJECTED"]);
+export const DOCUMENT_INBOX_DOCUMENT_TYPES = Object.freeze([...SUPPLIER_DOCUMENT_TYPES]);
+export const DOCUMENT_INBOX_CATEGORIES = Object.freeze([
+  "software", "hosting", "telecom", "accounting", "hardware", "marketing",
+  "insurance", "education", "office", "transport", "other",
+]);
+const DOCUMENT_INBOX_STATUS_LABELS = Object.freeze({
+  RECEIVED: "Ontvangen", REVIEW_REQUIRED: "Te beoordelen", APPROVED: "Goedgekeurd",
+  PROCESSED: "Verwerkt", REJECTED: "Afgewezen",
+});
+
+export function documentInboxStatusPresentation(status) {
+  if (!DOCUMENT_INBOX_STATUSES.includes(status)) throw new Error("INVALID_DOCUMENT_INBOX_STATUS");
+  return {
+    status,
+    label: DOCUMENT_INBOX_STATUS_LABELS[status],
+    tone: status === "PROCESSED" ? "green" : status === "REJECTED" ? "red" : status === "REVIEW_REQUIRED" ? "amber" : "neutral",
+  };
+}
+
+export function documentInboxReadPresentation(data) {
+  if (!data || data.scope !== "document_inbox" || !Array.isArray(data.items)) throw new Error("INVALID_DOCUMENT_INBOX_RESPONSE");
+  for (const item of data.items) {
+    if (!item || !UUID.test(String(item.id || "")) || !DOCUMENT_INBOX_STATUSES.includes(item.lifecycle_status)
+        || !Number.isSafeInteger(item.revision) || item.revision < 0 || !Array.isArray(item.warnings)
+        || !["production", "internal_e2e"].includes(item.record_classification)) {
+      throw new Error("INVALID_DOCUMENT_INBOX_ITEM");
+    }
+  }
+  return data;
+}
+
+export function documentInboxFilter(items, filters = {}) {
+  const query = String(filters.search || "").trim().toLocaleLowerCase("nl-BE");
+  const status = String(filters.status || "");
+  const documentType = String(filters.documentType || "");
+  const from = String(filters.from || "");
+  const to = String(filters.to || "");
+  if (status && !DOCUMENT_INBOX_STATUSES.includes(status)) throw new Error("INVALID_DOCUMENT_INBOX_FILTER");
+  if (documentType && !DOCUMENT_INBOX_DOCUMENT_TYPES.includes(documentType)) throw new Error("INVALID_DOCUMENT_INBOX_FILTER");
+  const filtered = items.filter((item) => {
+    const haystack = [item.confirmed_supplier_name, item.proposed_supplier_name, item.confirmed_document_reference, item.proposed_document_reference]
+      .filter(Boolean).join(" ").toLocaleLowerCase("nl-BE");
+    const receivedDate = String(item.received_at || "").slice(0, 10);
+    return (!query || haystack.includes(query))
+      && (!status || item.lifecycle_status === status)
+      && (!documentType || (item.confirmed_document_type || item.proposed_document_type) === documentType)
+      && (!from || receivedDate >= from) && (!to || receivedDate <= to);
+  });
+  return filtered.sort((left, right) => {
+    const order = String(right.received_at || "").localeCompare(String(left.received_at || "")) || String(right.id).localeCompare(String(left.id));
+    return filters.sort === "oldest" ? -order : order;
+  });
+}
+
+function documentInboxBoundedValues(values) {
+  const supplierName = String(values?.supplier_name || "").trim();
+  const documentType = String(values?.document_type || "");
+  const documentReference = String(values?.document_reference || "").trim();
+  const documentDate = String(values?.document_date || "");
+  const amountMinor = businessExpenseAmountMinor(values?.amount);
+  const description = String(values?.description || "").trim();
+  const category = String(values?.category || "");
+  const expenseDate = String(values?.expense_date || "");
+  const relationType = String(values?.relation_type || "");
+  if (!supplierName || supplierName.length > 200 || !DOCUMENT_INBOX_DOCUMENT_TYPES.includes(documentType)
+      || documentReference.length > 200 || (documentDate && !/^\d{4}-\d{2}-\d{2}$/.test(documentDate))
+      || amountMinor === null || String(values?.currency || "") !== "EUR"
+      || !description || description.length > 1000 || !DOCUMENT_INBOX_CATEGORIES.includes(category)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate) || !DOCUMENT_INBOX_DOCUMENT_TYPES.includes(relationType)) {
+    throw new Error("INVALID_DOCUMENT_INBOX_VALUES");
+  }
+  return {
+    p_supplier_name: supplierName, p_document_type: documentType,
+    p_document_reference: documentReference || null, p_document_date: documentDate || null,
+    p_amount_minor: amountMinor, p_currency: "EUR", p_description: description,
+    p_category: category, p_expense_date: expenseDate, p_relation_type: relationType,
+  };
+}
+
+export function documentInboxProposalRequest(item, values) {
+  if (!item || !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status)) throw new Error("DOCUMENT_INBOX_NOT_REVIEWABLE");
+  return { p_inbox_item_id: item.id, p_expected_revision: item.revision, ...documentInboxBoundedValues(values), p_warnings: item.warnings };
+}
+
+export function documentInboxConfirmRequest(item, values) {
+  if (!item || item.lifecycle_status !== "REVIEW_REQUIRED") throw new Error("DOCUMENT_INBOX_NOT_CONFIRMABLE");
+  return { p_inbox_item_id: item.id, p_expected_revision: item.revision, ...documentInboxBoundedValues(values) };
+}
+
+export function documentInboxApproveRequest(item, acknowledgeWarnings) {
+  if (!item || item.lifecycle_status !== "REVIEW_REQUIRED") throw new Error("DOCUMENT_INBOX_NOT_APPROVABLE");
+  return { p_inbox_item_id: item.id, p_expected_revision: item.revision, p_acknowledge_warnings: Boolean(acknowledgeWarnings) };
+}
+
+export function documentInboxRejectRequest(item, reason = "") {
+  const normalizedReason = String(reason).trim();
+  if (!item || !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status) || normalizedReason.length > 500) throw new Error("DOCUMENT_INBOX_NOT_REJECTABLE");
+  return { p_inbox_item_id: item.id, p_expected_revision: item.revision, p_reason: normalizedReason || null };
+}
+
+export function documentInboxProcessRequest(item) {
+  if (!item || item.lifecycle_status !== "APPROVED") throw new Error("DOCUMENT_INBOX_NOT_PROCESSABLE");
+  return { p_inbox_item_id: item.id, p_expected_revision: item.revision };
+}
+
+export function createDocumentInboxCommandController({ execute, reload, onBusy, onSuccess, onFailure }) {
+  let busy = false;
+  return {
+    get submitting() { return busy; },
+    async submit(rpc, request) {
+      if (busy) return false;
+      busy = true;
+      onBusy(true);
+      try {
+        const result = await execute(rpc, request);
+        await reload();
+        if (result?.ok === false) {
+          onFailure(result.error_code || "DOCUMENT_INBOX_PROCESSING_ERROR");
+          return false;
+        }
+        onSuccess(result);
+        return true;
+      } catch (error) {
+        onFailure(error?.message || "DOCUMENT_INBOX_COMMAND_FAILED");
+        return false;
+      } finally {
+        busy = false;
+        onBusy(false);
+      }
+    },
+  };
+}
+
+function documentInboxDisplayValue(value, fallback = "Niet voorgesteld") {
+  return value === null || value === undefined || value === "" ? fallback : String(value);
+}
+
+function documentInboxInitialValues(item) {
+  const value = (field) => item[`confirmed_${field}`] ?? item[`proposed_${field}`] ?? "";
+  const amountMinor = value("amount_minor");
+  return {
+    supplier_name: value("supplier_name"), document_type: value("document_type"),
+    document_reference: value("document_reference"), document_date: value("document_date"),
+    expense_date: value("expense_date"), amount: Number.isSafeInteger(amountMinor) ? (amountMinor / 100).toFixed(2).replace(".", ",") : "",
+    currency: value("currency") || "EUR", description: value("description"),
+    category: value("category"), relation_type: value("relation_type"),
+  };
+}
+
+function documentInboxHasConfirmedValues(item) {
+  return Boolean(item.confirmed_supplier_name && item.confirmed_document_type && item.confirmed_amount_minor
+    && item.confirmed_currency === "EUR" && item.confirmed_description && item.confirmed_category
+    && item.confirmed_expense_date && item.confirmed_relation_type);
+}
+
+function documentInboxBadgeClass(status) {
+  if (status === "PROCESSED") return "badge badge--green";
+  if (status === "REJECTED") return "badge badge--red";
+  if (status === "REVIEW_REQUIRED") return "badge badge--amber";
+  return "badge";
+}
+
+function formatDocumentInboxBytes(byteCount) {
+  if (!Number.isSafeInteger(byteCount) || byteCount < 0) return "Niet beschikbaar";
+  if (byteCount < 1024) return `${byteCount} B`;
+  if (byteCount < 1024 * 1024) return `${(byteCount / 1024).toFixed(1)} KiB`;
+  return `${(byteCount / (1024 * 1024)).toFixed(1)} MiB`;
+}
 
 export function supplierDocumentFileError(file) {
   if (!file || typeof file.name !== "string" || !file.name || file.name.length > 200 || /[\\/]/.test(file.name)
@@ -1730,6 +1899,237 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         status.textContent = "SDF-financiële gegevens konden niet worden geladen.";
         content.hidden = true;
       }
+    }
+    if (activeFinanceTab === "inbox") {
+      const status = document.getElementById("documentInboxStatus");
+      const count = document.getElementById("documentInboxCount");
+      const filters = document.getElementById("documentInboxFilters");
+      const clearFilters = document.getElementById("documentInboxClearFilters");
+      const list = document.getElementById("documentInboxList");
+      const empty = document.getElementById("documentInboxEmpty");
+      const dialog = document.getElementById("documentInboxDialog");
+      const dialogFile = document.getElementById("documentInboxDialogFile");
+      const dialogStatus = document.getElementById("documentInboxDialogStatus");
+      const metadata = document.getElementById("documentInboxMetadata");
+      const warnings = document.getElementById("documentInboxWarnings");
+      const warningList = document.getElementById("documentInboxWarningList");
+      const acknowledgeWarnings = document.getElementById("documentInboxAcknowledgeWarnings");
+      const proposed = document.getElementById("documentInboxProposed");
+      const form = document.getElementById("documentInboxConfirmedForm");
+      const processedResult = document.getElementById("documentInboxProcessedResult");
+      const actionStatus = document.getElementById("documentInboxActionStatus");
+      const close = document.getElementById("documentInboxClose");
+      const reject = document.getElementById("documentInboxReject");
+      const saveProposal = document.getElementById("documentInboxSaveProposal");
+      const saveConfirmed = document.getElementById("documentInboxSaveConfirmed");
+      const approve = document.getElementById("documentInboxApprove");
+      const process = document.getElementById("documentInboxProcess");
+      const actionButtons = [reject, saveProposal, saveConfirmed, approve, process];
+      let inboxItems = [];
+      let selectedInboxItem = null;
+      let selectedInboxTrigger = null;
+      let confirmedFormDirty = false;
+
+      function appendDefinition(target, label, value) {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        const description = document.createElement("dd");
+        term.textContent = label;
+        description.textContent = documentInboxDisplayValue(value);
+        row.append(term, description);
+        target.append(row);
+      }
+
+      function currentInboxFilters() {
+        return Object.fromEntries(new FormData(filters));
+      }
+
+      function renderInboxList() {
+        const visibleItems = documentInboxFilter(inboxItems, currentInboxFilters());
+        list.replaceChildren();
+        for (const item of visibleItems) {
+          const row = document.createElement("li");
+          const button = document.createElement("button");
+          const identity = document.createElement("span");
+          const supplier = document.createElement("strong");
+          const reference = document.createElement("small");
+          const facts = document.createElement("span");
+          const lifecycle = document.createElement("span");
+          const attention = document.createElement("small");
+          const presentation = documentInboxStatusPresentation(item.lifecycle_status);
+          supplier.textContent = item.confirmed_supplier_name || item.proposed_supplier_name || "Leverancier nog niet ingevuld";
+          reference.textContent = item.confirmed_document_reference || item.proposed_document_reference || item.original_file_name || item.id;
+          identity.className = "document-inbox-item__identity";
+          identity.append(supplier, reference);
+          facts.className = "document-inbox-item__facts";
+          facts.textContent = [
+            item.confirmed_document_type || item.proposed_document_type || "Type onbekend",
+            item.confirmed_document_date || item.proposed_document_date || "Datum onbekend",
+            Number.isSafeInteger(item.confirmed_amount_minor ?? item.proposed_amount_minor)
+              ? formatFinanceMoney(item.confirmed_amount_minor ?? item.proposed_amount_minor, item.confirmed_currency || item.proposed_currency || "EUR")
+              : "Bedrag onbekend",
+            `Ontvangen ${formatDate(item.received_at)}`,
+          ].join(" · ");
+          lifecycle.className = `${documentInboxBadgeClass(item.lifecycle_status)} document-inbox-item__status`;
+          lifecycle.textContent = presentation.label;
+          attention.className = "document-inbox-item__attention";
+          attention.textContent = item.warnings.length ? `${item.warnings.length} ${item.warnings.length === 1 ? "waarschuwing" : "waarschuwingen"}` : "Geen waarschuwingen";
+          button.type = "button";
+          button.className = "document-inbox-item";
+          button.dataset.documentInboxItemId = item.id;
+          button.setAttribute("aria-label", `${supplier.textContent}, ${presentation.label}`);
+          button.addEventListener("click", ()=>openInboxItem(item, button));
+          button.append(identity, facts, lifecycle, attention);
+          row.append(button);
+          list.append(row);
+        }
+        count.textContent = `${visibleItems.length} van ${inboxItems.length}`;
+        empty.hidden = visibleItems.length !== 0;
+      }
+
+      function renderInboxReview(item) {
+        const presentation = documentInboxStatusPresentation(item.lifecycle_status);
+        const editable = ["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status);
+        dialogFile.textContent = `${item.original_file_name || "Bestandsnaam niet beschikbaar"} · ${item.mime_type || "MIME onbekend"}`;
+        dialogStatus.className = documentInboxBadgeClass(item.lifecycle_status);
+        dialogStatus.textContent = presentation.label;
+        metadata.replaceChildren();
+        for (const [label, value] of [
+          ["Ontvangen", formatDate(item.received_at)], ["Bron", String(item.source_type || "Onbekend").replaceAll("_", " ")],
+          ["Bestand", item.original_file_name], ["MIME", item.mime_type], ["Grootte", formatDocumentInboxBytes(item.byte_count)],
+        ]) appendDefinition(metadata, label, value);
+        warningList.replaceChildren();
+        for (const warning of item.warnings) {
+          const warningItem = document.createElement("li");
+          warningItem.textContent = documentInboxDisplayValue(typeof warning === "string" ? warning : warning?.message || warning?.code, "Controle vereist");
+          warningList.append(warningItem);
+        }
+        warnings.hidden = item.warnings.length === 0;
+        acknowledgeWarnings.checked = Boolean(item.warnings_acknowledged);
+        acknowledgeWarnings.disabled = !editable;
+        proposed.replaceChildren();
+        for (const [label, value] of [
+          ["Leverancier", item.proposed_supplier_name], ["Documenttype", item.proposed_document_type],
+          ["Referentie", item.proposed_document_reference], ["Documentdatum", item.proposed_document_date],
+          ["Kostendatum", item.proposed_expense_date],
+          ["Bedrag", Number.isSafeInteger(item.proposed_amount_minor) ? formatFinanceMoney(item.proposed_amount_minor, item.proposed_currency || "EUR") : null],
+          ["Omschrijving", item.proposed_description], ["Categorie", item.proposed_category], ["Relatietype", item.proposed_relation_type],
+        ]) appendDefinition(proposed, label, value);
+        const initialValues = documentInboxInitialValues(item);
+        for (const [name, value] of Object.entries(initialValues)) form.elements.namedItem(name).value = value;
+        confirmedFormDirty = false;
+        for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = !editable;
+        reject.hidden = !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status);
+        saveProposal.hidden = item.lifecycle_status !== "RECEIVED";
+        saveConfirmed.hidden = item.lifecycle_status !== "REVIEW_REQUIRED";
+        approve.hidden = item.lifecycle_status !== "REVIEW_REQUIRED";
+        approve.disabled = !documentInboxHasConfirmedValues(item) || (item.warnings.length > 0 && !acknowledgeWarnings.checked);
+        process.hidden = item.lifecycle_status !== "APPROVED";
+        process.textContent = item.processing_error_code ? "Opnieuw proberen" : "Verwerken";
+        processedResult.hidden = item.lifecycle_status !== "PROCESSED";
+        if (item.lifecycle_status === "PROCESSED") {
+          document.getElementById("documentInboxExpenseResult").textContent = documentInboxDisplayValue(item.result_business_expense_id, "Niet beschikbaar");
+          document.getElementById("documentInboxDocumentResult").textContent = documentInboxDisplayValue(item.result_supplier_document_id, "Niet beschikbaar");
+          document.getElementById("documentInboxLinkResult").textContent = documentInboxDisplayValue(item.result_link_id, "Niet beschikbaar");
+          document.getElementById("documentInboxProcessedAt").textContent = item.processed_at ? formatDate(item.processed_at) : "Niet beschikbaar";
+        }
+        actionStatus.textContent = item.processing_error_code
+          ? "De vorige verwerking is niet voltooid. Controleer de gegevens en probeer opnieuw."
+          : item.lifecycle_status === "REJECTED" ? "Dit document is definitief afgewezen." : "";
+      }
+
+      function openInboxItem(item, trigger) {
+        selectedInboxItem = item;
+        selectedInboxTrigger = trigger;
+        renderInboxReview(item);
+        dialog.showModal();
+        close.focus();
+      }
+
+      async function loadDocumentInbox(successMessage = "") {
+        try {
+          const response = await client.rpc("get_document_inbox_v1", { p_lifecycle_status: null, p_record_classification: "production" });
+          if (response.error) throw response.error;
+          inboxItems = documentInboxReadPresentation(response.data).items;
+          renderInboxList();
+          if (dialog.open && selectedInboxItem) {
+            const currentItem = inboxItems.find((item)=>item.id === selectedInboxItem.id);
+            if (currentItem) {
+              selectedInboxItem = currentItem;
+              renderInboxReview(currentItem);
+            } else {
+              dialog.close();
+            }
+          }
+          status.textContent = successMessage || (inboxItems.length ? "Document Inbox beschikbaar." : "Nog geen documenten ontvangen.");
+        } catch {
+          inboxItems = [];
+          renderInboxList();
+          count.textContent = "Niet beschikbaar";
+          status.textContent = "Document Inbox kon niet veilig worden geladen.";
+        }
+      }
+
+      const controller = createDocumentInboxCommandController({
+        execute: async (rpc, request)=>{
+          const allowed = new Set(["update_document_inbox_proposal_v1", "confirm_document_inbox_values_v1", "approve_document_inbox_item_v1", "reject_document_inbox_item_v1", "process_document_inbox_item_v1"]);
+          if (!allowed.has(rpc)) throw new Error("DOCUMENT_INBOX_COMMAND_NOT_ALLOWED");
+          const response = await client.rpc(rpc, request);
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        reload: ()=>loadDocumentInbox("Document Inbox bijgewerkt."),
+        onBusy: (busy)=>{
+          for (const button of actionButtons) button.disabled = busy || (button === approve && (confirmedFormDirty
+            || !selectedInboxItem || !documentInboxHasConfirmedValues(selectedInboxItem)
+            || selectedInboxItem.warnings.length > 0 && !acknowledgeWarnings.checked));
+          close.disabled = busy;
+          for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = busy || !["RECEIVED", "REVIEW_REQUIRED"].includes(selectedInboxItem?.lifecycle_status);
+          acknowledgeWarnings.disabled = busy || !["RECEIVED", "REVIEW_REQUIRED"].includes(selectedInboxItem?.lifecycle_status);
+          if (busy) actionStatus.textContent = "Actie wordt verwerkt.";
+        },
+        onSuccess: ()=>{
+          dialog.close();
+          selectedInboxTrigger?.focus();
+        },
+        onFailure: (errorCode)=>{ actionStatus.textContent = errorCode === "DOCUMENT_INBOX_PROCESSING_ERROR" || errorCode === "PROCESSING_FAILED"
+          ? "Verwerking niet voltooid. De actuele status is geladen; controleer de gegevens en probeer opnieuw."
+          : "De actie kon niet worden voltooid. De actuele status is opnieuw geladen."; },
+      });
+
+      filters.addEventListener("submit", (event)=>event.preventDefault());
+      filters.addEventListener("input", renderInboxList);
+      filters.addEventListener("change", renderInboxList);
+      clearFilters.addEventListener("click", ()=>{ filters.reset(); renderInboxList(); document.getElementById("documentInboxSearch").focus(); });
+      form.addEventListener("input", ()=>{ confirmedFormDirty = true; approve.disabled = true; });
+      acknowledgeWarnings.addEventListener("change", ()=>{
+        approve.disabled = confirmedFormDirty || !selectedInboxItem || !documentInboxHasConfirmedValues(selectedInboxItem)
+          || (selectedInboxItem.warnings.length > 0 && !acknowledgeWarnings.checked);
+      });
+      close.addEventListener("click", ()=>{ if (!controller.submitting) dialog.close(); });
+      dialog.addEventListener("cancel", (event)=>{ if (controller.submitting) event.preventDefault(); });
+      dialog.addEventListener("close", ()=>selectedInboxTrigger?.focus());
+      saveProposal.addEventListener("click", async ()=>{
+        if (!selectedInboxItem || !form.reportValidity()) return;
+        await controller.submit("update_document_inbox_proposal_v1", documentInboxProposalRequest(selectedInboxItem, Object.fromEntries(new FormData(form))));
+      });
+      saveConfirmed.addEventListener("click", async ()=>{
+        if (!selectedInboxItem || !form.reportValidity()) return;
+        await controller.submit("confirm_document_inbox_values_v1", documentInboxConfirmRequest(selectedInboxItem, Object.fromEntries(new FormData(form))));
+      });
+      approve.addEventListener("click", async ()=>{
+        if (!selectedInboxItem) return;
+        await controller.submit("approve_document_inbox_item_v1", documentInboxApproveRequest(selectedInboxItem, acknowledgeWarnings.checked));
+      });
+      reject.addEventListener("click", async ()=>{
+        if (!selectedInboxItem || !window.confirm("Dit document definitief afwijzen? Het kan daarna niet opnieuw worden geopend.")) return;
+        await controller.submit("reject_document_inbox_item_v1", documentInboxRejectRequest(selectedInboxItem));
+      });
+      process.addEventListener("click", async ()=>{
+        if (!selectedInboxItem) return;
+        await controller.submit("process_document_inbox_item_v1", documentInboxProcessRequest(selectedInboxItem));
+      });
+      await loadDocumentInbox();
     }
     if (activeFinanceTab === "expenses") {
       const status = document.getElementById("financeExpenseStatus");
