@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
-import { businessExpenseDocumentLinkRequest, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
+import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -2413,6 +2413,7 @@ test("finance tab routing is closed, persistent, and cannot override application
 const inboxItem = (overrides = {}) => ({
   id: "f6d00000-0000-4000-8000-000000000001", lifecycle_status: "REVIEW_REQUIRED", revision: 2,
   received_at: "2026-08-29T09:00:00Z", record_classification: "internal_e2e", warnings: [],
+  extraction_status: "NOT_RECORDED", extraction_candidates: {},
   proposed_supplier_name: "Proposed BV", proposed_document_reference: "P-100", proposed_document_type: "INVOICE",
   confirmed_supplier_name: null, confirmed_document_reference: null, confirmed_document_type: null,
   ...overrides,
@@ -2431,6 +2432,79 @@ test("document inbox presentation supports exactly five authoritative statuses",
   assert.throws(()=>documentInboxStatusPresentation("FAILED"), /INVALID_DOCUMENT_INBOX_STATUS/);
   assert.equal(documentInboxReadPresentation({ scope: "document_inbox", items: [inboxItem()] }).items.length, 1);
   assert.throws(()=>documentInboxReadPresentation({ scope: "document_inbox", items: [inboxItem({ warnings: null })] }), /INVALID_DOCUMENT_INBOX_ITEM/);
+});
+
+test("document inbox extraction action is revision-bound to reviewable states", () => {
+  assert.deepEqual(DOCUMENT_INBOX_EXTRACTION_STATUSES, ["NOT_RECORDED", "SUCCEEDED", "PARTIAL", "ERROR"]);
+  assert.deepEqual(documentInboxExtractionRequest(inboxItem()), {
+    document_inbox_item_id: inboxItem().id,
+    expected_revision: 2,
+  });
+  assert.deepEqual(documentInboxExtractionRequest(inboxItem({ lifecycle_status: "RECEIVED" })), {
+    document_inbox_item_id: inboxItem().id,
+    expected_revision: 2,
+  });
+  for (const lifecycle_status of ["APPROVED", "PROCESSED", "REJECTED"]) {
+    assert.throws(()=>documentInboxExtractionRequest(inboxItem({ lifecycle_status })), /NOT_REVIEWABLE/);
+  }
+});
+
+test("document inbox extraction presentation keeps PARTIAL and ERROR non-authoritative", () => {
+  const partial = documentInboxExtractionPresentation(inboxItem({
+    extraction_status: "PARTIAL",
+    extraction_candidates: {
+      supplier_name: { value: "Candidate BV", confidence: 0.71, evidence: "page:1" },
+    },
+  }));
+  assert.equal(partial.label, "Gedeeltelijke analyse");
+  assert.match(partial.message, /Controleer alle voorstellen/);
+  assert.deepEqual(partial.candidates[0], {
+    name: "supplier_name", label: "Leverancier", value: "Candidate BV", confidence: "71%", evidence: "page:1",
+  });
+  const failed = documentInboxExtractionPresentation(inboxItem({ extraction_status: "ERROR" }));
+  assert.equal(failed.label, "Analyse niet beschikbaar");
+  assert.doesNotMatch(failed.message, /PROVIDER|secret|token|EXTRACTION_/i);
+  assert.equal(documentInboxExtractionFailure({ status: 409, message: "database detail" }), "REVISION_CONFLICT");
+  assert.equal(documentInboxExtractionFailure({ status: 403, message: "jwt detail" }), "AUTHORIZATION");
+  assert.equal(documentInboxExtractionFailure(new Error("provider secret detail")), "UNAVAILABLE");
+});
+
+test("document inbox extraction controller blocks overlap and refreshes authoritative state", async () => {
+  const calls = [];
+  let release;
+  const controller = createDocumentInboxExtractionController({
+    execute: async (request)=>{
+      calls.push(["extract", request]);
+      await new Promise((resolve)=>{ release = resolve; });
+      return { ok: true, code: "DOCUMENT_INBOX_EXTRACTION_RECORDED", id: inboxItem().id, status: "REVIEW_REQUIRED", revision: 3, extraction_status: "PARTIAL", extraction_candidates: {} };
+    },
+    reload: async ()=>calls.push(["reload"]),
+    onBusy: (busy)=>calls.push(["busy", busy]),
+    onSuccess: (result)=>calls.push(["success", result.extraction_status]),
+    onFailure: (failure)=>calls.push(["failure", failure]),
+  });
+  const first = controller.submit(inboxItem());
+  assert.equal(await controller.submit(inboxItem()), false);
+  release();
+  assert.equal(await first, true);
+  assert.deepEqual(calls.map(([kind])=>kind), ["busy", "extract", "reload", "success", "busy"]);
+  assert.deepEqual(calls[1][1], { document_inbox_item_id: inboxItem().id, expected_revision: 2 });
+  assert.equal(calls.some(([kind])=>["confirm", "approve", "process"].includes(kind)), false);
+});
+
+test("document inbox extraction conflict refreshes once without retry or authority escalation", async () => {
+  const calls = [];
+  const controller = createDocumentInboxExtractionController({
+    execute: async (request)=>{
+      calls.push(["extract", request]);
+      throw Object.assign(new Error("DOCUMENT_INBOX_REVISION_CONFLICT"), { status: 409 });
+    },
+    reload: async ()=>calls.push(["reload"]), onBusy: ()=>{},
+    onSuccess: ()=>calls.push(["success"]), onFailure: (failure)=>calls.push(["failure", failure]),
+  });
+  assert.equal(await controller.submit(inboxItem()), false);
+  assert.deepEqual(calls.map(([kind])=>kind), ["extract", "reload", "failure"]);
+  assert.deepEqual(calls[2], ["failure", "REVISION_CONFLICT"]);
 });
 
 test("document inbox filters are view-only and cover search status type date and ordering", () => {
@@ -2562,14 +2636,18 @@ test("document inbox UI preserves backend authority lifecycle and responsive rev
   ]);
   const panel = html.match(/<section class="finance-tab-panel document-inbox"[\s\S]*?<\/section>/)?.[0] || "";
   const dialog = html.match(/<dialog id="documentInboxDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const extractionBlock = script.match(/const extractionController = createDocumentInboxExtractionController\([\s\S]*?const controller = createDocumentInboxCommandController/)?.[0] || "";
   assert.match(panel, /data-finance-tab-panel="inbox"/);
   for (const label of ["Ontvangen", "Te beoordelen", "Goedgekeurd", "Verwerkt", "Afgewezen"]) assert.match(`${panel}${script}`, new RegExp(label));
   for (const control of ["documentInboxSearch", "documentInboxStatusFilter", "documentInboxTypeFilter", "documentInboxFrom", "documentInboxTo", "documentInboxSort", "documentInboxClearFilters"]) assert.match(panel, new RegExp(`id="${control}"`));
   assert.match(dialog, /id="documentInboxProposedTitle">Voorgesteld/);
   assert.match(dialog, /id="documentInboxConfirmedTitle">Bevestigd/);
+  assert.match(dialog, /id="documentInboxExtractionTitle">Analysevoorstellen/);
+  assert.match(dialog, /Niet definitief · extractiebewijs/);
+  assert.match(dialog, /id="documentInboxExtractionCandidates"/);
   assert.match(dialog, /id="documentInboxWarnings"/);
   assert.match(dialog, /id="documentInboxProcessedResult"/);
-  for (const action of ["documentInboxSaveProposal", "documentInboxSaveConfirmed", "documentInboxApprove", "documentInboxReject", "documentInboxProcess"]) assert.match(dialog, new RegExp(`id="${action}"`));
+  for (const action of ["documentInboxExtract", "documentInboxSaveProposal", "documentInboxSaveConfirmed", "documentInboxApprove", "documentInboxReject", "documentInboxProcess"]) assert.match(dialog, new RegExp(`id="${action}"`));
   assert.equal((script.match(/client\.rpc\("get_document_inbox_v1"/g) || []).length, 1);
   assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
   assert.doesNotMatch(script, /\.from\(["']document_inbox_items["']\)/);
@@ -2577,6 +2655,12 @@ test("document inbox UI preserves backend authority lifecycle and responsive rev
   assert.match(script, /filters\.addEventListener\("(?:input|change)", renderInboxList\)/);
   assert.match(script, /processedResult\.hidden = item\.lifecycle_status !== "PROCESSED"/);
   assert.match(script, /reject\.hidden = !\["RECEIVED", "REVIEW_REQUIRED"\]\.includes/);
+  assert.match(script, /extract\.hidden = !\["RECEIVED", "REVIEW_REQUIRED"\]\.includes/);
+  assert.match(extractionBlock, /client\.functions\.invoke\("document-inbox-extract", \{[\s\S]*?body: request/);
+  assert.doesNotMatch(extractionBlock, /SUPABASE_SERVICE_ROLE_KEY|provider[_-]?secret|storage[_-]?credential/i);
+  for (const forbidden of ["confirm_document_inbox_values_v1", "approve_document_inbox_item_v1", "process_document_inbox_item_v1"]) {
+    assert.doesNotMatch(extractionBlock, new RegExp(`client\\.rpc\\("${forbidden}"`));
+  }
   assert.match(script, /const editable = \["RECEIVED", "REVIEW_REQUIRED"\]\.includes/);
   assert.match(script, /inboxItems\.find\(\(item\)=>item\.id === selectedInboxItem\.id\)/);
   assert.match(script, /form\.addEventListener\("input", \(\)=>\{ confirmedFormDirty = true; approve\.disabled = true; \}\)/);
@@ -2584,6 +2668,8 @@ test("document inbox UI preserves backend authority lifecycle and responsive rev
   assert.doesNotMatch(`${html}${script}`, /Proposed BV|Confirmed NV|INV-100/);
   assert.match(css, /\.document-inbox-values--proposed[^}]*border-left:4px solid #b67b10/);
   assert.match(css, /\.document-inbox-values--confirmed[^}]*border-left:4px solid var\(--turquoise-deep\)/);
+  assert.match(css, /\.document-inbox-values--extraction[^}]*border-left:4px solid #3b6f91/);
+  assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.document-inbox-values--extraction dl/);
   assert.match(css, /\.document-inbox-review__body[^}]*overflow:auto/);
   assert.match(css, /@media \(max-width:900px\)[^{]*\{[^}]*\.document-inbox-filters/);
   assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-filters/);

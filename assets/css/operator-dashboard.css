@@ -229,6 +229,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .document-inbox-values--proposed { border-left:4px solid #b67b10; background:#fffdf7; }
 .document-inbox-values--proposed .eyebrow { color:#8a651c; }
 .document-inbox-values--proposed dl { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.document-inbox-values--extraction { margin-top:1rem; border-left:4px solid #3b6f91; background:#f4f9fc; }
+.document-inbox-values--extraction .eyebrow { color:#315f7d; }
+.document-inbox-values--extraction dl { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.document-inbox-extraction-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.document-inbox-extraction-message { margin:0 0 .85rem; color:var(--muted); font-size:.82rem; }
+@media (max-width:900px) { .document-inbox-values--extraction dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:540px) { .document-inbox-values--extraction dl { grid-template-columns:1fr; } .document-inbox-extraction-heading { flex-wrap:wrap; } }
 .document-inbox-values--confirmed { border-left:4px solid var(--turquoise-deep); background:var(--turquoise-soft); }
 .document-inbox-confirmed-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; }
 .document-inbox-confirmed-form :disabled { color:#66757c; background:#eef3f3; }

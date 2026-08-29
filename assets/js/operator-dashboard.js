@@ -95,6 +95,7 @@ export const SUPPLIER_DOCUMENT_RELATION_TYPES = Object.freeze([...SUPPLIER_DOCUM
 export const SUPPLIER_DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
 export const SUPPLIER_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCUMENT_INBOX_STATUSES = Object.freeze(["RECEIVED", "REVIEW_REQUIRED", "APPROVED", "PROCESSED", "REJECTED"]);
+export const DOCUMENT_INBOX_EXTRACTION_STATUSES = Object.freeze(["NOT_RECORDED", "SUCCEEDED", "PARTIAL", "ERROR"]);
 export const DOCUMENT_INBOX_DOCUMENT_TYPES = Object.freeze([...SUPPLIER_DOCUMENT_TYPES]);
 export const DOCUMENT_INBOX_CATEGORIES = Object.freeze([
   "software", "hosting", "telecom", "accounting", "hardware", "marketing",
@@ -103,6 +104,15 @@ export const DOCUMENT_INBOX_CATEGORIES = Object.freeze([
 const DOCUMENT_INBOX_STATUS_LABELS = Object.freeze({
   RECEIVED: "Ontvangen", REVIEW_REQUIRED: "Te beoordelen", APPROVED: "Goedgekeurd",
   PROCESSED: "Verwerkt", REJECTED: "Afgewezen",
+});
+const DOCUMENT_INBOX_EXTRACTION_LABELS = Object.freeze({
+  NOT_RECORDED: "Nog niet geanalyseerd", SUCCEEDED: "Analyse voltooid",
+  PARTIAL: "Gedeeltelijke analyse", ERROR: "Analyse niet beschikbaar",
+});
+const DOCUMENT_INBOX_CANDIDATE_LABELS = Object.freeze({
+  supplier_name: "Leverancier", document_reference: "Documentreferentie",
+  document_date: "Documentdatum", document_type: "Documenttype", amount: "Bedrag",
+  currency: "Valuta", due_date: "Vervaldatum", vat_amount: "Btw-bedrag",
 });
 
 export function documentInboxStatusPresentation(status) {
@@ -114,11 +124,71 @@ export function documentInboxStatusPresentation(status) {
   };
 }
 
+export function documentInboxExtractionRequest(item) {
+  if (!item || !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status)) throw new Error("DOCUMENT_INBOX_NOT_REVIEWABLE");
+  if (!UUID.test(String(item.id || "")) || !Number.isSafeInteger(item.revision) || item.revision < 1) throw new Error("INVALID_DOCUMENT_INBOX_EXTRACTION_REQUEST");
+  return { document_inbox_item_id: item.id, expected_revision: item.revision };
+}
+
+export function documentInboxExtractionPresentation(item) {
+  const extractionStatus = String(item?.extraction_status || "");
+  const source = item?.extraction_candidates;
+  if (!DOCUMENT_INBOX_EXTRACTION_STATUSES.includes(extractionStatus)
+      || !source || typeof source !== "object" || Array.isArray(source)) throw new Error("INVALID_DOCUMENT_INBOX_EXTRACTION");
+  const candidates = Object.entries(source).map(([name, candidate])=>{
+    const value = candidate?.value;
+    const confidence = candidate?.confidence;
+    const evidence = candidate?.evidence;
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(name)
+        || (typeof value !== "string" && typeof value !== "number")
+        || !Number.isFinite(confidence) || confidence < 0 || confidence > 1
+        || typeof evidence !== "string" || !evidence.trim()) throw new Error("INVALID_DOCUMENT_INBOX_EXTRACTION_CANDIDATE");
+    return {
+      name,
+      label: DOCUMENT_INBOX_CANDIDATE_LABELS[name] || name.replaceAll("_", " "),
+      value: String(value),
+      confidence: `${Math.round(confidence * 100)}%`,
+      evidence: evidence.trim(),
+    };
+  });
+  return {
+    status: extractionStatus,
+    label: DOCUMENT_INBOX_EXTRACTION_LABELS[extractionStatus],
+    tone: extractionStatus === "SUCCEEDED" ? "green" : extractionStatus === "PARTIAL" ? "amber" : extractionStatus === "ERROR" ? "red" : "neutral",
+    message: extractionStatus === "SUCCEEDED" ? "Extractievoorstellen zijn beschikbaar voor menselijke controle."
+      : extractionStatus === "PARTIAL" ? "De analyse is gedeeltelijk. Controleer alle voorstellen en bewijsgegevens."
+      : extractionStatus === "ERROR" ? "Analyse niet beschikbaar. Probeer opnieuw of beoordeel het document handmatig."
+      : "Start de analyse om niet-definitieve voorstellen te verzamelen.",
+    candidates,
+  };
+}
+
+export function documentInboxExtractionResponse(data) {
+  if (!data || data.ok !== true || data.code !== "DOCUMENT_INBOX_EXTRACTION_RECORDED"
+      || !UUID.test(String(data.id || "")) || !DOCUMENT_INBOX_STATUSES.includes(data.status)
+      || !Number.isSafeInteger(data.revision) || data.revision < 1
+      || !DOCUMENT_INBOX_EXTRACTION_STATUSES.includes(data.extraction_status)
+      || !data.extraction_candidates || typeof data.extraction_candidates !== "object" || Array.isArray(data.extraction_candidates)) {
+    throw new Error("INVALID_DOCUMENT_INBOX_EXTRACTION_RESPONSE");
+  }
+  return data;
+}
+
+export function documentInboxExtractionFailure(error) {
+  const code = String(error?.code || error?.message || "");
+  const status = Number(error?.status || error?.context?.status || 0);
+  if (status === 409 || code === "DOCUMENT_INBOX_REVISION_CONFLICT") return "REVISION_CONFLICT";
+  if (status === 401 || status === 403 || /AUTHENTICATION_REQUIRED|OWNER_REQUIRED/.test(code)) return "AUTHORIZATION";
+  return "UNAVAILABLE";
+}
+
 export function documentInboxReadPresentation(data) {
   if (!data || data.scope !== "document_inbox" || !Array.isArray(data.items)) throw new Error("INVALID_DOCUMENT_INBOX_RESPONSE");
   for (const item of data.items) {
     if (!item || !UUID.test(String(item.id || "")) || !DOCUMENT_INBOX_STATUSES.includes(item.lifecycle_status)
         || !Number.isSafeInteger(item.revision) || item.revision < 0 || !Array.isArray(item.warnings)
+        || !DOCUMENT_INBOX_EXTRACTION_STATUSES.includes(item.extraction_status)
+        || !item.extraction_candidates || typeof item.extraction_candidates !== "object" || Array.isArray(item.extraction_candidates)
         || !["production", "internal_e2e"].includes(item.record_classification)) {
       throw new Error("INVALID_DOCUMENT_INBOX_ITEM");
     }
@@ -219,6 +289,32 @@ export function createDocumentInboxCommandController({ execute, reload, onBusy, 
         return true;
       } catch (error) {
         onFailure(error?.message || "DOCUMENT_INBOX_COMMAND_FAILED");
+        return false;
+      } finally {
+        busy = false;
+        onBusy(false);
+      }
+    },
+  };
+}
+
+export function createDocumentInboxExtractionController({ execute, reload, onBusy, onSuccess, onFailure }) {
+  let busy = false;
+  return {
+    get submitting() { return busy; },
+    async submit(item) {
+      if (busy) return false;
+      const request = documentInboxExtractionRequest(item);
+      busy = true;
+      onBusy(true);
+      try {
+        const result = documentInboxExtractionResponse(await execute(request));
+        await reload();
+        onSuccess(result);
+        return true;
+      } catch (error) {
+        try { await reload(); } catch {}
+        onFailure(documentInboxExtractionFailure(error));
         return false;
       } finally {
         busy = false;
@@ -2001,17 +2097,22 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const warnings = document.getElementById("documentInboxWarnings");
       const warningList = document.getElementById("documentInboxWarningList");
       const acknowledgeWarnings = document.getElementById("documentInboxAcknowledgeWarnings");
+      const extraction = document.getElementById("documentInboxExtraction");
+      const extractionStatus = document.getElementById("documentInboxExtractionStatus");
+      const extractionMessage = document.getElementById("documentInboxExtractionMessage");
+      const extractionCandidates = document.getElementById("documentInboxExtractionCandidates");
       const proposed = document.getElementById("documentInboxProposed");
       const form = document.getElementById("documentInboxConfirmedForm");
       const processedResult = document.getElementById("documentInboxProcessedResult");
       const actionStatus = document.getElementById("documentInboxActionStatus");
       const close = document.getElementById("documentInboxClose");
       const reject = document.getElementById("documentInboxReject");
+      const extract = document.getElementById("documentInboxExtract");
       const saveProposal = document.getElementById("documentInboxSaveProposal");
       const saveConfirmed = document.getElementById("documentInboxSaveConfirmed");
       const approve = document.getElementById("documentInboxApprove");
       const process = document.getElementById("documentInboxProcess");
-      const actionButtons = [reject, saveProposal, saveConfirmed, approve, process];
+      const actionButtons = [reject, extract, saveProposal, saveConfirmed, approve, process];
       let inboxItems = [];
       let selectedInboxItem = null;
       let selectedInboxTrigger = null;
@@ -2094,6 +2195,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         warnings.hidden = item.warnings.length === 0;
         acknowledgeWarnings.checked = Boolean(item.warnings_acknowledged);
         acknowledgeWarnings.disabled = !editable;
+        const extractionPresentation = documentInboxExtractionPresentation(item);
+        extraction.hidden = false;
+        extractionStatus.className = `badge${extractionPresentation.tone === "neutral" ? "" : ` badge--${extractionPresentation.tone}`}`;
+        extractionStatus.textContent = extractionPresentation.label;
+        extractionMessage.textContent = extractionPresentation.message;
+        extractionCandidates.replaceChildren();
+        for (const candidate of extractionPresentation.candidates) {
+          appendDefinition(extractionCandidates, candidate.label, `${candidate.value} · Zekerheid ${candidate.confidence} · Bewijs ${candidate.evidence}`);
+        }
         proposed.replaceChildren();
         for (const [label, value] of [
           ["Leverancier", item.proposed_supplier_name], ["Documenttype", item.proposed_document_type],
@@ -2107,6 +2217,8 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         confirmedFormDirty = false;
         for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = !editable;
         reject.hidden = !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status);
+        extract.hidden = !["RECEIVED", "REVIEW_REQUIRED"].includes(item.lifecycle_status);
+        extract.textContent = item.extraction_status === "NOT_RECORDED" ? "Document analyseren" : "Opnieuw analyseren";
         saveProposal.hidden = item.lifecycle_status !== "RECEIVED";
         saveConfirmed.hidden = item.lifecycle_status !== "REVIEW_REQUIRED";
         approve.hidden = item.lifecycle_status !== "REVIEW_REQUIRED";
@@ -2198,6 +2310,52 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         },
       });
 
+      async function extractionInvokeError(error) {
+        let code = String(error?.message || "DOCUMENT_INBOX_EXTRACTION_NOT_AVAILABLE");
+        const status = Number(error?.context?.status || 0);
+        try {
+          const payload = await error.context.clone().json();
+          if (typeof payload?.code === "string") code = payload.code;
+        } catch {}
+        return Object.assign(new Error(code), { code, status });
+      }
+
+      const extractionController = createDocumentInboxExtractionController({
+        execute: async (request)=>{
+          const response = await client.functions.invoke("document-inbox-extract", {
+            method: "POST",
+            body: request,
+          });
+          if (response.error) throw await extractionInvokeError(response.error);
+          return response.data;
+        },
+        reload: ()=>loadDocumentInbox(),
+        onBusy: (busy)=>{
+          for (const button of actionButtons) button.disabled = busy || (button === approve && (confirmedFormDirty
+            || !selectedInboxItem || !documentInboxHasConfirmedValues(selectedInboxItem)
+            || selectedInboxItem.warnings.length > 0 && !acknowledgeWarnings.checked));
+          close.disabled = busy;
+          for (const field of form.querySelectorAll("input, select, textarea")) field.disabled = busy || !["RECEIVED", "REVIEW_REQUIRED"].includes(selectedInboxItem?.lifecycle_status);
+          acknowledgeWarnings.disabled = busy || !["RECEIVED", "REVIEW_REQUIRED"].includes(selectedInboxItem?.lifecycle_status);
+          extract.textContent = busy ? "Analyseren..." : selectedInboxItem?.extraction_status === "NOT_RECORDED" ? "Document analyseren" : "Opnieuw analyseren";
+          if (busy) actionStatus.textContent = "Document wordt veilig geanalyseerd.";
+        },
+        onSuccess: (result)=>{
+          actionStatus.textContent = result.extraction_status === "ERROR"
+            ? "Analyse niet beschikbaar. Probeer opnieuw of beoordeel het document handmatig."
+            : result.extraction_status === "PARTIAL"
+            ? "Gedeeltelijke analyse geladen. Controleer alle voorstellen en bewijsgegevens."
+            : "Analysevoorstellen geladen voor menselijke controle.";
+        },
+        onFailure: (failure)=>{
+          actionStatus.textContent = failure === "REVISION_CONFLICT"
+            ? "Het document is intussen gewijzigd. De actuele versie is geladen; controleer deze opnieuw."
+            : failure === "AUTHORIZATION"
+            ? "Je bent niet bevoegd om dit document te analyseren."
+            : "Analyse kon niet worden gestart. De actuele Inbox is opnieuw geladen.";
+        },
+      });
+
       const controller = createDocumentInboxCommandController({
         execute: async (rpc, request)=>{
           const allowed = new Set(["update_document_inbox_proposal_v1", "confirm_document_inbox_values_v1", "approve_document_inbox_item_v1", "reject_document_inbox_item_v1", "process_document_inbox_item_v1"]);
@@ -2286,9 +2444,13 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         approve.disabled = confirmedFormDirty || !selectedInboxItem || !documentInboxHasConfirmedValues(selectedInboxItem)
           || (selectedInboxItem.warnings.length > 0 && !acknowledgeWarnings.checked);
       });
-      close.addEventListener("click", ()=>{ if (!controller.submitting) dialog.close(); });
-      dialog.addEventListener("cancel", (event)=>{ if (controller.submitting) event.preventDefault(); });
+      close.addEventListener("click", ()=>{ if (!controller.submitting && !extractionController.submitting) dialog.close(); });
+      dialog.addEventListener("cancel", (event)=>{ if (controller.submitting || extractionController.submitting) event.preventDefault(); });
       dialog.addEventListener("close", ()=>selectedInboxTrigger?.focus());
+      extract.addEventListener("click", async ()=>{
+        if (!selectedInboxItem) return;
+        await extractionController.submit(selectedInboxItem);
+      });
       saveProposal.addEventListener("click", async ()=>{
         if (!selectedInboxItem || !form.reportValidity()) return;
         await controller.submit("update_document_inbox_proposal_v1", documentInboxProposalRequest(selectedInboxItem, Object.fromEntries(new FormData(form))));
