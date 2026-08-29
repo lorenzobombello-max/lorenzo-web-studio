@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseCategoryLabel, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
+import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-expenses-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-expense-entry-ui";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -371,7 +371,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 9);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 10);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
@@ -2385,6 +2385,83 @@ const emptyBusinessExpensePortfolio = () => ({
     bank_actuals_available: false, recurring_available: false,
   },
   bank_actuals: null,
+});
+
+test("business expense amount input converts exact decimal strings to positive minor units", () => {
+  assert.equal(businessExpenseAmountMinor("12,50"), 1250);
+  assert.equal(businessExpenseAmountMinor("12.5"), 1250);
+  assert.equal(businessExpenseAmountMinor("0,01"), 1);
+  assert.equal(businessExpenseAmountMinor(" 7 "), 700);
+  for (const invalid of ["", "0", "0,00", "-1", "1,234", "1.2.3", "90071992547409,92"]) {
+    assert.equal(businessExpenseAmountMinor(invalid), null);
+  }
+});
+
+test("business expense create request is bounded to the six production authority fields", () => {
+  const request = businessExpenseCreateRequest({ supplier_name: "  Supplier  ", description: "  Tool  ", category: "software", amount: "12,50", currency: "EUR", expense_date: "2026-08-29" });
+  assert.deepEqual(request, { p_supplier_name: "Supplier", p_description: "Tool", p_category: "software", p_amount_minor: 1250, p_currency: "EUR", p_expense_date: "2026-08-29" });
+  for (const override of [{ supplier_name: " " }, { description: " " }, { category: "travel" }, { amount: "0" }, { currency: "USD" }, { expense_date: "" }]) {
+    assert.throws(()=>businessExpenseCreateRequest({ supplier_name: "Supplier", description: "Tool", category: "software", amount: "12,50", currency: "EUR", expense_date: "2026-08-29", ...override }), /INVALID_BUSINESS_EXPENSE_ENTRY/);
+  }
+});
+
+test("business expense entry controller prevents overlap and reloads only after successful create", async () => {
+  let releaseCreate;
+  const calls = [];
+  const errors = [];
+  const controller = createBusinessExpenseEntryController({
+    createExpense: async (request)=>{ calls.push(["create", request]); await new Promise((resolve)=>{ releaseCreate = resolve; }); return "expense-id"; },
+    reloadPortfolio: async ()=>calls.push(["reload"]),
+    onBusy: (busy)=>calls.push(["busy", busy]),
+    onCreated: (id)=>calls.push(["created", id]),
+    onError: (error)=>errors.push(error),
+  });
+  const values = { supplier_name: "Supplier", description: "Tool", category: "software", amount: "12,50", currency: "EUR", expense_date: "2026-08-29" };
+  const first = controller.submit(values);
+  const second = await controller.submit(values);
+  assert.equal(second, false);
+  assert.equal(calls.filter(([kind])=>kind === "create").length, 1);
+  releaseCreate();
+  assert.equal(await first, true);
+  assert.deepEqual(calls.map(([kind])=>kind), ["busy", "create", "created", "reload", "busy"]);
+  assert.equal(errors.length, 0);
+});
+
+test("business expense entry controller reports create errors without reload or created state", async () => {
+  const calls = [];
+  const controller = createBusinessExpenseEntryController({
+    createExpense: async ()=>{ throw new Error("backend"); },
+    reloadPortfolio: async ()=>calls.push("reload"),
+    onBusy: ()=>{}, onCreated: ()=>calls.push("created"), onError: ()=>calls.push("error"),
+  });
+  assert.equal(await controller.submit({ supplier_name: "Supplier", description: "Tool", category: "software", amount: "1", currency: "EUR", expense_date: "2026-08-29" }), false);
+  assert.deepEqual(calls, ["error"]);
+});
+
+test("business expense entry UI exposes only the approved authority and create flow", async () => {
+  const [html, script, css] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
+  ]);
+  const form = html.match(/<dialog id="businessExpenseDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  assert.match(script, /textContent = "Nieuwe bedrijfskost"/);
+  assert.match(form, /name="supplier_name"[^>]*required/);
+  assert.match(form, /name="description"[^>]*required/);
+  assert.deepEqual([...form.matchAll(/<option value="([a-z]+)">/g)].map((match)=>match[1]), [
+    "software", "hosting", "telecom", "accounting", "hardware", "marketing",
+    "insurance", "education", "office", "transport", "other",
+  ]);
+  assert.match(form, /name="amount"[^>]*inputmode="decimal"[^>]*required/);
+  assert.match(form, /name="currency"[^>]*value="EUR"[^>]*readonly/);
+  assert.match(form, /name="expense_date"[^>]*type="date"[^>]*required/);
+  assert.doesNotMatch(form, /record_classification|internal_e2e|paid|payment|vat|btw|bank|outstanding|overdue|due_date|document|upload|file/i);
+  assert.match(script, /client\.rpc\("create_business_expense_v1", request\)/);
+  assert.doesNotMatch(script, /client\.from\("business_expenses"\)\.insert/);
+  assert.match(script, /submit\.disabled = busy/);
+  assert.match(script, /form\.reset\(\);\s*dialog\.close\(\);\s*trigger\.focus\(\)/);
+  assert.match(script, /reloadPortfolio: \(\)=>loadBusinessExpensePortfolio\("Bedrijfskost opgeslagen\."\)/);
+  assert.match(script, /Bedrijfskost kon niet worden opgeslagen\./);
+  assert.match(css, /\.business-expense-dialog[^}]*max-height:calc\(100vh - 2rem\)/);
+  assert.match(css, /@media \(max-width:540px\)[^}]*\{[\s\S]*?\.business-expense-form__fields \{ grid-template-columns:1fr/);
 });
 
 test("business expense finance presentation preserves authority, cancellation, currencies, and safe document summaries", () => {

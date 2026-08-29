@@ -23,6 +23,13 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
 const OPERATOR_MODULES = new Set(["dossiers", "finance", "workforce", "recruitment", "messages", "calendar"]);
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "owner"]);
 
+function localDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
   if (role !== "owner" || parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
@@ -83,6 +90,68 @@ const BUSINESS_EXPENSE_RELATION_LABELS = Object.freeze({
   INVOICE: "Factuur", CREDIT_NOTE: "Creditnota", RECEIPT: "Kassaticket / ontvangstbewijs",
   CONTRACT: "Contract", OTHER: "Overig",
 });
+
+export function businessExpenseAmountMinor(value) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const [units, decimals = ""] = normalized.split(".");
+  const amountMinor = (BigInt(units) * 100n) + BigInt(decimals.padEnd(2, "0"));
+  if (amountMinor <= 0n || amountMinor > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Number(amountMinor);
+}
+
+export function businessExpenseCreateRequest(values) {
+  const supplierName = String(values?.supplier_name ?? "").trim();
+  const description = String(values?.description ?? "").trim();
+  const category = String(values?.category ?? "");
+  const amountMinor = businessExpenseAmountMinor(values?.amount);
+  const currency = String(values?.currency ?? "");
+  const expenseDate = String(values?.expense_date ?? "");
+  if (!supplierName || supplierName.length > 200
+      || !description || description.length > 1000
+      || !Object.hasOwn(BUSINESS_EXPENSE_CATEGORY_LABELS, category)
+      || amountMinor === null || currency !== "EUR"
+      || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate)) throw new Error("INVALID_BUSINESS_EXPENSE_ENTRY");
+  return {
+    p_supplier_name: supplierName,
+    p_description: description,
+    p_category: category,
+    p_amount_minor: amountMinor,
+    p_currency: "EUR",
+    p_expense_date: expenseDate,
+  };
+}
+
+export function createBusinessExpenseEntryController({ createExpense, reloadPortfolio, onBusy, onCreated, onError }) {
+  let submitting = false;
+  return {
+    get submitting() { return submitting; },
+    async submit(values) {
+      if (submitting) return false;
+      let request;
+      try {
+        request = businessExpenseCreateRequest(values);
+      } catch (error) {
+        onError(error);
+        return false;
+      }
+      submitting = true;
+      onBusy(true);
+      try {
+        const result = await createExpense(request);
+        onCreated(result);
+        await reloadPortfolio();
+        return true;
+      } catch (error) {
+        onError(error);
+        return false;
+      } finally {
+        submitting = false;
+        onBusy(false);
+      }
+    },
+  };
+}
 
 export function websiteFinancePortfolioPresentation(portfolio) {
   const validMoney = (value)=>Number.isSafeInteger(value) && value >= 0;
@@ -1550,79 +1619,151 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const totals = document.getElementById("financeExpenseCurrencyTotals");
       const expenses = document.getElementById("financeExpenseList");
       const empty = document.getElementById("financeExpenseEmpty");
-      try {
-        const response = await client.rpc("get_business_expense_portfolio_v1");
-        if (response.error) throw response.error;
-        const portfolio = businessExpenseFinancePortfolioPresentation(response.data);
-        totals.replaceChildren();
-        expenses.replaceChildren();
-        for (const currencyTotal of portfolio.currency_totals) {
-          const group = document.createElement("section");
-          const heading = document.createElement("h3");
-          const metrics = document.createElement("dl");
-          const metric = document.createElement("div");
-          const term = document.createElement("dt");
-          const value = document.createElement("dd");
-          group.className = "finance-currency-group";
-          heading.textContent = currencyTotal.currency;
-          metrics.className = "finance-metrics finance-metrics--expense";
-          term.textContent = "Geregistreerde kosten";
-          value.textContent = formatFinanceMoney(currencyTotal.active_expense_minor, currencyTotal.currency);
-          metric.append(term, value);
-          metrics.append(metric);
-          group.append(heading, metrics);
-          totals.append(group);
-        }
-        for (const expense of portfolio.expenses) {
-          const item = document.createElement("li");
-          const heading = document.createElement("div");
-          const supplier = document.createElement("strong");
-          const lifecycle = document.createElement("span");
-          const metrics = document.createElement("dl");
-          const relations = document.createElement("p");
-          supplier.textContent = expense.supplier_name;
-          lifecycle.textContent = expense.status === "CANCELLED" ? "Geannuleerd" : "Geregistreerd";
-          item.dataset.expenseStatus = expense.status;
-          heading.className = "finance-project-heading";
-          metrics.className = "finance-project-metrics finance-expense-metrics";
-          relations.className = "finance-payment-status";
-          heading.append(supplier, lifecycle);
-          for (const [label, value] of [
-            ["Omschrijving", expense.description || "Geen omschrijving"],
-            ["Categorie", businessExpenseCategoryLabel(expense.category)],
-            ["Bedrag", formatFinanceMoney(expense.amount_minor, expense.currency)],
-            ["Datum", expense.expense_date],
-            ["Documenten", `${expense.document_count} ${expense.document_count === 1 ? "document" : "documenten"}`],
-          ]) {
+      const dialog = document.getElementById("businessExpenseDialog");
+      const form = document.getElementById("businessExpenseForm");
+      const formStatus = document.getElementById("businessExpenseFormStatus");
+      const submit = document.getElementById("businessExpenseSubmit");
+      const cancel = document.getElementById("businessExpenseCancel");
+      const amount = document.getElementById("businessExpenseAmount");
+      const expenseDate = document.getElementById("businessExpenseDate");
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "primary-action primary-action--compact";
+      trigger.textContent = "Nieuwe bedrijfskost";
+      trigger.id = "businessExpenseCreate";
+      document.getElementById("financeExpensesTitle").closest(".finance-section-heading").append(trigger);
+      const loadBusinessExpensePortfolio = async (successMessage = "")=>{
+        try {
+          const response = await client.rpc("get_business_expense_portfolio_v1");
+          if (response.error) throw response.error;
+          const portfolio = businessExpenseFinancePortfolioPresentation(response.data);
+          totals.replaceChildren();
+          expenses.replaceChildren();
+          for (const currencyTotal of portfolio.currency_totals) {
+            const group = document.createElement("section");
+            const heading = document.createElement("h3");
+            const metrics = document.createElement("dl");
             const metric = document.createElement("div");
             const term = document.createElement("dt");
-            const description = document.createElement("dd");
-            term.textContent = label;
-            description.textContent = value;
-            metric.append(term, description);
+            const value = document.createElement("dd");
+            group.className = "finance-currency-group";
+            heading.textContent = currencyTotal.currency;
+            metrics.className = "finance-metrics finance-metrics--expense";
+            term.textContent = "Geregistreerde kosten";
+            value.textContent = formatFinanceMoney(currencyTotal.active_expense_minor, currencyTotal.currency);
+            metric.append(term, value);
             metrics.append(metric);
+            group.append(heading, metrics);
+            totals.append(group);
           }
-          relations.textContent = expense.relation_types.length
-            ? expense.relation_types.map(businessExpenseRelationLabel).join(" · ")
-            : "Geen documenttypes geregistreerd.";
-          item.append(heading, metrics, relations);
-          expenses.append(item);
+          for (const expense of portfolio.expenses) {
+            const item = document.createElement("li");
+            const heading = document.createElement("div");
+            const supplier = document.createElement("strong");
+            const lifecycle = document.createElement("span");
+            const metrics = document.createElement("dl");
+            const relations = document.createElement("p");
+            supplier.textContent = expense.supplier_name;
+            lifecycle.textContent = expense.status === "CANCELLED" ? "Geannuleerd" : "Geregistreerd";
+            item.dataset.expenseStatus = expense.status;
+            heading.className = "finance-project-heading";
+            metrics.className = "finance-project-metrics finance-expense-metrics";
+            relations.className = "finance-payment-status";
+            heading.append(supplier, lifecycle);
+            for (const [label, value] of [
+              ["Omschrijving", expense.description || "Geen omschrijving"],
+              ["Categorie", businessExpenseCategoryLabel(expense.category)],
+              ["Bedrag", formatFinanceMoney(expense.amount_minor, expense.currency)],
+              ["Datum", expense.expense_date],
+              ["Documenten", `${expense.document_count} ${expense.document_count === 1 ? "document" : "documenten"}`],
+            ]) {
+              const metric = document.createElement("div");
+              const term = document.createElement("dt");
+              const description = document.createElement("dd");
+              term.textContent = label;
+              description.textContent = value;
+              metric.append(term, description);
+              metrics.append(metric);
+            }
+            relations.textContent = expense.relation_types.length
+              ? expense.relation_types.map(businessExpenseRelationLabel).join(" · ")
+              : "Geen documenttypes geregistreerd.";
+            item.append(heading, metrics, relations);
+            expenses.append(item);
+          }
+          for (const availability of document.querySelectorAll("[data-expense-availability]")) {
+            availability.textContent = portfolio.availability[availability.dataset.expenseAvailability]
+              ? "Beschikbaar" : "Niet beschikbaar";
+          }
+          document.getElementById("financeExpenseBankAccount").textContent =
+            portfolio.availability.bank_actuals_available || portfolio.bank_actuals !== null ? "Beschikbaar" : "Niet gekoppeld";
+          count.textContent = `${portfolio.expense_count} ${portfolio.expense_count === 1 ? "kost" : "kosten"}`;
+          empty.hidden = portfolio.expense_count !== 0;
+          status.textContent = successMessage || (portfolio.expense_count ? "Bedrijfskosten beschikbaar." : "");
+          content.hidden = false;
+        } catch {
+          count.textContent = "Niet beschikbaar";
+          status.textContent = "Bedrijfskosten konden niet worden geladen.";
+          content.hidden = true;
         }
-        for (const availability of document.querySelectorAll("[data-expense-availability]")) {
-          availability.textContent = portfolio.availability[availability.dataset.expenseAvailability]
-            ? "Beschikbaar" : "Niet beschikbaar";
+      };
+      await loadBusinessExpensePortfolio();
+      const controller = createBusinessExpenseEntryController({
+        createExpense: async (request)=>{
+          const response = await client.rpc("create_business_expense_v1", request);
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        reloadPortfolio: ()=>loadBusinessExpensePortfolio("Bedrijfskost opgeslagen."),
+        onBusy: (busy)=>{
+          submit.disabled = busy;
+          cancel.disabled = busy;
+          submit.textContent = busy ? "Opslaan..." : "Bedrijfskost opslaan";
+          if (busy) formStatus.textContent = "Bedrijfskost opslaan.";
+        },
+        onCreated: ()=>{
+          form.reset();
+          dialog.close();
+          trigger.focus();
+        },
+        onError: ()=>{ formStatus.textContent = "Bedrijfskost kon niet worden opgeslagen."; },
+      });
+      trigger.addEventListener("click", ()=>{
+        formStatus.textContent = "";
+        if (!expenseDate.value) expenseDate.value = localDateInputValue();
+        dialog.showModal();
+        document.getElementById("businessExpenseSupplier").focus();
+      });
+      amount.addEventListener("input", ()=>amount.setCustomValidity(""));
+      form.addEventListener("input", (event)=>event.target.setCustomValidity(""));
+      cancel.addEventListener("click", ()=>{
+        if (controller.submitting) return;
+        form.reset();
+        dialog.close();
+        trigger.focus();
+      });
+      form.addEventListener("submit", async (event)=>{
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form));
+        const supplier = document.getElementById("businessExpenseSupplier");
+        const description = document.getElementById("businessExpenseDescription");
+        if (!String(values.supplier_name).trim()) {
+          supplier.setCustomValidity("Vul een leverancier in.");
+          supplier.reportValidity();
+          return;
         }
-        document.getElementById("financeExpenseBankAccount").textContent =
-          portfolio.availability.bank_actuals_available || portfolio.bank_actuals !== null ? "Beschikbaar" : "Niet gekoppeld";
-        count.textContent = `${portfolio.expense_count} ${portfolio.expense_count === 1 ? "kost" : "kosten"}`;
-        empty.hidden = portfolio.expense_count !== 0;
-        status.textContent = portfolio.expense_count ? "Bedrijfskosten beschikbaar." : "";
-        content.hidden = false;
-      } catch {
-        count.textContent = "Niet beschikbaar";
-        status.textContent = "Bedrijfskosten konden niet worden geladen.";
-        content.hidden = true;
-      }
+        if (!String(values.description).trim()) {
+          description.setCustomValidity("Vul een omschrijving in.");
+          description.reportValidity();
+          return;
+        }
+        if (businessExpenseAmountMinor(amount.value) === null) {
+          amount.setCustomValidity("Voer een bedrag groter dan nul in met maximaal twee decimalen.");
+          amount.reportValidity();
+          return;
+        }
+        await controller.submit(values);
+      });
     }
   }
   if (activeModule !== "dossiers") {
