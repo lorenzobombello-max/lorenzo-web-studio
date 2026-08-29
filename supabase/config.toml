@@ -34,6 +34,9 @@ verify_jwt = false
 [functions.customer-request-upload]
 verify_jwt = false
 
+[functions.supplier-document-upload]
+verify_jwt = true
+
 [functions.commercial-operator-command]
 verify_jwt = true
 static_files = ["./functions/commercial-operator-command/assets/*.docx"]
