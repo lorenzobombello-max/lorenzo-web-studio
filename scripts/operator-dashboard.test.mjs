@@ -4,6 +4,7 @@ import test from "node:test";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
+import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -149,6 +150,57 @@ test("production dashboard uses real application data and no synthetic state", a
   assert.doesNotMatch(script, /\.innerHTML|insertAdjacentHTML/);
   assert.match(css, /\.dashboard-grid/);
   assert.match(css, /\.application-list/);
+});
+
+test("dossier document manifest UI uses only safe local actions and isolated states", async () => {
+  const [html, script] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard.js"),
+  ]);
+  assert.match(html, /id="documentStatusList"/);
+  assert.match(html, /id="documentManifestState"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(script, /action: "get_dossier_document_manifest"/);
+  assert.match(script, /action: "create_dossier_document_access"/);
+  assert.match(script, /loadAssignment\(application, requestId\),\s*loadDossierDocuments\(application, requestId\)/);
+  assert.match(script, /Documenten konden niet worden geladen\. Het dossier blijft beschikbaar\./);
+  assert.doesNotMatch(script, /get_dossier_document_manifest[\s\S]{0,300}storage_(?:bucket|object|path)/);
+});
+
+test("dossier document requests bind exact dossier and downloadable document authority", () => {
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  const application = { quote_request_id: quoteRequestId };
+  const item = {
+    quote_request_id: quoteRequestId, document_id: documentId,
+    source_type: "CUSTOMER_UPLOAD", can_open: true, can_download: true,
+  };
+  assert.deepEqual(dossierDocumentManifestRequest(application), {
+    action: "get_dossier_document_manifest", quote_request_id: quoteRequestId,
+  });
+  assert.deepEqual(dossierDocumentAccessRequest(application, item), {
+    action: "create_dossier_document_access", quote_request_id: quoteRequestId,
+    source_type: "CUSTOMER_UPLOAD", document_id: documentId,
+  });
+  assert.throws(()=>dossierDocumentAccessRequest(application, { ...item, source_type: "QUOTATION" }), /INVALID_DOSSIER_DOCUMENT_ACCESS_REQUEST/);
+  assert.throws(()=>dossierDocumentAccessRequest(application, { ...item, quote_request_id: "a1800000-0000-4000-8000-000000000095" }), /INVALID_DOSSIER_DOCUMENT_ACCESS_REQUEST/);
+  assert.throws(()=>dossierDocumentAccessRequest(application, { ...item, storage_object_path: "forged/path.pdf", can_download: false }), /INVALID_DOSSIER_DOCUMENT_ACCESS_REQUEST/);
+});
+
+test("dossier document presentation supports exactly quotation artifact and customer upload sources", () => {
+  const base = {
+    document_id: "a1800000-0000-4000-8000-000000000094",
+    title: "LWS-OFF-2099-0001", filename: null, status: "ISSUED",
+    created_at: "2099-01-01T00:00:00Z", can_open: false, can_download: false,
+  };
+  assert.deepEqual(dossierDocumentPresentation({ ...base, source_type: "QUOTATION" }), {
+    type: "Offerte", name: "LWS-OFF-2099-0001", date: base.created_at,
+    status: "ISSUED", actionable: false,
+  });
+  assert.equal(dossierDocumentPresentation({ ...base, source_type: "QUOTATION_ARTIFACT", filename: "offerte.docx", can_open: true, can_download: true }).type, "Offertebestand");
+  assert.equal(dossierDocumentPresentation({ ...base, source_type: "CUSTOMER_UPLOAD", filename: "briefing.pdf", can_open: true, can_download: true }).type, "Klantupload");
+  for (const excluded of ["INVOICE", "INTAKE_UPLOAD", "COMMERCIAL_DOCUMENT", "SUPPLIER_DOCUMENT", "BUSINESS_EXPENSE", "DOCUMENT_INBOX"]) {
+    assert.throws(()=>dossierDocumentPresentation({ ...base, source_type: excluded }), /INVALID_DOSSIER_DOCUMENT/);
+  }
 });
 
 test("quotation issuance control is owner-admin gated and sends no client authority", async () => {

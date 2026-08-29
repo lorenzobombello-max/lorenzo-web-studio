@@ -37,6 +37,8 @@ const APPLICATION_ACTIONS = new Set([
   "get_assignment_operator_roster",
   "get_dossier_assignment",
   "get_my_assigned_dossiers",
+  "get_dossier_document_manifest",
+  "create_dossier_document_access",
   "list_customer_requests_for_dossier",
   "get_customer_request",
   "transition_customer_request",
@@ -165,6 +167,15 @@ export type InternalE2EAcceptedFileCleanupActionInput = Readonly<{
 export type QuotationIssuanceActionInput = Readonly<{
   action: "issue_and_deliver_approved_quotation";
   quote_request_id: string;
+}>;
+export type DossierDocumentActionInput = Readonly<{
+  action: "get_dossier_document_manifest";
+  quote_request_id: string;
+}> | Readonly<{
+  action: "create_dossier_document_access";
+  quote_request_id: string;
+  source_type: "QUOTATION_ARTIFACT" | "CUSTOMER_UPLOAD";
+  document_id: string;
 }>;
 type DossierLifecycleTransportInput = Readonly<{
   quote_request_id: string;
@@ -500,6 +511,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action"])
     : action === "get_my_assigned_dossiers"
     ? new Set(["action", "cursor", "limit"])
+    : action === "get_dossier_document_manifest"
+    ? new Set(["action", "quote_request_id"])
+    : action === "create_dossier_document_access"
+    ? new Set(["action", "quote_request_id", "source_type", "document_id"])
     : action === "list_customer_requests_for_dossier"
     ? new Set(["action", "dossier_reference", "cursor", "limit"])
     : action === "get_customer_request"
@@ -618,6 +633,21 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return { action, cursor, limit };
+  }
+  if (action === "get_dossier_document_manifest") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId };
+  }
+  if (action === "create_dossier_document_access") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const documentId = String(value.document_id || "");
+    const sourceType = String(value.source_type || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(documentId)
+      || !["QUOTATION_ARTIFACT", "CUSTOMER_UPLOAD"].includes(sourceType)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, quote_request_id: quoteRequestId, source_type: sourceType, document_id: documentId };
   }
   if (action === "list_customer_requests_for_dossier") {
     const cursor = value.cursor ?? null;
@@ -872,6 +902,10 @@ function mapDatabaseError(error: unknown) {
     ,"INTERNAL_E2E_OWNER_REQUIRED"
     ,"INTERNAL_E2E_CLEANUP_BINDING_REQUIRED"
     ,"INTERNAL_E2E_CLEANUP_AUTHORIZATION_REQUIRED"
+    ,"DOSSIER_DOCUMENT_READER_REQUIRED"
+    ,"DOSSIER_DOCUMENT_ACCESS_DENIED"
+    ,"DOSSIER_DOCUMENT_NOT_DOWNLOADABLE"
+    ,"DOSSIER_DOCUMENT_SOURCE_INVALID"
   ].includes(code)) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if ([
     "PROJECT_SCOPE_DENIED",
@@ -1064,6 +1098,102 @@ export async function executeDossierLifecycleTransport(
   });
   if (commandResult.error) throw new Error(commandResult.error.message);
   return commandResult.data;
+}
+
+const DOSSIER_DOCUMENT_MANIFEST_FIELDS = [
+  "document_id", "source_type", "document_type", "artifact_type", "title",
+  "filename", "status", "created_at", "accepted_at", "source_record_id",
+  "version", "sha256", "quote_request_id", "customer_id", "project_id",
+  "can_open", "can_download",
+];
+
+function isNullableUuid(value: unknown): boolean {
+  return value === null || UUID.test(String(value));
+}
+
+function isNullableString(value: unknown): boolean {
+  return value === null || typeof value === "string";
+}
+
+function validateDossierDocumentManifest(value: unknown, quoteRequestId: string) {
+  if (!Array.isArray(value)) throw new Error("INVALID_DOSSIER_DOCUMENT_MANIFEST_RESPONSE");
+  return value.map((item)=>{
+    if (!isRecord(item) || !hasExactKeys(item, DOSSIER_DOCUMENT_MANIFEST_FIELDS)
+      || !UUID.test(String(item.document_id)) || !UUID.test(String(item.source_record_id))
+      || item.quote_request_id !== quoteRequestId
+      || !["QUOTATION", "QUOTATION_ARTIFACT", "CUSTOMER_UPLOAD"].includes(String(item.source_type))
+      || !["QUOTATION", "CUSTOMER_UPLOAD"].includes(String(item.document_type))
+      || !isNullableString(item.artifact_type) || typeof item.title !== "string" || item.title.length < 1
+      || !isNullableString(item.filename) || typeof item.status !== "string" || item.status.length < 1
+      || typeof item.created_at !== "string" || !Number.isFinite(Date.parse(item.created_at))
+      || (item.accepted_at !== null && (typeof item.accepted_at !== "string" || !Number.isFinite(Date.parse(item.accepted_at))))
+      || !isNullableString(item.version) || !isNullableString(item.sha256)
+      || !isNullableUuid(item.customer_id) || !isNullableUuid(item.project_id)
+      || typeof item.can_open !== "boolean" || typeof item.can_download !== "boolean"
+      || (item.source_type === "QUOTATION" && (item.filename !== null || item.can_open || item.can_download))
+      || (item.source_type === "QUOTATION_ARTIFACT" && (item.document_type !== "QUOTATION" || typeof item.artifact_type !== "string" || typeof item.filename !== "string"))
+      || (item.source_type === "CUSTOMER_UPLOAD" && (item.document_type !== "CUSTOMER_UPLOAD" || item.artifact_type !== null || typeof item.filename !== "string"))) {
+      throw new Error("INVALID_DOSSIER_DOCUMENT_MANIFEST_RESPONSE");
+    }
+    return item;
+  });
+}
+
+export async function executeDossierDocumentManifestTransport(
+  client: DossierAssignmentRpcClient,
+  actorAuthUserId: string,
+  input: Extract<DossierDocumentActionInput, { action: "get_dossier_document_manifest" }>,
+): Promise<unknown> {
+  const { data, error } = await client.rpc("get_operator_dossier_document_manifest_v1", {
+    p_actor_auth_user_id: actorAuthUserId,
+    p_quote_request_id: input.quote_request_id,
+  });
+  if (error) throw new Error(error.message);
+  return validateDossierDocumentManifest(data, input.quote_request_id);
+}
+
+export async function executeDossierDocumentAccessTransport(
+  client: DossierAssignmentRpcClient,
+  actorAuthUserId: string,
+  input: Extract<DossierDocumentActionInput, { action: "create_dossier_document_access" }>,
+  createSignedUrl: (bucket: string, path: string, expiresInSeconds: number, filename: string)=>PromiseLike<string>,
+  now: ()=>number = ()=>Date.now(),
+): Promise<Readonly<{ signed_url: string; expires_at: string; filename: string }>> {
+  const { data, error } = await client.rpc("authorize_operator_dossier_document_download_v1", {
+    p_actor_auth_user_id: actorAuthUserId,
+    p_quote_request_id: input.quote_request_id,
+    p_source_type: input.source_type,
+    p_document_id: input.document_id,
+  });
+  if (error) throw new Error(error.message);
+  if (!isRecord(data) || !hasExactKeys(data, [
+    "state", "document_id", "source_type", "storage_bucket_id",
+    "storage_object_path", "filename", "expires_in_seconds",
+  ]) || data.state !== "AUTHORIZED" || data.document_id !== input.document_id
+    || data.source_type !== input.source_type || typeof data.storage_bucket_id !== "string"
+    || data.storage_bucket_id.length < 1 || typeof data.storage_object_path !== "string"
+    || data.storage_object_path.length < 1 || typeof data.filename !== "string"
+    || data.filename.length < 1 || data.expires_in_seconds !== 60) {
+    throw new Error("INVALID_DOSSIER_DOCUMENT_AUTHORIZATION_RESPONSE");
+  }
+  const signedUrl = await createSignedUrl(
+    data.storage_bucket_id,
+    data.storage_object_path,
+    data.expires_in_seconds,
+    data.filename,
+  );
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(signedUrl);
+  } catch {
+    throw new Error("INVALID_DOSSIER_DOCUMENT_SIGNED_URL");
+  }
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("INVALID_DOSSIER_DOCUMENT_SIGNED_URL");
+  return {
+    signed_url: signedUrl,
+    expires_at: new Date(now() + 60_000).toISOString(),
+    filename: data.filename,
+  };
 }
 
 export async function handleCommercialOperator(request: Request, deps: CommercialOperatorDependencies): Promise<Response> {

@@ -3,12 +3,15 @@ import {
   executeAssignmentOperatorRosterTransport,
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
+  executeDossierDocumentAccessTransport,
+  executeDossierDocumentManifestTransport,
   executeDossierLifecycleTransport,
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
   handleCommercialOperator,
   type InternalE2EAcceptedFileCleanupActionInput,
+  type DossierDocumentActionInput,
   type CustomerRequestActionInput,
   type CustomerRequestUploadOperatorActionInput,
   type QuotationBusinessApprovalPromotionActionInput,
@@ -81,6 +84,17 @@ type DossierAssignmentActionInput = Readonly<{
   reason: string | null;
 }>;
 type DossierAssignmentClient = Parameters<typeof executeDossierAssignmentReadTransport>[0];
+type DossierDocumentServiceClient = DossierAssignmentClient & Readonly<{
+  storage: Readonly<{
+    from(bucket: string): Readonly<{
+      createSignedUrl(
+        path: string,
+        expiresIn: number,
+        options: Readonly<{ download: string }>,
+      ): PromiseLike<Readonly<{ data: Readonly<{ signedUrl: string }> | null; error: Readonly<{ message: string }> | null }>>;
+    }>;
+  }>;
+}>;
 type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   action: string;
   intake_id: string;
@@ -171,6 +185,32 @@ export async function executeCallerJwtCurrentOperatorIdentityAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeCurrentOperatorIdentityTransport(clientFor(jwt));
+}
+
+export async function executeServiceRoleDossierDocumentAction(
+  actorAuthUserId: string,
+  input: DossierDocumentActionInput,
+  client: DossierDocumentServiceClient,
+  now: ()=>number = ()=>Date.now(),
+): Promise<unknown> {
+  if (input.action === "get_dossier_document_manifest") {
+    return await executeDossierDocumentManifestTransport(client, actorAuthUserId, input);
+  }
+  return await executeDossierDocumentAccessTransport(
+    client,
+    actorAuthUserId,
+    input,
+    async (bucket, path, expiresInSeconds, filename)=>{
+      const { data, error } = await client.storage.from(bucket).createSignedUrl(
+        path,
+        expiresInSeconds,
+        { download: filename },
+      );
+      if (error || !data) throw new Error(error?.message || "INVALID_DOSSIER_DOCUMENT_SIGNED_URL");
+      return data.signedUrl;
+    },
+    now,
+  );
 }
 
 type QuotationBusinessDraftRpcClient = Readonly<{
@@ -642,6 +682,13 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
           cursor: input.cursor,
           limit: input.limit,
         }, clientFor);
+      }
+      if (input.action === "get_dossier_document_manifest" || input.action === "create_dossier_document_access") {
+        return await executeServiceRoleDossierDocumentAction(
+          actorAuthUserId,
+          input as DossierDocumentActionInput,
+          serviceClient(),
+        );
       }
       if ([
         "list_customer_requests_for_dossier",

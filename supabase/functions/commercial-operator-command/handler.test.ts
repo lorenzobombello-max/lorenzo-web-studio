@@ -1,9 +1,11 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   createUnsignedTestJwt,
   executeAssignmentOperatorRosterTransport,
   executeDossierAssignmentMutationTransport,
   executeDossierAssignmentReadTransport,
+  executeDossierDocumentAccessTransport,
+  executeDossierDocumentManifestTransport,
   executeDossierLifecycleTransport,
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
@@ -12,7 +14,7 @@ import {
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction, executeServiceRoleDossierDocumentAction } from "./index.ts";
 import { createQuotationApprovalIntegrity, verifyQuotationApprovalIntegrity } from "../_shared/quotation-approval-integrity.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
@@ -2047,4 +2049,159 @@ Deno.test("pending-intake count returns only active aggregate metadata", async (
     result: { active_count: 3 },
   });
   assertEquals(harness.events, ["preflight", "pending-count"]);
+});
+
+Deno.test("dossier document actions accept only exact authority-minimal input", async ()=>{
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  for (const [body, input] of [
+    [
+      { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId },
+      { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId },
+    ],
+    [
+      { action: "create_dossier_document_access", quote_request_id: quoteRequestId, source_type: "CUSTOMER_UPLOAD", document_id: documentId },
+      { action: "create_dossier_document_access", quote_request_id: quoteRequestId, source_type: "CUSTOMER_UPLOAD", document_id: documentId },
+    ],
+  ] as const) {
+    const harness = dependencies();
+    assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 200);
+    assertEquals(harness.calls, [{ jwt, input }]);
+  }
+  for (const invalid of [
+    { action: "get_dossier_document_manifest", quote_request_id: "invalid" },
+    { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId, storage_bucket_id: "quotation-artifacts" },
+    { action: "create_dossier_document_access", quote_request_id: quoteRequestId, source_type: "QUOTATION", document_id: documentId },
+    { action: "create_dossier_document_access", quote_request_id: quoteRequestId, source_type: "CUSTOMER_UPLOAD", document_id: documentId, storage_object_path: "forged/path.pdf" },
+  ]) {
+    const harness = dependencies();
+    assertEquals((await handleCommercialOperator(request(invalid), harness.deps)).status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("dossier document manifest transport validates and exposes only the approved DTO", async ()=>{
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  const row = {
+    document_id: documentId, source_type: "CUSTOMER_UPLOAD", document_type: "CUSTOMER_UPLOAD",
+    artifact_type: null, title: "briefing.pdf", filename: "briefing.pdf", status: "ACCEPTED",
+    created_at: "2099-01-01T00:00:00Z", accepted_at: null, source_record_id: documentId,
+    version: null, sha256: "1".repeat(64), quote_request_id: quoteRequestId,
+    customer_id: null, project_id: null, can_open: true, can_download: true,
+  };
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeDossierDocumentManifestTransport({ rpc: async (name, args)=>{
+    calls.push({ name, args });
+    return { data: [row], error: null };
+  } }, userId, { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId });
+  assertEquals(result, [row]);
+  assertEquals(calls, [{ name: "get_operator_dossier_document_manifest_v1", args: {
+    p_actor_auth_user_id: userId, p_quote_request_id: quoteRequestId,
+  } }]);
+  await assertRejects(()=>executeDossierDocumentManifestTransport({ rpc: ()=>Promise.resolve({
+    data: [{ ...row, storage_object_path: "private/path.pdf" }], error: null,
+  }) }, userId, { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId }), Error, "INVALID_DOSSIER_DOCUMENT_MANIFEST_RESPONSE");
+});
+
+Deno.test("dossier document access signs only an exact authorized locator and returns no locator", async ()=>{
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  const events: string[] = [];
+  const result = await executeDossierDocumentAccessTransport({ rpc: async (name, args)=>{
+    events.push(`rpc:${name}`);
+    assertEquals(args, {
+      p_actor_auth_user_id: userId, p_quote_request_id: quoteRequestId,
+      p_source_type: "QUOTATION_ARTIFACT", p_document_id: documentId,
+    });
+    return { data: {
+      state: "AUTHORIZED", document_id: documentId, source_type: "QUOTATION_ARTIFACT",
+      storage_bucket_id: "quotation-artifacts", storage_object_path: "issuances/exact.docx",
+      filename: "LWS-OFF-2099-0001-v1.docx", expires_in_seconds: 60,
+    }, error: null };
+  } }, userId, {
+    action: "create_dossier_document_access", quote_request_id: quoteRequestId,
+    source_type: "QUOTATION_ARTIFACT", document_id: documentId,
+  }, async (bucket, path, ttl, filename)=>{
+    events.push("sign");
+    assertEquals({ bucket, path, ttl, filename }, {
+      bucket: "quotation-artifacts", path: "issuances/exact.docx", ttl: 60,
+      filename: "LWS-OFF-2099-0001-v1.docx",
+    });
+    return "https://storage.example.test/signed/exact";
+  }, ()=>4_070_908_800_000);
+  assertEquals(events, ["rpc:authorize_operator_dossier_document_download_v1", "sign"]);
+  assertEquals(result, {
+    signed_url: "https://storage.example.test/signed/exact",
+    expires_at: "2099-01-01T00:01:00.000Z",
+    filename: "LWS-OFF-2099-0001-v1.docx",
+  });
+  assertEquals(JSON.stringify(result).includes("quotation-artifacts"), false);
+  assertEquals(JSON.stringify(result).includes("issuances/exact.docx"), false);
+});
+
+Deno.test("dossier document access fails closed before signing and maps authorization safely", async ()=>{
+  let signCalls = 0;
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  await assertRejects(()=>executeDossierDocumentAccessTransport({ rpc: ()=>Promise.resolve({
+    data: {
+      state: "AUTHORIZED", document_id: documentId, source_type: "CUSTOMER_UPLOAD",
+      storage_bucket_id: "customer-request-quarantine", storage_object_path: "forged/path.pdf",
+      filename: "briefing.pdf", expires_in_seconds: 300,
+    }, error: null,
+  }) }, userId, {
+    action: "create_dossier_document_access", quote_request_id: quoteRequestId,
+    source_type: "CUSTOMER_UPLOAD", document_id: documentId,
+  }, async ()=>{ signCalls += 1; return "https://storage.example.test/forged"; }), Error, "INVALID_DOSSIER_DOCUMENT_AUTHORIZATION_RESPONSE");
+  assertEquals(signCalls, 0);
+
+  for (const databaseCode of ["DOSSIER_DOCUMENT_READER_REQUIRED", "DOSSIER_DOCUMENT_ACCESS_DENIED"]) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({
+      action: "create_dossier_document_access", quote_request_id: quoteRequestId,
+      source_type: "CUSTOMER_UPLOAD", document_id: documentId,
+    }), harness.deps);
+    assertEquals(response.status, 403);
+    assertEquals((await response.json()).code, "OPERATOR_NOT_AUTHORIZED");
+  }
+});
+
+Deno.test("dossier document index dispatch signs only the RPC-authorized object for 60 seconds", async ()=>{
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const documentId = "a1800000-0000-4000-8000-000000000094";
+  const calls: Array<Record<string, unknown>> = [];
+  const client = {
+    rpc: async (name: string, args: Record<string, unknown>)=>{
+      calls.push({ kind: "rpc", name, args });
+      return { data: {
+        state: "AUTHORIZED", document_id: documentId, source_type: "CUSTOMER_UPLOAD",
+        storage_bucket_id: "customer-request-quarantine", storage_object_path: "requests/exact/file.pdf",
+        filename: "briefing.pdf", expires_in_seconds: 60,
+      }, error: null };
+    },
+    storage: { from: (bucket: string)=>({
+      createSignedUrl: async (path: string, expiresIn: number, options: { download: string })=>{
+        calls.push({ kind: "sign", bucket, path, expiresIn, options });
+        return { data: { signedUrl: "https://storage.example.test/signed/upload" }, error: null };
+      },
+    }) },
+  };
+  const result = await executeServiceRoleDossierDocumentAction(userId, {
+    action: "create_dossier_document_access", quote_request_id: quoteRequestId,
+    source_type: "CUSTOMER_UPLOAD", document_id: documentId,
+  }, client, ()=>4_070_908_800_000);
+  assertEquals(calls, [
+    { kind: "rpc", name: "authorize_operator_dossier_document_download_v1", args: {
+      p_actor_auth_user_id: userId, p_quote_request_id: quoteRequestId,
+      p_source_type: "CUSTOMER_UPLOAD", p_document_id: documentId,
+    } },
+    { kind: "sign", bucket: "customer-request-quarantine", path: "requests/exact/file.pdf",
+      expiresIn: 60, options: { download: "briefing.pdf" } },
+  ]);
+  assertEquals(result, {
+    signed_url: "https://storage.example.test/signed/upload",
+    expires_at: "2099-01-01T00:01:00.000Z",
+    filename: "briefing.pdf",
+  });
 });

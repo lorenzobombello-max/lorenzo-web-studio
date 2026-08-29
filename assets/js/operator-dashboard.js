@@ -796,6 +796,54 @@ const QUOTATION_DELIVERY_PRESENTATION = Object.freeze({
   retry_wait: Object.freeze({ status: "retry_wait", label: "Verzending tijdelijk mislukt — nieuwe poging mogelijk", tone: "amber" }),
   failed: Object.freeze({ status: "failed", label: "Verzending mislukt — manuele controle vereist", tone: "red" }),
 });
+const DOSSIER_DOCUMENT_ACCESS_SOURCES = new Set(["QUOTATION_ARTIFACT", "CUSTOMER_UPLOAD"]);
+const DOSSIER_DOCUMENT_TYPE_LABELS = Object.freeze({
+  QUOTATION: "Offerte",
+  QUOTATION_ARTIFACT: "Offertebestand",
+  CUSTOMER_UPLOAD: "Klantupload",
+});
+
+export function dossierDocumentManifestRequest(application) {
+  const quoteRequestId = String(application?.quote_request_id || "");
+  if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_DOCUMENT_REQUEST");
+  return { action: "get_dossier_document_manifest", quote_request_id: quoteRequestId };
+}
+
+export function dossierDocumentAccessRequest(application, item) {
+  const quoteRequestId = String(application?.quote_request_id || "");
+  const documentId = String(item?.document_id || "");
+  const sourceType = String(item?.source_type || "");
+  if (!UUID.test(quoteRequestId) || item?.quote_request_id !== quoteRequestId
+    || !UUID.test(documentId) || !DOSSIER_DOCUMENT_ACCESS_SOURCES.has(sourceType)
+    || item?.can_open !== true || item?.can_download !== true) {
+    throw new Error("INVALID_DOSSIER_DOCUMENT_ACCESS_REQUEST");
+  }
+  return {
+    action: "create_dossier_document_access",
+    quote_request_id: quoteRequestId,
+    source_type: sourceType,
+    document_id: documentId,
+  };
+}
+
+export function dossierDocumentPresentation(item) {
+  const sourceType = String(item?.source_type || "");
+  if (!Object.hasOwn(DOSSIER_DOCUMENT_TYPE_LABELS, sourceType)
+    || !UUID.test(String(item?.document_id || ""))
+    || typeof item?.title !== "string" || !item.title
+    || typeof item?.status !== "string" || !item.status
+    || typeof item?.created_at !== "string" || !Number.isFinite(Date.parse(item.created_at))) {
+    throw new Error("INVALID_DOSSIER_DOCUMENT");
+  }
+  return {
+    type: DOSSIER_DOCUMENT_TYPE_LABELS[sourceType],
+    name: item.filename || item.title,
+    date: item.created_at,
+    status: item.status.replaceAll("_", " "),
+    actionable: DOSSIER_DOCUMENT_ACCESS_SOURCES.has(sourceType)
+      && item.can_open === true && item.can_download === true,
+  };
+}
 
 export function quotationDeliveryPresentation(delivery) {
   const status = String(delivery?.status || "");
@@ -3480,21 +3528,79 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
   }
 
-  function renderDocuments(application, project) {
+  function renderDocumentState(message) {
     const list = document.getElementById("documentStatusList");
     list.replaceChildren();
-    const quotation = application.quotation;
-    if (quotation) {
-      appendStatusItem(list, quotation.quotation_number || "Offerte zonder nummer", `Status: ${quotation.issuance_status || "Niet uitgegeven"}`, "METADATA AVAILABLE", "green");
-      if (quotation.docx_sha256) appendStatusItem(list, "Offerte-uitgiftebewijs", `${quotation.docx_bytes || 0} bytes · hashmetadata vastgelegd`, "ISSUED EVIDENCE AVAILABLE", "green");
-      if (quotation.acceptance_id) appendStatusItem(list, "Acceptatiebewijs", formatDate(quotation.accepted_at), "ACCEPTED EVIDENCE AVAILABLE", "green");
-    } else {
-      appendStatusItem(list, "Offerte", "Geen authoritatieve offertemetadata aanwezig", "NOT AVAILABLE", "");
+    document.getElementById("documentManifestState").textContent = message;
+  }
+
+  function renderDocuments(application, manifest, requestId) {
+    const list = document.getElementById("documentStatusList");
+    const state = document.getElementById("documentManifestState");
+    list.replaceChildren();
+    state.textContent = manifest.length ? "" : "Geen dossierdocumenten beschikbaar.";
+    for (const item of manifest) {
+      const presentation = dossierDocumentPresentation(item);
+      const row = document.createElement("li");
+      const identity = document.createElement("div");
+      const title = document.createElement("strong");
+      const detail = document.createElement("small");
+      title.textContent = presentation.name;
+      detail.textContent = `${presentation.type} · ${formatDate(presentation.date)}`;
+      identity.append(title, detail);
+      row.append(identity, badge(presentation.status, item.accepted_at ? "green" : "amber"));
+      if (presentation.actionable) {
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "secondary-action";
+        open.textContent = "Openen / downloaden";
+        open.addEventListener("click", async ()=>{
+          open.disabled = true;
+          const originalDetail = detail.textContent;
+          detail.textContent = `${originalDetail} · Veilige link wordt gemaakt.`;
+          try {
+            const access = await invoke(dossierDocumentAccessRequest(application, item));
+            if (requestId !== detailRequestId || selectedDetail?.quote_request_id !== application.quote_request_id) return;
+            const url = new URL(String(access?.signed_url || ""));
+            if (!["https:", "http:"].includes(url.protocol)
+              || typeof access?.expires_at !== "string" || !Number.isFinite(Date.parse(access.expires_at))
+              || typeof access?.filename !== "string" || !access.filename) {
+              throw new Error("INVALID_DOSSIER_DOCUMENT_ACCESS");
+            }
+            const link = document.createElement("a");
+            link.href = url.href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.download = access.filename;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            detail.textContent = originalDetail;
+          } catch {
+            if (requestId === detailRequestId) detail.textContent = `${originalDetail} · Document kon niet worden geopend.`;
+          } finally {
+            if (requestId === detailRequestId) open.disabled = false;
+          }
+        });
+        row.append(open);
+      }
+      list.append(row);
     }
-    for (const document of project?.documents || []) {
-      appendStatusItem(list, document.commercial_reference, `${document.document_type} · ${document.workflow_state}`, "METADATA ONLY", "amber");
+  }
+
+  async function loadDossierDocuments(application, requestId) {
+    renderDocumentState("Documenten worden geladen.");
+    try {
+      const manifest = await invoke(dossierDocumentManifestRequest(application));
+      if (requestId !== detailRequestId || selectedDetail?.quote_request_id !== application.quote_request_id) return false;
+      if (!Array.isArray(manifest)) throw new Error("INVALID_DOSSIER_DOCUMENT_MANIFEST");
+      renderDocuments(application, manifest, requestId);
+      return true;
+    } catch {
+      if (requestId !== detailRequestId) return false;
+      renderDocumentState("Documenten konden niet worden geladen. Het dossier blijft beschikbaar.");
+      return false;
     }
-    appendStatusItem(list, "Binair archief", "Geen downloadbare opslaglocatie geregistreerd", "NOT YET AVAILABLE", "amber");
   }
 
   function renderPayment(project) {
@@ -3577,7 +3683,6 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     }
     setBadge("projectStateBadge", project ? stateLabel(project.current_state) : "GEEN PROJECT", project ? "green" : "amber");
     renderPayment(project);
-    renderDocuments(application, project);
     renderWorkflow(project?.current_state, Boolean(application?.acceptance), Boolean(project));
     renderTimeline(project);
   }
@@ -3739,6 +3844,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     quotationActionButton.hidden = !canIssueApprovedQuotation(application, currentIdentity);
     quotationActionButton.disabled = quotationActionBusy;
     promote.hidden = !canPromoteApplication(application);
+    renderDocumentState("Documenten worden geladen.");
     renderProjectDossier(null);
   }
 
@@ -3759,7 +3865,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       renderDetail(application);
       selectedLocator = locator;
       updateLocation(locator);
-      await loadAssignment(application, requestId);
+      await Promise.all([
+        loadAssignment(application, requestId),
+        loadDossierDocuments(application, requestId),
+      ]);
       if (requestId !== detailRequestId) return false;
       if (application.request_kind === "website" && application.project?.project_id) {
         detailMessage.textContent = "Projectdossier wordt geladen.";
