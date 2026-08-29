@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
+import { businessExpenseDocumentLinkRequest, createSupplierDocumentExpenseLinkController, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-expense-entry-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-sdf-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -371,9 +372,11 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 10);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 12);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
+  assert.match(script, /client\.rpc\("create_supplier_document_v1", request\)/);
+  assert.match(script, /client\.rpc\("link_business_expense_document_v1", request\)/);
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
   assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
   assert.match(script, /client\.rpc\("purge_dossier_v1"/);
@@ -2436,6 +2439,150 @@ test("business expense entry controller reports create errors without reload or 
   });
   assert.equal(await controller.submit({ supplier_name: "Supplier", description: "Tool", category: "software", amount: "1", currency: "EUR", expense_date: "2026-08-29" }), false);
   assert.deepEqual(calls, ["error"]);
+});
+
+const supplierDocumentFixture = () => ({ name: "factuur-2026.pdf", type: "application/pdf", size: 321 });
+const supplierUploadFixture = () => ({
+  ok: true,
+  code: "STORED",
+  bucket: "supplier-documents",
+  object_path: `documents/${"a".repeat(64)}.pdf`,
+  sha256: "a".repeat(64),
+  byte_count: 321,
+  mime_type: "application/pdf",
+});
+const supplierDocumentValues = () => ({
+  document_type: "INVOICE",
+  supplier_name: " Leverancier BV ",
+  document_reference: " INV-2026-01 ",
+  document_date: "2026-08-29",
+  relation_type: "INVOICE",
+});
+
+test("supplier document form contracts expose exact types and client file boundaries", () => {
+  const exactTypes = ["INVOICE", "CREDIT_NOTE", "RECEIPT", "CONTRACT", "OTHER"];
+  assert.deepEqual(SUPPLIER_DOCUMENT_TYPES, exactTypes);
+  assert.deepEqual(SUPPLIER_DOCUMENT_RELATION_TYPES, exactTypes);
+  assert.equal(SUPPLIER_DOCUMENT_ACCEPT, "application/pdf,image/png,image/jpeg");
+  assert.equal(SUPPLIER_DOCUMENT_MAX_BYTES, 10485760);
+  for (const type of SUPPLIER_DOCUMENT_ACCEPT.split(",")) {
+    assert.equal(supplierDocumentFileError({ name: "document", type, size: 1 }), null);
+  }
+  assert.equal(supplierDocumentFileError({ name: "document.txt", type: "text/plain", size: 1 }), "INVALID_MIME");
+  assert.equal(supplierDocumentFileError({ name: "large.pdf", type: "application/pdf", size: 10485761 }), "FILE_TOO_LARGE");
+});
+
+test("supplier document create and link requests use only exact server-authoritative contracts", () => {
+  const upload = supplierDocumentUploadResponse(supplierUploadFixture());
+  assert.deepEqual(upload, {
+    bucket: "supplier-documents", object_path: `documents/${"a".repeat(64)}.pdf`, sha256: "a".repeat(64),
+    byte_count: 321, mime_type: "application/pdf",
+  });
+  assert.deepEqual(supplierDocumentCreateRequest(supplierDocumentValues(), supplierDocumentFixture(), upload), {
+    p_document_type: "INVOICE", p_supplier_name: "Leverancier BV", p_document_reference: "INV-2026-01",
+    p_document_date: "2026-08-29", p_original_file_name: "factuur-2026.pdf", p_mime_type: "application/pdf",
+    p_byte_count: 321, p_sha256: "a".repeat(64),
+  });
+  assert.deepEqual(businessExpenseDocumentLinkRequest(
+    "f6e00000-0000-4000-8000-000000000001", "f6d00000-0000-4000-8000-000000000001", "INVOICE",
+  ), {
+    p_business_expense_id: "f6e00000-0000-4000-8000-000000000001",
+    p_supplier_document_id: "f6d00000-0000-4000-8000-000000000001",
+    p_relation_type: "INVOICE",
+  });
+  assert.throws(()=>supplierDocumentUploadResponse({ ...supplierUploadFixture(), sha256: "client-value" }), /INVALID_SUPPLIER_DOCUMENT_UPLOAD_RESPONSE/);
+  assert.throws(()=>supplierDocumentCreateRequest({ ...supplierDocumentValues(), document_type: "PAYMENT_EVIDENCE" }, supplierDocumentFixture(), upload), /INVALID_SUPPLIER_DOCUMENT_ENTRY/);
+});
+
+test("supplier document flow runs upload then create then link then authoritative reload", async () => {
+  const calls = [];
+  const controller = createSupplierDocumentExpenseLinkController({
+    uploadDocument: async (file)=>{ calls.push(["upload", file]); return supplierUploadFixture(); },
+    createDocument: async (request)=>{ calls.push(["create", request]); return "f6d00000-0000-4000-8000-000000000001"; },
+    linkDocument: async (request)=>{ calls.push(["link", request]); return "f6f00000-0000-4000-8000-000000000001"; },
+    reloadPortfolio: async ()=>calls.push(["reload"]),
+    onBusy: (busy)=>calls.push(["busy", busy]), onFailure: ()=>calls.push(["failure"]), onSuccess: ()=>calls.push(["success"]),
+  });
+  assert.equal(await controller.submit({ expenseId: "f6e00000-0000-4000-8000-000000000001", file: supplierDocumentFixture(), values: supplierDocumentValues() }), true);
+  assert.deepEqual(calls.map(([kind])=>kind), ["busy", "upload", "create", "link", "reload", "success", "busy"]);
+  assert.equal(controller.retryStage, null);
+});
+
+test("supplier document flow stops at each failure and retries only the incomplete checkpoint", async () => {
+  for (const failedStage of ["upload", "create", "link"]) {
+    const calls = [];
+    let fail = true;
+    const controller = createSupplierDocumentExpenseLinkController({
+      uploadDocument: async ()=>{ calls.push("upload"); if (failedStage === "upload" && fail) throw new Error("upload"); return supplierUploadFixture(); },
+      createDocument: async ()=>{ calls.push("create"); if (failedStage === "create" && fail) throw new Error("create"); return "f6d00000-0000-4000-8000-000000000001"; },
+      linkDocument: async ()=>{ calls.push("link"); if (failedStage === "link" && fail) throw new Error("link"); },
+      reloadPortfolio: async ()=>calls.push("reload"), onBusy: ()=>{}, onFailure: (stage)=>calls.push(`failure:${stage}`), onSuccess: ()=>calls.push("success"),
+    });
+    const input = { expenseId: "f6e00000-0000-4000-8000-000000000001", file: supplierDocumentFixture(), values: supplierDocumentValues() };
+    assert.equal(await controller.submit(input), false);
+    const beforeRetry = [...calls];
+    fail = false;
+    assert.equal(await controller.submit(input), true);
+    assert.equal(calls.filter((call)=>call === "upload").length, failedStage === "upload" ? 2 : 1);
+    assert.equal(calls.filter((call)=>call === "create").length, failedStage === "create" ? 2 : 1);
+    assert.equal(calls.filter((call)=>call === "link").length, failedStage === "link" ? 2 : 1);
+    if (failedStage === "upload") assert.deepEqual(beforeRetry, ["upload", "failure:upload"]);
+    if (failedStage === "create") assert.deepEqual(beforeRetry, ["upload", "create", "failure:create"]);
+    if (failedStage === "link") assert.deepEqual(beforeRetry, ["upload", "create", "link", "failure:link"]);
+  }
+});
+
+test("supplier document flow blocks overlapping submits and cancel reset performs no writes", async () => {
+  let releaseUpload;
+  const calls = [];
+  const controller = createSupplierDocumentExpenseLinkController({
+    uploadDocument: async ()=>{ calls.push("upload"); await new Promise((resolve)=>{ releaseUpload = resolve; }); return supplierUploadFixture(); },
+    createDocument: async ()=>"f6d00000-0000-4000-8000-000000000001", linkDocument: async ()=>{}, reloadPortfolio: async ()=>{},
+    onBusy: ()=>{}, onFailure: ()=>{}, onSuccess: ()=>{},
+  });
+  controller.reset();
+  assert.deepEqual(calls, []);
+  const input = { expenseId: "f6e00000-0000-4000-8000-000000000001", file: supplierDocumentFixture(), values: supplierDocumentValues() };
+  const first = controller.submit(input);
+  assert.equal(await controller.submit(input), false);
+  assert.equal(calls.filter((call)=>call === "upload").length, 1);
+  releaseUpload();
+  assert.equal(await first, true);
+});
+
+test("supplier document expense UI preserves the exact frontend-only production contract", async () => {
+  const [html, script, css] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
+  ]);
+  const dialog = html.match(/<dialog id="supplierDocumentDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const fields = [...dialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]);
+  const selects = [...dialog.matchAll(/<select[^>]*name="(?:document_type|relation_type)"[\s\S]*?<\/select>/g)]
+    .map((select)=>[...select[0].matchAll(/<option value="([A-Z_]+)">/g)].map((option)=>option[1]));
+  assert.match(script, /textContent = "Document toevoegen"/);
+  assert.match(script, /setAttribute\("aria-label", `Document toevoegen voor \$\{expense\.supplier_name\}`\)/);
+  assert.deepEqual(fields, ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
+  assert.deepEqual(selects, [SUPPLIER_DOCUMENT_TYPES, SUPPLIER_DOCUMENT_RELATION_TYPES]);
+  assert.match(dialog, /name="file"[^>]*type="file"[^>]*accept="application\/pdf,image\/png,image\/jpeg"[^>]*required/);
+  assert.match(dialog, /name="supplier_name"[^>]*required/);
+  assert.match(script, /documentSupplier\.value = expense\.supplier_name/);
+  assert.match(script, /client\.functions\.invoke\("supplier-document-upload", \{[\s\S]*?body: file/);
+  assert.equal((script.match(/client\.functions\.invoke\("supplier-document-upload"/g) || []).length, 1);
+  assert.doesNotMatch(script, /client\.storage\.from\(/);
+  assert.doesNotMatch(script, /client\.from\("(?:business_expenses|supplier_documents|business_expense_documents)"\)/);
+  assert.match(script, /client\.rpc\("create_supplier_document_v1", request\)/);
+  assert.match(script, /client\.rpc\("link_business_expense_document_v1", request\)/);
+  assert.match(script, /reloadPortfolio: \(\)=>loadBusinessExpensePortfolio\("Document opgeslagen en gekoppeld\."\)/);
+  assert.match(script, /Document kon niet veilig worden geüpload\./);
+  assert.match(script, /Document kon niet worden geregistreerd\./);
+  assert.match(script, /Document is opgeslagen maar kon niet aan de bedrijfskost worden gekoppeld\./);
+  assert.match(script, /documentSubmit\.disabled = busy/);
+  assert.match(script, /documentController\.retryStage/);
+  assert.doesNotMatch(script, /document_count\s*(?:\+\+|\+=)|relation_types\.(?:push|splice)/);
+  assert.doesNotMatch(dialog, /record_classification|internal_e2e|PAYMENT_EVIDENCE|paid|unpaid|payment|vat|btw|iban|bank|kbc|gocardless|enable banking|download|signed.?url|preview|ocr|gmail|drive|peppol|titeca|james|yuki|exact|billit/i);
+  assert.match(css, /\.supplier-document-dialog \{ overflow:auto; \}/);
+  assert.match(css, /@media \(max-width:540px\)[^{]*\{[\s\S]*?\.supplier-document-file \{ grid-column:auto; \}/);
+  assert.equal((html.match(/data-finance-tab=/g) || []).length, 6);
+  assert.match(html, /module=finance&amp;financeTab=expenses/);
 });
 
 test("business expense entry UI exposes only the approved authority and create flow", async () => {

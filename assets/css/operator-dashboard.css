@@ -99,6 +99,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-expense-list li[data-expense-status="CANCELLED"] { border-left:4px solid var(--red); background:#fffafa; }
 .finance-expense-list li[data-expense-status="CANCELLED"] .finance-project-heading span { color:var(--red); }
 .finance-expense-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.finance-expense-actions { margin-top:.85rem; display:flex; justify-content:flex-end; border-top:1px solid var(--line); padding-top:.85rem; }
 .business-expense-dialog { width:min(42rem,calc(100% - 2rem)); max-height:calc(100vh - 2rem); padding:0; border:1px solid var(--line-strong); border-radius:var(--radius); }
 .business-expense-dialog::backdrop { background:rgba(17,29,54,.58); }
 .business-expense-form { padding:clamp(1.2rem,3vw,2rem); }
@@ -109,6 +110,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .business-expense-form input[readonly] { background:var(--navy-soft); }
 .business-expense-form__actions { display:flex; justify-content:flex-end; gap:.65rem; }
 .business-expense-form__actions .primary-action { margin:0; }
+.supplier-document-dialog { overflow:auto; }
+.supplier-document-expense { margin:-.7rem 0 1.2rem; color:var(--muted); font-size:.86rem; font-weight:750; overflow-wrap:anywhere; }
+.supplier-document-file { grid-column:1/-1; }
+.supplier-document-file input { padding:.45rem; }
 .finance-layer-note { margin:1.25rem 0 0; padding:.85rem 1rem; color:var(--muted); border-left:3px solid var(--turquoise); background:rgba(232,246,244,.55); font-size:.86rem; }
 .finance-empty strong { display:block; margin-bottom:.35rem; color:var(--navy); }
 .finance-empty p { margin:0; }
@@ -288,4 +293,4 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } .module-navigation a[aria-current="page"]::after,.module-shell__title::after { opacity:1; transform:none; } .finance-visual__line,.finance-visual__trail { stroke-dashoffset:0; } .finance-visual__laser { opacity:1; transform:none; } }
 @media (max-width:900px) { .finance-availability { grid-template-columns:repeat(2,minmax(0,1fr)); } .finance-metrics { grid-template-columns:1fr; } }
 @media (max-width:900px) { .finance-expense-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:540px) { .finance-tabs { margin-inline:-.75rem; padding-inline:.75rem; } .finance-tabs a { padding-inline:.65rem; } .finance-section-heading { align-items:flex-start; flex-direction:column; } .finance-availability,.finance-project-metrics { grid-template-columns:1fr; } .business-expense-form__fields { grid-template-columns:1fr; } .finance-metrics dd { font-size:1.15rem; } }
+@media (max-width:540px) { .finance-tabs { margin-inline:-.75rem; padding-inline:.75rem; } .finance-tabs a { padding-inline:.65rem; } .finance-section-heading { align-items:flex-start; flex-direction:column; } .finance-availability,.finance-project-metrics { grid-template-columns:1fr; } .business-expense-form__fields { grid-template-columns:1fr; } .supplier-document-file { grid-column:auto; } .finance-expense-actions .secondary-action { width:100%; } .supplier-document-dialog .business-expense-form__actions { flex-direction:column-reverse; } .supplier-document-dialog .business-expense-form__actions button { width:100%; } .finance-metrics dd { font-size:1.15rem; } }

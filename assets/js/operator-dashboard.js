@@ -90,6 +90,125 @@ const BUSINESS_EXPENSE_RELATION_LABELS = Object.freeze({
   INVOICE: "Factuur", CREDIT_NOTE: "Creditnota", RECEIPT: "Kassaticket / ontvangstbewijs",
   CONTRACT: "Contract", OTHER: "Overig",
 });
+export const SUPPLIER_DOCUMENT_TYPES = Object.freeze(["INVOICE", "CREDIT_NOTE", "RECEIPT", "CONTRACT", "OTHER"]);
+export const SUPPLIER_DOCUMENT_RELATION_TYPES = Object.freeze([...SUPPLIER_DOCUMENT_TYPES]);
+export const SUPPLIER_DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
+export const SUPPLIER_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+export function supplierDocumentFileError(file) {
+  if (!file || typeof file.name !== "string" || !file.name || file.name.length > 200 || /[\\/]/.test(file.name)
+      || !SUPPLIER_DOCUMENT_ACCEPT.split(",").includes(file.type)) return "INVALID_MIME";
+  if (!Number.isSafeInteger(file.size) || file.size < 1) return "INVALID_FILE";
+  if (file.size > SUPPLIER_DOCUMENT_MAX_BYTES) return "FILE_TOO_LARGE";
+  return null;
+}
+
+export function supplierDocumentUploadResponse(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)
+      || data.bucket !== "supplier-documents"
+      || typeof data.object_path !== "string" || !/^documents\/[0-9a-f]{64}\.(?:pdf|png|jpg)$/.test(data.object_path)
+      || typeof data.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(data.sha256)
+      || !Number.isSafeInteger(data.byte_count) || data.byte_count < 1 || data.byte_count > SUPPLIER_DOCUMENT_MAX_BYTES
+      || !SUPPLIER_DOCUMENT_ACCEPT.split(",").includes(data.mime_type)) throw new Error("INVALID_SUPPLIER_DOCUMENT_UPLOAD_RESPONSE");
+  return {
+    bucket: data.bucket,
+    object_path: data.object_path,
+    sha256: data.sha256,
+    byte_count: data.byte_count,
+    mime_type: data.mime_type,
+  };
+}
+
+export function supplierDocumentCreateRequest(values, file, upload) {
+  const documentType = String(values?.document_type || "");
+  const supplierName = String(values?.supplier_name || "").trim();
+  const documentReference = String(values?.document_reference || "").trim();
+  const documentDate = String(values?.document_date || "");
+  const originalFileName = String(file?.name || "").trim();
+  if (!SUPPLIER_DOCUMENT_TYPES.includes(documentType)
+      || !supplierName || supplierName.length > 200
+      || documentReference.length > 200
+      || (documentDate && !/^\d{4}-\d{2}-\d{2}$/.test(documentDate))
+      || !originalFileName || originalFileName.length > 200 || /[\\/]/.test(originalFileName)) {
+    throw new Error("INVALID_SUPPLIER_DOCUMENT_ENTRY");
+  }
+  const authority = supplierDocumentUploadResponse(upload);
+  return {
+    p_document_type: documentType,
+    p_supplier_name: supplierName,
+    p_document_reference: documentReference || null,
+    p_document_date: documentDate || null,
+    p_original_file_name: originalFileName,
+    p_mime_type: authority.mime_type,
+    p_byte_count: authority.byte_count,
+    p_sha256: authority.sha256,
+  };
+}
+
+export function businessExpenseDocumentLinkRequest(expenseId, supplierDocumentId, relationType) {
+  if (!UUID.test(String(expenseId || "")) || !UUID.test(String(supplierDocumentId || ""))
+      || !SUPPLIER_DOCUMENT_RELATION_TYPES.includes(relationType)) throw new Error("INVALID_BUSINESS_EXPENSE_DOCUMENT_LINK");
+  return {
+    p_business_expense_id: expenseId,
+    p_supplier_document_id: supplierDocumentId,
+    p_relation_type: relationType,
+  };
+}
+
+export function createSupplierDocumentExpenseLinkController({ uploadDocument, createDocument, linkDocument, reloadPortfolio, onBusy, onFailure, onSuccess }) {
+  let busy = false;
+  let checkpoint = null;
+  const controller = {
+    get submitting() { return busy; },
+    get retryStage() {
+      if (!checkpoint) return null;
+      if (!checkpoint.documentId) return "create";
+      if (!checkpoint.linked) return "link";
+      return "reload";
+    },
+    reset() { if (!busy) checkpoint = null; },
+    async submit({ expenseId, file, values }) {
+      if (busy) return false;
+      if (!checkpoint && supplierDocumentFileError(file)) {
+        onFailure("validation");
+        return false;
+      }
+      busy = true;
+      onBusy(true);
+      let stage = "upload";
+      try {
+        if (!checkpoint) {
+          const upload = supplierDocumentUploadResponse(await uploadDocument(file));
+          checkpoint = { expenseId, file, values: { ...values }, upload, documentId: null, linked: false };
+        }
+        if (checkpoint.expenseId !== expenseId) throw new Error("SUPPLIER_DOCUMENT_EXPENSE_CHANGED");
+        if (!checkpoint.documentId) {
+          stage = "create";
+          const documentId = await createDocument(supplierDocumentCreateRequest(checkpoint.values, checkpoint.file, checkpoint.upload));
+          if (!UUID.test(String(documentId || ""))) throw new Error("INVALID_SUPPLIER_DOCUMENT_ID");
+          checkpoint.documentId = documentId;
+        }
+        if (!checkpoint.linked) {
+          stage = "link";
+          await linkDocument(businessExpenseDocumentLinkRequest(checkpoint.expenseId, checkpoint.documentId, checkpoint.values.relation_type));
+          checkpoint.linked = true;
+        }
+        stage = "reload";
+        await reloadPortfolio();
+        checkpoint = null;
+        onSuccess();
+        return true;
+      } catch (error) {
+        onFailure(stage, error);
+        return false;
+      } finally {
+        busy = false;
+        onBusy(false);
+      }
+    },
+  };
+  return controller;
+}
 
 export function businessExpenseAmountMinor(value) {
   const normalized = String(value ?? "").trim().replace(",", ".");
@@ -1626,6 +1745,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const cancel = document.getElementById("businessExpenseCancel");
       const amount = document.getElementById("businessExpenseAmount");
       const expenseDate = document.getElementById("businessExpenseDate");
+      const documentDialog = document.getElementById("supplierDocumentDialog");
+      const documentForm = document.getElementById("supplierDocumentForm");
+      const documentFormStatus = document.getElementById("supplierDocumentFormStatus");
+      const documentExpense = document.getElementById("supplierDocumentExpense");
+      const documentFile = document.getElementById("supplierDocumentFile");
+      const documentSupplier = document.getElementById("supplierDocumentSupplier");
+      const documentSubmit = document.getElementById("supplierDocumentSubmit");
+      const documentCancel = document.getElementById("supplierDocumentCancel");
+      let selectedExpense = null;
       const trigger = document.createElement("button");
       trigger.type = "button";
       trigger.className = "primary-action primary-action--compact";
@@ -1688,7 +1816,26 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
             relations.textContent = expense.relation_types.length
               ? expense.relation_types.map(businessExpenseRelationLabel).join(" · ")
               : "Geen documenttypes geregistreerd.";
-            item.append(heading, metrics, relations);
+            const actions = document.createElement("div");
+            const addDocument = document.createElement("button");
+            actions.className = "finance-expense-actions";
+            addDocument.type = "button";
+            addDocument.className = "secondary-action";
+            addDocument.dataset.supplierDocumentExpenseId = expense.id;
+            addDocument.textContent = "Document toevoegen";
+            addDocument.setAttribute("aria-label", `Document toevoegen voor ${expense.supplier_name}`);
+            addDocument.addEventListener("click", ()=>{
+              selectedExpense = expense;
+              documentForm.reset();
+              documentSupplier.value = expense.supplier_name;
+              documentExpense.textContent = `${expense.supplier_name} · ${expense.description || "Geen omschrijving"}`;
+              documentFormStatus.textContent = "";
+              documentSubmit.textContent = "Document opslaan en koppelen";
+              documentDialog.showModal();
+              documentFile.focus();
+            });
+            actions.append(addDocument);
+            item.append(heading, metrics, relations, actions);
             expenses.append(item);
           }
           for (const availability of document.querySelectorAll("[data-expense-availability]")) {
@@ -1728,6 +1875,50 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         },
         onError: ()=>{ formStatus.textContent = "Bedrijfskost kon niet worden opgeslagen."; },
       });
+      const documentController = createSupplierDocumentExpenseLinkController({
+        uploadDocument: async (file)=>{
+          const response = await client.functions.invoke("supplier-document-upload", {
+            method: "POST",
+            headers: { "Content-Type": file.type },
+            body: file,
+          });
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        createDocument: async (request)=>{
+          const response = await client.rpc("create_supplier_document_v1", request);
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        linkDocument: async (request)=>{
+          const response = await client.rpc("link_business_expense_document_v1", request);
+          if (response.error || !UUID.test(String(response.data || ""))) throw response.error || new Error("INVALID_BUSINESS_EXPENSE_DOCUMENT_LINK_ID");
+          return response.data;
+        },
+        reloadPortfolio: ()=>loadBusinessExpensePortfolio("Document opgeslagen en gekoppeld."),
+        onBusy: (busy)=>{
+          documentSubmit.disabled = busy;
+          documentCancel.disabled = busy;
+          for (const field of documentForm.querySelectorAll("input, select")) field.disabled = busy;
+          if (busy) documentFormStatus.textContent = "Document wordt veilig opgeslagen en gekoppeld.";
+        },
+        onFailure: (stage)=>{
+          if (stage === "upload") documentFormStatus.textContent = "Document kon niet veilig worden geüpload.";
+          else if (stage === "create") documentFormStatus.textContent = "Document kon niet worden geregistreerd.";
+          else if (stage === "link") documentFormStatus.textContent = "Document is opgeslagen maar kon niet aan de bedrijfskost worden gekoppeld.";
+          else if (stage === "reload") documentFormStatus.textContent = "Document is gekoppeld maar de actuele bedrijfskosten konden niet worden geladen.";
+          if (stage === "create") documentSubmit.textContent = "Registratie opnieuw proberen";
+          if (stage === "link") documentSubmit.textContent = "Koppeling opnieuw proberen";
+          if (stage === "reload") documentSubmit.textContent = "Portfolio opnieuw laden";
+        },
+        onSuccess: ()=>{
+          const expenseId = selectedExpense?.id;
+          documentForm.reset();
+          documentDialog.close();
+          selectedExpense = null;
+          document.querySelector(`[data-supplier-document-expense-id="${expenseId}"]`)?.focus();
+        },
+      });
       trigger.addEventListener("click", ()=>{
         formStatus.textContent = "";
         if (!expenseDate.value) expenseDate.value = localDateInputValue();
@@ -1763,6 +1954,38 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
           return;
         }
         await controller.submit(values);
+      });
+      documentForm.addEventListener("input", (event)=>event.target.setCustomValidity(""));
+      documentFile.addEventListener("change", ()=>documentFile.setCustomValidity(""));
+      documentCancel.addEventListener("click", ()=>{
+        if (documentController.submitting) return;
+        if (documentController.retryStage) {
+          documentFormStatus.textContent = "Voltooi eerst de openstaande documentstap zodat geen opgeslagen document ongekoppeld achterblijft.";
+          documentSubmit.focus();
+          return;
+        }
+        const returnTarget = selectedExpense?.id;
+        documentController.reset();
+        documentForm.reset();
+        documentDialog.close();
+        selectedExpense = null;
+        document.querySelector(`[data-supplier-document-expense-id="${returnTarget}"]`)?.focus();
+      });
+      documentForm.addEventListener("submit", async (event)=>{
+        event.preventDefault();
+        if (!selectedExpense || documentController.submitting) return;
+        const file = documentFile.files?.[0];
+        const fileError = supplierDocumentFileError(file);
+        if (fileError) {
+          documentFile.setCustomValidity(fileError === "FILE_TOO_LARGE"
+            ? "Kies een bestand van maximaal 10 MiB."
+            : "Kies een PDF-, PNG- of JPEG-bestand.");
+          documentFile.reportValidity();
+          return;
+        }
+        if (!documentForm.reportValidity()) return;
+        const values = Object.fromEntries(new FormData(documentForm));
+        await documentController.submit({ expenseId: selectedExpense.id, file, values });
       });
     }
   }
