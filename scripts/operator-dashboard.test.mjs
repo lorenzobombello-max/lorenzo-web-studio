@@ -21,9 +21,9 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     ["businessExpenseDialog", "operator-modal--work"],
     ["supplierDocumentDialog", "operator-modal--work"],
     ["promotionDialog", "operator-modal--compact"],
-    ["lifecycleDialog", "operator-modal--compact"],
-    ["dossierLifecycleDialog", "operator-modal--compact"],
-    ["dossierPurgeDialog", "operator-modal--compact"],
+    ["lifecycleDialog", "operator-modal--action-confirm"],
+    ["dossierLifecycleDialog", "operator-modal--action-confirm"],
+    ["dossierPurgeDialog", "operator-modal--action-confirm"],
   ]);
   const dialogs = [...html.matchAll(/<dialog\b[^>]*>/g)].map(([tag])=>({
     tag,
@@ -36,15 +36,17 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     assert.deepEqual(modalTypes, [expectedTypes.get(id)], `${id} must have its one approved modal type`);
   }
   assert.match(css, /dialog\.operator-modal--reading \{ width:min\(85vw,118rem\); \}/);
-  assert.match(css, /dialog\.operator-modal--work \{ width:min\(76vw,106rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:min\(90vw,128rem\); \}/);
   assert.match(css, /dialog\.operator-modal--compact \{ width:min\(34rem,calc\(100vw - 2rem\)\); \}/);
+  assert.match(css, /dialog\.operator-modal--action-confirm \{ width:min\(68vw,92rem\); \}/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--reading \{ width:min\(90vw,128rem\); \}/);
-  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--work \{ width:min\(84vw,120rem\); \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?\.operator-modal--work \.finance-modal-brand img \{ width:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) :is\(input,select,textarea\) \{ min-height:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?#documentInboxUploadDialog \.document-inbox-upload-zone \{ min-height:clamp/);
-  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ max-width:calc\(100vw - 4rem\); max-height:calc\(100dvh - 2rem\); \}/);
-  assert.match(css, /@media \(max-width:900px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work \{ width:calc\(100vw - 1\.5rem\); max-width:none; \} \}/);
-  assert.match(css, /@media \(max-width:540px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ width:calc\(100vw - 1rem\); max-width:none; max-height:calc\(100dvh - 1rem\); \} \}/);
+  assert.match(css, /\.operator-modal--action-confirm \.confirmation__field textarea \{ min-height:clamp/);
+  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact,dialog\.operator-modal--action-confirm \{ max-width:calc\(100vw - 4rem\); max-height:calc\(100dvh - 2rem\); \}/);
+  assert.match(css, /@media \(max-width:900px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--action-confirm \{ width:calc\(100vw - 1\.5rem\); max-width:none; \} \}/);
+  assert.match(css, /@media \(max-width:540px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact,dialog\.operator-modal--action-confirm \{ width:calc\(100vw - 1rem\); max-width:none; max-height:calc\(100dvh - 1rem\); \}/);
   for (const selector of ["#businessExpenseDialog", "#documentInboxUploadDialog", ".business-expense-dialog", ".supplier-document-dialog", ".document-inbox-dialog", ".dossier-preview-dialog"]) {
     assert.doesNotMatch(css, new RegExp(`${selector.replace(/[.#]/g, "\\$&")} \\{[^}]*\\bwidth:`));
   }
@@ -2545,7 +2547,7 @@ test("document inbox direct upload UI is bounded accessible authority-only and r
   for (const forbidden of ["create_business_expense_v1", "create_supplier_document_v1", "link_business_expense_document_v1", "approve_document_inbox_item_v1", "process_document_inbox_item_v1"]) {
     assert.doesNotMatch(uploadBlock, new RegExp(`client\\.rpc\\("${forbidden}"`));
   }
-  assert.match(css, /dialog\.operator-modal--work \{ width:min\(76vw,106rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:min\(90vw,128rem\); \}/);
   assert.match(css, /\.document-inbox-upload-zone \{[^}]*min-height:190px/);
   assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-upload-actions \{ flex-direction:column-reverse; \}/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
@@ -2874,7 +2876,7 @@ test("business expense entry UI exposes only the approved authority and create f
   assert.match(script, /form\.reset\(\);\s*dialog\.close\(\);\s*trigger\.focus\(\)/);
   assert.match(script, /reloadPortfolio: \(\)=>loadBusinessExpensePortfolio\("Bedrijfskost opgeslagen\."\)/);
   assert.match(script, /Bedrijfskost kon niet worden opgeslagen\./);
-  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{[^}]*max-height:calc\(100dvh - 2rem\)/);
+  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact,dialog\.operator-modal--action-confirm \{[^}]*max-height:calc\(100dvh - 2rem\)/);
   assert.match(css, /@media \(max-width:540px\)[^}]*\{[\s\S]*?\.business-expense-form__fields \{ grid-template-columns:1fr/);
 });
 
