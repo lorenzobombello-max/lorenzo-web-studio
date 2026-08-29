@@ -2594,6 +2594,19 @@ test("supplier document expense UI preserves the exact frontend-only production 
   assert.match(html, /module=finance&amp;financeTab=expenses/);
 });
 
+test("Finance expense modals share the fixed official company branding", async () => {
+  const html = await read("operator/dashboard/index.html");
+  const expenseDialog = html.match(/<dialog id="businessExpenseDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const documentDialog = html.match(/<dialog id="supplierDocumentDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const branding = /<div class="finance-modal-brand"><img src="\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png" alt=""[^>]*><span class="finance-modal-brand__name">Lorenzo <strong>Web Solutions<\/strong><\/span><\/div>/;
+  assert.match(expenseDialog, branding);
+  assert.match(documentDialog, branding);
+  assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 2);
+  assert.doesNotMatch(`${expenseDialog}${documentDialog}`, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
+  assert.deepEqual([...expenseDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["supplier_name", "description", "category", "amount", "currency", "expense_date"]);
+  assert.deepEqual([...documentDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
+});
+
 test("business expense entry UI exposes only the approved authority and create flow", async () => {
   const [html, script, css] = await Promise.all([
     read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
