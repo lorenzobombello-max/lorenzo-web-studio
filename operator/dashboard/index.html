@@ -10,9 +10,9 @@
   <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="/assets/css/pages.css" />
   <link rel="stylesheet" href="/assets/css/operator-auth.css" />
-  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260829-finance-inbox-upload-ui" />
+  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260830-operator-nav-perf-2" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
-  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260829-finance-inbox-upload-ui"></script>
+  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260830-operator-nav-perf-2"></script>
 </head>
 <body>
   <main id="operatorDashboardGate" class="operator-auth-main"><section class="operator-auth-panel operator-auth-panel--center" role="status"><span class="operator-auth-spinner" aria-hidden="true"></span><h1 id="operatorDashboardGateTitle">Autorisatie wordt gecontroleerd</h1><p id="operatorDashboardGateMessage" class="operator-auth-message">Even geduld.</p><button id="operatorDashboardLogout" class="button button--dark" type="button" hidden>Afmelden</button></section></main>
@@ -50,7 +50,7 @@
       <section class="module-shell" data-module-panel="messages" aria-labelledby="messagesModuleTitle" hidden><p class="eyebrow">Operatormodule</p><h1 id="messagesModuleTitle" class="module-shell__title">Berichten</h1><p>Deze module wordt in een volgende fase aangesloten.</p></section>
       <section class="module-shell module-shell--calendar" data-module-panel="calendar" aria-labelledby="calendarModuleTitle" hidden><p class="eyebrow">Operatormodule</p><h1 id="calendarModuleTitle" class="module-shell__title">Kalender</h1><p>Deze module wordt in een volgende fase aangesloten.</p></section>
       <section id="pendingIntakes" class="module-shell pending-intake-workspace" data-module-panel="intake" aria-labelledby="pendingIntakesTitle" hidden>
-        <div class="project-heading pending-intake-heading"><div><p class="eyebrow">Commerciële intake</p><h1 id="pendingIntakesTitle" class="module-shell__title">Intake opvolging</h1><p>Beheer uitnodigingen en gestarte intakes vóór indiening.</p></div><div class="pending-intake-heading__actions"><span id="pendingWorkspaceCount" class="badge">Laden</span><a class="secondary-action" href="/operator/dashboard/?module=dossiers">Terug naar dossiers</a><button id="pendingIntakesRefresh" type="button" class="secondary-action">Vernieuwen</button></div></div>
+        <div class="project-heading pending-intake-heading"><div><p class="eyebrow">Commerciële intake</p><h1 id="pendingIntakesTitle" class="module-shell__title">Intake opvolging</h1><p>Beheer uitnodigingen en gestarte intakes vóór indiening.</p></div><div class="pending-intake-heading__actions"><span id="pendingWorkspaceCount" class="badge">Laden</span><a class="secondary-action" href="/operator/dashboard/?module=dossiers" data-operator-module="dossiers">Terug naar dossiers</a><button id="pendingIntakesRefresh" type="button" class="secondary-action">Vernieuwen</button></div></div>
         <div class="zone-filters pending-intake-tabs" role="group" aria-label="Intake-opvolging"><button type="button" data-pending-retention-state="ACTIVE" aria-pressed="true">Actief</button><button type="button" data-pending-retention-state="ARCHIVED" aria-pressed="false">Gearchiveerd</button></div>
         <form id="pendingIntakeFilters" class="pending-intake-filters" role="search">
           <label class="pending-intake-filter--search" for="pendingIntakeSearch">Zoeken<input id="pendingIntakeSearch" type="search" maxlength="200" placeholder="Naam, bedrijf of e-mail" autocomplete="off" /></label>
@@ -104,7 +104,7 @@
       </section>
       <div id="managerWorkspace" hidden>
       <section class="project-heading" aria-labelledby="pageTitle"><div><p class="eyebrow">Commerciële intake</p><h1 id="pageTitle">Aanvragen</h1><p>Ingediende aanvragen en hun projectstatus.</p></div></section>
-      <a id="pendingIntakesEntry" class="intake-followup-entry" href="/operator/dashboard/?module=intake" hidden><span><small>Voor indiening</small><strong>Intake opvolging</strong></span><span id="pendingIntakesCount" class="badge">Laden</span></a>
+      <a id="pendingIntakesEntry" class="intake-followup-entry" href="/operator/dashboard/?module=intake" data-operator-module="intake" hidden><span><small>Voor indiening</small><strong>Intake opvolging</strong></span><span id="pendingIntakesCount" class="badge">Laden</span></a>
       <div class="dashboard-grid">
         <section class="panel" aria-labelledby="applicationsTitle">
           <div class="panel__heading"><div><p class="eyebrow">Overzicht</p><h2 id="applicationsTitle">Dossiers</h2></div><span class="badge" data-operator-role-badge></span></div>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createOperatorModuleNavigation, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
@@ -8,8 +9,8 @@ import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDo
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-upload-ui";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
+const OPERATOR_ASSET_RELEASE = "20260830-operator-nav-perf-2";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-upload-ui";
 
 test("all operator dialogs use one exclusive responsive modal type authority", async () => {
   const [html, css] = await Promise.all([
@@ -89,6 +90,125 @@ test("operator dashboard assets share one versioned Pages-compatible release ide
 test("operator shell links to the canonical dashboard route", async () => {
   const source = await read("operator/index.html");
   assert.match(source, /href="\/operator\/dashboard\/"/);
+});
+
+test("module navigation updates URL client-side and reuses verified identity", async () => {
+  const identity = { display_name: "Owner", role: "owner", status: "ACTIVE" };
+  const pushed = [];
+  const activated = [];
+  const loaded = [];
+  const navigation = createOperatorModuleNavigation({
+    identity,
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: (url)=>pushed.push(url),
+    activateModule: (module)=>activated.push(module),
+    loadModule: async (module, context)=>loaded.push([module, context.identity]),
+  });
+  assert.equal(await navigation.navigate("?module=finance"), true);
+  assert.deepEqual(pushed, ["/operator/dashboard/?module=finance"]);
+  assert.deepEqual(activated, ["finance"]);
+  assert.deepEqual(loaded, [["finance", identity]]);
+});
+
+test("module navigation restores history state without pushing a new entry", async () => {
+  const pushed = [];
+  const activated = [];
+  const navigation = createOperatorModuleNavigation({
+    identity: { role: "owner" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: (url)=>pushed.push(url),
+    activateModule: (module)=>activated.push(module),
+    loadModule: async ()=>true,
+  });
+  assert.equal(await navigation.navigate("?module=intake", { push: false }), true);
+  assert.deepEqual(pushed, []);
+  assert.deepEqual(activated, ["intake"]);
+});
+
+test("module navigation invalidates cached identity on auth loss", async () => {
+  let loads = 0;
+  const navigation = createOperatorModuleNavigation({
+    identity: { role: "owner" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: ()=>{},
+    activateModule: ()=>{},
+    loadModule: async ()=>{ loads += 1; },
+  });
+  navigation.invalidateIdentity();
+  assert.equal(navigation.identity, null);
+  assert.equal(await navigation.navigate("?module=finance"), false);
+  assert.equal(loads, 0);
+});
+
+test("module data failures distinguish authorization loss from availability errors", () => {
+  for (const code of ["AUTHENTICATION_REQUIRED", "INVALID_JWT", "HUMAN_JWT_REQUIRED", "OPERATOR_NOT_AUTHORIZED"]) {
+    assert.equal(isOperatorAuthorizationFailure(code), true);
+  }
+  for (const code of ["INTERNAL_ERROR", "OPERATOR_REQUEST_FAILED", "NETWORK_ERROR", null]) {
+    assert.equal(isOperatorAuthorizationFailure(code), false);
+  }
+});
+
+test("late module load cannot become current after a newer navigation", async () => {
+  const releases = new Map();
+  const completed = [];
+  const navigation = createOperatorModuleNavigation({
+    identity: { role: "owner" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: ()=>{},
+    activateModule: ()=>{},
+    loadModule: (module, context)=>new Promise((resolve)=>releases.set(module, ()=>{
+      completed.push([module, context.isCurrent()]);
+      resolve(true);
+    })),
+  });
+  const finance = navigation.navigate("?module=finance");
+  const intake = navigation.navigate("?module=intake");
+  releases.get("finance")();
+  assert.equal(await finance, false);
+  releases.get("intake")();
+  assert.equal(await intake, true);
+  assert.deepEqual(completed, [["finance", false], ["intake", true]]);
+});
+
+test("returning to an initializing module reuses one loader", async () => {
+  let release;
+  let intakeLoads = 0;
+  const navigation = createOperatorModuleNavigation({
+    identity: { role: "owner" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: ()=>{},
+    activateModule: ()=>{},
+    loadModule: (module, context)=>{
+      if (module !== "intake") return true;
+      intakeLoads += 1;
+      return new Promise((resolve)=>{ release = ()=>resolve(context.isCurrent()); });
+    },
+  });
+  const firstIntake = navigation.navigate("?module=intake");
+  await navigation.navigate("?module=finance");
+  const secondIntake = navigation.navigate("?module=intake");
+  release();
+  assert.equal(await firstIntake, false);
+  assert.equal(await secondIntake, true);
+  assert.equal(intakeLoads, 1);
+});
+
+test("dashboard guard intercepts local module links and supports browser history", async () => {
+  const [html, guard] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+  ]);
+  assert.match(html, /id="pendingIntakesEntry"[^>]*data-operator-module="intake"/);
+  assert.match(html, /href="\/operator\/dashboard\/\?module=dossiers" data-operator-module="dossiers">Terug naar dossiers/);
+  assert.match(guard, /event\.preventDefault\(\);\s*void moduleNavigation\.navigate\(target\)/);
+  assert.match(guard, /window\.history\.pushState\(null, "", url\)/);
+  assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void moduleNavigation\.navigate\(window\.location\.href, \{ push: false \}\)\)/);
+  assert.match(guard, /verifiedIdentity: context\.identity/);
+  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*window\.location\.replace/);
+  assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
+  assert.equal((guard.match(/gate\.hidden = true/g) || []).length, 1);
+  assert.doesNotMatch(guard, /gate\.hidden = false/);
 });
 
 test("dashboard remains hidden until the authorization guard succeeds", async () => {
@@ -469,7 +589,7 @@ test("Customer Requests UI stays inside personal workspace and exposes work acti
 test("personal queue routing is server-result-driven and fails closed", async () => {
   const script = await read("assets/js/operator-dashboard.js");
   assert.match(script, /loadManagerAuthority: \(\)=>listController\.load\(\)/);
-  assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
+  assert.match(script, /if \(!isCurrent\(\)\) return currentIdentity;\s*if \(dashboardRoute !== "manager"\) \{\s*if \(isOperatorAuthorizationFailure\(listController\.state\.error\)\) onAuthorizationFailure\(\);\s*return currentIdentity;\s*\}\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
   assert.equal((script.match(/client\.rpc\(/g) || []).length, 15);
@@ -1648,7 +1768,8 @@ test("dashboard resolves identity before routing and contains no contradictory s
   assert.doesNotMatch(html, />OPERATOR<|>OWNER \/ ADMIN</);
   assert.match(script, /invoke\(\{ action: "get_current_operator_identity" \}\)/);
   assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("resolveDashboardAuthority({"));
-  assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf("personalQueueWorkspace.hidden = false"));
+  assert.ok(script.indexOf('invoke({ action: "get_current_operator_identity" })') < script.indexOf('personalQueueWorkspace.hidden = currentIdentity.role === "owner"'));
+  assert.match(script, /currentIdentity\.role === "owner"\s*\? await listController\.load\(\) \? "manager" : "closed"/);
   assert.match(script, /for \(const roleBadge of roleBadges\) roleBadge\.textContent = identity\.roleLabel/);
 });
 

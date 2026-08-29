@@ -48,6 +48,72 @@ export function financeTabFromUrl(url, role) {
   return FINANCE_TABS.has(tab) ? tab : "overview";
 }
 
+export function createOperatorModuleNavigation({ identity, initialUrl, activateModule, loadModule, pushUrl }) {
+  let verifiedIdentity = identity;
+  let currentUrl = new URL(initialUrl, "https://operator.invalid");
+  let currentModule = operatorModuleFromUrl(currentUrl, identity?.role);
+  let generation = 0;
+  const initialized = new Set([currentModule]);
+  const initializing = new Map();
+
+  async function navigate(url, { push = true } = {}) {
+    if (!verifiedIdentity) return false;
+    const nextUrl = new URL(url, currentUrl);
+    const module = operatorModuleFromUrl(nextUrl, verifiedIdentity.role);
+    currentUrl = nextUrl;
+    currentModule = module;
+    const requestGeneration = ++generation;
+    if (push) pushUrl(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    activateModule(module, nextUrl);
+    if (initialized.has(module)) return true;
+    if (!initializing.has(module)) {
+      const initialization = Promise.resolve(loadModule(module, {
+        identity: verifiedIdentity,
+        url: nextUrl,
+        isCurrent: ()=>Boolean(verifiedIdentity) && currentModule === module,
+      })).then((loaded)=>{
+        if (loaded !== false) initialized.add(module);
+        return loaded;
+      }).finally(()=>initializing.delete(module));
+      initializing.set(module, initialization);
+    }
+    const loaded = await initializing.get(module);
+    return Boolean(verifiedIdentity) && requestGeneration === generation && loaded !== false;
+  }
+
+  return {
+    navigate,
+    invalidateIdentity: ()=>{
+      verifiedIdentity = null;
+      generation += 1;
+      initialized.clear();
+      initializing.clear();
+    },
+    get identity() {
+      return verifiedIdentity;
+    },
+  };
+}
+
+export function presentOperatorModule(root, module) {
+  for (const link of root.querySelectorAll("[data-operator-module]")) {
+    if (link.dataset.operatorModule === module) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  for (const panel of root.querySelectorAll("[data-module-panel]")) {
+    panel.hidden = panel.dataset.modulePanel !== module;
+  }
+}
+
+export function isOperatorAuthorizationFailure(code) {
+  return new Set([
+    "AUTHENTICATION_REQUIRED",
+    "INVALID_JWT",
+    "HUMAN_JWT_REQUIRED",
+    "OPERATOR_NOT_AUTHORIZED",
+  ]).has(String(code || ""));
+}
+
 const FINANCE_UNAVAILABLE_FLAGS = Object.freeze([
   "invoice_projection_available",
   "outstanding_projection_available",
@@ -1920,7 +1986,15 @@ export async function runInternalSmokeB({
   return Object.fromEntries(INTERNAL_SMOKE_B_FIELDS.map((field)=>[field, result[field]]));
 }
 
-export async function startOperatorDashboard({ client, functionsBaseUrl, callOperator = callCommercialOperator }) {
+export async function startOperatorDashboard({
+  client,
+  functionsBaseUrl,
+  callOperator = callCommercialOperator,
+  verifiedIdentity = null,
+  isCurrent = ()=>true,
+  onAuthorizationFailure = ()=>{},
+  onDossierRoute = ()=>{},
+}) {
   const roleBadges = Array.from(document.querySelectorAll("[data-operator-role-badge]"));
   const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
   const personalQueueList = document.getElementById("personalQueueList");
@@ -2065,23 +2139,26 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
 
   async function invoke(input) {
     const response = await callOperator(client, functionsBaseUrl, input);
-    if (response.status >= 400 || !response.body?.ok) throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
+    if (response.status >= 400 || !response.body?.ok) {
+      if (response.status === 401) onAuthorizationFailure();
+      throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
+    }
     return response.body.result;
   }
 
-  const currentIdentity = await invoke({ action: "get_current_operator_identity" });
+  const currentIdentity = verifiedIdentity || await invoke({ action: "get_current_operator_identity" });
   const identity = currentOperatorIdentityPresentation(currentIdentity);
   for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
   const moduleNavigation = document.getElementById("operatorModuleNavigation");
-  const moduleLinks = Array.from(document.querySelectorAll("[data-operator-module]"));
-  const modulePanels = Array.from(document.querySelectorAll("[data-module-panel]"));
   const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
   moduleNavigation.hidden = currentIdentity.role !== "owner";
-  for (const link of moduleLinks) {
-    if (link.dataset.operatorModule === activeModule) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+  presentOperatorModule(document, activeModule);
+  if (activeModule !== "dossiers") {
+    internalSmokePanel.hidden = true;
+    internalSmokeBPanel.hidden = true;
+    personalQueueWorkspace.hidden = true;
+    managerWorkspace.hidden = true;
   }
-  for (const panel of modulePanels) panel.hidden = panel.dataset.modulePanel !== activeModule;
   if (activeModule === "finance") {
     const activeFinanceTab = financeTabFromUrl(window.location.href, currentIdentity.role);
     const financeTabLinks = Array.from(document.querySelectorAll("[data-finance-tab]"));
@@ -3149,14 +3226,10 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     personalQueueWorkspace.hidden = true;
     managerWorkspace.hidden = true;
     await Promise.all([loadPendingWorkspace(), loadPendingIntakeCount()]);
-    return;
+    return currentIdentity;
   }
   if (activeModule !== "dossiers") {
-    internalSmokePanel.hidden = true;
-    internalSmokeBPanel.hidden = true;
-    personalQueueWorkspace.hidden = true;
-    managerWorkspace.hidden = true;
-    return;
+    return currentIdentity;
   }
   if (internalSmokePanel && internalSmokeAvailable(window.location.href, currentIdentity)) {
     internalSmokePanel.hidden = false;
@@ -3376,7 +3449,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     personalQueueController.refresh();
   });
   personalQueueLoadMore.addEventListener("click", ()=>personalQueueController.loadMore());
-  personalQueueWorkspace.hidden = false;
+  personalQueueWorkspace.hidden = currentIdentity.role === "owner";
 
   function renderFacets(facets, selectedYear, selectedQuarter) {
     const years = Array.isArray(facets?.years) ? facets.years : [];
@@ -3405,12 +3478,19 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     loadMore.disabled = state.loading || !state.next_cursor;
   });
 
-  const dashboardRoute = await resolveDashboardAuthority({
-    loadPersonalQueue: ()=>personalQueueController.load(),
-    getPersonalQueueError: ()=>personalQueueController.state.error,
-    loadManagerAuthority: ()=>listController.load(),
-  });
-  if (dashboardRoute !== "manager") return;
+  const dashboardRoute = currentIdentity.role === "owner"
+    ? await listController.load() ? "manager" : "closed"
+    : await resolveDashboardAuthority({
+      loadPersonalQueue: ()=>personalQueueController.load(),
+      getPersonalQueueError: ()=>personalQueueController.state.error,
+      loadManagerAuthority: ()=>listController.load(),
+    });
+  onDossierRoute(dashboardRoute);
+  if (!isCurrent()) return currentIdentity;
+  if (dashboardRoute !== "manager") {
+    if (isOperatorAuthorizationFailure(listController.state.error)) onAuthorizationFailure();
+    return currentIdentity;
+  }
   personalQueueWorkspace.hidden = true;
   managerWorkspace.hidden = false;
 
@@ -4280,6 +4360,7 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
     if (summary) await loadDetail(selectedLocator, summary);
     else clearDetail();
   }
+  return currentIdentity;
 }
 
 export function focusIntakeLifecycle(lifecycle, buttons, fallback) {
