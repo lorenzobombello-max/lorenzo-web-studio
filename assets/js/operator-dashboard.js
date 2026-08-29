@@ -288,6 +288,84 @@ export function supplierDocumentUploadResponse(data) {
   };
 }
 
+export function documentInboxUploadResponse(data) {
+  if (!data || data.ok !== true || !["STORED", "DUPLICATE"].includes(data.code)) {
+    throw new Error("INVALID_DOCUMENT_INBOX_UPLOAD_RESPONSE");
+  }
+  return { ...supplierDocumentUploadResponse(data), code: data.code };
+}
+
+export function documentInboxReceiveRequest(file, upload) {
+  const authority = supplierDocumentUploadResponse(upload);
+  const originalFileName = String(file?.name || "").trim();
+  if (supplierDocumentFileError(file) || originalFileName.length > 200 || /[\\/]/.test(originalFileName)) {
+    throw new Error("INVALID_DOCUMENT_INBOX_FILE");
+  }
+  return {
+    p_sha256: authority.sha256,
+    p_original_file_name: originalFileName,
+    p_mime_type: authority.mime_type,
+    p_byte_count: authority.byte_count,
+    p_source_type: "MANUAL_UPLOAD",
+    p_source_instance: null,
+    p_external_id: null,
+    p_record_classification: "production",
+  };
+}
+
+function documentInboxReceiveResponse(data) {
+  if (!data || !UUID.test(String(data.id || "")) || !DOCUMENT_INBOX_STATUSES.includes(data.status)
+      || !Number.isSafeInteger(data.revision) || data.revision < 1 || typeof data.replayed !== "boolean") {
+    throw new Error("INVALID_DOCUMENT_INBOX_RECEIVE_RESPONSE");
+  }
+  return data;
+}
+
+export function createDocumentInboxUploadController({ uploadDocument, receiveDocument, reloadInbox, onBusy, onFailure, onSuccess }) {
+  let busy = false;
+  let checkpoint = null;
+  const controller = {
+    get submitting() { return busy; },
+    get retryStage() {
+      if (!checkpoint) return null;
+      return checkpoint.received ? "reload" : "receive";
+    },
+    reset() { if (!busy) checkpoint = null; },
+    async submit(file) {
+      if (busy) return false;
+      if (!checkpoint && supplierDocumentFileError(file)) {
+        onFailure("validation");
+        return false;
+      }
+      busy = true;
+      onBusy(true);
+      let stage = "upload";
+      try {
+        if (!checkpoint) {
+          checkpoint = { file, upload: documentInboxUploadResponse(await uploadDocument(file)), received: null };
+        }
+        if (!checkpoint.received) {
+          stage = "receive";
+          checkpoint.received = documentInboxReceiveResponse(await receiveDocument(documentInboxReceiveRequest(checkpoint.file, checkpoint.upload)));
+        }
+        stage = "reload";
+        await reloadInbox();
+        const result = { ...checkpoint.received, duplicate: checkpoint.upload.code === "DUPLICATE" || checkpoint.received.replayed };
+        checkpoint = null;
+        onSuccess(result);
+        return true;
+      } catch (error) {
+        onFailure(stage, error);
+        return false;
+      } finally {
+        busy = false;
+        onBusy(false);
+      }
+    },
+  };
+  return controller;
+}
+
 export function supplierDocumentCreateRequest(values, file, upload) {
   const documentType = String(values?.document_type || "");
   const supplierName = String(values?.supplier_name || "").trim();
@@ -1907,6 +1985,15 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       const clearFilters = document.getElementById("documentInboxClearFilters");
       const list = document.getElementById("documentInboxList");
       const empty = document.getElementById("documentInboxEmpty");
+      const uploadOpen = document.getElementById("documentInboxUploadOpen");
+      const uploadDialog = document.getElementById("documentInboxUploadDialog");
+      const uploadForm = document.getElementById("documentInboxUploadForm");
+      const uploadZone = document.getElementById("documentInboxUploadZone");
+      const uploadFile = document.getElementById("documentInboxUploadFile");
+      const uploadFileName = document.getElementById("documentInboxUploadFileName");
+      const uploadStatus = document.getElementById("documentInboxUploadStatus");
+      const uploadSubmit = document.getElementById("documentInboxUploadSubmit");
+      const uploadCancel = document.getElementById("documentInboxUploadCancel");
       const dialog = document.getElementById("documentInboxDialog");
       const dialogFile = document.getElementById("documentInboxDialogFile");
       const dialogStatus = document.getElementById("documentInboxDialogStatus");
@@ -2070,6 +2157,47 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
         }
       }
 
+      const uploadController = createDocumentInboxUploadController({
+        uploadDocument: async (file)=>{
+          const response = await client.functions.invoke("supplier-document-upload", {
+            method: "POST",
+            headers: { "Content-Type": file.type },
+            body: file,
+          });
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        receiveDocument: async (request)=>{
+          const response = await client.rpc("receive_document_inbox_item_v1", request);
+          if (response.error) throw response.error;
+          return response.data;
+        },
+        reloadInbox: ()=>loadDocumentInbox(),
+        onBusy: (busy)=>{
+          uploadSubmit.disabled = busy;
+          uploadCancel.disabled = busy;
+          uploadFile.disabled = busy;
+          uploadSubmit.textContent = busy ? "Document ontvangen..." : uploadController.retryStage === "receive" ? "Inbox-registratie opnieuw proberen" : "Document uploaden";
+          if (busy) uploadStatus.textContent = uploadController.retryStage === "receive"
+            ? "Veilig opgeslagen document registreren in de Inbox."
+            : "Document veilig uploaden en ontvangen.";
+        },
+        onFailure: (stage)=>{
+          if (stage === "validation") uploadStatus.textContent = "Kies een geldig PDF-, PNG- of JPEG-bestand van maximaal 10 MiB.";
+          else if (stage === "upload") uploadStatus.textContent = "Document kon niet veilig worden geüpload.";
+          else if (stage === "receive") uploadStatus.textContent = "Bestand veilig opgeslagen, registratie in de Inbox nog niet voltooid.";
+          else uploadStatus.textContent = "Document is ontvangen, maar de actuele Inbox kon niet worden geladen.";
+          uploadSubmit.textContent = stage === "receive" ? "Inbox-registratie opnieuw proberen" : stage === "reload" ? "Inbox opnieuw laden" : "Document uploaden";
+        },
+        onSuccess: (result)=>{
+          uploadForm.reset();
+          uploadFileName.textContent = "Sleep een document hierheen of selecteer een bestand";
+          uploadDialog.close();
+          status.textContent = result.duplicate ? "Dit document was al ontvangen." : "Document ontvangen en toegevoegd aan de Inbox.";
+          uploadOpen.focus();
+        },
+      });
+
       const controller = createDocumentInboxCommandController({
         execute: async (rpc, request)=>{
           const allowed = new Set(["update_document_inbox_proposal_v1", "confirm_document_inbox_values_v1", "approve_document_inbox_item_v1", "reject_document_inbox_item_v1", "process_document_inbox_item_v1"]);
@@ -2101,6 +2229,58 @@ export async function startOperatorDashboard({ client, functionsBaseUrl, callOpe
       filters.addEventListener("input", renderInboxList);
       filters.addEventListener("change", renderInboxList);
       clearFilters.addEventListener("click", ()=>{ filters.reset(); renderInboxList(); document.getElementById("documentInboxSearch").focus(); });
+      uploadOpen.addEventListener("click", ()=>{
+        uploadController.reset();
+        uploadForm.reset();
+        uploadStatus.textContent = "";
+        uploadFileName.textContent = "Sleep een document hierheen of selecteer een bestand";
+        uploadSubmit.textContent = "Document uploaden";
+        uploadDialog.showModal();
+        uploadFile.focus();
+      });
+      uploadFile.addEventListener("change", ()=>{
+        uploadFile.setCustomValidity("");
+        uploadFileName.textContent = uploadFile.files?.[0]?.name || "Sleep een document hierheen of selecteer een bestand";
+      });
+      for (const eventName of ["dragenter", "dragover"]) uploadZone.addEventListener(eventName, (event)=>{
+        event.preventDefault();
+        uploadZone.classList.add("is-dragging");
+      });
+      for (const eventName of ["dragleave", "drop"]) uploadZone.addEventListener(eventName, (event)=>{
+        event.preventDefault();
+        uploadZone.classList.remove("is-dragging");
+      });
+      uploadZone.addEventListener("drop", (event)=>{
+        if (uploadController.submitting || !event.dataTransfer?.files?.length) return;
+        uploadFile.files = event.dataTransfer.files;
+        uploadFile.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      uploadCancel.addEventListener("click", ()=>{
+        if (uploadController.submitting) return;
+        uploadController.reset();
+        uploadForm.reset();
+        uploadDialog.close();
+        uploadOpen.focus();
+      });
+      uploadDialog.addEventListener("cancel", (event)=>{
+        if (uploadController.submitting) event.preventDefault();
+        else uploadController.reset();
+      });
+      uploadDialog.addEventListener("close", ()=>uploadOpen.focus());
+      uploadForm.addEventListener("submit", async (event)=>{
+        event.preventDefault();
+        if (uploadController.submitting) return;
+        const file = uploadFile.files?.[0];
+        const fileError = supplierDocumentFileError(file);
+        if (fileError) {
+          uploadFile.setCustomValidity(fileError === "FILE_TOO_LARGE"
+            ? "Kies een bestand van maximaal 10 MiB."
+            : "Kies een PDF-, PNG- of JPEG-bestand.");
+          uploadFile.reportValidity();
+          return;
+        }
+        await uploadController.submit(file);
+      });
       form.addEventListener("input", ()=>{ confirmedFormDirty = true; approve.disabled = true; });
       acknowledgeWarnings.addEventListener("change", ()=>{
         approve.disabled = confirmedFormDirty || !selectedInboxItem || !documentInboxHasConfirmedValues(selectedInboxItem)

@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
-import { businessExpenseDocumentLinkRequest, createSupplierDocumentExpenseLinkController, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
+import { businessExpenseDocumentLinkRequest, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-ui";
+const OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-upload-ui";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
 
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
@@ -372,7 +372,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(dashboardRoute !== "manager"\) return;\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 14);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 15);
   assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
@@ -2431,6 +2431,84 @@ test("document inbox command controller prevents overlap and reloads authoritati
   assert.deepEqual(calls.map(([kind])=>kind), ["busy", "execute", "reload", "success", "busy"]);
 });
 
+test("document inbox direct upload uses only verified metadata and exact manual receive parameters", () => {
+  const file = supplierDocumentFixture();
+  const upload = supplierUploadFixture();
+  assert.deepEqual(documentInboxUploadResponse(upload), { ...supplierDocumentUploadResponse(upload), code: "STORED" });
+  assert.deepEqual(documentInboxReceiveRequest(file, upload), {
+    p_sha256: "a".repeat(64), p_original_file_name: "factuur-2026.pdf", p_mime_type: "application/pdf",
+    p_byte_count: 321, p_source_type: "MANUAL_UPLOAD", p_source_instance: null, p_external_id: null,
+    p_record_classification: "production",
+  });
+  assert.throws(()=>documentInboxUploadResponse({ ...upload, code: "UNKNOWN" }), /INVALID_DOCUMENT_INBOX_UPLOAD_RESPONSE/);
+  assert.throws(()=>documentInboxReceiveRequest(file, { ...upload, sha256: "client-value" }), /INVALID_SUPPLIER_DOCUMENT_UPLOAD_RESPONSE/);
+});
+
+test("document inbox direct upload retries receive without uploading the binary twice", async () => {
+  const calls = [];
+  let receiveFails = true;
+  const controller = createDocumentInboxUploadController({
+    uploadDocument: async ()=>{ calls.push("upload"); return supplierUploadFixture(); },
+    receiveDocument: async (request)=>{ calls.push(["receive", request.p_source_type]); if (receiveFails) throw new Error("receive"); return { id: inboxItem().id, status: "RECEIVED", revision: 1, replayed: false }; },
+    reloadInbox: async ()=>calls.push("reload"), onBusy: ()=>{}, onFailure: (stage)=>calls.push(`failure:${stage}`),
+    onSuccess: (result)=>calls.push(["success", result.duplicate]),
+  });
+  assert.equal(await controller.submit(supplierDocumentFixture()), false);
+  assert.equal(controller.retryStage, "receive");
+  receiveFails = false;
+  assert.equal(await controller.submit(supplierDocumentFixture()), true);
+  assert.equal(calls.filter((call)=>call === "upload").length, 1);
+  assert.deepEqual(calls.map((call)=>Array.isArray(call) ? call[0] : call), ["upload", "receive", "failure:receive", "receive", "reload", "success"]);
+});
+
+test("document inbox direct upload reports authoritative duplicate and blocks overlap", async () => {
+  const calls = [];
+  let releaseUpload;
+  const controller = createDocumentInboxUploadController({
+    uploadDocument: async ()=>{ calls.push("upload"); await new Promise((resolve)=>{ releaseUpload = resolve; }); return { ...supplierUploadFixture(), code: "DUPLICATE" }; },
+    receiveDocument: async ()=>({ id: inboxItem().id, status: "RECEIVED", revision: 1, replayed: true }),
+    reloadInbox: async ()=>calls.push("reload"), onBusy: (busy)=>calls.push(`busy:${busy}`), onFailure: ()=>calls.push("failure"),
+    onSuccess: (result)=>calls.push(`duplicate:${result.duplicate}`),
+  });
+  const first = controller.submit(supplierDocumentFixture());
+  assert.equal(await controller.submit(supplierDocumentFixture()), false);
+  assert.equal(calls.filter((call)=>call === "upload").length, 1);
+  releaseUpload();
+  assert.equal(await first, true);
+  assert.deepEqual(calls, ["busy:true", "upload", "reload", "duplicate:true", "busy:false"]);
+});
+
+test("document inbox direct upload UI is bounded accessible authority-only and responsive", async () => {
+  const [html, script, css] = await Promise.all([
+    read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
+  ]);
+  const panel = html.match(/<section class="finance-tab-panel document-inbox"[\s\S]*?<\/section>/)?.[0] || "";
+  const dialog = html.match(/<dialog id="documentInboxUploadDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const uploadBlock = script.match(/const uploadController = createDocumentInboxUploadController\([\s\S]*?const controller = createDocumentInboxCommandController/)?.[0] || "";
+  assert.match(panel, /id="documentInboxUploadOpen"[^>]*>Document uploaden<\/button>/);
+  assert.match(panel, /id="documentInboxEmpty"[\s\S]*?Geen documenten gevonden/);
+  assert.match(dialog, /aria-labelledby="documentInboxUploadTitle"/);
+  assert.match(dialog, /aria-describedby="documentInboxUploadDescription"/);
+  assert.match(dialog, /class="finance-modal-brand"[\s\S]*?lorenzo-web-solution-logo-transparent\.png[\s\S]*?Lorenzo <strong>Web Solutions<\/strong>/);
+  assert.match(dialog, /name="file"[^>]*accept="application\/pdf,image\/png,image\/jpeg"[^>]*required/);
+  assert.match(dialog, /Maximaal 10 MiB · PDF, PNG, JPEG/);
+  assert.equal((dialog.match(/<label\b/g) || []).length, 1);
+  assert.doesNotMatch(dialog, /bedrag|categorie|omschrijving|name="(?:amount|category|description|supplier_name|document_type)"|betaling|btw|bank|preview|ocr|gmail|drive|peppol/i);
+  assert.match(uploadBlock, /client\.functions\.invoke\("supplier-document-upload", \{[\s\S]*?body: file/);
+  assert.match(uploadBlock, /client\.rpc\("receive_document_inbox_item_v1", request\)/);
+  assert.match(script, /p_source_type: "MANUAL_UPLOAD"/);
+  assert.match(uploadBlock, /reloadInbox: \(\)=>loadDocumentInbox\(\)/);
+  assert.match(uploadBlock, /Bestand veilig opgeslagen, registratie in de Inbox nog niet voltooid\./);
+  assert.match(uploadBlock, /Dit document was al ontvangen\./);
+  for (const forbidden of ["create_business_expense_v1", "create_supplier_document_v1", "link_business_expense_document_v1", "approve_document_inbox_item_v1", "process_document_inbox_item_v1"]) {
+    assert.doesNotMatch(uploadBlock, new RegExp(`client\\.rpc\\("${forbidden}"`));
+  }
+  assert.match(css, /\.document-inbox-upload-dialog \{ width:min\(44rem,calc\(100% - 2rem\)\)/);
+  assert.match(css, /\.document-inbox-upload-zone \{[^}]*min-height:190px/);
+  assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-upload-actions \{ flex-direction:column-reverse; \}/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+});
+
 test("document inbox UI preserves backend authority lifecycle and responsive review semantics", async () => {
   const [html, script, css] = await Promise.all([
     read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js"), read("assets/css/operator-dashboard.css"),
@@ -2670,7 +2748,7 @@ test("supplier document expense UI preserves the exact frontend-only production 
   assert.match(dialog, /name="supplier_name"[^>]*required/);
   assert.match(script, /documentSupplier\.value = expense\.supplier_name/);
   assert.match(script, /client\.functions\.invoke\("supplier-document-upload", \{[\s\S]*?body: file/);
-  assert.equal((script.match(/client\.functions\.invoke\("supplier-document-upload"/g) || []).length, 1);
+  assert.equal((script.match(/client\.functions\.invoke\("supplier-document-upload"/g) || []).length, 2);
   assert.doesNotMatch(script, /client\.storage\.from\(/);
   assert.doesNotMatch(script, /client\.from\("(?:business_expenses|supplier_documents|business_expense_documents)"\)/);
   assert.match(script, /client\.rpc\("create_supplier_document_v1", request\)/);
@@ -2706,7 +2784,7 @@ test("Finance expense modals share the fixed official company branding", async (
   const branding = /<div class="finance-modal-brand"><img src="\/assets\/images\/branding\/logo\/lorenzo-web-solution-logo-transparent\.png" alt=""[^>]*><span class="finance-modal-brand__name">Lorenzo <strong>Web Solutions<\/strong><\/span><\/div>/;
   assert.match(expenseDialog, branding);
   assert.match(documentDialog, branding);
-  assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 3);
+  assert.equal((html.match(/class="finance-modal-brand"/g) || []).length, 4);
   assert.doesNotMatch(`${expenseDialog}${documentDialog}`, /<svg|data:image\/svg|lorenzo-web-solution-logo\.svg/i);
   assert.deepEqual([...expenseDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["supplier_name", "description", "category", "amount", "currency", "expense_date"]);
   assert.deepEqual([...documentDialog.matchAll(/name="([^"]+)"/g)].map((match)=>match[1]), ["file", "document_type", "supplier_name", "document_reference", "document_date", "relation_type"]);
