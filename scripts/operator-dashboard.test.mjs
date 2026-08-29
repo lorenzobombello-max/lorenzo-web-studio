@@ -9,6 +9,44 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260829-finance-inbox-upload-ui";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260829-finance-expense-link-ui";
 
+test("all operator dialogs use one exclusive responsive modal type authority", async () => {
+  const [html, css] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/css/operator-dashboard.css"),
+  ]);
+  const expectedTypes = new Map([
+    ["applicationDossierPreview", "operator-modal--reading"],
+    ["documentInboxDialog", "operator-modal--reading"],
+    ["documentInboxUploadDialog", "operator-modal--work"],
+    ["businessExpenseDialog", "operator-modal--work"],
+    ["supplierDocumentDialog", "operator-modal--work"],
+    ["promotionDialog", "operator-modal--compact"],
+    ["lifecycleDialog", "operator-modal--compact"],
+    ["dossierLifecycleDialog", "operator-modal--compact"],
+    ["dossierPurgeDialog", "operator-modal--compact"],
+  ]);
+  const dialogs = [...html.matchAll(/<dialog\b[^>]*>/g)].map(([tag])=>({
+    tag,
+    id: tag.match(/\bid="([^"]+)"/)?.[1],
+  }));
+  assert.equal(dialogs.length, expectedTypes.size);
+  for (const { tag, id } of dialogs) {
+    const classes = tag.match(/\bclass="([^"]*)"/)?.[1].split(/\s+/) || [];
+    const modalTypes = classes.filter((name)=>name.startsWith("operator-modal--"));
+    assert.deepEqual(modalTypes, [expectedTypes.get(id)], `${id} must have its one approved modal type`);
+  }
+  assert.match(css, /dialog\.operator-modal--reading \{ width:min\(85vw,118rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:min\(76vw,106rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--compact \{ width:min\(34rem,calc\(100vw - 2rem\)\); \}/);
+  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ max-width:calc\(100vw - 4rem\); max-height:calc\(100dvh - 2rem\); \}/);
+  assert.match(css, /@media \(max-width:900px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work \{ width:calc\(100vw - 1\.5rem\); max-width:none; \} \}/);
+  assert.match(css, /@media \(max-width:540px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ width:calc\(100vw - 1rem\); max-width:none; max-height:calc\(100dvh - 1rem\); \} \}/);
+  for (const selector of ["#businessExpenseDialog", "#documentInboxUploadDialog", ".business-expense-dialog", ".supplier-document-dialog", ".document-inbox-dialog", ".dossier-preview-dialog"]) {
+    assert.doesNotMatch(css, new RegExp(`${selector.replace(/[.#]/g, "\\$&")} \\{[^}]*\\bwidth:`));
+  }
+  assert.doesNotMatch(css, /(?:^|\n)dialog \{[^}]*\bwidth:/);
+});
+
 test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
     read("operator/dashboard/index.html"),
@@ -2503,7 +2541,7 @@ test("document inbox direct upload UI is bounded accessible authority-only and r
   for (const forbidden of ["create_business_expense_v1", "create_supplier_document_v1", "link_business_expense_document_v1", "approve_document_inbox_item_v1", "process_document_inbox_item_v1"]) {
     assert.doesNotMatch(uploadBlock, new RegExp(`client\\.rpc\\("${forbidden}"`));
   }
-  assert.match(css, /\.document-inbox-upload-dialog \{ width:min\(44rem,calc\(100% - 2rem\)\)/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:min\(76vw,106rem\); \}/);
   assert.match(css, /\.document-inbox-upload-zone \{[^}]*min-height:190px/);
   assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-upload-actions \{ flex-direction:column-reverse; \}/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
@@ -2832,7 +2870,7 @@ test("business expense entry UI exposes only the approved authority and create f
   assert.match(script, /form\.reset\(\);\s*dialog\.close\(\);\s*trigger\.focus\(\)/);
   assert.match(script, /reloadPortfolio: \(\)=>loadBusinessExpensePortfolio\("Bedrijfskost opgeslagen\."\)/);
   assert.match(script, /Bedrijfskost kon niet worden opgeslagen\./);
-  assert.match(css, /\.business-expense-dialog[^}]*max-height:calc\(100vh - 2rem\)/);
+  assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{[^}]*max-height:calc\(100dvh - 2rem\)/);
   assert.match(css, /@media \(max-width:540px\)[^}]*\{[\s\S]*?\.business-expense-form__fields \{ grid-template-columns:1fr/);
 });
 
