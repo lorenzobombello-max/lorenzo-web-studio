@@ -407,9 +407,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 dialog { padding:0; border:0; border-radius:var(--radius); box-shadow:0 30px 90px rgba(0,0,0,.35); }
 dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal--compact,dialog.operator-modal--action-confirm { max-width:calc(100vw - 4rem); max-height:calc(100dvh - 2rem); }
 dialog.operator-modal--reading { width:min(85vw,118rem); }
-dialog.operator-modal--work { width:min(90vw,128rem); }
+dialog.operator-modal--work { width:90vw; }
 dialog.operator-modal--compact { width:min(34rem,calc(100vw - 2rem)); }
-dialog.operator-modal--action-confirm { width:min(68vw,92rem); }
+dialog.operator-modal--action-confirm { width:68vw; }
 @media (min-width:2000px) { dialog.operator-modal--reading { width:min(90vw,128rem); } }
 dialog::backdrop { background:rgba(5,10,14,.72); }
 .confirmation { padding:1.5rem; }

@@ -36,9 +36,11 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     assert.deepEqual(modalTypes, [expectedTypes.get(id)], `${id} must have its one approved modal type`);
   }
   assert.match(css, /dialog\.operator-modal--reading \{ width:min\(85vw,118rem\); \}/);
-  assert.match(css, /dialog\.operator-modal--work \{ width:min\(90vw,128rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:90vw; \}/);
+  assert.doesNotMatch(css, /dialog\.operator-modal--work \{[^}]*128rem/);
   assert.match(css, /dialog\.operator-modal--compact \{ width:min\(34rem,calc\(100vw - 2rem\)\); \}/);
-  assert.match(css, /dialog\.operator-modal--action-confirm \{ width:min\(68vw,92rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--action-confirm \{ width:68vw; \}/);
+  assert.doesNotMatch(css, /dialog\.operator-modal--action-confirm \{[^}]*92rem/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--reading \{ width:min\(90vw,128rem\); \}/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?\.operator-modal--work \.finance-modal-brand img \{ width:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) :is\(input,select,textarea\) \{ min-height:clamp/);
@@ -2547,7 +2549,8 @@ test("document inbox direct upload UI is bounded accessible authority-only and r
   for (const forbidden of ["create_business_expense_v1", "create_supplier_document_v1", "link_business_expense_document_v1", "approve_document_inbox_item_v1", "process_document_inbox_item_v1"]) {
     assert.doesNotMatch(uploadBlock, new RegExp(`client\\.rpc\\("${forbidden}"`));
   }
-  assert.match(css, /dialog\.operator-modal--work \{ width:min\(90vw,128rem\); \}/);
+  assert.match(css, /dialog\.operator-modal--work \{ width:90vw; \}/);
+  assert.doesNotMatch(css, /dialog\.operator-modal--work \{[^}]*128rem/);
   assert.match(css, /\.document-inbox-upload-zone \{[^}]*min-height:190px/);
   assert.match(css, /@media \(max-width:540px\)[\s\S]*?\.document-inbox-upload-actions \{ flex-direction:column-reverse; \}/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
