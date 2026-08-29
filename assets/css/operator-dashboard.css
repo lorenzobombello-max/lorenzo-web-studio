@@ -45,7 +45,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .module-navigation a[aria-current="page"] { color:var(--white); text-shadow:0 0 14px rgba(143,245,232,.22); }
 .module-navigation a[aria-current="page"]::after { opacity:1; transform:scaleX(1); animation:module-nav-reveal var(--motion-duration-slow) var(--motion-ease) both; }
 .topbar__status { display:flex; align-items:center; justify-content:flex-end; gap:.75rem; color:#c5d0d5; font-size:.82rem; font-weight:700; }
-.workspace { width:min(1420px,calc(100% - 48px)); margin:auto; padding:clamp(2rem,4vw,3.5rem) 0 5rem; }
+.workspace { width:calc(100% - 48px); margin:auto; padding:clamp(2rem,4vw,3.5rem) 0 5rem; }
 .module-shell { max-width:760px; padding:clamp(2rem,5vw,4rem) 0; animation:module-panel-enter var(--motion-duration-normal) var(--motion-ease) both; }
 .module-shell h1 { margin:.3rem 0 .65rem; color:var(--navy); font-size:2.6rem; line-height:1.1; letter-spacing:0; }
 .module-shell__title { position:relative; width:max-content; max-width:100%; }
