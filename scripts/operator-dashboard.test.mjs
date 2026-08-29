@@ -9,8 +9,8 @@ import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDo
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260830-finance-subnav-client-nav";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-operator-nav-perf-2";
+const OPERATOR_ASSET_RELEASE = "20260830-finance-direct-load-first-switch";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-finance-subnav-client-nav";
 
 test("all operator dialogs use one exclusive responsive modal type authority", async () => {
   const [html, css] = await Promise.all([
@@ -265,12 +265,29 @@ test("dashboard guard intercepts every Finance tab without repeating auth bootst
     read("assets/js/operator-dashboard-guard.mjs"),
   ]);
   assert.equal((html.match(/data-finance-tab=/g) || []).length, 7);
-  assert.match(guard, /querySelectorAll\("\[data-finance-tab\]"\)/);
-  assert.match(guard, /financeTabFromUrl\(target, identity\.role\) !== link\.dataset\.financeTab/);
+  assert.match(guard, /document\.addEventListener\("click", \(event\)=>\{/);
+  assert.match(guard, /event\.target\.closest\?\.\("\[data-finance-tab\]"\)/);
+  assert.match(guard, /financeTabFromUrl\(target, financeNavigation\.identity\.role\) !== link\.dataset\.financeTab/);
   assert.match(guard, /event\.preventDefault\(\);\s*void financeNavigation\.navigate\(target\)/);
   assert.match(guard, /verifiedIdentity: context\.identity/);
   assert.match(guard, /financeNavigation\?\.invalidateIdentity\(\)/);
+  assert.match(guard, /onIdentityReady: \(verifiedIdentity\)=>\{\s*financeNavigation = createOperatorFinanceNavigation/);
+  assert.ok(guard.indexOf('document.addEventListener("click"') < guard.indexOf("await getOperatorClient()"));
+  assert.ok(guard.indexOf("onIdentityReady:") < guard.indexOf("gate.hidden = true"));
   assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
+});
+
+test("direct Finance deep-link bootstrap arms the first delegated click before dashboard reveal", async () => {
+  const [dashboardScript, guard] = await Promise.all([
+    read("assets/js/operator-dashboard.js"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+  ]);
+  assert.ok(dashboardScript.indexOf("onIdentityReady(currentIdentity)") < dashboardScript.indexOf("presentFinanceTab(document, activeFinanceTab)"));
+  assert.ok(guard.indexOf('document.addEventListener("click"') < guard.indexOf("await getOperatorClient()"));
+  assert.ok(guard.indexOf("onIdentityReady:") < guard.indexOf("gate.hidden = true"));
+  assert.match(guard, /if \(!link \|\| !financeNavigation\?\.identity\) return;/);
+  assert.match(guard, /event\.preventDefault\(\);\s*void financeNavigation\.navigate\(target\)/);
+  assert.doesNotMatch(guard, /financeLinks|for \(const link of document\.querySelectorAll\("\[data-finance-tab\]"\)\)/);
 });
 
 test("dashboard remains hidden until the authorization guard succeeds", async () => {

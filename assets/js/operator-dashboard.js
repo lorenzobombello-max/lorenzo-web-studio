@@ -2024,6 +2024,7 @@ export async function startOperatorDashboard({
   callOperator = callCommercialOperator,
   verifiedIdentity = null,
   isCurrent = ()=>true,
+  onIdentityReady = ()=>{},
   onAuthorizationFailure = ()=>{},
   onDossierRoute = ()=>{},
 }) {
@@ -2179,6 +2180,7 @@ export async function startOperatorDashboard({
   }
 
   const currentIdentity = verifiedIdentity || await invoke({ action: "get_current_operator_identity" });
+  onIdentityReady(currentIdentity);
   const identity = currentOperatorIdentityPresentation(currentIdentity);
   for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
   const moduleNavigation = document.getElementById("operatorModuleNavigation");

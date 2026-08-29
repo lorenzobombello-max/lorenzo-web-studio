@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
 import { getOperatorClient } from "./operator-auth-client.mjs";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260830-finance-subnav-client-nav";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260830-finance-direct-load-first-switch";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -23,6 +23,15 @@ function moduleNavigationTarget(event, link) {
   return url.origin === window.location.origin && url.pathname === window.location.pathname ? url : null;
 }
 
+document.addEventListener("click", (event)=>{
+  const link = event.target.closest?.("[data-finance-tab]");
+  if (!link || !financeNavigation?.identity) return;
+  const target = moduleNavigationTarget(event, link);
+  if (!target || financeTabFromUrl(target, financeNavigation.identity.role) !== link.dataset.financeTab) return;
+  event.preventDefault();
+  void financeNavigation.navigate(target);
+});
+
 try {
   const { client, config } = await getOperatorClient();
   const access = await requireAuthorizedOperator(client);
@@ -44,11 +53,32 @@ try {
   if (access.status === "unauthorized") logout.hidden = false;
   else if (access.status === "authorized") {
     const functionsBaseUrl = `${config.supabaseUrl}/functions/v1`;
-    const identity = await startOperatorDashboard({ client, functionsBaseUrl, onAuthorizationFailure: redirectToLogin });
+    const identity = await startOperatorDashboard({
+      client,
+      functionsBaseUrl,
+      onIdentityReady: (verifiedIdentity)=>{
+        financeNavigation = createOperatorFinanceNavigation({
+          identity: verifiedIdentity,
+          initialUrl: window.location.href,
+          activateTab: (tab)=>presentFinanceTab(document, tab),
+          pushUrl: (url)=>window.history.pushState(null, "", url),
+          loadTab: async (_tab, context)=>{
+            await startOperatorDashboard({
+              client,
+              functionsBaseUrl,
+              verifiedIdentity: context.identity,
+              isCurrent: context.isCurrent,
+              onAuthorizationFailure: redirectToLogin,
+            });
+            return true;
+          },
+        });
+      },
+      onAuthorizationFailure: redirectToLogin,
+    });
     gate.hidden = true;
     dashboard.hidden = false;
     const moduleLinks = Array.from(document.querySelectorAll("[data-operator-module]"));
-    const financeLinks = Array.from(document.querySelectorAll("[data-finance-tab]"));
     const dossierWorkspaces = ["internalSmokePanel", "internalSmokeBPanel", "personalQueueWorkspace", "managerWorkspace"]
       .map((id)=>document.getElementById(id)).filter(Boolean);
     let activeModule = operatorModuleFromUrl(window.location.href, identity.role);
@@ -88,23 +118,6 @@ try {
         return true;
       },
     });
-    financeNavigation = createOperatorFinanceNavigation({
-      identity,
-      initialUrl: window.location.href,
-      activateTab: (tab)=>presentFinanceTab(document, tab),
-      pushUrl: (url)=>window.history.pushState(null, "", url),
-      loadTab: async (_tab, context)=>{
-        await startOperatorDashboard({
-          client,
-          functionsBaseUrl,
-          verifiedIdentity: context.identity,
-          isCurrent: context.isCurrent,
-          onAuthorizationFailure: redirectToLogin,
-        });
-        return true;
-      },
-    });
-
     async function navigateModule(url, options) {
       const navigated = await moduleNavigation.navigate(url, options);
       if (operatorModuleFromUrl(url, identity.role) === "finance") {
@@ -119,14 +132,6 @@ try {
         if (!target) return;
         event.preventDefault();
         void navigateModule(target);
-      });
-    }
-    for (const link of financeLinks) {
-      link.addEventListener("click", (event)=>{
-        const target = moduleNavigationTarget(event, link);
-        if (!target || financeTabFromUrl(target, identity.role) !== link.dataset.financeTab) return;
-        event.preventDefault();
-        void financeNavigation.navigate(target);
       });
     }
     window.addEventListener("popstate", ()=>void navigateModule(window.location.href, { push: false }));
