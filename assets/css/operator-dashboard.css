@@ -108,6 +108,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-expense-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .finance-expense-actions { margin-top:.85rem; display:flex; justify-content:flex-end; border-top:1px solid var(--line); padding-top:.85rem; }
 .business-expense-dialog { width:min(42rem,calc(100% - 2rem)); max-height:calc(100vh - 2rem); padding:0; border:1px solid var(--line-strong); border-radius:var(--radius); }
+#businessExpenseDialog { width:clamp(52rem,64vw,72rem); max-width:calc(100% - 3rem); }
 .business-expense-dialog[open] { animation:modal-enter var(--motion-duration-normal) var(--motion-ease) both; }
 .business-expense-dialog::backdrop { background:rgba(17,29,54,.58); animation:status-enter var(--motion-duration-fast) ease both; }
 .business-expense-form { padding:clamp(1.2rem,3vw,2rem); }
@@ -144,6 +145,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .finance-layer-note { margin:1.25rem 0 0; padding:.85rem 1rem; color:var(--muted); border-left:3px solid var(--turquoise); background:rgba(232,246,244,.55); font-size:.86rem; }
 .document-inbox-heading__actions { display:flex; align-items:center; justify-content:flex-end; gap:.75rem; }
 .document-inbox-upload-dialog { width:min(44rem,calc(100% - 2rem)); max-height:calc(100dvh - 2rem); overflow:auto; border-color:rgba(20,124,118,.32); box-shadow:0 28px 80px rgba(17,29,54,.28); }
+#documentInboxUploadDialog { width:clamp(50rem,60vw,68rem); max-width:calc(100% - 3rem); }
 .document-inbox-upload-form { display:grid; }
 .document-inbox-upload-fields { display:block; }
 .document-inbox-upload-file { display:grid; gap:.55rem; color:var(--navy); font-size:.76rem; font-weight:850; text-transform:uppercase; }
@@ -156,6 +158,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .document-inbox-upload-zone input::file-selector-button { min-height:40px; margin-right:.75rem; padding:.5rem .8rem; color:var(--navy); border:1px solid var(--line-strong); border-radius:4px; background:var(--navy-soft); font-weight:850; cursor:pointer; }
 .document-inbox-upload-status { min-height:1.4rem; }
 .document-inbox-upload-actions { display:flex; justify-content:flex-end; gap:.65rem; }
+@media (min-width:901px) {
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-brand { height:88px; padding:.85rem clamp(2rem,3vw,3rem); gap:1rem; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-brand img { width:62px; height:62px; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-brand__name { font-size:1.15rem; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-heading { padding:1.75rem clamp(2rem,3vw,3rem) 1.5rem; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-heading h2 { font-size:1.8rem; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-fields { padding:2rem clamp(2rem,3vw,3rem); gap:1.35rem 1.75rem; }
+	:is(#businessExpenseDialog,#documentInboxUploadDialog) .finance-modal-actions { padding:1.4rem clamp(2rem,3vw,3rem) 1.6rem; gap:.9rem; }
+	#businessExpenseDialog .business-expense-form input,#businessExpenseDialog .business-expense-form select { min-height:50px; padding:.75rem .85rem; }
+	#documentInboxUploadDialog .document-inbox-upload-zone { min-height:240px; padding:2rem; }
+}
 .document-inbox-filters { margin:1rem 0 1.25rem; padding:1rem; display:grid; grid-template-columns:minmax(12rem,2fr) repeat(5,minmax(8rem,1fr)) auto; gap:.75rem; align-items:end; border-block:1px solid var(--line); background:rgba(248,251,251,.82); }
 .document-inbox-filters label,.document-inbox-confirmed-form label { min-width:0; display:grid; gap:.35rem; color:var(--muted); font-size:.68rem; font-weight:850; text-transform:uppercase; }
 .document-inbox-filters input,.document-inbox-filters select,.document-inbox-confirmed-form input,.document-inbox-confirmed-form select,.document-inbox-confirmed-form textarea { width:100%; min-width:0; min-height:42px; padding:.55rem .65rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:var(--white); letter-spacing:0; text-transform:none; }
@@ -387,5 +400,5 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (max-width:900px) { .finance-expense-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:900px) { .document-inbox-filters { grid-template-columns:repeat(3,minmax(0,1fr)); } .document-inbox-filter--search { grid-column:span 2; } .document-inbox-item { grid-template-columns:minmax(0,1fr) auto; } .document-inbox-item__facts { grid-column:1/-1; grid-row:2; } .document-inbox-item__attention { text-align:left; } .document-inbox-review-grid { grid-template-columns:1fr; } .document-inbox-metadata { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:540px) { .finance-tabs { margin-inline:-.75rem; padding-inline:.75rem; } .finance-tabs a { padding-inline:.65rem; } .finance-section-heading { align-items:flex-start; flex-direction:column; } .finance-availability,.finance-project-metrics { grid-template-columns:1fr; } .business-expense-form__fields { grid-template-columns:1fr; } .supplier-document-file { grid-column:auto; } .finance-expense-actions .secondary-action { width:100%; } .business-expense-dialog { width:calc(100% - 1rem); max-height:calc(100dvh - 1rem); overflow:auto; } .finance-modal-brand { height:58px; padding:.45rem 1rem; gap:.6rem; } .finance-modal-brand img { width:42px; height:42px; } .finance-modal-brand__name { font-size:.9rem; } .finance-modal-heading { padding:1.1rem 1rem 1rem; } .finance-modal-fields { padding:1.15rem 1rem; gap:.9rem; } .supplier-document-upload { padding:.9rem; grid-template-columns:38px minmax(0,1fr); } .supplier-document-upload__icon { width:38px; height:38px; } .finance-modal-status { padding-inline:1rem; } .finance-modal-actions { padding:1rem; } .supplier-document-dialog .business-expense-form__actions { flex-direction:column-reverse; } .supplier-document-dialog .business-expense-form__actions button { width:100%; } .finance-metrics dd { font-size:1.15rem; } .document-inbox-filters { margin-inline:-.75rem; padding-inline:.75rem; grid-template-columns:1fr; } .document-inbox-filter--search { grid-column:auto; } .document-inbox-item { padding:.8rem; grid-template-columns:1fr; gap:.45rem; } .document-inbox-item__facts { grid-column:auto; grid-row:auto; } .document-inbox-item__attention { text-align:left; } .document-inbox-dialog { overflow:hidden; } .document-inbox-review { max-height:calc(100dvh - 1rem); } .document-inbox-dialog-heading { display:grid; } .document-inbox-review__body { padding:1rem; } .document-inbox-metadata,.document-inbox-values--proposed dl,.document-inbox-result dl,.document-inbox-confirmed-form { grid-template-columns:1fr; } .document-inbox-field--wide { grid-column:auto; } .document-inbox-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .document-inbox-actions button,.document-inbox-actions button:first-child { width:100%; margin:0; } .document-inbox-actions #documentInboxSaveProposal,.document-inbox-actions #documentInboxSaveConfirmed,.document-inbox-actions #documentInboxApprove,.document-inbox-actions #documentInboxProcess { grid-column:1/-1; } }
-@media (max-width:900px) { .document-inbox-upload-dialog { width:min(44rem,calc(100% - 1.5rem)); } }
+@media (max-width:900px) { #businessExpenseDialog,#documentInboxUploadDialog { width:calc(100% - 1.5rem); max-width:none; } }
 @media (max-width:540px) { .document-inbox-heading__actions { width:100%; justify-content:space-between; } .document-inbox-upload-zone { min-height:165px; padding:1rem; } .document-inbox-upload-actions { flex-direction:column-reverse; } .document-inbox-upload-actions button { width:100%; } }
