@@ -169,6 +169,34 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 	.operator-modal--reading .dossier-preview-dialog__header { padding:1.5rem clamp(2rem,3vw,3.5rem); }
 	.operator-modal--reading .dossier-preview-dialog__body { padding:2rem clamp(2rem,3vw,3.5rem); }
 }
+@media (min-width:2000px) {
+	:is(.operator-modal--reading,.operator-modal--work) { font-size:clamp(1rem,.35vw + .55rem,1.125rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand { height:clamp(6rem,5vw,7.5rem); padding:clamp(1rem,1.2vw,1.5rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.15rem,1.1vw,1.6rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand img { width:clamp(4.25rem,3.5vw,5rem); height:clamp(4.25rem,3.5vw,5rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-brand__name { font-size:clamp(1.25rem,.75vw,1.5rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading { padding:clamp(2rem,2vw,2.75rem) clamp(4rem,4.5vw,6.5rem) clamp(1.75rem,1.8vw,2.4rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-heading h2 { font-size:clamp(2rem,1.55vw,2.4rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-fields { padding:clamp(2.5rem,3.2vw,4.5rem) clamp(4rem,4.5vw,6.5rem); gap:clamp(1.5rem,1.5vw,2.15rem) clamp(2.25rem,2.25vw,3.25rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .business-expense-form label,
+	.operator-modal--reading :is(.document-inbox-filters,.document-inbox-confirmed-form) label,
+	#documentInboxUploadDialog .document-inbox-upload-file { font-size:clamp(.875rem,.5vw,1rem); gap:clamp(.35rem,.35vw,.55rem); }
+	:is(.operator-modal--reading,.operator-modal--work) :is(input,select,textarea) { min-height:clamp(3.375rem,2.8vw,4rem); padding:clamp(.8rem,.7vw,1rem) clamp(1rem,.9vw,1.3rem); font-size:clamp(.95rem,.48vw,1.05rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .business-expense-form :is(input,select,textarea),
+	.operator-modal--reading .document-inbox-confirmed-form :is(input,select,textarea) { min-height:clamp(3.75rem,2.8vw,4rem); padding:clamp(.8rem,.7vw,1rem) clamp(1rem,.9vw,1.3rem); font-size:clamp(1rem,.52vw,1.125rem); }
+	:is(.operator-modal--reading,.operator-modal--work) :is(.finance-modal-heading p,.supplier-document-expense,.supplier-document-upload__copy,.document-inbox-upload-zone__copy,.document-inbox-review__body,.application-dossier-copy) { font-size:clamp(1rem,.5vw,1.125rem); }
+	:is(.operator-modal--reading,.operator-modal--work) .finance-modal-actions { padding:clamp(1.6rem,1.6vw,2.2rem) clamp(4rem,4.5vw,6.5rem) clamp(1.8rem,1.8vw,2.5rem); gap:clamp(1rem,1vw,1.4rem); }
+	:is(.operator-modal--reading,.operator-modal--work) :is(.primary-action,.secondary-action,.danger-action) { min-height:clamp(3rem,2.6vw,3.75rem); padding:clamp(.75rem,.7vw,1rem) clamp(1.15rem,1.1vw,1.6rem); font-size:clamp(1rem,.52vw,1.125rem); }
+	#documentInboxUploadDialog .document-inbox-upload-zone { min-height:clamp(17.5rem,29vh,21rem); padding:clamp(2.5rem,3vw,4rem); gap:clamp(.8rem,.8vw,1.2rem); }
+	#documentInboxUploadDialog .document-inbox-upload-zone__icon { width:clamp(3.25rem,3vw,4.25rem); height:clamp(3.25rem,3vw,4.25rem); font-size:clamp(1.5rem,1.2vw,1.9rem); }
+	#documentInboxUploadDialog .document-inbox-upload-zone__copy { font-size:clamp(1rem,.52vw,1.125rem); }
+	#documentInboxUploadDialog .document-inbox-upload-zone__copy strong { font-size:clamp(1rem,.6vw,1.25rem); }
+	#supplierDocumentDialog .supplier-document-upload { min-height:clamp(11.25rem,20vh,15rem); padding:clamp(2rem,2.5vw,3.5rem); }
+	.operator-modal--reading .dossier-preview-dialog__header { padding:clamp(1.5rem,1.8vw,2.5rem) clamp(3rem,4vw,5.75rem); }
+	.operator-modal--reading .dossier-preview-dialog__header h2 { font-size:clamp(1.75rem,1.4vw,2.2rem); }
+	.operator-modal--reading .dossier-preview-dialog__body,
+	.operator-modal--reading .document-inbox-review__body { padding:clamp(2rem,2.5vw,3.5rem) clamp(3rem,4vw,5.75rem); }
+	.operator-modal--reading :is(.application-dossier-copy,.document-inbox-review__body) { line-height:clamp(1.55,1.2vw,1.75); }
+}
 .document-inbox-filters { margin:1rem 0 1.25rem; padding:1rem; display:grid; grid-template-columns:minmax(12rem,2fr) repeat(5,minmax(8rem,1fr)) auto; gap:.75rem; align-items:end; border-block:1px solid var(--line); background:rgba(248,251,251,.82); }
 .document-inbox-filters label,.document-inbox-confirmed-form label { min-width:0; display:grid; gap:.35rem; color:var(--muted); font-size:.68rem; font-weight:850; text-transform:uppercase; }
 .document-inbox-filters input,.document-inbox-filters select,.document-inbox-confirmed-form input,.document-inbox-confirmed-form select,.document-inbox-confirmed-form textarea { width:100%; min-width:0; min-height:42px; padding:.55rem .65rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:var(--white); letter-spacing:0; text-transform:none; }
@@ -378,6 +406,7 @@ dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal
 dialog.operator-modal--reading { width:min(85vw,118rem); }
 dialog.operator-modal--work { width:min(76vw,106rem); }
 dialog.operator-modal--compact { width:min(34rem,calc(100vw - 2rem)); }
+@media (min-width:2000px) { dialog.operator-modal--reading { width:min(90vw,128rem); } dialog.operator-modal--work { width:min(84vw,120rem); } }
 dialog::backdrop { background:rgba(5,10,14,.72); }
 .confirmation { padding:1.5rem; }
 .confirmation h2 { margin:.4rem 0; font-size:1.65rem; }

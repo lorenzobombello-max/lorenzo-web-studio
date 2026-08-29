@@ -38,6 +38,10 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
   assert.match(css, /dialog\.operator-modal--reading \{ width:min\(85vw,118rem\); \}/);
   assert.match(css, /dialog\.operator-modal--work \{ width:min\(76vw,106rem\); \}/);
   assert.match(css, /dialog\.operator-modal--compact \{ width:min\(34rem,calc\(100vw - 2rem\)\); \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--reading \{ width:min\(90vw,128rem\); \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?dialog\.operator-modal--work \{ width:min\(84vw,120rem\); \}/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) :is\(input,select,textarea\) \{ min-height:clamp/);
+  assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?#documentInboxUploadDialog \.document-inbox-upload-zone \{ min-height:clamp/);
   assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ max-width:calc\(100vw - 4rem\); max-height:calc\(100dvh - 2rem\); \}/);
   assert.match(css, /@media \(max-width:900px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work \{ width:calc\(100vw - 1\.5rem\); max-width:none; \} \}/);
   assert.match(css, /@media \(max-width:540px\) \{ dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact \{ width:calc\(100vw - 1rem\); max-width:none; max-height:calc\(100dvh - 1rem\); \} \}/);
