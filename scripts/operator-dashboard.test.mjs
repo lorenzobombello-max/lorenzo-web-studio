@@ -3550,3 +3550,13 @@ test("Intake opvolging is a lazy dedicated workspace with guarded cleanup", asyn
   assert.doesNotMatch(script, /pendingIntakesRefresh\.addEventListener\("click", \(\)=>loadPendingIntakes\(\)\);\s*await loadPendingIntakes\(\);/);
   assert.match(css, /@media \(max-width:1000px\) \{ \.pending-intake-grid \{ grid-template-columns:1fr; \} \.pending-intake-grid > \.panel \{ min-height:0; \}/);
 });
+
+test("operator workspace globally fills short desktop and mobile viewports", async () => {
+  const css = await read("assets/css/operator-dashboard.css");
+  assert.match(css, /html \{ min-height:100%; color-scheme:light; \}/);
+  assert.match(css, /body \{[^}]*min-height:100vh; min-height:100dvh;/);
+  assert.match(css, /#operatorDashboard:not\(\[hidden\]\) \{ min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; \}/);
+  assert.match(css, /\.workspace \{[^}]*display:flex; flex:1 0 auto; flex-direction:column;/);
+  assert.match(css, /\.workspace > :not\(\[hidden\]\) \{ flex:1 0 auto; \}/);
+  assert.doesNotMatch(css, /#(?:dossiers|intake|finance)\s*\{[^}]*min-height/i);
+});
