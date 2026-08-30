@@ -4,6 +4,10 @@ import {
   printApplicationDossier,
   renderApplicationDossier,
 } from "./application-dossier-copy.js?v=20260828-dossier-purge-ui";
+import {
+  printSdfQualificationReview,
+  renderSdfQualificationReview,
+} from "./sdf-qualification-review.mjs?v=20260831-operator-parity";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
@@ -1489,7 +1493,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
-const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier"]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfQualificationDossier", "sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const LIFECYCLE_PRESENTATION = Object.freeze({
@@ -1979,6 +1983,70 @@ export function customerCorePresentation(application) {
 
 export function sdfPackageLabel(value) {
   return SDF_PACKAGE_LABELS[value] || "Niet geregistreerd";
+}
+
+const SDF_QUALIFICATION_STATUS_LABELS = Object.freeze({
+  invited: "Uitgenodigd",
+  in_progress: "In uitvoering",
+  submitted: "Ingediend",
+  under_review: "In beoordeling",
+  changes_requested: "Aanvulling gevraagd",
+  qualification_complete: "Kwalificatie voltooid",
+  closed: "Gesloten",
+});
+const SDF_QUALIFICATION_TAXONOMIES = new Set(["sdf_qualification_intake/1.0.0", "sdf_qualification_intake/2.0.0"]);
+const SDF_QUALIFICATION_SUBMITTED_STATUSES = new Set(["submitted", "under_review", "changes_requested", "qualification_complete", "closed"]);
+
+export function sdfQualificationDetailRequest(application) {
+  if (application?.request_kind !== "slimme_documentenflow" || !UUID.test(String(application?.quote_request_id || ""))) {
+    throw new Error("INVALID_SDF_QUALIFICATION_DETAIL_REQUEST");
+  }
+  return { action: "inspect_sdf_qualification_intake", quote_request_id: application.quote_request_id };
+}
+
+export function sdfQualificationStatusPresentation(status) {
+  const label = SDF_QUALIFICATION_STATUS_LABELS[status];
+  if (!label) throw new Error("INVALID_SDF_QUALIFICATION_STATUS");
+  return {
+    value: status,
+    label,
+    activeWork: ["submitted", "under_review"].includes(status),
+    tone: status === "qualification_complete" ? "green" : ["in_progress", "submitted", "under_review", "changes_requested"].includes(status) ? "amber" : "",
+  };
+}
+
+export function sdfQualificationDetailPresentation(readModel, application, preparedAt = new Date().toISOString()) {
+  const status = sdfQualificationStatusPresentation(readModel?.status);
+  const answers = readModel?.latest_submission;
+  const hasAnswers = answers !== null && answers !== undefined;
+  if (!UUID.test(String(readModel?.quote_request_id || ""))
+      || readModel.quote_request_id !== application?.quote_request_id
+      || !UUID.test(String(readModel?.intake_id || ""))
+      || !SDF_QUALIFICATION_TAXONOMIES.has(readModel?.taxonomy_version)
+      || (hasAnswers && (typeof answers !== "object" || Array.isArray(answers)))
+      || (SDF_QUALIFICATION_SUBMITTED_STATUSES.has(status.value) && !hasAnswers)
+      || (hasAnswers && (!Number.isInteger(readModel?.latest_submission_sequence) || readModel.latest_submission_sequence < 1))) {
+    throw new Error("INVALID_SDF_QUALIFICATION_DETAIL");
+  }
+  return {
+    answers: hasAnswers ? answers : null,
+    status,
+    context: {
+      reference: application.application_reference || application.support_reference || readModel.quote_request_id,
+      intakeReference: readModel.intake_id,
+      customerName: readModel.name || application.name || "",
+      organization: readModel.company || application.company || "",
+      email: readModel.email || application.email || "",
+      status: status.label,
+      taxonomyVersion: readModel.taxonomy_version,
+      preparedAt,
+    },
+    meta: {
+      intakeReference: readModel.intake_id,
+      taxonomyVersion: readModel.taxonomy_version,
+      submissionSequence: hasAnswers ? String(readModel.latest_submission_sequence) : "Nog niet ingediend",
+    },
+  };
 }
 
 function formatSdfPrice(entry, recurring = false) {
@@ -2690,6 +2758,10 @@ export async function startOperatorDashboard({
   const sdfDocumentUploadCreate = document.getElementById("sdfDocumentUploadCreate");
   const sdfDocumentUploadCopy = document.getElementById("sdfDocumentUploadCopy");
   const sdfDocumentUploadRevoke = document.getElementById("sdfDocumentUploadRevoke");
+  const sdfQualificationMessage = document.getElementById("sdfQualificationMessage");
+  const sdfQualificationReview = document.getElementById("sdfQualificationReview");
+  const sdfQualificationPrint = document.getElementById("sdfQualificationPrint");
+  const sdfQualificationActions = document.getElementById("sdfQualificationActions");
   const internalSmokePanel = document.getElementById("internalSmokePanel");
   const internalSmokeRun = document.getElementById("internalSmokeRun");
   const internalSmokeStatus = document.getElementById("internalSmokeStatus");
@@ -4532,6 +4604,10 @@ export async function startOperatorDashboard({
     applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     const dossierOutput = application.application;
     applicationDossierActions.hidden = true;
+    sdfQualificationReview.replaceChildren();
+    sdfQualificationActions.hidden = true;
+    sdfQualificationPrint.disabled = true;
+    sdfQualificationMessage.textContent = isWebsite ? "" : "Qualification wordt geladen.";
     if (isWebsite && dossierOutput) {
       try {
         renderApplicationDossier(document.getElementById("applicationDossierCopyContent"), dossierOutput);
@@ -4625,6 +4701,42 @@ export async function startOperatorDashboard({
     renderProjectDossier(null);
   }
 
+  async function loadSdfQualification(application, requestId) {
+    if (application.request_kind !== "slimme_documentenflow") return true;
+    try {
+      const readModel = await invoke(sdfQualificationDetailRequest(application));
+      if (requestId !== detailRequestId || selectedDetail !== application) return false;
+      const output = sdfQualificationDetailPresentation(readModel, application);
+      setBadge("sdfQualificationStatus", output.status.label, output.status.tone);
+      setText("sdfQualificationCustomer", output.context.customerName || "Niet beschikbaar");
+      setText("sdfQualificationOrganization", output.context.organization || "Niet beschikbaar");
+      setText("sdfQualificationEmail", output.context.email || "Niet beschikbaar");
+      setText("sdfQualificationIntakeReference", output.meta.intakeReference);
+      setText("sdfQualificationTaxonomy", output.meta.taxonomyVersion);
+      setText("sdfQualificationSubmission", output.meta.submissionSequence);
+      if (!output.answers) {
+        sdfQualificationReview.replaceChildren();
+        sdfQualificationMessage.textContent = "Er is nog geen ingediende qualification beschikbaar.";
+        sdfQualificationActions.hidden = true;
+        return true;
+      }
+      renderSdfQualificationReview(sdfQualificationReview, output.answers, output.context);
+      sdfQualificationPrint.onclick = () => printSdfQualificationReview(output.answers, output.context);
+      sdfQualificationPrint.disabled = false;
+      sdfQualificationActions.hidden = false;
+      sdfQualificationMessage.textContent = "";
+      return true;
+    } catch {
+      if (requestId !== detailRequestId || selectedDetail !== application) return false;
+      sdfQualificationReview.replaceChildren();
+      sdfQualificationActions.hidden = true;
+      sdfQualificationPrint.disabled = true;
+      setBadge("sdfQualificationStatus", "Niet beschikbaar", "amber");
+      sdfQualificationMessage.textContent = "De qualificationdetail is niet beschikbaar voor deze operator of aanvraag.";
+      return false;
+    }
+  }
+
   async function loadDetail(locator, summary = selectedSummary) {
     const requestId = ++detailRequestId;
     selectedSummary = summary;
@@ -4645,6 +4757,7 @@ export async function startOperatorDashboard({
       await Promise.all([
         loadAssignment(application, requestId),
         loadDossierDocuments(application, requestId),
+        loadSdfQualification(application, requestId),
       ]);
       if (requestId !== detailRequestId) return false;
       if (application.request_kind === "website" && application.project?.project_id) {

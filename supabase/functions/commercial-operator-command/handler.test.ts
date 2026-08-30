@@ -1311,7 +1311,7 @@ Deno.test("service role JWT cannot enter application actions", async () => {
     exp: 4102444800,
   });
   for (
-    const action of ["list_applications", "get_assignment_operator_roster"]
+    const action of ["list_applications", "get_assignment_operator_roster", "inspect_sdf_qualification_intake"]
   ) {
     const harness = dependencies();
     const response = await handleCommercialOperator(

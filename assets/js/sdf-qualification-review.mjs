@@ -46,8 +46,13 @@ export function buildSdfQualificationPresentation(data, context = {}) {
   const preparedAt = context.preparedAt || new Date().toISOString();
   const overviewRows = [
     context.reference ? ["Aanvraagreferentie", text(context.reference)] : null,
+    context.intakeReference ? ["Qualificationreferentie", text(context.intakeReference)] : null,
+    context.customerName ? ["Klant", text(context.customerName)] : null,
+    context.organization ? ["Organisatie", text(context.organization)] : null,
+    context.email ? ["E-mail", text(context.email)] : null,
     ["Datum", formatDate(preparedAt)],
     ["Status", text(context.status, "Concept — nog niet ingediend")],
+    context.taxonomyVersion ? ["Schema", text(context.taxonomyVersion)] : null,
   ];
   const packageRows = [
     ["Richting", packageInfo.label], ["Commerciële referentie", packageInfo.reference], ["Inbegrepen maximum", packageInfo.scope],

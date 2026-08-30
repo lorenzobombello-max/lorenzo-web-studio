@@ -1,4 +1,4 @@
-@page { size: A4 portrait; margin: 12mm; }
+@page { size: A4 portrait; margin: 15mm 12mm 12mm; }
 * { box-sizing: border-box; }
 html { color-scheme: light; }
 body { max-width: 186mm; margin: 0 auto; color: #17211d; background: #fff; font: 9.5pt/1.4 Arial, sans-serif; }

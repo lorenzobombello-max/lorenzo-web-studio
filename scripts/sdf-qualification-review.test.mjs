@@ -55,3 +55,19 @@ test("print document uses A4 stylesheet, includes complete review, and excludes 
   assert.doesNotMatch(html, /token=|capability|Bearer|aaaaaaaaaaaaaaaa/);
   assert.doesNotMatch(html, /<input|<button|data-step-target/);
 });
+
+test("operator print context adds only explicit dossier metadata", () => {
+  const presentation = buildSdfQualificationPresentation(fixture(), {
+    reference: "LWS-AAN-2026-0001",
+    intakeReference: "8c20163c-3c52-45ea-b3e2-11c2e49bc231",
+    customerName: "Ada Lovelace",
+    organization: "Analytical Engines BV",
+    email: "ada@example.test",
+    status: "Ingediend",
+    taxonomyVersion: "sdf_qualification_intake/2.0.0",
+    preparedAt: "2026-08-31T09:30:00.000Z",
+  });
+  const html = sdfQualificationPrintHtml(presentation);
+  for (const expected of ["Ada Lovelace", "Analytical Engines BV", "ada@example.test", "Ingediend", "sdf_qualification_intake/2.0.0"]) assert.match(html, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(html, /capability|authorization|bearer|token/i);
+});
