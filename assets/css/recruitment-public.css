@@ -30,5 +30,6 @@
 .vacancy-card__detail { padding-top:1rem; display:grid; gap:1rem; }
 .vacancy-card__detail h4 { margin:0 0 .25rem; color:var(--ink); font-size:.95rem; }
 .vacancy-card__detail p { color:var(--muted); white-space:pre-line; overflow-wrap:anywhere; }
+@media (min-width:1800px) { .careers-hero__image { left:auto; width:min(62vw,1600px); object-position:center 8%; } }
 @media (max-width:860px) { .careers-hero { min-height:600px; } .careers-hero h1 { font-size:3.75rem; } .vacancy-list { grid-template-columns:1fr; } }
 @media (max-width:540px) { .careers-hero { min-height:560px; padding-bottom:64px; } .careers-hero h1 { font-size:3rem; } .careers-hero__veil { background:linear-gradient(90deg,rgba(7,12,17,.92),rgba(7,12,17,.62)); } .vacancy-state { min-height:180px; padding:1.35rem; } .vacancy-department__heading { align-items:flex-start; flex-direction:column; } .vacancy-department__heading h2 { font-size:1.55rem; } .vacancy-card { padding:1.2rem; } }
