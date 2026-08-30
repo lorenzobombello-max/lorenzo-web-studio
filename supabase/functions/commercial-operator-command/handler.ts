@@ -346,6 +346,10 @@ function validatePendingIntakesResult(value: unknown) {
     "retention_revision",
     "can_permanently_delete",
     "delete_block_reason",
+    "started_at",
+    "current_reminder_cycle",
+    "reminder_1_sent_at",
+    "reminder_2_sent_at",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, ["items"]) ||
@@ -392,6 +396,13 @@ function validatePendingIntakesResult(value: unknown) {
           "CUSTOMER_REQUEST_EXISTS",
           "FINANCIAL_DEPENDENCY_EXISTS",
         ].includes(String(item.delete_block_reason)))
+      || (item.started_at !== null && typeof item.started_at !== "string")
+      || !Number.isSafeInteger(item.current_reminder_cycle)
+      || Number(item.current_reminder_cycle) < 0
+      || (item.reminder_1_sent_at !== null &&
+        typeof item.reminder_1_sent_at !== "string")
+      || (item.reminder_2_sent_at !== null &&
+        typeof item.reminder_2_sent_at !== "string")
     ) {
       throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
     }
