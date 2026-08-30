@@ -86,6 +86,25 @@ type OperatorApplicationFacetsV2Input = Omit<
   OperatorApplicationCursorInput,
   "year" | "quarter"
 >;
+type SupabaseAuthClient = Readonly<{
+  auth: Readonly<{
+    getUser(jwt: string): PromiseLike<
+      Readonly<{
+        data: Readonly<{ user: Readonly<{ id: string }> | null }>;
+        error: unknown;
+      }>
+    >;
+  }>;
+}>;
+
+export async function verifySupabaseAuthUser(
+  client: SupabaseAuthClient,
+  jwt: string,
+): Promise<Readonly<{ id: string }> | null> {
+  const { data, error } = await client.auth.getUser(jwt);
+  return error || !data.user ? null : { id: data.user.id };
+}
+
 type DossierAssignmentActionInput =
   | Readonly<{
     action: "get_dossier_assignment";
@@ -740,12 +759,8 @@ if (import.meta.main) {
       });
       return handleCommercialOperator(request, {
         now: () => Date.now(),
-        verifyUser: async (jwt: string) => {
-          const { data, error } = await clientFor(jwt).auth.getUser(jwt);
-          return error || !data.user ? null : {
-            id: data.user.id,
-          };
-        },
+        verifyUser: async (jwt: string) =>
+          await verifySupabaseAuthUser(clientFor(jwt), jwt),
         authorizeApplicationReader: async (jwt: string) => {
           const { error } = await clientFor(jwt).rpc(
             "authorize_operator_application_reader_v2",

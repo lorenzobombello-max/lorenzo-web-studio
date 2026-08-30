@@ -34,6 +34,7 @@ import {
   executeQuotationBusinessDraftAction,
   executeServiceRoleDossierDocumentAction,
   executeServiceRoleWorkforceCalendarAction,
+  verifySupabaseAuthUser,
 } from "./index.ts";
 import {
   createQuotationApprovalIntegrity,
@@ -373,6 +374,105 @@ Deno.test("application list uses the verified human JWT and bounded pagination",
     jwt,
     input: { action: "list_applications", limit: 25, offset: 5 },
   }]);
+});
+
+Deno.test("authentication failures deny before command dispatch", async () => {
+  const cases = [
+    {
+      name: "missing bearer",
+      request: new Request("https://example.test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list_applications" }),
+      }),
+    },
+    {
+      name: "malformed JWT",
+      request: request({ action: "list_applications" }, "not-a-jwt"),
+    },
+    {
+      name: "expired JWT",
+      request: request(
+        { action: "list_applications" },
+        createUnsignedTestJwt({
+          sub: userId,
+          role: "authenticated",
+          exp: 1,
+        }),
+      ),
+    },
+  ];
+  for (const testCase of cases) {
+    const harness = dependencies();
+    let verifyCalls = 0;
+    const response = await handleCommercialOperator(testCase.request, {
+      ...harness.deps,
+      verifyUser: async () => {
+        verifyCalls += 1;
+        return { id: userId };
+      },
+    });
+    assertEquals(response.status, 401, testCase.name);
+    assertEquals(verifyCalls, 0, testCase.name);
+    assertEquals(harness.calls.length, 0, testCase.name);
+  }
+});
+
+Deno.test("Supabase Auth rejection and errors fail closed before dispatch", async () => {
+  for (
+    const verifyUser of [
+      async () => null,
+      async () => {
+        throw new Error("AUTH_UNAVAILABLE");
+      },
+    ]
+  ) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(
+      request({ action: "list_applications" }),
+      { ...harness.deps, verifyUser },
+    );
+    assertEquals(response.status >= 400, true);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("runtime auth adapter verifies the exact bearer JWT and rejects Auth errors", async () => {
+  const calls: string[] = [];
+  const client = (user: { id: string } | null, error: unknown = null) => ({
+    auth: {
+      getUser: async (token: string) => {
+        calls.push(token);
+        return { data: { user }, error };
+      },
+    },
+  });
+  assertEquals(await verifySupabaseAuthUser(client({ id: userId }), jwt), {
+    id: userId,
+  });
+  assertEquals(
+    await verifySupabaseAuthUser(client(null, "INVALID_JWT"), jwt),
+    null,
+  );
+  assertEquals(
+    await verifySupabaseAuthUser(client(null, "WRONG_PROJECT"), jwt),
+    null,
+  );
+  assertEquals(calls, [jwt, jwt, jwt]);
+});
+
+Deno.test("commercial operator command disables its legacy gateway JWT check", async () => {
+  const config = await Deno.readTextFile(
+    new URL("../../config.toml", import.meta.url),
+  );
+  const section = config.match(
+    /\[functions\.commercial-operator-command\]([\s\S]*?)(?=\n\[|$)/,
+  );
+  assertEquals(
+    [...(section?.[1].matchAll(/^verify_jwt\s*=\s*(true|false)$/gm) ?? [])]
+      .map((match) => match[1]),
+    ["false"],
+  );
 });
 
 Deno.test("application detail requires exactly one valid locator", async () => {

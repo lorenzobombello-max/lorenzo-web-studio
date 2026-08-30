@@ -47,5 +47,5 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.commercial-operator-command]
-verify_jwt = true
+verify_jwt = false
 static_files = ["./functions/commercial-operator-command/assets/*.docx"]
