@@ -73,15 +73,15 @@ insert into public.quote_request_intakes (
   access_state, lifecycle_revision, started_at, submitted_at, reviewed_at,
   confirmation, created_at
 ) values
-  ('fa200000-0000-4000-8000-000000000001', 'fa100001-0000-4000-8000-000000000001', 'invited', repeat('1',64), clock_timestamp() + interval '6 days', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '1 day'),
-  ('fa200000-0000-4000-8000-000000000002', 'fa100002-0000-4000-8000-000000000002', 'in_progress', repeat('2',64), clock_timestamp() + interval '6 days', 'ACTIVE', 0, clock_timestamp() - interval '12 hours', null, null, false, clock_timestamp() - interval '1 day'),
+  ('fa200000-0000-4000-8000-000000000001', 'fa100001-0000-4000-8000-000000000001', 'invited', repeat('1',64), clock_timestamp() + interval '3 days', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '1 day'),
+  ('fa200000-0000-4000-8000-000000000002', 'fa100002-0000-4000-8000-000000000002', 'in_progress', repeat('2',64), clock_timestamp() + interval '3 days', 'ACTIVE', 0, clock_timestamp() - interval '12 hours', null, null, false, clock_timestamp() - interval '1 day'),
   ('fa200000-0000-4000-8000-000000000003', 'fa100003-0000-4000-8000-000000000003', 'submitted', repeat('3',64), clock_timestamp() + interval '6 days', 'ACTIVE', 0, clock_timestamp() - interval '12 hours', clock_timestamp() - interval '1 hour', null, true, clock_timestamp() - interval '1 day'),
   ('fa200000-0000-4000-8000-000000000004', 'fa100004-0000-4000-8000-000000000004', 'reviewed', repeat('4',64), clock_timestamp() + interval '6 days', 'ACTIVE', 0, clock_timestamp() - interval '12 hours', clock_timestamp() - interval '2 hours', clock_timestamp() - interval '1 hour', true, clock_timestamp() - interval '1 day'),
   ('fa200000-0000-4000-8000-000000000005', 'fa100005-0000-4000-8000-000000000005', 'invited', repeat('5',64), clock_timestamp() + interval '6 days', 'CANCELLED', 0, null, null, null, false, clock_timestamp() - interval '1 day'),
   ('fa200000-0000-4000-8000-000000000006', 'fa100006-0000-4000-8000-000000000006', 'in_progress', repeat('6',64), clock_timestamp() + interval '6 days', 'INTERRUPTED', 0, clock_timestamp() - interval '12 hours', null, null, false, clock_timestamp() - interval '1 day'),
   ('fa200000-0000-4000-8000-000000000007', 'fa100007-0000-4000-8000-000000000007', 'invited', repeat('7',64), clock_timestamp() - interval '1 day', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '2 days'),
   ('fa200000-0000-4000-8000-000000000008', 'fa100008-0000-4000-8000-000000000008', 'invited', repeat('8',64), clock_timestamp() - interval '1 day', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '2 days'),
-  ('fa200000-0000-4000-8000-000000000009', 'fa100009-0000-4000-8000-000000000009', 'invited', repeat('9',64), clock_timestamp() + interval '6 days', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '1 day');
+  ('fa200000-0000-4000-8000-000000000009', 'fa100009-0000-4000-8000-000000000009', 'invited', repeat('9',64), clock_timestamp() + interval '3 days', 'ACTIVE', 0, null, null, null, false, clock_timestamp() - interval '1 day');
 
 create temp table email_job_count_before as
 select count(*)::bigint as value from public.quote_request_email_jobs;
@@ -115,7 +115,7 @@ select ok(
   'expired intake is excluded'
 );
 select ok(
-  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_2') where intake_id = 'fa200000-0000-4000-8000-000000000001'),
+  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_2', clock_timestamp() + interval '2 days 12 hours') where intake_id = 'fa200000-0000-4000-8000-000000000001'),
   'REMINDER_1 and REMINDER_2 are independent candidate identities'
 );
 
@@ -149,7 +149,7 @@ select is(
 
 create temp table reminder_two_claim as
 select * from public.claim_intake_reminder_v1(
-  'fa200000-0000-4000-8000-000000000001', 'REMINDER_2'
+  'fa200000-0000-4000-8000-000000000001', 'REMINDER_2', clock_timestamp() + interval '2 days 12 hours'
 );
 select is((select count(*)::integer from reminder_two_claim), 1, 'REMINDER_2 remains independently claimable');
 select is(
@@ -240,13 +240,13 @@ select is(
   'reactivation creates the next reminder cycle'
 );
 select ok(
-  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_1')
+  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_1', clock_timestamp() + interval '3 days 1 minute')
          where intake_id = 'fa200000-0000-4000-8000-000000000008' and access_cycle = 1),
   'old-cycle sent evidence does not block the reactivated cycle'
 );
 create temp table reactivated_claim as
 select * from public.claim_intake_reminder_v1(
-  'fa200000-0000-4000-8000-000000000008', 'REMINDER_1'
+  'fa200000-0000-4000-8000-000000000008', 'REMINDER_1', clock_timestamp() + interval '3 days 1 minute'
 );
 select is((select access_cycle from reactivated_claim), 1::bigint, 'reactivated reminder is claimed in cycle one');
 select is(

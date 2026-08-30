@@ -41,6 +41,16 @@ interface IntakeInvitationEmailData {
   intakeUrl: string;
 }
 
+export interface IntakeReminderEmailData {
+  clientName: string;
+  company: string | null;
+  requestId: string;
+  intakeUrl: string;
+  progressStatus: "invited" | "in_progress";
+  reminderPhase: "REMINDER_1" | "REMINDER_2";
+  expiresAt: string;
+}
+
 interface SubmittedIntakeAdminEmailData {
   output: ApplicationOutput;
   adminUrl: string;
@@ -463,6 +473,120 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
     data.intakeUrl,
     "",
     "Stuur deze persoonlijke link niet door. Wie de link bezit, kan je briefing openen.",
+    "",
+    "Met vriendelijke groet,",
+    "Lorenzo Web Solutions",
+    "",
+    "Professionele websites voor zelfstandigen en kleine ondernemingen",
+    "https://lorenzowebsolutions.be",
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
+export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
+  const isInProgress = data.progressStatus === "in_progress";
+  const isFinalReminder = data.reminderPhase === "REMINDER_2";
+  const subject = isFinalReminder
+    ? "Uw persoonlijke websitebriefing vervalt binnenkort"
+    : "Uw persoonlijke websitebriefing staat nog klaar";
+  const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
+  const expiresAt = new Date(data.expiresAt).toLocaleString("nl-BE", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Europe/Brussels",
+  });
+  const safeName = escapeHtml(data.clientName);
+  const safeCompany = data.company ? escapeHtml(data.company) : null;
+  const safeReference = escapeHtml(requestReference);
+  const safeIntakeUrl = escapeHtml(data.intakeUrl);
+  const safeExpiresAt = escapeHtml(expiresAt);
+  const statusMessage = isInProgress
+    ? "U bent al begonnen. U kunt verdergaan waar u stopte."
+    : "Uw intake staat nog voor u klaar.";
+  const ctaLabel = isInProgress ? "Intake verder invullen" : "Intake invullen";
+  const expiryMessage = isFinalReminder
+    ? `Uw persoonlijke intake blijft beschikbaar tot ${safeExpiresAt}.`
+    : `Uw persoonlijke intake blijft beschikbaar tot ${safeExpiresAt}.`;
+
+  const html = `<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${subject}</title>
+</head>
+<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${isFinalReminder ? "Uw persoonlijke intake vervalt binnenkort." : "Uw persoonlijke intake staat nog klaar."}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+          <tr>
+            <td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;">
+              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 32px 32px;font-size:16px;line-height:1.65;">
+              <h1 style="margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;">${isFinalReminder ? "Uw websitebriefing vervalt binnenkort" : "Uw websitebriefing staat nog klaar"}</h1>
+              <p style="margin:0 0 16px;">Beste ${safeName},</p>
+              <p style="margin:0 0 16px;">${statusMessage}</p>
+              ${safeCompany ? `<p style="margin:0 0 16px;">Deze briefing hoort bij <strong>${safeCompany}</strong>.</p>` : ""}
+              <p style="margin:0 0 24px;">${expiryMessage}</p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <strong style="color:#172033;">Aanvraag ${safeReference}</strong><br>
+                    Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan.
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
+                <tr>
+                  <td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;">
+                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">${ctaLabel}</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> stuur deze e-mail of link niet door. Wie de link bezit, kan uw briefing openen.</p>
+              <p style="margin:0 0 24px;color:#5a6475;font-size:13px;word-break:break-all;">Werkt de knop niet? Open dan:<br><a href="${safeIntakeUrl}" style="color:#12346b;text-decoration:underline;">${safeIntakeUrl}</a></p>
+              <p style="margin:0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;">
+              <strong style="color:#172033;">Lorenzo Web Solutions</strong><br>
+              Professionele websites voor zelfstandigen en kleine ondernemingen<br>
+              <a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    subject,
+    "",
+    `Beste ${data.clientName},`,
+    "",
+    statusMessage,
+    ...(data.company ? [`Deze briefing hoort bij ${data.company}.`] : []),
+    expiryMessage.replaceAll("&amp;", "&"),
+    "",
+    `Aanvraag ${requestReference}`,
+    "Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan.",
+    "",
+    `${ctaLabel}:`,
+    data.intakeUrl,
+    "",
+    "Stuur deze persoonlijke link niet door. Wie de link bezit, kan uw briefing openen.",
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",
