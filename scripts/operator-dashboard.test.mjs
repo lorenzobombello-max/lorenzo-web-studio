@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
+import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createWorkforceCalendarModel, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
@@ -3559,4 +3559,56 @@ test("operator workspace globally fills short desktop and mobile viewports", asy
   assert.match(css, /\.workspace \{[^}]*display:flex; flex:1 0 auto; flex-direction:column;/);
   assert.match(css, /\.workspace > :not\(\[hidden\]\) \{ flex:1 0 auto; \}/);
   assert.doesNotMatch(css, /#(?:dossiers|intake|finance)\s*\{[^}]*min-height/i);
+});
+
+test("calendar foundation exposes accessible read-only controls and no mutation surface", async () => {
+  const [html, css, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css"), read("assets/js/operator-dashboard.js")]);
+  const calendar = html.match(/class="module-shell module-shell--calendar"[\s\S]*?<\/section>/)?.[0] || "";
+  assert.match(calendar, /data-calendar-view="day"/);
+  assert.match(calendar, /data-calendar-view="week"[^>]*aria-pressed="true"/);
+  assert.match(calendar, /data-calendar-view="month"/);
+  assert.match(calendar, /data-calendar-view="year"/);
+  assert.match(calendar, /data-calendar-status="full_day"[^>]*>[\s\S]*?Volledige werkdag/);
+  assert.match(calendar, /id="calendarPrevious"[^>]*aria-label="Vorige periode"/);
+  assert.match(calendar, /id="calendarToday"/);
+  assert.match(calendar, /id="calendarNext"[^>]*aria-label="Volgende periode"/);
+  assert.match(calendar, /Nog geen werknemersgegevens beschikbaar/);
+  assert.match(calendar, /<dt>Uren<\/dt><dd>Niet beschikbaar<\/dd>/);
+  assert.doesNotMatch(calendar, /aanvragen|goedkeuren|melden|upload|boeken|clock|payroll|IBAN/i);
+  assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto/);
+  assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.calendar-heading/);
+  assert.match(script, /initializeWorkforceCalendar\(root, source = \{ employees: \[\], entries: \[\] \}\)/);
+  assert.doesNotMatch(script.match(/function initializeWorkforceCalendar[\s\S]*?\n\}/)?.[0] || "", /fetch\(|\.rpc\(|callCommercialOperator/);
+});
+
+test("calendar model supports day week month year and deterministic navigation", () => {
+  const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
+  assert.equal(model.snapshot().view, "week");
+  assert.equal(model.snapshot().dates.length, 7);
+  assert.equal(model.setView("day").dates.length, 1);
+  assert.equal(model.navigate(-1).anchor, "2026-08-29");
+  assert.equal(model.goToday().anchor, "2026-08-30");
+  assert.equal(model.setView("month").dates.length, 31);
+  assert.equal(model.navigate(1).anchor, "2026-09-01");
+  assert.equal(model.setView("year").dates.length, 12);
+  assert.equal(model.navigate(-1).anchor, "2025-09-01");
+});
+
+test("calendar model preserves empty and scalable employee rows with explicit statuses", () => {
+  const empty = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
+  assert.deepEqual(empty.snapshot().employees, []);
+  const employees = Array.from({ length: 20 }, (_, index)=>({ id: `employee-${index}`, name: `Werknemer ${index + 1}`, role: "Operator", team: "Operations" }));
+  const statuses = ["full_day", "half_day_am", "half_day_pm", "leave", "sick", "other_absence"];
+  const entries = statuses.map((status, index)=>({ employee_id: `employee-${index}`, date: "2026-08-24", status }));
+  const populated = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-24T12:00:00Z"), employees, entries });
+  const snapshot = populated.snapshot();
+  assert.equal(snapshot.employees.length, 20);
+  assert.deepEqual(snapshot.employees.slice(0, statuses.length).map((employee)=>employee.statuses[0].key), statuses);
+  assert.equal(snapshot.employees[19].statuses[0].key, "no_data");
+  for (const status of [...statuses, "worked", "no_data"]) {
+    const presentation = calendarStatusPresentation(status);
+    assert.ok(presentation.label);
+    assert.ok(presentation.icon);
+  }
+  assert.equal(calendarStatusPresentation("unknown").key, "no_data");
 });

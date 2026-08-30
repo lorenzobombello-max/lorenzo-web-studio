@@ -22,6 +22,172 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
 });
 const OPERATOR_MODULES = new Set(["dossiers", "intake", "finance", "workforce", "recruitment", "messages", "calendar"]);
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
+const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
+const CALENDAR_STATUSES = Object.freeze({
+  worked: { label: "Gewerkt / aanwezig", icon: "A" },
+  full_day: { label: "Volledige werkdag", icon: "A" },
+  half_day_am: { label: "Halve dag voormiddag", icon: "1/2" },
+  half_day_pm: { label: "Halve dag namiddag", icon: "1/2" },
+  leave: { label: "Verlof", icon: "V" },
+  sick: { label: "Ziek", icon: "Z" },
+  other_absence: { label: "Andere afwezigheid", icon: "A" },
+  no_data: { label: "Geen planning / geen data", icon: "-" },
+});
+
+function calendarDate(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw new TypeError("INVALID_CALENDAR_DATE");
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12));
+}
+
+function calendarDateKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addCalendarDays(date, days) {
+  const result = calendarDate(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
+function calendarPeriodDates(view, anchor) {
+  if (view === "day") return [anchor];
+  if (view === "week") {
+    const mondayOffset = (anchor.getUTCDay() + 6) % 7;
+    return Array.from({ length: 7 }, (_, index)=>addCalendarDays(anchor, index - mondayOffset));
+  }
+  if (view === "month") {
+    const count = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0)).getUTCDate();
+    return Array.from({ length: count }, (_, index)=>new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), index + 1, 12)));
+  }
+  return Array.from({ length: 12 }, (_, month)=>new Date(Date.UTC(anchor.getUTCFullYear(), month, 1, 12)));
+}
+
+function calendarPeriodLabel(view, dates, anchor) {
+  const day = new Intl.DateTimeFormat("nl-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const short = new Intl.DateTimeFormat("nl-BE", { day: "numeric", month: "short", timeZone: "UTC" });
+  const month = new Intl.DateTimeFormat("nl-BE", { month: "long", year: "numeric", timeZone: "UTC" });
+  if (view === "day") return day.format(anchor);
+  if (view === "week") return `${short.format(dates[0])} - ${short.format(dates.at(-1))} ${dates.at(-1).getUTCFullYear()}`;
+  if (view === "month") return month.format(anchor);
+  return String(anchor.getUTCFullYear());
+}
+
+export function calendarStatusPresentation(status) {
+  const key = Object.hasOwn(CALENDAR_STATUSES, status) ? status : "no_data";
+  return { key, ...CALENDAR_STATUSES[key] };
+}
+
+export function createWorkforceCalendarModel({ today = ()=>new Date(), employees = [], entries = [], initialView = "week" } = {}) {
+  let view = CALENDAR_VIEWS.has(initialView) ? initialView : "week";
+  let anchor = calendarDate(today());
+  const safeEmployees = employees.filter((employee)=>employee && typeof employee.id === "string" && typeof employee.name === "string");
+  const entryByEmployeeDate = new Map(entries.map((entry)=>[`${entry.employee_id}:${entry.date}`, calendarStatusPresentation(entry.status)]));
+
+  function snapshot() {
+    const dates = calendarPeriodDates(view, anchor);
+    return {
+      view,
+      anchor: calendarDateKey(anchor),
+      label: calendarPeriodLabel(view, dates, anchor),
+      dates: dates.map(calendarDateKey),
+      employees: safeEmployees.map((employee)=>({
+        id: employee.id,
+        name: employee.name,
+        role: typeof employee.role === "string" ? employee.role : "",
+        team: typeof employee.team === "string" ? employee.team : "",
+        statuses: dates.map((date)=>entryByEmployeeDate.get(`${employee.id}:${calendarDateKey(date)}`) || calendarStatusPresentation("no_data")),
+      })),
+    };
+  }
+
+  return {
+    snapshot,
+    setView(nextView) {
+      if (CALENDAR_VIEWS.has(nextView)) view = nextView;
+      return snapshot();
+    },
+    navigate(direction) {
+      const amount = Number(direction) < 0 ? -1 : 1;
+      if (view === "day") anchor = addCalendarDays(anchor, amount);
+      else if (view === "week") anchor = addCalendarDays(anchor, amount * 7);
+      else if (view === "month") anchor = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + amount, 1, 12));
+      else anchor = new Date(Date.UTC(anchor.getUTCFullYear() + amount, anchor.getUTCMonth(), 1, 12));
+      return snapshot();
+    },
+    goToday() {
+      anchor = calendarDate(today());
+      return snapshot();
+    },
+  };
+}
+
+export function initializeWorkforceCalendar(root, source = { employees: [], entries: [] }) {
+  const viewport = root.getElementById("calendarViewport");
+  if (!viewport || viewport.dataset.initialized === "true") return;
+  viewport.dataset.initialized = "true";
+  const model = createWorkforceCalendarModel(source);
+  const periodLabel = root.getElementById("calendarPeriodLabel");
+  const employeeCount = root.getElementById("calendarEmployeeCount");
+  const empty = root.getElementById("calendarEmpty");
+  const viewButtons = Array.from(root.querySelectorAll("[data-calendar-view]"));
+
+  function render() {
+    const state = model.snapshot();
+    periodLabel.textContent = state.label;
+    employeeCount.textContent = `${state.employees.length} ${state.employees.length === 1 ? "werknemer" : "werknemers"}`;
+    empty.hidden = state.employees.length > 0;
+    for (const button of viewButtons) button.setAttribute("aria-pressed", String(button.dataset.calendarView === state.view));
+    viewport.replaceChildren();
+    const table = root.createElement("table");
+    const head = root.createElement("thead");
+    const headerRow = root.createElement("tr");
+    const employeeHeader = root.createElement("th");
+    employeeHeader.scope = "col";
+    employeeHeader.textContent = "Werknemer";
+    headerRow.append(employeeHeader);
+    for (const date of state.dates) {
+      const header = root.createElement("th");
+      header.scope = "col";
+      header.textContent = state.view === "year" ? new Intl.DateTimeFormat("nl-BE", { month: "short", timeZone: "UTC" }).format(calendarDate(date)) : new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(calendarDate(date));
+      headerRow.append(header);
+    }
+    head.append(headerRow);
+    table.append(head);
+    const body = root.createElement("tbody");
+    for (const employee of state.employees) {
+      const row = root.createElement("tr");
+      const identity = root.createElement("th");
+      identity.scope = "row";
+      const name = root.createElement("strong");
+      const detail = root.createElement("span");
+      name.textContent = employee.name;
+      detail.textContent = [employee.role, employee.team].filter(Boolean).join(" / ");
+      identity.append(name, detail);
+      row.append(identity);
+      for (const status of employee.statuses) {
+        const cell = root.createElement("td");
+        const marker = root.createElement("span");
+        marker.className = "calendar-status";
+        marker.dataset.calendarStatus = status.key;
+        marker.title = status.label;
+        marker.setAttribute("aria-label", status.label);
+        marker.textContent = status.icon;
+        cell.append(marker);
+        row.append(cell);
+      }
+      body.append(row);
+    }
+    table.append(body);
+    viewport.append(table);
+  }
+
+  for (const button of viewButtons) button.addEventListener("click", ()=>{ model.setView(button.dataset.calendarView); render(); });
+  root.getElementById("calendarPrevious").addEventListener("click", ()=>{ model.navigate(-1); render(); });
+  root.getElementById("calendarNext").addEventListener("click", ()=>{ model.navigate(1); render(); });
+  root.getElementById("calendarToday").addEventListener("click", ()=>{ model.goToday(); render(); });
+  render();
+}
 
 function localDateInputValue(date = new Date()) {
   const year = date.getFullYear();
@@ -2187,6 +2353,7 @@ export async function startOperatorDashboard({
   const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
   moduleNavigation.hidden = currentIdentity.role !== "owner";
   presentOperatorModule(document, activeModule);
+  if (activeModule === "calendar") initializeWorkforceCalendar(document);
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;
