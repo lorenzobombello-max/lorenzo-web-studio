@@ -10,8 +10,8 @@ import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDo
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260830-sdf-upload-workspace";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-recruitment-publication-control";
+const OPERATOR_ASSET_RELEASE = "20260830-sdf-pending-list";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-sdf-upload-workspace";
 
 const recruitmentVacancy = {
   id: "a1800000-0000-4000-8000-000000000081",
@@ -3744,6 +3744,30 @@ test("pending workspace search filters and sorting are deterministic", () => {
   assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "OLDEST" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
   assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "EXPIRY" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
   assert.deepEqual(pendingIntakeWorkspaceItems(items, { sort: "STATUS" }).map((item)=>item.name), ["Lorenzo Bombello", "Lindsay Test"]);
+});
+
+test("pending workspace keeps Website and SDF rows aligned with the backend count", () => {
+  const items = [
+    pendingIntake({ name: "Lorenzo Bombello" }),
+    pendingIntake({
+      intake_id: "a1800000-0000-4000-8000-000000000093",
+      quote_request_id: "a1800000-0000-4000-8000-000000000094",
+      name: "Nathalie Florens",
+    }),
+    pendingIntake({
+      intake_id: "a1800000-0000-4000-8000-000000000095",
+      quote_request_id: "a1800000-0000-4000-8000-000000000096",
+      name: "LWS Synthetic SDF Test",
+      request_kind: "slimme_documentenflow",
+      sdf_package: "start",
+      website_type: "Slimme documentenflow - start",
+    }),
+  ];
+  const visible = pendingIntakeWorkspaceItems(items, { search: "", filter: "ALL", sort: "NEWEST" });
+  assert.equal(visible.length, items.length);
+  assert.deepEqual(new Set(visible.map((item)=>item.name)), new Set(["Lorenzo Bombello", "Nathalie Florens", "LWS Synthetic SDF Test"]));
+  assert.equal(pendingIntakePresentation(items[2]).intake.label, "Uitnodiging verstuurd");
+  assert.equal(pendingIntakePresentation(pendingIntake({ request_kind: "email" })), null);
 });
 
 test("pending retention and delete commands remain authority-minimal", () => {

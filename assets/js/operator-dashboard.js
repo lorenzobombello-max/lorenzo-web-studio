@@ -1774,7 +1774,7 @@ export function pendingIntakePresentation(item) {
       || !UUID.test(String(item.quote_request_id || ""))
       || !UUID.test(String(item.intake_id || ""))
       || typeof item.name !== "string" || !item.name
-      || item.request_kind !== "website"
+      || !["website", "slimme_documentenflow"].includes(item.request_kind)
       || !["invited", "in_progress"].includes(item.intake_status)) return null;
   const lifecycle = {
     intake_id: item.intake_id,
@@ -3710,7 +3710,7 @@ export async function startOperatorDashboard({
       setText("pendingIntakeOrganization", item.organization || "Niet opgegeven");
       setText("pendingIntakeEmail", item.email);
       setText("pendingIntakePhone", item.phone || "Niet opgegeven");
-      setText("pendingIntakeRequestKind", "Website");
+      setText("pendingIntakeRequestKind", item.request_kind === "slimme_documentenflow" ? "Slimme documentenflow" : "Website");
       setText("pendingIntakeWebsiteType", item.website_type);
       setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
       setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));
