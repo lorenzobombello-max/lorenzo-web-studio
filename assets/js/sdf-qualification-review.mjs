@@ -1,9 +1,9 @@
 export const SDF_QUALIFICATION_DISCLAIMER = "De uiteindelijke scope en prijs worden bevestigd in uw offerte.";
 
 const PACKAGE_PRESENTATION = Object.freeze({
-  start: { label: "START", reference: "€2.850 implementatie · €175/maand · excl. btw", scope: "Max. 1 documentflow · 2 documenttypes/templates · 500 pagina's/maand · 3 gebruikers" },
-  groei: { label: "GROEI", reference: "€5.700 implementatie · €299/maand · excl. btw", scope: "Max. 3 documentflows · 5 documenttypes/templates · 2.500 pagina's/maand · 10 gebruikers" },
-  pro: { label: "PRO", reference: "€7.500 implementatie · €449/maand · excl. btw", scope: "Max. 6 documentflows · 10 documenttypes/templates · 7.500 pagina's/maand · 25 gebruikers" },
+  start: { label: "START", reference: "€2.850 implementatie · €175/maand · excl. btw", scope: "Max. 1 documentflow · 2 documenttypes/templates · 500 pagina's/maand · Tot 3 gebruikersaccounts" },
+  groei: { label: "GROEI", reference: "€5.700 implementatie · €299/maand · excl. btw", scope: "Max. 3 documentflows · 5 documenttypes/templates · 2.500 pagina's/maand · Tot 10 gebruikersaccounts" },
+  pro: { label: "PRO", reference: "€7.500 implementatie · €449/maand · excl. btw", scope: "Max. 6 documentflows · 10 documenttypes/templates · 7.500 pagina's/maand · Tot 25 gebruikersaccounts" },
   maatwerk: { label: "MAATWERK", reference: "Prijs na beoordeling en offerte", scope: "Boven PRO-grenzen of uitzonderlijke complexiteit" },
   advice_requested: { label: "ADVIES GEWENST", reference: "Persoonlijke beoordeling", scope: "Lorenzo Web Solutions bepaalt samen met u de passende richting" },
 });
