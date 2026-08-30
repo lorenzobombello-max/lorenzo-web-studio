@@ -1,0 +1,30 @@
+.careers-hero { min-height:680px; }
+.careers-hero::before,.careers-hero::after { display:none; }
+.careers-hero__image,.careers-hero__veil { position:absolute; inset:0; width:100%; height:100%; }
+.careers-hero__image { z-index:-3; object-fit:cover; object-position:center 38%; }
+.careers-hero__veil { z-index:-2; background:linear-gradient(90deg,rgba(7,12,17,.94) 0%,rgba(7,12,17,.78) 46%,rgba(7,12,17,.28) 100%); }
+.careers-hero h1 { max-width:15ch; font-size:4.75rem; line-height:1; letter-spacing:0; }
+.careers-hero .page-hero__lead { max-width:48ch; color:rgba(255,255,255,.86); }
+.careers-intro { min-height:480px; background:linear-gradient(180deg,#f5f7f8,#eef3f4); }
+.vacancy-state { min-height:150px; margin-top:2rem; padding:2rem; display:grid; align-content:center; border:1px solid var(--line); border-left:4px solid var(--signal-deep); border-radius:var(--radius); background:var(--white); }
+.vacancy-state[hidden],.vacancy-groups[hidden] { display:none; }
+.vacancy-state strong { color:var(--ink); font-size:1.2rem; }
+.vacancy-state p { margin-top:.35rem; color:var(--muted); }
+.vacancy-state--error { border-left-color:#a53f3f; }
+.vacancy-groups { margin-top:2.5rem; display:grid; gap:3.5rem; }
+.vacancy-department { display:grid; gap:1.25rem; }
+.vacancy-department__heading { padding-bottom:.75rem; display:flex; align-items:end; justify-content:space-between; gap:1rem; border-bottom:1px solid var(--line); }
+.vacancy-department__heading h2 { color:var(--ink); font-size:2rem; line-height:1.15; letter-spacing:0; }
+.vacancy-department__heading span { color:var(--muted); font-size:.8rem; font-weight:700; text-transform:uppercase; }
+.vacancy-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.vacancy-card { min-width:0; padding:1.5rem; border:1px solid var(--line); border-top:3px solid var(--signal-deep); border-radius:var(--radius); background:var(--white); box-shadow:0 14px 34px rgba(8,20,29,.06); }
+.vacancy-card h3 { color:var(--ink); font-size:1.35rem; line-height:1.2; letter-spacing:0; overflow-wrap:anywhere; }
+.vacancy-card__meta { margin:.65rem 0 1rem; display:flex; flex-wrap:wrap; gap:.4rem .8rem; color:var(--muted); font-size:.84rem; font-weight:700; }
+.vacancy-card > p { color:var(--muted); }
+.vacancy-card details { margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--line); }
+.vacancy-card summary { width:max-content; max-width:100%; color:var(--signal-deep); cursor:pointer; font-weight:800; }
+.vacancy-card__detail { padding-top:1rem; display:grid; gap:1rem; }
+.vacancy-card__detail h4 { margin:0 0 .25rem; color:var(--ink); font-size:.95rem; }
+.vacancy-card__detail p { color:var(--muted); white-space:pre-line; overflow-wrap:anywhere; }
+@media (max-width:860px) { .careers-hero { min-height:600px; } .careers-hero h1 { font-size:3.75rem; } .vacancy-list { grid-template-columns:1fr; } }
+@media (max-width:540px) { .careers-hero { min-height:560px; padding-bottom:64px; } .careers-hero h1 { font-size:3rem; } .careers-hero__veil { background:linear-gradient(90deg,rgba(7,12,17,.92),rgba(7,12,17,.62)); } .vacancy-state { min-height:180px; padding:1.35rem; } .vacancy-department__heading { align-items:flex-start; flex-direction:column; } .vacancy-department__heading h2 { font-size:1.55rem; } .vacancy-card { padding:1.2rem; } }

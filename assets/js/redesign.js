@@ -191,6 +191,13 @@
     requestAnimationFrame(frame);
   }
 
+  if (navigation && !navigation.querySelector("[data-careers-link]")) {
+    const careersLink = document.createElement("a");
+    careersLink.href = "/werken-bij/";
+    careersLink.dataset.careersLink = "";
+    careersLink.textContent = "Werken bij ons";
+    navigation.insertBefore(careersLink, navigation.querySelector(".nav-cta"));
+  }
   if (menuToggle) menuToggle.addEventListener("click", toggleMenu);
   if (navigation) {
     navigation.addEventListener("click", (event) => {

@@ -18,6 +18,7 @@ $requiredFiles = @(
   "robots.txt",
   "sitemap.xml",
   "site.webmanifest",
+  "werken-bij/index.html",
   "operator/index.html",
   "operator/dashboard/index.html",
   "operator/login/index.html",
@@ -53,6 +54,7 @@ $requiredFiles = @(
   "assets/css/operator-auth.css",
   "assets/css/operator-dashboard.css",
   "assets/css/pages.css",
+  "assets/css/recruitment-public.css",
   "assets/css/quotation-acceptance.css",
   "assets/css/redesign.css",
   "assets/css/review-request.css",
@@ -85,6 +87,7 @@ $requiredFiles = @(
   "assets/js/operator-login.mjs",
   "assets/js/operator-shell.mjs",
   "assets/js/pages.js",
+  "assets/js/recruitment-public.js",
   "assets/js/quotation-acceptance.js",
   "assets/js/redesign.js",
   "assets/js/review-request.js",
@@ -209,6 +212,13 @@ $operatorConfig = [ordered]@{
   callbackUrl = "https://lorenzowebsolutions.be/operator/auth/callback/"
 }
 $operatorConfig | ConvertTo-Json | Set-Content -Path $operatorConfigPath -Encoding UTF8
+
+$publicRecruitmentConfigPath = Join-Path $outputPath "assets/config/public-recruitment.json"
+$publicRecruitmentConfig = [ordered]@{
+  supabaseUrl = $OperatorSupabaseUrl
+  publishableKey = $OperatorPublishableKey
+}
+$publicRecruitmentConfig | ConvertTo-Json | Set-Content -Path $publicRecruitmentConfigPath -Encoding UTF8
 
 $allEntries = Get-ChildItem -Path $outputPath -Recurse -Force
 $forbidden = @()

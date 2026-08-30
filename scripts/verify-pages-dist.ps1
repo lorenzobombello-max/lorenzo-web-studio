@@ -256,7 +256,8 @@ $operatorRequiredPaths = @(
   "assets/js/operator-dashboard-guard.mjs",
   "assets/js/operator-dashboard.js",
   "assets/js/operator-shell.mjs",
-  "assets/config/operator-auth.json"
+  "assets/config/operator-auth.json",
+  "assets/config/public-recruitment.json"
 )
 foreach ($relativePath in $operatorRequiredPaths) {
   if (-not (Test-Path (Join-Path $distPath $relativePath) -PathType Leaf)) {
@@ -275,6 +276,20 @@ if (Test-Path $operatorConfigPath -PathType Leaf) {
   }
   if ([string]::IsNullOrWhiteSpace($operatorConfig.publishableKey) -or $operatorConfig.publishableKey -match '(?i)service_role|secret') {
     $operatorAuthMismatches += "Missing or forbidden operator browser key"
+  }
+}
+
+$publicRecruitmentConfigPath = Join-Path $distPath "assets/config/public-recruitment.json"
+if (Test-Path $publicRecruitmentConfigPath -PathType Leaf) {
+  $publicRecruitmentConfig = Get-Content $publicRecruitmentConfigPath -Raw | ConvertFrom-Json
+  if ($publicRecruitmentConfig.supabaseUrl -ne "https://xcsptvntvrizwhskaphr.supabase.co") {
+    $operatorAuthMismatches += "Unexpected public recruitment Supabase URL"
+  }
+  if ([string]::IsNullOrWhiteSpace($publicRecruitmentConfig.publishableKey) -or $publicRecruitmentConfig.publishableKey -match '(?i)service_role|secret') {
+    $operatorAuthMismatches += "Missing or forbidden public recruitment browser key"
+  }
+  if ($publicRecruitmentConfig.PSObject.Properties.Name.Count -ne 2) {
+    $operatorAuthMismatches += "Unexpected public recruitment config fields"
   }
 }
 
