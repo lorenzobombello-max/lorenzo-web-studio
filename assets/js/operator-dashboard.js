@@ -1706,9 +1706,14 @@ export function applicationIdentityPresentation(application) {
     };
   }
   return {
-    visibleReference: `Oudere aanvraag · ${quoteRequestId}`,
+    visibleReference: `Oudere aanvraag · ${shortTechnicalReference(quoteRequestId)}`,
     locator: { quote_request_id: quoteRequestId },
   };
+}
+
+export function shortTechnicalReference(reference) {
+  const value = String(reference || "").trim();
+  return UUID.test(value) ? `#${value.slice(0, 8).toUpperCase()}` : "";
 }
 
 export function canPromoteApplication(detail) {
@@ -2032,8 +2037,8 @@ export function sdfQualificationDetailPresentation(readModel, application, prepa
     answers: hasAnswers ? answers : null,
     status,
     context: {
-      reference: application.application_reference || application.support_reference || readModel.quote_request_id,
-      intakeReference: readModel.intake_id,
+      reference: application.application_reference || application.support_reference || shortTechnicalReference(readModel.quote_request_id),
+      intakeReference: shortTechnicalReference(readModel.intake_id),
       customerName: readModel.name || application.name || "",
       organization: readModel.company || application.company || "",
       email: readModel.email || application.email || "",
@@ -4622,7 +4627,16 @@ export async function startOperatorDashboard({
         applicationDossierActions.hidden = true;
       }
     }
-    setText("detailReference", applicationIdentityPresentation(application).visibleReference);
+    const applicationPresentation = applicationIdentityPresentation(application);
+    const detailReference = document.getElementById("detailReference");
+    setText("detailReference", applicationPresentation.visibleReference);
+    if (!APPLICATION_REFERENCE.test(String(application.application_reference || "")) && UUID.test(String(application.quote_request_id || ""))) {
+      detailReference.title = application.quote_request_id;
+      detailReference.setAttribute("aria-label", `${applicationPresentation.visibleReference}. Volledige technische referentie ${application.quote_request_id}`);
+    } else {
+      detailReference.removeAttribute("title");
+      detailReference.removeAttribute("aria-label");
+    }
     setText("detailInternalReference", application.application_reference || "Niet beschikbaar");
     setText("detailSupportReference", application.support_reference || "Niet beschikbaar");
     setText("detailName", application.name);
@@ -4711,7 +4725,11 @@ export async function startOperatorDashboard({
       setText("sdfQualificationCustomer", output.context.customerName || "Niet beschikbaar");
       setText("sdfQualificationOrganization", output.context.organization || "Niet beschikbaar");
       setText("sdfQualificationEmail", output.context.email || "Niet beschikbaar");
-      setText("sdfQualificationIntakeReference", output.meta.intakeReference);
+      const intakeReference = document.getElementById("sdfQualificationIntakeReference");
+      const intakeDisplayReference = shortTechnicalReference(output.meta.intakeReference);
+      setText("sdfQualificationIntakeReference", intakeDisplayReference);
+      intakeReference.title = output.meta.intakeReference;
+      intakeReference.setAttribute("aria-label", `Kwalificatiereferentie ${intakeDisplayReference}. Volledige technische referentie ${output.meta.intakeReference}`);
       setText("sdfQualificationTaxonomy", output.meta.taxonomyVersion);
       setText("sdfQualificationSubmission", output.meta.submissionSequence);
       if (!output.answers) {
@@ -4793,6 +4811,7 @@ export async function startOperatorDashboard({
       const reference = document.createElement("small");
       const applicationPresentation = applicationIdentityPresentation(application);
       reference.textContent = `${applicationPresentation.visibleReference} · ${formatDate(application.dossier_date)}`;
+      if (!APPLICATION_REFERENCE.test(String(application.application_reference || "")) && UUID.test(String(application.quote_request_id || ""))) reference.title = application.quote_request_id;
       identity.append(name, reference);
       const statuses = document.createElement("span");
       statuses.className = "application-list__statuses";

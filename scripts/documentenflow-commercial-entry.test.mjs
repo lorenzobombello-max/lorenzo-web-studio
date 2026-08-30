@@ -33,11 +33,25 @@ test("package interest selects and submits canonical SDF package identity", () =
 });
 
 test("Documentenflow packages contain the exact approved prices", () => {
-  for (const value of ["€ 2.850", "€ 175", "€ 5.700", "€ 299", "vanaf € 7.500", "vanaf € 449"]) {
+  for (const value of ["€ 2.850", "€ 175", "€ 5.700", "€ 299", "€ 7.500", "€ 449"]) {
     assert.equal(documentenflow.split(value).length - 1, 1, `${value} appears exactly once`);
   }
-  assert.equal(documentenflow.split("excl. btw").length - 1, 6);
+  assert.equal(documentenflow.split("excl. btw").length - 1, 7);
   assert.equal(documentenflow.split("/ maand").length - 1, 3);
+});
+
+test("Documentenflow package cards show exact public capacities without classification logic", () => {
+  assert.match(documentenflow, /slimme-documentenflow\.css\?v=20260831-packages/);
+  for (const value of [
+    "1 documentflow", "2 documenttypes/templates", "500 pagina's/maand", "3 gebruikers",
+    "3 documentflows", "5 documenttypes/templates", "2.500 pagina's/maand", "10 gebruikers",
+    "6 documentflows", "10 documenttypes/templates", "7.500 pagina's/maand", "25 gebruikers",
+    "Boven PRO-grenzen", "Uitzonderlijke complexiteit", "Na beoordeling", "en offerte",
+  ]) assert.match(documentenflow, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(documentenflow, /Niet zeker welk pakket past\?/);
+  assert.match(documentenflow, />Advies gewenst </);
+  assert.match(documentenflow, /De uiteindelijke scope en prijs worden bevestigd in jouw offerte/);
+  assert.doesNotMatch(documentenflow, /budget.?guard|automatisch pakket kiezen|packageclassificatie/i);
 });
 
 test("every package CTA enters the Documentenflow request route", () => {

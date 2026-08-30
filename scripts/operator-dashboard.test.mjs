@@ -7,11 +7,12 @@ import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionContro
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
+import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260831-sdf-qualification-detail";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-sdf-upload-workspace";
+const OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-qualification-detail";
 
 const recruitmentVacancy = {
   id: "a1800000-0000-4000-8000-000000000081",
@@ -1036,15 +1037,25 @@ test("application identity presents the human reference and routes with the exis
 test("application identity preserves the technical UUID fallback for legacy records", () => {
   const quoteRequestId = "a1100000-0000-4000-8000-000000000003";
   assert.deepEqual(applicationIdentityPresentation({ application_reference: null, quote_request_id: quoteRequestId }), {
-    visibleReference: `Oudere aanvraag · ${quoteRequestId}`,
+    visibleReference: "Oudere aanvraag · #A1100000",
     locator: { quote_request_id: quoteRequestId },
   });
   assert.deepEqual(applicationIdentityPresentation({ application_reference: "invalid", quote_request_id: quoteRequestId }).locator, { quote_request_id: quoteRequestId });
 });
 
+test("technical UUID references use a short uppercase display without changing the source value", () => {
+  const requestId = "46efc6dd-4414-448e-9e6d-a171a7e391ec";
+  const intakeId = "3e2d0571-ddfd-476a-a056-a8b75d1440dc";
+  assert.equal(shortTechnicalReference(requestId), "#46EFC6DD");
+  assert.equal(shortTechnicalReference(intakeId), "#3E2D0571");
+  assert.equal(shortTechnicalReference("invalid"), "");
+  assert.equal(requestId, "46efc6dd-4414-448e-9e6d-a171a7e391ec");
+  assert.equal(intakeId, "3e2d0571-ddfd-476a-a056-a8b75d1440dc");
+});
+
 test("application list and detail use the same human-readable identity presentation", async () => {
   const script = await read("assets/js/operator-dashboard.js");
-  assert.match(script, /setText\("detailReference", applicationIdentityPresentation\(application\)\.visibleReference\)/);
+  assert.match(script, /const applicationPresentation = applicationIdentityPresentation\(application\);[\s\S]*setText\("detailReference", applicationPresentation\.visibleReference\)/);
   assert.match(script, /reference\.textContent = `\$\{applicationPresentation\.visibleReference\}/);
   assert.match(script, /const locator = applicationPresentation\.locator/);
 });
