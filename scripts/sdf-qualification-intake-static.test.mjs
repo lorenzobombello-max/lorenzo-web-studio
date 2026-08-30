@@ -1,9 +1,31 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { applySdfQualificationView, sdfQualificationInitialView } from "../assets/js/sdf-qualification-state.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+
+test("draft restore does not show submitted success state", () => {
+  for (const status of ["invited", "in_progress", "changes_requested"]) {
+    const nodes = {
+      loading: { hidden: true }, unavailable: { hidden: true },
+      workspace: { hidden: true }, success: { hidden: false },
+    };
+    const view = sdfQualificationInitialView(status);
+    applySdfQualificationView(view, nodes);
+    assert.equal(view, "workspace");
+    assert.equal(nodes.workspace.hidden, false);
+    assert.equal(nodes.success.hidden, true);
+  }
+});
+
+test("only canonical submitted lifecycle statuses show success", () => {
+  for (const status of ["submitted", "under_review", "qualification_complete", "closed"]) {
+    assert.equal(sdfQualificationInitialView(status), "success");
+  }
+  assert.equal(sdfQualificationInitialView("unexpected"), "unavailable");
+});
 
 test("SDF qualification intake preserves its three-step form contract", async () => {
   const html = await read("pages/sdf-qualification-intake.html");
@@ -73,11 +95,17 @@ test("SDF progress presentation mirrors the active three-step structure", async 
 });
 
 test("SDF qualification intake preserves capability and API contracts", async () => {
-  const script = await read("assets/js/sdf-qualification-intake.js");
+  const [html, script] = await Promise.all([
+    read("pages/sdf-qualification-intake.html"),
+    read("assets/js/sdf-qualification-intake.js"),
+  ]);
 
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260831-4/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
+  assert.match(script, /sdfQualificationInitialView\(intake\.status\)/);
+  assert.match(script, /applySdfQualificationView\("workspace",stateViews\)/);
 
   for (const key of [
     "documentPurpose",

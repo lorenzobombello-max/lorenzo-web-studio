@@ -83,6 +83,7 @@ $requiredFiles = @(
   "assets/js/intake.js",
   "assets/js/sdf-qualification-intake.js",
   "assets/js/sdf-qualification-review.mjs",
+  "assets/js/sdf-qualification-state.mjs",
   "assets/js/sdf-qualification-stepper.mjs",
   "assets/js/operator-auth-client.mjs",
   "assets/js/operator-auth-core.mjs",
