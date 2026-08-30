@@ -42,6 +42,7 @@ const APPLICATION_ACTIONS = new Set([
   "inspect_sdf_qualification_intake",
   "transition_sdf_qualification_intake",
   "authorize_sdf_quotation_preparation_v1",
+  "accept_sdf_for_active_work_v1",
   "count_pending_intakes",
   "archive_pending_intake",
   "restore_pending_intake",
@@ -739,7 +740,7 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id"])
     : action === "transition_sdf_qualification_intake"
     ? new Set(["action", "quote_request_id", "transition", "reason", "idempotency_key"])
-    : action === "authorize_sdf_quotation_preparation_v1"
+    : action === "authorize_sdf_quotation_preparation_v1" || action === "accept_sdf_for_active_work_v1"
     ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "list_pending_intakes"
     ? new Set(["action", "retention_state"])
@@ -988,7 +989,7 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, quote_request_id: quoteRequestId };
   }
-  if (action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake" || action === "authorize_sdf_quotation_preparation_v1") {
+  if (action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake" || action === "authorize_sdf_quotation_preparation_v1" || action === "accept_sdf_for_active_work_v1") {
     const quoteRequestId = String(value.quote_request_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
     if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");

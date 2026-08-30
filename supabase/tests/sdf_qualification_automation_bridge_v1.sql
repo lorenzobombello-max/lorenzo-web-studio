@@ -3,13 +3,15 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(97);
+select plan(125);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
 select has_table('public','sdf_qualification_intake_events','immutable SDF lifecycle events exist');
 select has_table('public','sdf_quotation_preparation_authorities','quotation preparation authority exists');
 select has_function('public','authorize_sdf_quotation_preparation_v1',array['uuid','uuid'],'quotation bridge command exists');
+select has_table('public','sdf_owner_work_acceptance_authorities','canonical Owner work-acceptance authority exists');
+select has_function('public','accept_sdf_for_active_work_v1',array['uuid','uuid'],'canonical Owner work-acceptance command exists');
 
 insert into auth.users(id,email) values
   ('bd100000-0000-4000-8000-000000000001','sdf-owner@example.test'),
@@ -56,6 +58,11 @@ select ok(
 select ok(
   not has_function_privilege('authenticated','public.list_operator_pending_sdf_intakes_v1(uuid)','execute'),
   'authenticated callers use the guarded operator command route instead of direct projection access'
+);
+select ok(
+  has_function_privilege('authenticated','public.accept_sdf_for_active_work_v1(uuid,uuid)','execute')
+  and not has_function_privilege('anon','public.accept_sdf_for_active_work_v1(uuid,uuid)','execute'),
+  'only authenticated callers can enter the guarded SDF work-acceptance RPC'
 );
 
 select lives_ok(
@@ -143,6 +150,11 @@ select is((select result->>'replayed' from allow_result),'false','Owner can expl
 select is((select count(*)::integer from public.sdf_qualification_intakes),1,'Owner allow creates exactly one intake');
 select is((select count(*)::integer from public.sdf_qualification_intake_email_jobs where kind='invitation'),1,'Owner allow creates exactly one invitation job');
 select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'invited SDF intake is visible in pending projection');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'invited SDF intake is not active');
+select throws_ok(
+  $$select public.accept_sdf_for_active_work_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000014')$$,
+  '55000','SDF_WORK_ACCEPTANCE_NOT_ELIGIBLE','invited SDF intake cannot be accepted into active work'
+);
 select is(
   public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000001')->'items'->0->>'request_kind',
   'slimme_documentenflow',
@@ -289,17 +301,26 @@ select lives_ok(
   )$$,
   'customer can save a valid C4A draft'
 );
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'in-progress SDF intake remains pending');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'in-progress SDF intake is not active');
+select throws_ok(
+  $$select public.accept_sdf_for_active_work_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000015')$$,
+  '55000','SDF_WORK_ACCEPTANCE_NOT_ELIGIBLE','in-progress SDF intake cannot be accepted into active work'
+);
 select lives_ok(
   $$select public.submit_sdf_qualification_intake_v1(repeat('b',64),1,true,'SDF_QUALIFICATION_CONFIRMATION_NL_BE_v1',encode(extensions.digest(convert_to('Ik bevestig dat de ingevulde informatie naar best vermogen volledig en correct is. Ik begrijp dat deze kwalificatie geen offerte, prijsbevestiging of aanvaarding van een opdracht vormt.','UTF8'),'sha256'),'hex'),'bd400000-0000-4000-8000-000000000002')$$,
   'customer can submit a complete C4A payload'
 );
 select is((select status::text from public.sdf_qualification_intakes),'submitted','submit enters active review projection boundary');
-select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),0,'submitted SDF intake leaves pending projection');
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'submitted SDF intake remains pending before Owner work acceptance');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'submitted SDF intake is not active before Owner work acceptance');
 
 select lives_ok(
   $$select public.transition_sdf_qualification_intake_v1('bd200000-0000-4000-8000-000000000001','begin_review',null,'bd400000-0000-4000-8000-000000000003')$$,
   'Owner begins review'
 );
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'under-review SDF intake remains pending before work acceptance');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'under-review SDF intake is not active before work acceptance');
 select throws_ok(
   $$select public.authorize_sdf_quotation_preparation_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000004')$$,
   '55000','SDF_QUALIFICATION_COMPLETE_REQUIRED','quotation preparation is blocked before completion'
@@ -312,6 +333,8 @@ select lives_ok(
   'Owner can request more information from the existing capability escrow'
 );
 select is((select status::text from public.sdf_qualification_intakes),'changes_requested','more-info blocks quotation eligibility');
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'changes-requested SDF intake remains pending before work acceptance');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'changes-requested SDF intake is not active before work acceptance');
 select is((select count(*)::integer from public.sdf_qualification_intake_email_jobs where kind='more_information'),1,'more-info mail job is idempotently recorded');
 select is(
   (select encrypted_capability from public.sdf_qualification_intake_email_jobs where kind='more_information'),
@@ -333,6 +356,7 @@ select lives_ok(
   $$select public.submit_sdf_qualification_intake_v1(repeat('b',64),2,true,'SDF_QUALIFICATION_CONFIRMATION_NL_BE_v1',encode(extensions.digest(convert_to('Ik bevestig dat de ingevulde informatie naar best vermogen volledig en correct is. Ik begrijp dat deze kwalificatie geen offerte, prijsbevestiging of aanvaarding van een opdracht vormt.','UTF8'),'sha256'),'hex'),'bd400000-0000-4000-8000-000000000006')$$,
   'customer can resubmit'
 );
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'resubmitted SDF intake remains pending before work acceptance');
 select lives_ok(
   $$select public.transition_sdf_qualification_intake_v1('bd200000-0000-4000-8000-000000000001','begin_review',null,'bd400000-0000-4000-8000-000000000007')$$,
   'Owner reviews the resubmission'
@@ -348,6 +372,8 @@ select lives_ok(
   $$select public.transition_sdf_qualification_intake_v1('bd200000-0000-4000-8000-000000000001','mark_qualification_complete',null,'bd400000-0000-4000-8000-000000000008')$$,
   'Owner marks qualification complete'
 );
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'qualification-complete SDF remains pending before work acceptance');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'qualification completion alone does not activate SDF work');
 select lives_ok(
   $$select public.authorize_sdf_quotation_preparation_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000009')$$,
   'Owner authorizes quotation preparation'
@@ -365,6 +391,39 @@ select throws_ok(
 );
 select is((select count(*)::integer from public.sdf_quotation_documents),0,'bridge creates no quotation document or send side effect');
 select is((select count(*)::integer from public.sdf_projects),0,'bridge creates no project side effect');
+
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'quotation preparation alone does not remove SDF from pending');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'quotation preparation alone does not activate SDF work');
+select set_config('request.jwt.claim.sub','bd100000-0000-4000-8000-000000000002',true);
+select throws_ok(
+  $$select public.accept_sdf_for_active_work_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000012')$$,
+  '42501','OWNER_REQUIRED','admin cannot accept SDF into active work'
+);
+select set_config('request.jwt.claim.sub','bd100000-0000-4000-8000-000000000001',true);
+create temporary table work_acceptance_result as
+select public.accept_sdf_for_active_work_v1(
+  'bd200000-0000-4000-8000-000000000001',
+  'bd400000-0000-4000-8000-000000000012'
+) as result;
+select is((select result->>'replayed' from work_acceptance_result),'false','Owner explicitly accepts SDF into active work');
+select is((select count(*)::integer from public.sdf_owner_work_acceptance_authorities),1,'work acceptance creates exactly one immutable authority');
+select is((select accepted_intake_status::text from public.sdf_owner_work_acceptance_authorities),'qualification_complete','authority snapshots the accepted qualification status');
+select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),0,'accepted SDF leaves pending');
+select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),1,'accepted SDF enters active exactly once');
+select is(
+  (public.accept_sdf_for_active_work_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000012')->>'replayed')::boolean,
+  true,
+  'exact work-acceptance replay is idempotent'
+);
+select throws_ok(
+  $$select public.accept_sdf_for_active_work_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000013')$$,
+  '55000','SDF_WORK_ALREADY_ACCEPTED','second work-acceptance command fails closed'
+);
+select throws_ok(
+  $$update public.sdf_owner_work_acceptance_authorities set accepted_at=clock_timestamp()$$,
+  '55000','SDF_QUALIFICATION_HISTORY_IMMUTABLE','work-acceptance authority cannot be updated'
+);
+select is((select count(*)::integer from public.sdf_projects),0,'work acceptance creates no project side effect');
 
 select * from finish();
 rollback;
