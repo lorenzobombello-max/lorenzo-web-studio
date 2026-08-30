@@ -61,25 +61,39 @@ export async function loadPublicVacancies(fetchImpl = fetch) {
   return publicVacanciesResponse(await response.json());
 }
 
-export function createPublicRecruitmentController({ loadState, load, onChange = ()=>{} }) {
+export function redirectUnavailablePublicRecruitmentRoute(location) {
+  if (location?.pathname !== "/werken-bij/" && location?.pathname !== "/werken-bij") return false;
+  location.replace("/");
+  return true;
+}
+
+export function createPublicRecruitmentController({ loadState, load, redirect = ()=>{}, onChange = ()=>{} }) {
   let state = { status: "idle", groups: [] };
   const update = (next)=>{ state = next; onChange(state); };
   return {
     get state() { return state; },
     async start() {
       update({ status: "checking", groups: [] });
+      let publication;
       try {
-        const publication = await loadState();
-        if (!publication.enabled) {
-          update({ status: "inactive", groups: [] });
-          return true;
-        }
-        update({ status: "loading", groups: [] });
+        publication = await loadState();
+      } catch {
+        update({ status: "redirecting", groups: [] });
+        redirect();
+        return false;
+      }
+      if (!publication.enabled) {
+        update({ status: "redirecting", groups: [] });
+        redirect();
+        return false;
+      }
+      update({ status: "loading", groups: [] });
+      try {
         const groups = groupPublicVacancies(await load());
         update({ status: groups.length ? "ready" : "empty", groups });
         return true;
       } catch {
-        update({ status: state.status === "loading" ? "error" : "unavailable", groups: [] });
+        update({ status: "error", groups: [] });
         return false;
       }
     },
@@ -87,23 +101,12 @@ export function createPublicRecruitmentController({ loadState, load, onChange = 
 }
 
 export function renderPublicRecruitment(root, state) {
-  const inactive = root.getElementById("careersInactive");
   const published = root.getElementById("careersPublishedContent");
-  const inactiveTitle = root.getElementById("careersInactiveTitle");
-  const inactiveDescription = root.getElementById("careersInactiveDescription");
   const loading = root.getElementById("vacancyLoading");
   const empty = root.getElementById("vacancyEmpty");
   const error = root.getElementById("vacancyError");
   const groups = root.getElementById("vacancyGroups");
-  const publicationClosed = ["checking", "inactive", "unavailable"].includes(state.status);
-  inactive.hidden = !publicationClosed;
-  published.hidden = publicationClosed;
-  inactiveTitle.textContent = state.status === "inactive"
-    ? "Rekrutering is momenteel niet actief."
-    : "Rekrutering is momenteel niet beschikbaar.";
-  inactiveDescription.textContent = state.status === "inactive"
-    ? "Op dit moment zijn er geen openstaande aanwervingen bij Lorenzo Web Solutions."
-    : "Probeer het later opnieuw.";
+  published.hidden = ["checking", "redirecting"].includes(state.status);
   loading.hidden = state.status !== "loading";
   empty.hidden = state.status !== "empty";
   error.hidden = state.status !== "error";
@@ -160,6 +163,7 @@ if (typeof document !== "undefined" && document.getElementById("vacancyGroups"))
   controller = createPublicRecruitmentController({
     loadState: ()=>loadSharedPublicRecruitmentPublicationState(),
     load: ()=>loadPublicVacancies(),
+    redirect: ()=>redirectUnavailablePublicRecruitmentRoute(window.location),
     onChange: (state)=>renderPublicRecruitment(document, state),
   });
   void controller.start();

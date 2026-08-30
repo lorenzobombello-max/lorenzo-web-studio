@@ -88,6 +88,7 @@ $requiredFiles = @(
   "assets/js/operator-shell.mjs",
   "assets/js/pages.js",
   "assets/js/recruitment-public.js",
+  "assets/js/recruitment-publication.js",
   "assets/js/quotation-acceptance.js",
   "assets/js/redesign.js",
   "assets/js/review-request.js",

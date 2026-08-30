@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createPublicRecruitmentController, groupPublicVacancies, loadPublicVacancies, publicVacanciesResponse } from "../assets/js/recruitment-public.js";
+import { createPublicRecruitmentController, groupPublicVacancies, loadPublicVacancies, publicVacanciesResponse, redirectUnavailablePublicRecruitmentRoute } from "../assets/js/recruitment-public.js";
 import { loadPublicRecruitmentPublicationState, publicRecruitmentLinkPlan, publicRecruitmentPublicationResponse } from "../assets/js/recruitment-publication.js";
 
 const root = new URL("../", import.meta.url);
@@ -21,15 +21,15 @@ const vacancy = (overrides = {})=>({
 
 test("public careers route has the required shell SEO heading and empty states", async ()=>{
   const [html, sitemap] = await Promise.all([read("werken-bij/index.html"), read("sitemap.xml")]);
+  assert.match(html, /<body>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/lorenzowebsolutions\.be\/werken-bij\/"/);
   assert.match(html, /<h1 id="careers-title">Werken bij Lorenzo Web Solutions<\/h1>/);
   assert.match(html, /Lorenzo Web Solutions zoekt mensen per specialisatie\. Niet iedereen hoeft alles te kunnen\./);
   assert.match(html, /Momenteel zijn er geen openstaande vacatures\./);
   assert.match(html, /Nieuwe vacatures verschijnen hier zodra er een functie beschikbaar is\./);
   assert.match(html, /Vacatures konden momenteel niet worden geladen\./);
-  assert.match(html, /id="careersInactive"/);
-  assert.match(html, /Rekrutering is momenteel niet beschikbaar\./);
   assert.match(html, /id="careersPublishedContent" hidden/);
+  assert.doesNotMatch(html, /careersInactive|Rekrutering is momenteel (?:niet actief|niet beschikbaar)/);
   assert.doesNotMatch(html, /JobPosting|Solliciteer spontaan|type="file"|<form\b|testkamer/i);
   assert.match(sitemap, /<loc>https:\/\/lorenzowebsolutions\.be\/werken-bij\/<\/loc>/);
 });
@@ -46,6 +46,11 @@ test("public navigation uses one careers label across both site script owners", 
   assert.match(publication, /Werken bij ons/);
   assert.deepEqual(publicRecruitmentLinkPlan(true), { header: true, footer: true });
   assert.deepEqual(publicRecruitmentLinkPlan(false), { header: false, footer: false });
+});
+
+test("Pages includes the publication authority module", async ()=>{
+  const prepare = await read("scripts/prepare-pages-dist.ps1");
+  assert.equal((prepare.match(/"assets\/js\/recruitment-publication\.js"/g) || []).length, 1);
 });
 
 test("public publication loader exposes only enabled through the anon RPC", async ()=>{
@@ -104,29 +109,41 @@ test("public loader calls only the anon public-list RPC", async ()=>{
 test("controller covers empty grouped and safe error states", async ()=>{
   const states = [];
   const enabledState = async ()=>({ enabled: true });
-  const empty = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>[], onChange: (state)=>states.push(state) });
+  let vacancyCalls = 0;
+  let redirects = 0;
+  const empty = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>{ vacancyCalls += 1; return []; }, redirect: ()=>{ redirects += 1; }, onChange: (state)=>states.push(state) });
   assert.equal(await empty.start(), true);
   assert.equal(empty.state.status, "empty");
+  assert.equal(vacancyCalls, 1);
+  assert.equal(redirects, 0);
 
   const populated = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>[vacancy(), vacancy({ title: "Backend developer", slug: "backend-developer" }), vacancy({ title: "Security engineer", slug: "security-engineer", department: "Security" })] });
   assert.equal(await populated.start(), true);
   assert.deepEqual(populated.state.groups.map((group)=>[group.department, group.items.length]), [["Development", 2], ["Security", 1]]);
 
-  let vacancyCalls = 0;
-  const inactive = createPublicRecruitmentController({ loadState: async ()=>({ enabled: false }), load: async ()=>{ vacancyCalls += 1; return []; } });
-  assert.equal(await inactive.start(), true);
-  assert.equal(inactive.state.status, "inactive");
-  assert.equal(vacancyCalls, 0);
+  const inactive = createPublicRecruitmentController({ loadState: async ()=>({ enabled: false }), load: async ()=>{ vacancyCalls += 1; return []; }, redirect: ()=>{ redirects += 1; } });
+  assert.equal(await inactive.start(), false);
+  assert.equal(inactive.state.status, "redirecting");
+  assert.equal(vacancyCalls, 1);
+  assert.equal(redirects, 1);
 
-  const unavailable = createPublicRecruitmentController({ loadState: async ()=>{ throw new Error("private database detail"); }, load: async ()=>{ vacancyCalls += 1; return []; } });
+  const unavailable = createPublicRecruitmentController({ loadState: async ()=>{ throw new Error("private database detail"); }, load: async ()=>{ vacancyCalls += 1; return []; }, redirect: ()=>{ redirects += 1; } });
   assert.equal(await unavailable.start(), false);
-  assert.deepEqual(unavailable.state, { status: "unavailable", groups: [] });
-  assert.equal(vacancyCalls, 0);
+  assert.deepEqual(unavailable.state, { status: "redirecting", groups: [] });
+  assert.equal(vacancyCalls, 1);
+  assert.equal(redirects, 2);
 
   const failed = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>{ throw new Error("private database detail"); } });
   assert.equal(await failed.start(), false);
   assert.deepEqual(failed.state, { status: "error", groups: [] });
   assert.deepEqual(states.map((state)=>state.status), ["checking", "loading", "empty"]);
+});
+
+test("disabled careers route redirects home without affecting other public pages", ()=>{
+  const replacements = [];
+  assert.equal(redirectUnavailablePublicRecruitmentRoute({ pathname: "/werken-bij/", replace: (path)=>replacements.push(path) }), true);
+  assert.equal(redirectUnavailablePublicRecruitmentRoute({ pathname: "/pages/about.html", replace: (path)=>replacements.push(path) }), false);
+  assert.deepEqual(replacements, ["/"]);
 });
 
 test("renderer is textContent-only and responsive CSS has desktop and mobile grids", async ()=>{
@@ -137,4 +154,5 @@ test("renderer is textContent-only and responsive CSS has desktop and mobile gri
   assert.match(css, /\.vacancy-list \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /@media \(max-width:860px\)[\s\S]*\.vacancy-list \{ grid-template-columns:1fr; \}/);
   assert.match(css, /overflow-wrap:anywhere/);
+  assert.doesNotMatch(css, /^\.preview-header\s*\{/m);
 });
