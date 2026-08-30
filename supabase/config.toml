@@ -40,6 +40,9 @@ verify_jwt = false
 [functions.intake-reminder-worker]
 verify_jwt = false
 
+[functions.sdf-inbound-email]
+verify_jwt = false
+
 [functions.supplier-document-upload]
 verify_jwt = true
 
