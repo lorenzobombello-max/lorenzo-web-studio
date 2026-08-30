@@ -18,7 +18,6 @@ select has_function('public', 'create_recruitment_vacancy_v1', array['text', 'te
 select has_function('public', 'update_recruitment_vacancy_v1', array['uuid', 'text', 'text', 'text', 'text', 'text', 'text', 'text']);
 select has_function('public', 'set_recruitment_vacancy_status_v1', array['uuid', 'text']);
 select has_function('public', 'list_public_recruitment_vacancies_v1', array[]::text[]);
-select hasnt_table('public', 'recruitment_applications', 'applicant authority is not created');
 select ok(
   (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.recruitment_vacancies'::regclass),
   'vacancy authority enables and forces RLS'

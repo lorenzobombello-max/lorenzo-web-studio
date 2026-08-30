@@ -34,6 +34,9 @@ verify_jwt = false
 [functions.customer-request-upload]
 verify_jwt = false
 
+[functions.recruitment-application-submit]
+verify_jwt = false
+
 [functions.intake-reminder-worker]
 verify_jwt = false
 
