@@ -53,6 +53,7 @@ const APPLICATION_ACTIONS = new Set([
   "transition_customer_request",
   "create_customer_request_upload_link",
   "revoke_customer_request_upload_link",
+  "promote_customer_request_upload_to_document_inbox",
   "assign_dossier",
   "get_project_dossier",
   "promote_accepted_application",
@@ -260,6 +261,10 @@ export type CustomerRequestUploadOperatorActionInput =
     reason: string;
     idempotency_key: string;
   }>;
+export type CustomerRequestUploadInboxPromotionActionInput = Readonly<{
+  action: "promote_customer_request_upload_to_document_inbox";
+  uploaded_file_id: string;
+}>;
 export type InternalE2EAcceptedFileCleanupActionInput = Readonly<{
   action: "cleanup_internal_e2e_accepted_file";
   run_id: string;
@@ -865,6 +870,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "request_id", "idempotency_key"])
     : action === "revoke_customer_request_upload_link"
     ? new Set(["action", "upload_request_id", "reason", "idempotency_key"])
+    : action === "promote_customer_request_upload_to_document_inbox"
+    ? new Set(["action", "uploaded_file_id"])
     : action === "get_dossier_assignment"
     ? new Set(["action", "dossier_reference"])
     : action === "assign_dossier"
@@ -1207,6 +1214,13 @@ function validateApplicationAction(value: UnvalidatedInput) {
       idempotency_key: idempotencyKey,
     };
   }
+  if (action === "promote_customer_request_upload_to_document_inbox") {
+    const uploadedFileId = String(value.uploaded_file_id || "");
+    if (!UUID.test(uploadedFileId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, uploaded_file_id: uploadedFileId };
+  }
   if (action === "get_dossier_assignment") {
     return {
       action,
@@ -1540,6 +1554,7 @@ function mapDatabaseError(error: unknown) {
   if (code === "APPROVAL_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
   if (code === "APPLICATION_NOT_FOUND") return response(404, code);
+  if (code === "CUSTOMER_REQUEST_UPLOAD_NOT_FOUND") return response(404, code);
   if (code === "APPROVAL_NOT_FOUND") {
     return response(404, "QUOTATION_APPROVAL_NOT_FOUND");
   }
@@ -1672,6 +1687,14 @@ function mapDatabaseError(error: unknown) {
       "TRASHED_DOSSIER_BLOCKER_CREATION_DENIED",
       "INVALID_CUSTOMER_REQUEST_TRANSITION",
       "CUSTOMER_REQUEST_TERMINAL",
+      "CUSTOMER_REQUEST_UPLOAD_NOT_ACCEPTED",
+      "CUSTOMER_REQUEST_UPLOAD_SOURCE_INVALID",
+      "CUSTOMER_REQUEST_UPLOAD_SOURCE_OBJECT_NOT_FOUND",
+      "CUSTOMER_REQUEST_UPLOAD_SOURCE_CONTENT_MISMATCH",
+      "CUSTOMER_REQUEST_UPLOAD_PROMOTION_CONFLICT",
+      "DOCUMENT_INBOX_PROMOTION_OBJECT_NOT_FOUND",
+      "DOCUMENT_INBOX_PROMOTION_OBJECT_MISMATCH",
+      "DOCUMENT_INBOX_BINARY_IDENTITY_MISMATCH",
       "QUOTATION_INTAKE_NOT_AVAILABLE",
       "PRICING_INTEGRITY_INVALID",
       "QUOTATION_TERMS_NOT_APPROVED",
@@ -1683,6 +1706,9 @@ function mapDatabaseError(error: unknown) {
       "QUOTATION_BUSINESS_PAYLOAD_INVALID",
     ].includes(code)
   ) return response(409, "COMMAND_REJECTED");
+  if (code === "CUSTOMER_REQUEST_UPLOAD_STORAGE_BRIDGE_FAILED") {
+    return response(502, "STORAGE_OPERATION_FAILED");
+  }
   if (code.startsWith("LEGACY_TEST_CLEANUP_")) {
     return response(409, "COMMAND_REJECTED");
   }

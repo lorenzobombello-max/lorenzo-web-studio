@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   type CustomerRequestActionInput,
+  type CustomerRequestUploadInboxPromotionActionInput,
   type CustomerRequestUploadOperatorActionInput,
   type DossierDocumentActionInput,
   executeAssignmentOperatorRosterTransport,
@@ -138,6 +139,25 @@ type DossierDocumentServiceClient =
             }
           >
         >;
+      }>;
+    }>;
+  }>;
+type CustomerRequestUploadPromotionServiceClient =
+  & DossierAssignmentClient
+  & Readonly<{
+    storage: Readonly<{
+      from(bucket: string): Readonly<{
+        download(path: string): PromiseLike<
+          Readonly<{
+            data: Blob | null;
+            error: unknown;
+          }>
+        >;
+        upload(
+          path: string,
+          bytes: Uint8Array,
+          options: Readonly<{ contentType: string; upsert: boolean }>,
+        ): PromiseLike<Readonly<{ data: unknown; error: unknown }>>;
       }>;
     }>;
   }>;
@@ -639,6 +659,148 @@ export async function executeCallerJwtCustomerRequestUploadAction(
   };
 }
 
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
+  return [...new Uint8Array(digest)].map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
+
+function customerRequestUploadPromotionResult(
+  value: unknown,
+  uploadedFileId: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_PROMOTION_RESPONSE");
+  }
+  const result = value as Record<string, unknown>;
+  if (
+    result.state !== "PROMOTED" ||
+    result.uploaded_file_id !== uploadedFileId ||
+    !UUID.test(String(result.document_inbox_item_id || "")) ||
+    !["RECEIVED", "REVIEW_REQUIRED", "APPROVED", "PROCESSED", "REJECTED"]
+      .includes(String(result.status || "")) ||
+    typeof result.replayed !== "boolean"
+  ) {
+    throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_PROMOTION_RESPONSE");
+  }
+  return {
+    uploaded_file_id: result.uploaded_file_id,
+    document_inbox_item_id: result.document_inbox_item_id,
+    status: result.status,
+    replayed: result.replayed,
+  };
+}
+
+export async function executeCustomerRequestUploadInboxPromotionAction(
+  jwt: string,
+  input: CustomerRequestUploadInboxPromotionActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+  serviceClient: () => CustomerRequestUploadPromotionServiceClient,
+): Promise<unknown> {
+  const callerClient = clientFor(jwt);
+  const authorization = await callerClient.rpc(
+    "authorize_customer_request_upload_inbox_promotion_v1",
+    { p_uploaded_file_id: input.uploaded_file_id },
+  );
+  if (authorization.error) throw new Error(authorization.error.message);
+  if (
+    !authorization.data || typeof authorization.data !== "object" ||
+    Array.isArray(authorization.data)
+  ) {
+    throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_PROMOTION_RESPONSE");
+  }
+  const authorized = authorization.data as Record<string, unknown>;
+  if (authorized.state === "PROMOTED") {
+    return customerRequestUploadPromotionResult(
+      authorized,
+      input.uploaded_file_id,
+    );
+  }
+
+  const sourceBucket = String(authorized.source_bucket_id || "");
+  const sourcePath = String(authorized.source_object_path || "");
+  const destinationBucket = String(authorized.destination_bucket_id || "");
+  const destinationPath = String(authorized.destination_object_path || "");
+  const mimeType = String(authorized.mime_type || "");
+  const expectedSha256 = String(authorized.sha256 || "");
+  const expectedByteCount = Number(authorized.byte_count);
+  if (
+    authorized.state !== "AUTHORIZED" ||
+    authorized.uploaded_file_id !== input.uploaded_file_id ||
+    !UUID.test(String(authorized.customer_request_id || "")) ||
+    !UUID.test(String(authorized.quote_request_id || "")) ||
+    sourceBucket !== "customer-request-quarantine" ||
+    destinationBucket !== "supplier-documents" ||
+    !sourcePath || !destinationPath ||
+    !["application/pdf", "image/png", "image/jpeg"].includes(mimeType) ||
+    !/^[0-9a-f]{64}$/.test(expectedSha256) ||
+    !Number.isSafeInteger(expectedByteCount) || expectedByteCount < 1 ||
+    expectedByteCount > 8_388_608
+  ) {
+    throw new Error("INVALID_CUSTOMER_REQUEST_UPLOAD_PROMOTION_RESPONSE");
+  }
+
+  const service = serviceClient();
+  const source = await service.storage.from(sourceBucket).download(sourcePath);
+  if (source.error || !source.data) {
+    throw new Error("CUSTOMER_REQUEST_UPLOAD_SOURCE_OBJECT_NOT_FOUND");
+  }
+  const bytes = new Uint8Array(await source.data.arrayBuffer());
+  if (
+    bytes.byteLength !== expectedByteCount ||
+    (source.data.type && source.data.type !== mimeType) ||
+    await sha256Hex(bytes) !== expectedSha256
+  ) {
+    throw new Error("CUSTOMER_REQUEST_UPLOAD_SOURCE_CONTENT_MISMATCH");
+  }
+
+  const uploaded = await service.storage.from(destinationBucket).upload(
+    destinationPath,
+    bytes,
+    { contentType: mimeType, upsert: false },
+  );
+  if (uploaded.error) {
+    const existing = await service.storage.from(destinationBucket).download(
+      destinationPath,
+    );
+    if (existing.error || !existing.data) {
+      throw new Error("CUSTOMER_REQUEST_UPLOAD_STORAGE_BRIDGE_FAILED");
+    }
+    const existingBytes = new Uint8Array(await existing.data.arrayBuffer());
+    if (
+      existingBytes.byteLength !== expectedByteCount ||
+      (existing.data.type && existing.data.type !== mimeType) ||
+      await sha256Hex(existingBytes) !== expectedSha256
+    ) {
+      throw new Error("CUSTOMER_REQUEST_UPLOAD_STORAGE_BRIDGE_FAILED");
+    }
+  }
+
+  const metadata = await service.rpc(
+    "finalize_supplier_document_upload_object_v1",
+    {
+      p_storage_object_path: destinationPath,
+      p_sha256: expectedSha256,
+      p_mime_type: mimeType,
+      p_byte_count: expectedByteCount,
+    },
+  );
+  if (metadata.error || metadata.data !== true) {
+    throw new Error("CUSTOMER_REQUEST_UPLOAD_STORAGE_BRIDGE_FAILED");
+  }
+
+  const finalized = await callerClient.rpc(
+    "finalize_customer_request_upload_inbox_promotion_v1",
+    { p_uploaded_file_id: input.uploaded_file_id },
+  );
+  if (finalized.error) throw new Error(finalized.error.message);
+  return customerRequestUploadPromotionResult(
+    finalized.data,
+    input.uploaded_file_id,
+  );
+}
+
 type InternalE2ECleanupStorageClient = Readonly<{
   storage: Readonly<{
     from(bucket: string): Readonly<{
@@ -972,6 +1134,17 @@ if (import.meta.main) {
               jwt,
               input as CustomerRequestUploadOperatorActionInput,
               clientFor,
+            );
+          }
+          if (
+            input.action ===
+              "promote_customer_request_upload_to_document_inbox"
+          ) {
+            return await executeCustomerRequestUploadInboxPromotionAction(
+              jwt,
+              input as CustomerRequestUploadInboxPromotionActionInput,
+              clientFor,
+              serviceClient,
             );
           }
           if (

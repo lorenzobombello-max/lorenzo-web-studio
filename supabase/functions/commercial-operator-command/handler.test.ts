@@ -30,6 +30,7 @@ import {
   executeCallerJwtInternalE2EAcceptedFileCleanupAction,
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
+  executeCustomerRequestUploadInboxPromotionAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
   executeServiceRoleDossierDocumentAction,
@@ -2464,6 +2465,223 @@ Deno.test("Customer Request upload-link revoke uses only caller JWT and capabili
       p_idempotency_key: "a1800000-0000-4000-8000-000000000071",
     },
   }]);
+});
+
+Deno.test("Customer Request upload promotion accepts only one canonical source id", async () => {
+  const uploadedFileId = "a1800000-0000-4000-8000-000000000073";
+  const valid = dependencies();
+  const response = await handleCommercialOperator(
+    request({
+      action: "promote_customer_request_upload_to_document_inbox",
+      uploaded_file_id: uploadedFileId,
+    }),
+    valid.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(valid.calls, [{
+    jwt,
+    input: {
+      action: "promote_customer_request_upload_to_document_inbox",
+      uploaded_file_id: uploadedFileId,
+    },
+  }]);
+
+  for (
+    const extra of [
+      { quote_request_id: userId },
+      { customer_request_id: userId },
+      { source_type: "CUSTOMER_REQUEST_UPLOAD" },
+      { bucket: "supplier-documents" },
+      { path: "documents/forged.pdf" },
+      { operator_id: userId },
+    ]
+  ) {
+    const harness = dependencies();
+    const denied = await handleCommercialOperator(
+      request({
+        action: "promote_customer_request_upload_to_document_inbox",
+        uploaded_file_id: uploadedFileId,
+        ...extra,
+      }),
+      harness.deps,
+    );
+    assertEquals(denied.status, 400);
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("Customer Request upload promotion copies privately then finalizes under caller JWT", async () => {
+  const uploadedFileId = "a1800000-0000-4000-8000-000000000073";
+  const inboxItemId = "a1800000-0000-4000-8000-000000000074";
+  const bytes = new TextEncoder().encode("%PDF-private-customer-upload");
+  const shaBuffer = await crypto.subtle.digest("SHA-256", bytes);
+  const sha256 = [...new Uint8Array(shaBuffer)].map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  const sourcePath =
+    `requests/${userId}/uploads/${userId}/files/${uploadedFileId}.pdf`;
+  const destinationPath = `documents/${sha256}.pdf`;
+  const rpcCalls: string[] = [];
+  const storageCalls: string[] = [];
+  const callerClient = {
+    rpc: async (name: string) => {
+      rpcCalls.push(name);
+      if (name === "authorize_customer_request_upload_inbox_promotion_v1") {
+        return {
+          data: {
+            state: "AUTHORIZED",
+            uploaded_file_id: uploadedFileId,
+            customer_request_id: "a1800000-0000-4000-8000-000000000075",
+            quote_request_id: "a1800000-0000-4000-8000-000000000076",
+            source_bucket_id: "customer-request-quarantine",
+            source_object_path: sourcePath,
+            destination_bucket_id: "supplier-documents",
+            destination_object_path: destinationPath,
+            original_file_name: "brief.pdf",
+            mime_type: "application/pdf",
+            byte_count: bytes.byteLength,
+            sha256,
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          state: "PROMOTED",
+          uploaded_file_id: uploadedFileId,
+          document_inbox_item_id: inboxItemId,
+          status: "RECEIVED",
+          replayed: false,
+        },
+        error: null,
+      };
+    },
+  };
+  const service = {
+    rpc: async (name: string) => {
+      rpcCalls.push(name);
+      return { data: true, error: null };
+    },
+    storage: {
+      from: (bucket: string) => ({
+        download: async (path: string) => {
+          storageCalls.push(`download:${bucket}:${path}`);
+          return {
+            data: new Blob([bytes], { type: "application/pdf" }),
+            error: null,
+          };
+        },
+        upload: async (path: string, _bytes: Uint8Array, options: unknown) => {
+          storageCalls.push(
+            `upload:${bucket}:${path}:${JSON.stringify(options)}`,
+          );
+          return { data: {}, error: null };
+        },
+      }),
+    },
+  };
+  const result = await executeCustomerRequestUploadInboxPromotionAction(
+    jwt,
+    {
+      action: "promote_customer_request_upload_to_document_inbox",
+      uploaded_file_id: uploadedFileId,
+    },
+    (token) => {
+      assertEquals(token, jwt);
+      return callerClient;
+    },
+    () => service,
+  );
+  assertEquals(result, {
+    uploaded_file_id: uploadedFileId,
+    document_inbox_item_id: inboxItemId,
+    status: "RECEIVED",
+    replayed: false,
+  });
+  assertEquals(rpcCalls, [
+    "authorize_customer_request_upload_inbox_promotion_v1",
+    "finalize_supplier_document_upload_object_v1",
+    "finalize_customer_request_upload_inbox_promotion_v1",
+  ]);
+  assertEquals(storageCalls, [
+    `download:customer-request-quarantine:${sourcePath}`,
+    `upload:supplier-documents:${destinationPath}:{"contentType":"application/pdf","upsert":false}`,
+  ]);
+  assertEquals(JSON.stringify(rpcCalls).includes("extract"), false);
+  assertEquals(JSON.stringify(rpcCalls).includes("provider"), false);
+});
+
+Deno.test("Customer Request upload promotion replays without storage and fails closed on corrupt source", async () => {
+  const uploadedFileId = "a1800000-0000-4000-8000-000000000073";
+  let serviceCalls = 0;
+  const replay = await executeCustomerRequestUploadInboxPromotionAction(
+    jwt,
+    {
+      action: "promote_customer_request_upload_to_document_inbox",
+      uploaded_file_id: uploadedFileId,
+    },
+    () => ({
+      rpc: async () => ({
+        data: {
+          state: "PROMOTED",
+          uploaded_file_id: uploadedFileId,
+          document_inbox_item_id: "a1800000-0000-4000-8000-000000000074",
+          status: "RECEIVED",
+          replayed: true,
+        },
+        error: null,
+      }),
+    }),
+    () => {
+      serviceCalls += 1;
+      throw new Error("service must not be constructed for replay");
+    },
+  );
+  assertEquals((replay as Record<string, unknown>).replayed, true);
+  assertEquals(serviceCalls, 0);
+
+  await assertRejects(
+    () =>
+      executeCustomerRequestUploadInboxPromotionAction(
+        jwt,
+        {
+          action: "promote_customer_request_upload_to_document_inbox",
+          uploaded_file_id: uploadedFileId,
+        },
+        () => ({
+          rpc: async () => ({
+            data: {
+              state: "AUTHORIZED",
+              uploaded_file_id: uploadedFileId,
+              customer_request_id: userId,
+              quote_request_id: "a1800000-0000-4000-8000-000000000076",
+              source_bucket_id: "customer-request-quarantine",
+              source_object_path: "requests/source.pdf",
+              destination_bucket_id: "supplier-documents",
+              destination_object_path: `documents/${"a".repeat(64)}.pdf`,
+              mime_type: "application/pdf",
+              byte_count: 5,
+              sha256: "a".repeat(64),
+            },
+            error: null,
+          }),
+        }),
+        () => ({
+          rpc: async () => ({ data: true, error: null }),
+          storage: {
+            from: () => ({
+              download: async () => ({
+                data: new Blob(["wrong"], { type: "application/pdf" }),
+                error: null,
+              }),
+              upload: async () => ({ data: {}, error: null }),
+            }),
+          },
+        }),
+      ),
+    Error,
+    "CUSTOMER_REQUEST_UPLOAD_SOURCE_CONTENT_MISMATCH",
+  );
 });
 
 Deno.test("Customer Requests reject service role and expose stable error envelopes", async () => {

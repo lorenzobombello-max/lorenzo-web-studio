@@ -19,6 +19,7 @@ select no_plan();
 
 select has_table('public', 'document_inbox_items', 'document inbox item authority exists');
 select has_table('public', 'document_inbox_events', 'document inbox immutable event ledger exists');
+select has_table('public', 'document_inbox_customer_request_upload_sources', 'Customer Request upload provenance reuses the existing Inbox');
 select has_function('public', 'receive_document_inbox_item_v1', array['text','text','text','bigint','text','text','text','text'], 'receive RPC exists');
 select has_function('public', 'record_document_inbox_extraction_v1', array['uuid','bigint','text','text','text','jsonb','text'], 'extraction placeholder RPC exists');
 select has_function('public', 'update_document_inbox_proposal_v1', array['uuid','bigint','text','text','text','date','bigint','text','text','text','date','text','jsonb'], 'proposal RPC exists');
@@ -27,6 +28,8 @@ select has_function('public', 'approve_document_inbox_item_v1', array['uuid','bi
 select has_function('public', 'reject_document_inbox_item_v1', array['uuid','bigint','text'], 'rejection RPC exists');
 select has_function('public', 'process_document_inbox_item_v1', array['uuid','bigint'], 'transactional processing RPC exists');
 select has_function('public', 'get_document_inbox_v1', array['text','text'], 'owner list/read RPC exists');
+select has_function('public', 'authorize_customer_request_upload_inbox_promotion_v1', array['uuid'], 'Customer Request upload promotion authorization exists');
+select has_function('public', 'finalize_customer_request_upload_inbox_promotion_v1', array['uuid'], 'Customer Request upload promotion finalization exists');
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.document_inbox_items'::regclass)
@@ -48,6 +51,13 @@ select ok(
   and not has_function_privilege('anon', 'public.receive_document_inbox_item_v1(text,text,text,bigint,text,text,text,text)', 'execute')
   and not has_function_privilege('service_role', 'public.process_document_inbox_item_v1(uuid,bigint)', 'execute'),
   'only authenticated receives guarded inbox command execution'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.document_inbox_customer_request_upload_sources', 'select,insert,update,delete')
+  and not has_table_privilege('anon', 'public.document_inbox_customer_request_upload_sources', 'select,insert,update,delete')
+  and not has_function_privilege('anon', 'public.authorize_customer_request_upload_inbox_promotion_v1(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.finalize_customer_request_upload_inbox_promotion_v1(uuid)', 'execute'),
+  'provenance has no direct browser writes and promotion requires caller-JWT authority'
 );
 select ok(
   exists (select 1 from pg_trigger where tgrelid = 'public.document_inbox_events'::regclass and tgname = 'trg_document_inbox_events_immutable' and tgenabled <> 'D'),
