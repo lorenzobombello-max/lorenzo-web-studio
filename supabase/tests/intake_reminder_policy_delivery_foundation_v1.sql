@@ -8,11 +8,11 @@ create temp table reminder_test_clock as
 select clock_timestamp() as value;
 
 select has_function('lws_internal', 'intake_reminder_phase_is_due_v1', array['text','timestamptz','timestamptz'], 'expiry-relative policy helper exists');
-select has_function('public', 'prepare_intake_reminder_email_job_v1', array['uuid','bigint','text','uuid','text','timestamptz'], 'cycle-bound preparation RPC exists');
+select has_function('public', 'prepare_intake_reminder_email_job_v1', array['uuid','bigint','text','uuid','timestamptz'], 'cycle-bound preparation RPC exists');
 select has_function('public', 'get_intake_reminder_email_delivery_v1', array['uuid','timestamptz'], 'final delivery-context recheck exists');
 select ok(
-  has_function_privilege('service_role', 'public.prepare_intake_reminder_email_job_v1(uuid,bigint,text,uuid,text,timestamptz)', 'execute')
-  and not has_function_privilege('authenticated', 'public.prepare_intake_reminder_email_job_v1(uuid,bigint,text,uuid,text,timestamptz)', 'execute')
+  has_function_privilege('service_role', 'public.prepare_intake_reminder_email_job_v1(uuid,bigint,text,uuid,timestamptz)', 'execute')
+  and not has_function_privilege('authenticated', 'public.prepare_intake_reminder_email_job_v1(uuid,bigint,text,uuid,timestamptz)', 'execute')
   and not has_function_privilege('anon', 'public.get_intake_reminder_email_delivery_v1(uuid,timestamptz)', 'execute'),
   'reminder payload authority remains service-only'
 );
@@ -85,6 +85,16 @@ insert into public.quote_request_intakes (
   ('fb200008-0000-4000-8000-000000000008', 'fb100008-0000-4000-8000-000000000008', 'invited', repeat('8',64), (select value + interval '3 days' from reminder_test_clock), 'ACTIVE', 0, null, false, (select value - interval '4 days' from reminder_test_clock)),
   ('fb200009-0000-4000-8000-000000000009', 'fb100009-0000-4000-8000-000000000009', 'invited', repeat('9',64), (select value - interval '1 hour' from reminder_test_clock), 'ACTIVE', 0, null, false, (select value - interval '7 days' from reminder_test_clock));
 
+insert into lws_internal.intake_reminder_capability_escrow (
+  intake_id, access_cycle, encrypted_capability
+)
+select
+  intake.id,
+  0,
+  'v1.aaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+from public.quote_request_intakes as intake
+where intake.id::text like 'fb2000%';
+
 select is(
   (select count(*)::integer from public.list_intake_reminder_candidates_v1('REMINDER_1', (select value from reminder_test_clock), 100) where intake_id = 'fb200001-0000-4000-8000-000000000001'),
   0,
@@ -114,7 +124,6 @@ create temp table invited_r1_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200002-0000-4000-8000-000000000002', 0, 'REMINDER_1',
   (select claim_token from invited_r1_claim),
-  'v1.aaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   (select value from reminder_test_clock)
 );
 select is((select email_job_status from invited_r1_job), 'pending', 'valid claim prepares a pending email job without delivery');
@@ -130,7 +139,6 @@ select is(
     select email_job_id from public.prepare_intake_reminder_email_job_v1(
       'fb200002-0000-4000-8000-000000000002', 0, 'REMINDER_1',
       (select claim_token from invited_r1_claim),
-      'v1.cccccccccccccccc.dddddddddddddddddddddddddddddddddddddddd',
       (select value from reminder_test_clock)
     )
   ) as attempts),
@@ -147,7 +155,6 @@ create temp table invited_r2_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200002-0000-4000-8000-000000000002', 0, 'REMINDER_2',
   (select claim_token from invited_r2_claim),
-  'v1.eeeeeeeeeeeeeeee.ffffffffffffffffffffffffffffffffffffffff',
   (select value + interval '2 days 12 hours' from reminder_test_clock)
 );
 select is((select email_job_status from invited_r2_job), 'pending', 'REMINDER_1 evidence does not block REMINDER_2 preparation');
@@ -155,7 +162,6 @@ select is(
   (select email_job_id from public.prepare_intake_reminder_email_job_v1(
     'fb200002-0000-4000-8000-000000000002', 0, 'REMINDER_2',
     (select claim_token from invited_r2_claim),
-    'v1.kkkkkkkkkkkkkkkk.llllllllllllllllllllllllllllllllllllllll',
     (select value + interval '2 days 12 hours' from reminder_test_clock)
   )),
   (select email_job_id from invited_r2_job),
@@ -210,7 +216,6 @@ select claims.intake_id, prepared.email_job_id
 from recheck_claims as claims
 cross join lateral public.prepare_intake_reminder_email_job_v1(
   claims.intake_id, 0, 'REMINDER_1', claims.claim_token,
-  'v1.gggggggggggggggg.hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
   (select value from reminder_test_clock)
 ) as prepared;
 
@@ -313,7 +318,6 @@ create temp table cycle_b_r1_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200009-0000-4000-8000-000000000009', 1, 'REMINDER_1',
   (select claim_token from cycle_b_r1_claim),
-  'v1.iiiiiiiiiiiiiiii.jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj',
   (select value + interval '3 days 1 minute' from reminder_test_clock)
 );
 select is((select email_job_status from cycle_b_r1_job), 'pending', 'cycle B can prepare REMINDER_1 after cycle A sent both phases');
@@ -326,7 +330,6 @@ create temp table cycle_b_r2_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200009-0000-4000-8000-000000000009', 1, 'REMINDER_2',
   (select claim_token from cycle_b_r2_claim),
-  'v1.mmmmmmmmmmmmmmmm.nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn',
   (select value + interval '6 days 1 minute' from reminder_test_clock)
 );
 select is((select email_job_status from cycle_b_r2_job), 'pending', 'cycle B can also prepare REMINDER_2 after cycle A sent both phases');
