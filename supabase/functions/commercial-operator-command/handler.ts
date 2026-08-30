@@ -22,6 +22,7 @@ const COMMANDS = new Set([
 ]);
 const APPLICATION_ACTIONS = new Set([
   "get_current_operator_identity",
+  "list_workforce_calendar",
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
@@ -130,6 +131,11 @@ type CurrentOperatorIdentity = Readonly<{
   display_name: string;
   role: "owner" | "operations_manager" | "operator" | "reviewer" | "read_only" | "admin";
   status: "ACTIVE";
+}>;
+export type WorkforceCalendarActionInput = Readonly<{
+  action: "list_workforce_calendar";
+  start_date: string;
+  end_date: string;
 }>;
 export type CustomerRequestActionInput = Readonly<{
   action: "list_customer_requests_for_dossier";
@@ -324,6 +330,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every((key)=>key in value);
+}
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const WORKFORCE_CALENDAR_STATUSES = new Set([
+  "WORKED_FULL_DAY",
+  "WORKED_HALF_DAY_AM",
+  "WORKED_HALF_DAY_PM",
+  "LEAVE",
+  "SICK",
+  "OTHER_ABSENCE",
+]);
+function isValidCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string" || !CALENDAR_DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+function validatedCalendarDate(value: unknown): string {
+  if (!isValidCalendarDate(value)) throw new RequestError(400, "INVALID_REQUEST");
+  return value as string;
 }
 function validatePendingIntakesResult(value: unknown) {
   const fields = [
@@ -520,6 +544,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action"])
     : action === "get_current_operator_identity"
     ? new Set(["action"])
+    : action === "list_workforce_calendar"
+    ? new Set(["action", "start_date", "end_date"])
     : action === "get_my_assigned_dossiers"
     ? new Set(["action", "cursor", "limit"])
     : action === "get_dossier_document_manifest"
@@ -636,6 +662,13 @@ function validateApplicationAction(value: UnvalidatedInput) {
     action === "get_current_operator_identity" ||
     action === "count_pending_intakes"
   ) return { action };
+  if (action === "list_workforce_calendar") {
+    const startDate = validatedCalendarDate(value.start_date);
+    const endDate = validatedCalendarDate(value.end_date);
+    const rangeDays = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000;
+    if (rangeDays < 0 || rangeDays > 365) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, start_date: startDate, end_date: endDate };
+  }
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
     const limit = value.limit === undefined ? 25 : value.limit;
@@ -900,6 +933,7 @@ function mapDatabaseError(error: unknown) {
     "OPERATOR_DISABLED",
     "OPERATOR_REVOKED",
     "OPERATOR_INACTIVE",
+    "OPERATOR_NOT_ACTIVE",
     "APPLICATION_SCOPE_DENIED",
     "QUOTATION_BUSINESS_SCOPE_DENIED",
     "QUOTATION_ORCHESTRATION_SCOPE_DENIED",
@@ -908,7 +942,8 @@ function mapDatabaseError(error: unknown) {
     "DOSSIER_ASSIGNMENT_READER_REQUIRED",
     "OPERATOR_PERSONAL_QUEUE_READER_REQUIRED",
     "CUSTOMER_REQUEST_ACCESS_DENIED",
-    "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED"
+    "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED",
+    "WORKFORCE_MANAGEMENT_READER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
     ,"INTERNAL_E2E_CLEANUP_BINDING_REQUIRED"
@@ -987,6 +1022,9 @@ function mapDatabaseError(error: unknown) {
     ,"INVALID_CUSTOMER_REQUEST_LIST_CURSOR"
     ,"INVALID_CUSTOMER_REQUEST_ACTION"
     ,"INVALID_CUSTOMER_REQUEST_COMMAND"
+    ,"WORKFORCE_DATE_RANGE_REQUIRED"
+    ,"WORKFORCE_DATE_RANGE_REVERSED"
+    ,"WORKFORCE_DATE_RANGE_TOO_LARGE"
   ].includes(code)) return response(400, "INVALID_REQUEST");
   if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
   if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
@@ -1064,6 +1102,46 @@ export async function executeAssignmentOperatorRosterTransport(
       operator_id: String(row.operator_id),
       display_name: row.display_name as string,
     }));
+}
+
+export async function executeWorkforceCalendarTransport(
+  client: DossierAssignmentRpcClient,
+  actorAuthUserId: string,
+  input: WorkforceCalendarActionInput,
+): Promise<unknown> {
+  const { data, error } = await client.rpc("list_workforce_calendar_v1", {
+    p_actor_id: actorAuthUserId,
+    p_start_date: input.start_date,
+    p_end_date: input.end_date,
+  });
+  if (error) throw new Error(error.message);
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+  const result = data as Record<string, unknown>;
+  if (!hasExactKeys(result, ["start_date", "end_date", "employees"])
+    || result.start_date !== input.start_date || result.end_date !== input.end_date
+    || !Array.isArray(result.employees)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+  for (const employeeValue of result.employees) {
+    if (!employeeValue || typeof employeeValue !== "object" || Array.isArray(employeeValue)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+    const employee = employeeValue as Record<string, unknown>;
+    if (!hasExactKeys(employee, ["employee_id", "display_name", "role_title", "team_name", "employment_status", "entries"])
+      || !UUID.test(String(employee.employee_id || ""))
+      || typeof employee.display_name !== "string" || employee.display_name.length < 1
+      || (employee.role_title !== null && typeof employee.role_title !== "string")
+      || (employee.team_name !== null && typeof employee.team_name !== "string")
+      || !["ACTIVE", "INACTIVE"].includes(String(employee.employment_status || ""))
+      || !Array.isArray(employee.entries)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+    for (const entryValue of employee.entries) {
+      if (!entryValue || typeof entryValue !== "object" || Array.isArray(entryValue)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+      const entry = entryValue as Record<string, unknown>;
+      if (!hasExactKeys(entry, ["date", "status"])
+        || !isValidCalendarDate(entry.date)
+        || entry.date < input.start_date || entry.date > input.end_date
+        || !WORKFORCE_CALENDAR_STATUSES.has(String(entry.status || ""))) {
+        throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+      }
+    }
+  }
+  return result;
 }
 
 export async function executeDossierAssignmentMutationTransport(

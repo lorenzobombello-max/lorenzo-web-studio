@@ -9,6 +9,7 @@ import {
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
+  executeWorkforceCalendarTransport,
   handleCommercialOperator,
   type InternalE2EAcceptedFileCleanupActionInput,
   type DossierDocumentActionInput,
@@ -17,6 +18,7 @@ import {
   type QuotationBusinessApprovalPromotionActionInput,
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
+  type WorkforceCalendarActionInput,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { deliverIssuedQuotation } from "../_shared/quotation-email-orchestration.ts";
@@ -121,6 +123,8 @@ type ValidatedApplicationActionInput = Record<string, unknown> & Readonly<{
   request_id: string;
   upload_request_id: string;
   uploaded_file_id: string;
+  start_date: string;
+  end_date: string;
   input: Record<string, unknown>;
 }>;
 type ValidatedDossierLifecycleActionInput = ValidatedApplicationActionInput & Readonly<{
@@ -185,6 +189,14 @@ export async function executeCallerJwtCurrentOperatorIdentityAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeCurrentOperatorIdentityTransport(clientFor(jwt));
+}
+
+export async function executeServiceRoleWorkforceCalendarAction(
+  actorAuthUserId: string,
+  input: WorkforceCalendarActionInput,
+  client: DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeWorkforceCalendarTransport(client, actorAuthUserId, input);
 }
 
 export async function executeServiceRoleDossierDocumentAction(
@@ -637,6 +649,13 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
       }
       if (input.action === "get_assignment_operator_roster") {
         return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
+      }
+      if (input.action === "list_workforce_calendar") {
+        return await executeServiceRoleWorkforceCalendarAction(
+          actorAuthUserId,
+          input as WorkforceCalendarActionInput,
+          serviceClient(),
+        );
       }
       if (input.action === "upsert_quotation_business_draft") {
         return await executeQuotationBusinessDraftAction(

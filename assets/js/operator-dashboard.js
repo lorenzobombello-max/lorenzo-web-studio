@@ -24,7 +24,6 @@ const OPERATOR_MODULES = new Set(["dossiers", "intake", "finance", "workforce", 
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
 const CALENDAR_STATUSES = Object.freeze({
-  worked: { label: "Gewerkt / aanwezig", icon: "A" },
   full_day: { label: "Volledige werkdag", icon: "A" },
   half_day_am: { label: "Halve dag voormiddag", icon: "1/2" },
   half_day_pm: { label: "Halve dag namiddag", icon: "1/2" },
@@ -32,6 +31,14 @@ const CALENDAR_STATUSES = Object.freeze({
   sick: { label: "Ziek", icon: "Z" },
   other_absence: { label: "Andere afwezigheid", icon: "A" },
   no_data: { label: "Geen planning / geen data", icon: "-" },
+});
+const WORKFORCE_CALENDAR_STATUS_MAP = Object.freeze({
+  WORKED_FULL_DAY: "full_day",
+  WORKED_HALF_DAY_AM: "half_day_am",
+  WORKED_HALF_DAY_PM: "half_day_pm",
+  LEAVE: "leave",
+  SICK: "sick",
+  OTHER_ABSENCE: "other_absence",
 });
 
 function calendarDate(value) {
@@ -78,26 +85,72 @@ export function calendarStatusPresentation(status) {
   return { key, ...CALENDAR_STATUSES[key] };
 }
 
-export function createWorkforceCalendarModel({ today = ()=>new Date(), employees = [], entries = [], initialView = "week" } = {}) {
+function exactObjectKeys(value, keys) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && keys.every((key)=>Object.hasOwn(value, key));
+}
+
+function validCalendarDateKey(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && calendarDateKey(parsed) === value;
+}
+
+export function workforceCalendarResponse(value, expectedRange) {
+  if (!exactObjectKeys(value, ["start_date", "end_date", "employees"])
+    || value.start_date !== expectedRange.start_date || value.end_date !== expectedRange.end_date
+    || !Array.isArray(value.employees)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+  for (const employee of value.employees) {
+    if (!exactObjectKeys(employee, ["employee_id", "display_name", "role_title", "team_name", "employment_status", "entries"])
+      || !UUID.test(employee.employee_id) || typeof employee.display_name !== "string" || !employee.display_name
+      || (employee.role_title !== null && typeof employee.role_title !== "string")
+      || (employee.team_name !== null && typeof employee.team_name !== "string")
+      || !["ACTIVE", "INACTIVE"].includes(employee.employment_status) || !Array.isArray(employee.entries)) {
+      throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+    }
+    for (const entry of employee.entries) {
+      if (!exactObjectKeys(entry, ["date", "status"])
+        || !validCalendarDateKey(entry.date) || entry.date < expectedRange.start_date || entry.date > expectedRange.end_date
+        || !Object.hasOwn(WORKFORCE_CALENDAR_STATUS_MAP, entry.status)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
+    }
+  }
+  return value;
+}
+
+export function workforceCalendarRequest(state) {
+  return { action: "list_workforce_calendar", ...state.range };
+}
+
+export function createWorkforceCalendarModel({ today = ()=>new Date(), employees = [], initialView = "week" } = {}) {
   let view = CALENDAR_VIEWS.has(initialView) ? initialView : "week";
   let anchor = calendarDate(today());
-  const safeEmployees = employees.filter((employee)=>employee && typeof employee.id === "string" && typeof employee.name === "string");
-  const entryByEmployeeDate = new Map(entries.map((entry)=>[`${entry.employee_id}:${entry.date}`, calendarStatusPresentation(entry.status)]));
+  let workforceEmployees = employees;
 
   function snapshot() {
     const dates = calendarPeriodDates(view, anchor);
+    const range = view === "year"
+      ? { start_date: `${anchor.getUTCFullYear()}-01-01`, end_date: `${anchor.getUTCFullYear()}-12-31` }
+      : { start_date: calendarDateKey(dates[0]), end_date: calendarDateKey(dates.at(-1)) };
     return {
       view,
       anchor: calendarDateKey(anchor),
       label: calendarPeriodLabel(view, dates, anchor),
       dates: dates.map(calendarDateKey),
-      employees: safeEmployees.map((employee)=>({
-        id: employee.id,
-        name: employee.name,
-        role: typeof employee.role === "string" ? employee.role : "",
-        team: typeof employee.team === "string" ? employee.team : "",
-        statuses: dates.map((date)=>entryByEmployeeDate.get(`${employee.id}:${calendarDateKey(date)}`) || calendarStatusPresentation("no_data")),
-      })),
+      range,
+      employees: workforceEmployees.map((employee)=>{
+        const entries = new Map(employee.entries.map((entry)=>[
+          entry.date,
+          calendarStatusPresentation(WORKFORCE_CALENDAR_STATUS_MAP[entry.status]),
+        ]));
+        return {
+          id: employee.employee_id,
+          name: employee.display_name,
+          role: employee.role_title || "",
+          team: employee.team_name || "",
+          employmentStatus: employee.employment_status,
+          statuses: dates.map((date)=>entries.get(calendarDateKey(date)) || calendarStatusPresentation("no_data")),
+        };
+      }),
     };
   }
 
@@ -119,24 +172,84 @@ export function createWorkforceCalendarModel({ today = ()=>new Date(), employees
       anchor = calendarDate(today());
       return snapshot();
     },
+    replaceEmployees(nextEmployees) {
+      workforceEmployees = nextEmployees;
+      return snapshot();
+    },
   };
 }
 
-export function initializeWorkforceCalendar(root, source = { employees: [], entries: [] }) {
+export function createWorkforceCalendarController({ model, load, onChange = ()=>{} }) {
+  let loading = false;
+  let error = null;
+  let generation = 0;
+  let pendingKey = null;
+  let pendingPromise = null;
+  const state = ()=>({ ...model.snapshot(), loading, error });
+  const notify = ()=>onChange(state());
+
+  async function reload() {
+    const request = workforceCalendarRequest(model.snapshot());
+    const key = `${request.start_date}:${request.end_date}`;
+    if (pendingKey === key && pendingPromise) return await pendingPromise;
+    const requestGeneration = ++generation;
+    loading = true;
+    error = null;
+    notify();
+    const task = (async ()=>{
+      try {
+        const result = workforceCalendarResponse(await load(request), request);
+        if (requestGeneration !== generation) return false;
+        model.replaceEmployees(result.employees);
+        loading = false;
+        notify();
+        return true;
+      } catch {
+        if (requestGeneration !== generation) return false;
+        loading = false;
+        error = "Kalendergegevens konden niet worden geladen.";
+        notify();
+        return false;
+      } finally {
+        if (requestGeneration === generation) {
+          pendingKey = null;
+          pendingPromise = null;
+        }
+      }
+    })();
+    pendingKey = key;
+    pendingPromise = task;
+    return await task;
+  }
+
+  return {
+    get state() { return state(); },
+    reload,
+    setView(view) { model.setView(view); return reload(); },
+    navigate(direction) { model.navigate(direction); return reload(); },
+    goToday() { model.goToday(); return reload(); },
+  };
+}
+
+export function initializeWorkforceCalendar(root, load) {
   const viewport = root.getElementById("calendarViewport");
   if (!viewport || viewport.dataset.initialized === "true") return;
+  if (typeof load !== "function") throw new TypeError("WORKFORCE_CALENDAR_LOADER_REQUIRED");
   viewport.dataset.initialized = "true";
-  const model = createWorkforceCalendarModel(source);
+  const model = createWorkforceCalendarModel();
   const periodLabel = root.getElementById("calendarPeriodLabel");
   const employeeCount = root.getElementById("calendarEmployeeCount");
   const empty = root.getElementById("calendarEmpty");
   const viewButtons = Array.from(root.querySelectorAll("[data-calendar-view]"));
+  const emptyMessage = empty.textContent;
+  let controller;
 
-  function render() {
-    const state = model.snapshot();
+  function render(state = controller.state) {
     periodLabel.textContent = state.label;
     employeeCount.textContent = `${state.employees.length} ${state.employees.length === 1 ? "werknemer" : "werknemers"}`;
-    empty.hidden = state.employees.length > 0;
+    empty.hidden = state.employees.length > 0 && !state.error;
+    empty.textContent = state.error || (state.loading ? "Kalendergegevens laden..." : emptyMessage);
+    viewport.setAttribute("aria-busy", String(state.loading));
     for (const button of viewButtons) button.setAttribute("aria-pressed", String(button.dataset.calendarView === state.view));
     viewport.replaceChildren();
     const table = root.createElement("table");
@@ -182,11 +295,14 @@ export function initializeWorkforceCalendar(root, source = { employees: [], entr
     viewport.append(table);
   }
 
-  for (const button of viewButtons) button.addEventListener("click", ()=>{ model.setView(button.dataset.calendarView); render(); });
-  root.getElementById("calendarPrevious").addEventListener("click", ()=>{ model.navigate(-1); render(); });
-  root.getElementById("calendarNext").addEventListener("click", ()=>{ model.navigate(1); render(); });
-  root.getElementById("calendarToday").addEventListener("click", ()=>{ model.goToday(); render(); });
+  controller = createWorkforceCalendarController({ model, load, onChange: render });
+  for (const button of viewButtons) button.addEventListener("click", ()=>{ void controller.setView(button.dataset.calendarView); });
+  root.getElementById("calendarPrevious").addEventListener("click", ()=>{ void controller.navigate(-1); });
+  root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); });
+  root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); });
   render();
+  void controller.reload();
+  return controller;
 }
 
 function localDateInputValue(date = new Date()) {
@@ -2353,7 +2469,7 @@ export async function startOperatorDashboard({
   const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
   moduleNavigation.hidden = currentIdentity.role !== "owner";
   presentOperatorModule(document, activeModule);
-  if (activeModule === "calendar") initializeWorkforceCalendar(document);
+  if (activeModule === "calendar") initializeWorkforceCalendar(document, invoke);
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;

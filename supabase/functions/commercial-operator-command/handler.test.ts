@@ -10,16 +10,27 @@ import {
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
+  executeWorkforceCalendarTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction, executeServiceRoleDossierDocumentAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction, executeServiceRoleDossierDocumentAction, executeServiceRoleWorkforceCalendarAction } from "./index.ts";
 import { createQuotationApprovalIntegrity, verifyQuotationApprovalIntegrity } from "../_shared/quotation-approval-integrity.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
 const jwt = createUnsignedTestJwt({ sub: userId, role: "authenticated", exp: 4102444800 });
 const cursorSecret = "ERERERERERERERERERERERERERERERERERERERERERE";
+const workforceEmployeeId = "a1800000-0000-4000-8000-000000000080";
+
+function workforceCalendarResult(overrides: Record<string, unknown> = {}) {
+  return {
+    start_date: "2026-08-24",
+    end_date: "2026-08-30",
+    employees: [],
+    ...overrides,
+  };
+}
 
 function request(body: Record<string, unknown>, token = jwt) {
   return new Request("https://example.test", {
@@ -2260,4 +2271,111 @@ Deno.test("dossier document index dispatch signs only the RPC-authorized object 
     expires_at: "2099-01-01T00:01:00.000Z",
     filename: "briefing.pdf",
   });
+});
+
+Deno.test("workforce calendar accepts only exact bounded dates without client actor authority", async ()=>{
+  const harness = dependencies();
+  const response = await handleCommercialOperator(request({
+    action: "list_workforce_calendar",
+    start_date: "2026-08-24",
+    end_date: "2026-08-30",
+  }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals(harness.calls, [{
+    jwt,
+    input: { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" },
+  }]);
+  assertEquals(Object.hasOwn(harness.calls[0].input, "actor_id"), false);
+
+  const invalidRequests = [
+    { start_date: "2026-8-24", end_date: "2026-08-30" },
+    { start_date: "2026-08-24", end_date: "2026-02-30" },
+    { start_date: "2026-08-30", end_date: "2026-08-24" },
+    { start_date: "2026-01-01", end_date: "2027-01-02" },
+  ];
+  for (const invalid of invalidRequests) {
+    const invalidResponse = await handleCommercialOperator(request({ action: "list_workforce_calendar", ...invalid }), dependencies().deps);
+    assertEquals(invalidResponse.status, 400);
+    assertEquals((await invalidResponse.json()).code, "INVALID_REQUEST");
+  }
+  const maximumResponse = await handleCommercialOperator(request({
+    action: "list_workforce_calendar", start_date: "2027-01-01", end_date: "2028-01-01",
+  }), dependencies().deps);
+  assertEquals(maximumResponse.status, 200);
+  const forgedActor = await handleCommercialOperator(request({
+    action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30", actor_id: userId,
+  }), dependencies().deps);
+  assertEquals(forgedActor.status, 400);
+  assertEquals((await forgedActor.json()).code, "IDENTITY_FIELD_FORBIDDEN");
+});
+
+Deno.test("workforce calendar transport calls only the service RPC with server actor and accepts empty authority", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const input = { action: "list_workforce_calendar" as const, start_date: "2026-08-24", end_date: "2026-08-30" };
+  const result = await executeServiceRoleWorkforceCalendarAction(userId, input, {
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      return Promise.resolve({ data: workforceCalendarResult(), error: null });
+    },
+  });
+  assertEquals(result, workforceCalendarResult());
+  assertEquals(calls, [{
+    name: "list_workforce_calendar_v1",
+    args: { p_actor_id: userId, p_start_date: "2026-08-24", p_end_date: "2026-08-30" },
+  }]);
+});
+
+Deno.test("workforce calendar transport accepts the exact employee DTO and all six statuses", async ()=>{
+  const statuses = ["WORKED_FULL_DAY", "WORKED_HALF_DAY_AM", "WORKED_HALF_DAY_PM", "LEAVE", "SICK", "OTHER_ABSENCE"];
+  const data = workforceCalendarResult({
+    employees: [{
+      employee_id: workforceEmployeeId,
+      display_name: "Workforce Employee",
+      role_title: "Consultant",
+      team_name: null,
+      employment_status: "ACTIVE",
+      entries: statuses.map((status, index)=>({ date: `2026-08-${String(24 + index).padStart(2, "0")}`, status })),
+    }],
+  });
+  const result = await executeWorkforceCalendarTransport({
+    rpc: ()=>Promise.resolve({ data, error: null }),
+  }, userId, { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" });
+  assertEquals(result, data);
+});
+
+Deno.test("workforce calendar response validator rejects drift and unknown status", async ()=>{
+  const input = { action: "list_workforce_calendar" as const, start_date: "2026-08-24", end_date: "2026-08-30" };
+  const employee = {
+    employee_id: workforceEmployeeId,
+    display_name: "Workforce Employee",
+    role_title: null,
+    team_name: "Operations",
+    employment_status: "ACTIVE",
+    entries: [{ date: "2026-08-24", status: "WORKED_FULL_DAY" }],
+  };
+  for (const invalid of [
+    workforceCalendarResult({ employees: [{ ...employee, email: "private@example.test" }] }),
+    workforceCalendarResult({ employees: [{ ...employee, entries: [{ date: "2026-08-24", status: "UNKNOWN" }] }] }),
+    workforceCalendarResult({ employees: [{ ...employee, entries: [{ date: "2026-02-30", status: "WORKED_FULL_DAY" }] }] }),
+    { ...workforceCalendarResult(), extra: true },
+  ]) {
+    await assertRejects(()=>executeWorkforceCalendarTransport({
+      rpc: ()=>Promise.resolve({ data: invalid, error: null }),
+    }, userId, input), Error, "INVALID_WORKFORCE_CALENDAR_RESPONSE");
+  }
+});
+
+Deno.test("workforce calendar failures use stable authorization and internal envelopes", async ()=>{
+  for (const [databaseCode, status, publicCode] of [
+    ["WORKFORCE_MANAGEMENT_READER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["OPERATOR_NOT_ACTIVE", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["UNEXPECTED_WORKFORCE_FAILURE", 500, "INTERNAL_ERROR"],
+  ] as const) {
+    const harness = dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } });
+    const response = await handleCommercialOperator(request({
+      action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30",
+    }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, publicCode);
+  }
 });

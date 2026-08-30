@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createWorkforceCalendarModel, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
+import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
@@ -3577,38 +3577,132 @@ test("calendar foundation exposes accessible read-only controls and no mutation 
   assert.doesNotMatch(calendar, /aanvragen|goedkeuren|melden|upload|boeken|clock|payroll|IBAN/i);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.calendar-heading/);
-  assert.match(script, /initializeWorkforceCalendar\(root, source = \{ employees: \[\], entries: \[\] \}\)/);
-  assert.doesNotMatch(script.match(/function initializeWorkforceCalendar[\s\S]*?\n\}/)?.[0] || "", /fetch\(|\.rpc\(|callCommercialOperator/);
+  assert.match(script, /initializeWorkforceCalendar\(root, load\)/);
+  assert.match(script, /initializeWorkforceCalendar\(document, invoke\)/);
+  assert.match(script, /action: "list_workforce_calendar"/);
+  assert.doesNotMatch(script.match(/function initializeWorkforceCalendar[\s\S]*?\n\}/)?.[0] || "", /fetch\(|client\.rpc\(/);
+  assert.doesNotMatch(script, /commercial_operators|mockEmployees|placeholder employee/i);
 });
 
 test("calendar model supports day week month year and deterministic navigation", () => {
   const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
   assert.equal(model.snapshot().view, "week");
   assert.equal(model.snapshot().dates.length, 7);
-  assert.equal(model.setView("day").dates.length, 1);
+  assert.deepEqual(workforceCalendarRequest(model.snapshot()), { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" });
+  assert.deepEqual(workforceCalendarRequest(model.setView("day")), { action: "list_workforce_calendar", start_date: "2026-08-30", end_date: "2026-08-30" });
   assert.equal(model.navigate(-1).anchor, "2026-08-29");
   assert.equal(model.goToday().anchor, "2026-08-30");
-  assert.equal(model.setView("month").dates.length, 31);
+  assert.deepEqual(workforceCalendarRequest(model.setView("month")), { action: "list_workforce_calendar", start_date: "2026-08-01", end_date: "2026-08-31" });
   assert.equal(model.navigate(1).anchor, "2026-09-01");
-  assert.equal(model.setView("year").dates.length, 12);
+  assert.deepEqual(workforceCalendarRequest(model.setView("year")), { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" });
   assert.equal(model.navigate(-1).anchor, "2025-09-01");
 });
 
-test("calendar model preserves empty and scalable employee rows with explicit statuses", () => {
+const workforceEmployee = (index, entries = []) => ({
+  employee_id: `a1800000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  display_name: `Werknemer ${index}`,
+  role_title: "Operator",
+  team_name: index % 2 ? "Operations" : null,
+  employment_status: index === 20 ? "INACTIVE" : "ACTIVE",
+  entries,
+});
+const workforceResult = (startDate, endDate, employees = []) => ({ start_date: startDate, end_date: endDate, employees });
+
+test("calendar model preserves empty and 20 authority employees with all six mapped statuses", () => {
   const empty = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
   assert.deepEqual(empty.snapshot().employees, []);
-  const employees = Array.from({ length: 20 }, (_, index)=>({ id: `employee-${index}`, name: `Werknemer ${index + 1}`, role: "Operator", team: "Operations" }));
-  const statuses = ["full_day", "half_day_am", "half_day_pm", "leave", "sick", "other_absence"];
-  const entries = statuses.map((status, index)=>({ employee_id: `employee-${index}`, date: "2026-08-24", status }));
-  const populated = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-24T12:00:00Z"), employees, entries });
+  const serverStatuses = ["WORKED_FULL_DAY", "WORKED_HALF_DAY_AM", "WORKED_HALF_DAY_PM", "LEAVE", "SICK", "OTHER_ABSENCE"];
+  const presentationStatuses = ["full_day", "half_day_am", "half_day_pm", "leave", "sick", "other_absence"];
+  const employees = Array.from({ length: 20 }, (_, index)=>workforceEmployee(index + 1,
+    index < serverStatuses.length ? [{ date: "2026-08-24", status: serverStatuses[index] }] : []));
+  const validated = workforceCalendarResponse(
+    workforceResult("2026-08-24", "2026-08-30", employees),
+    { start_date: "2026-08-24", end_date: "2026-08-30" },
+  );
+  const populated = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-24T12:00:00Z"), employees: validated.employees });
   const snapshot = populated.snapshot();
   assert.equal(snapshot.employees.length, 20);
-  assert.deepEqual(snapshot.employees.slice(0, statuses.length).map((employee)=>employee.statuses[0].key), statuses);
+  assert.deepEqual(snapshot.employees.slice(0, presentationStatuses.length).map((employee)=>employee.statuses[0].key), presentationStatuses);
   assert.equal(snapshot.employees[19].statuses[0].key, "no_data");
-  for (const status of [...statuses, "worked", "no_data"]) {
+  for (const status of [...presentationStatuses, "no_data"]) {
     const presentation = calendarStatusPresentation(status);
     assert.ok(presentation.label);
     assert.ok(presentation.icon);
   }
   assert.equal(calendarStatusPresentation("unknown").key, "no_data");
+});
+
+test("calendar response accepts exact empty and employee DTOs and rejects drift or unknown status", () => {
+  const range = { start_date: "2026-08-24", end_date: "2026-08-30" };
+  assert.deepEqual(workforceCalendarResponse(workforceResult(range.start_date, range.end_date), range).employees, []);
+  const employee = workforceEmployee(1, [{ date: "2026-08-24", status: "WORKED_FULL_DAY" }]);
+  assert.equal(workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [employee]), range).employees[0].employee_id, employee.employee_id);
+  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, operator_id: employee.employee_id }]), range), /INVALID_WORKFORCE_CALENDAR_RESPONSE/);
+  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, entries: [{ date: "2026-08-24", status: "UNKNOWN" }] }]), range), /INVALID_WORKFORCE_CALENDAR_RESPONSE/);
+});
+
+test("calendar controller loads initial empty authority and reloads day week month year navigation", async () => {
+  const requests = [];
+  const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
+  const controller = createWorkforceCalendarController({ model, load: async (request)=>{
+    requests.push(request);
+    return workforceResult(request.start_date, request.end_date);
+  } });
+  assert.equal(await controller.reload(), true);
+  await controller.setView("day");
+  await controller.setView("week");
+  await controller.setView("month");
+  await controller.setView("year");
+  await controller.navigate(-1);
+  await controller.navigate(1);
+  await controller.goToday();
+  assert.deepEqual(requests, [
+    { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" },
+    { action: "list_workforce_calendar", start_date: "2026-08-30", end_date: "2026-08-30" },
+    { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" },
+    { action: "list_workforce_calendar", start_date: "2026-08-01", end_date: "2026-08-31" },
+    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
+    { action: "list_workforce_calendar", start_date: "2025-01-01", end_date: "2025-12-31" },
+    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
+    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
+  ]);
+  assert.deepEqual(controller.state.employees, []);
+});
+
+test("calendar controller deduplicates identical loads and stale response cannot overwrite newer period", async () => {
+  const requests = [];
+  const releases = [];
+  const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
+  const controller = createWorkforceCalendarController({ model, load: (request)=>{
+    requests.push(request);
+    return new Promise((resolve)=>releases.push(resolve));
+  } });
+  const first = controller.reload();
+  const duplicate = controller.reload();
+  assert.equal(requests.length, 1);
+  const newer = controller.setView("month");
+  assert.equal(requests.length, 2);
+  releases[1](workforceResult("2026-08-01", "2026-08-31", [workforceEmployee(2)]));
+  assert.equal(await newer, true);
+  releases[0](workforceResult("2026-08-24", "2026-08-30", [workforceEmployee(1)]));
+  assert.equal(await first, false);
+  assert.equal(await duplicate, false);
+  assert.equal(controller.state.view, "month");
+  assert.equal(controller.state.employees[0].id, workforceEmployee(2).employee_id);
+});
+
+test("calendar controller preserves data on failure and a subsequent success recovers", async () => {
+  let calls = 0;
+  const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z"), employees: [workforceEmployee(1)] });
+  const controller = createWorkforceCalendarController({ model, load: async (request)=>{
+    calls += 1;
+    if (calls === 1) throw new Error("private backend detail");
+    return workforceResult(request.start_date, request.end_date, [workforceEmployee(2)]);
+  } });
+  assert.equal(await controller.reload(), false);
+  assert.equal(controller.state.error, "Kalendergegevens konden niet worden geladen.");
+  assert.equal(controller.state.employees[0].id, workforceEmployee(1).employee_id);
+  assert.equal(await controller.reload(), true);
+  assert.equal(controller.state.error, null);
+  assert.equal(controller.state.employees[0].id, workforceEmployee(2).employee_id);
 });
