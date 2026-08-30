@@ -40,6 +40,12 @@ verify_jwt = false
 [functions.intake-reminder-worker]
 verify_jwt = false
 
+[functions.application-intake-automation]
+verify_jwt = false
+
+[functions.sdf-qualification-intake]
+verify_jwt = false
+
 [functions.sdf-inbound-email]
 verify_jwt = false
 

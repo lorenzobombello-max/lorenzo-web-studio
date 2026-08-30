@@ -1,5 +1,12 @@
 import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildAdminNotificationEmail, buildQuotationEmail, buildSubmittedIntakeAdminEmail } from "./email-templates.ts";
+import {
+  buildAdminNotificationEmail,
+  buildQuotationEmail,
+  buildSdfQualificationInvitationEmail,
+  buildSdfQualificationMoreInformationEmail,
+  buildSdfRequestReceivedEmail,
+  buildSubmittedIntakeAdminEmail,
+} from "./email-templates.ts";
 import { buildApplicationOutput } from "./application-output.ts";
 
 const base = {
@@ -108,6 +115,34 @@ Deno.test("admin email identifies Documentenflow without fabricated website fiel
   assertStringIncludes(result.subject, "Slimme Documentenflow");
   assertStringIncludes(result.text, "Aanvraagtype: Slimme Documentenflow");
   assertStringIncludes(result.text, "Type website: Niet van toepassing");
+});
+
+Deno.test("SDF customer templates preserve exact authority copy and escape customer data", () => {
+  const confirmation = buildSdfRequestReceivedEmail({
+    customerName: "Klant <script>",
+    applicationReference: "LWS-AAN-2026-0042",
+  });
+  assertEquals(confirmation.subject, "We hebben uw aanvraag voor Slimme Documentenflow ontvangen");
+  assertStringIncludes(confirmation.text, "Uw aanvraag is nog niet inhoudelijk beoordeeld.");
+  assertStringIncludes(confirmation.text, "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.");
+  assertStringIncludes(confirmation.html, "Klant &lt;script&gt;");
+
+  const invitation = buildSdfQualificationInvitationEmail({
+    customerName: "Testklant",
+    intakeUrl: "https://example.test/pages/sdf-qualification-intake.html#token=secret",
+  });
+  assertEquals(invitation.subject, "Vul uw intake voor Slimme Documentenflow in");
+  assertStringIncludes(invitation.text, "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.");
+  assertStringIncludes(invitation.text, "leidt niet automatisch tot een offerte of prijsbevestiging");
+
+  const moreInformation = buildSdfQualificationMoreInformationEmail({
+    customerName: "Testklant",
+    moreInformationReason: "Beschrijf de goedkeuringsstappen <volledig>.",
+    intakeUrl: "https://example.test/pages/sdf-qualification-intake.html#token=secret",
+  });
+  assertEquals(moreInformation.subject, "Aanvullende informatie nodig voor uw Slimme Documentenflow");
+  assertStringIncludes(moreInformation.text, "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.");
+  assertStringIncludes(moreInformation.html, "&lt;volledig&gt;");
 });
 
 Deno.test("quotation delivery keeps the capability transient and contains no remote assets or trackers", () => {

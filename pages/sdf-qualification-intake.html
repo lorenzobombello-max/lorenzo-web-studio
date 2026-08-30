@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="lws-functions-base-url" content="https://xcsptvntvrizwhskaphr.supabase.co/functions/v1" />
+  <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
+  <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="../assets/css/pages.css" />
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260831" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260831"></script>
+</head>
+<body class="sdf-intake-page">
+  <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
+  <header class="sdf-header">
+    <div class="container sdf-header__inner">
+      <a class="brand" href="../index.html" aria-label="Lorenzo Web Solutions home"><img src="../assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" /><span class="brand__name">Lorenzo <strong>Web Solutions</strong></span></a>
+      <span class="sdf-secure-label">Beveiligde kwalificatie</span>
+    </div>
+  </header>
+
+  <main id="main-content" class="container sdf-main">
+    <section class="sdf-intro" aria-labelledby="sdf-title">
+      <p class="eyebrow">Slimme documentenflow</p>
+      <h1 id="sdf-title">Breng uw documentenflow helder in kaart.</h1>
+      <p>Uw antwoorden vormen de basis voor een gerichte beoordeling van uw huidige en gewenste werkwijze.</p>
+    </section>
+
+    <section id="loadingState" class="sdf-state" role="status"><span class="sdf-spinner" aria-hidden="true"></span><h2>Uw kwalificatie wordt geladen</h2></section>
+    <section id="unavailableState" class="sdf-state sdf-state--error" hidden><h2>Deze kwalificatie is niet beschikbaar</h2><p id="unavailableMessage">De persoonlijke link is ongeldig of niet meer geldig.</p></section>
+    <section id="successState" class="sdf-state sdf-state--success" hidden tabindex="-1"><p class="eyebrow">Informatie ontvangen</p><h2>Bedankt voor uw toelichting.</h2><p>We beoordelen uw documentenflow en nemen contact met u op over de volgende stap. Dit is nog geen offerte of prijsbevestiging.</p></section>
+
+    <div id="workspace" class="sdf-workspace" hidden>
+      <aside class="sdf-progress" aria-label="Voortgang">
+        <ol>
+          <li><button type="button" data-step-target="0" aria-current="step"><span>01</span> Documenten</button></li>
+          <li><button type="button" data-step-target="1"><span>02</span> Werkstappen</button></li>
+          <li><button type="button" data-step-target="2"><span>03</span> Uw flow</button></li>
+        </ol>
+        <div class="sdf-progress__status"><span>Status</span><strong id="draftStatus">Nog niet bewaard</strong></div>
+      </aside>
+
+      <form id="qualificationForm" class="sdf-form" novalidate>
+        <div id="formMessage" class="sdf-message" role="status" aria-live="polite" hidden></div>
+        <fieldset class="sdf-step" data-step="0">
+          <legend>Welke documenten gebruikt u?</legend>
+          <p>Selecteer alle documenttypes die deel uitmaken van de flow.</p>
+          <div class="sdf-options" id="documentCategories">
+            <label><input type="checkbox" value="quotation" /> Offerte</label><label><input type="checkbox" value="invoice" /> Factuur</label>
+            <label><input type="checkbox" value="order_confirmation" /> Bestelbevestiging</label><label><input type="checkbox" value="work_order" /> Werkbon</label>
+            <label><input type="checkbox" value="delivery_note" /> Leveringsbon</label><label><input type="checkbox" value="contract" /> Contract</label>
+            <label><input type="checkbox" value="customer_document" /> Klantendocument</label><label><input type="checkbox" value="supplier_document" /> Leveranciersdocument</label>
+            <label><input type="checkbox" value="internal_administrative_document" /> Intern administratief document</label><label><input type="checkbox" value="multiple_document_types" /> Meerdere documenttypes</label>
+            <label><input type="checkbox" value="other_custom" /> Ander documenttype</label><label><input type="checkbox" value="unknown_qualification_required" /> Nog te bepalen</label>
+          </div>
+          <div id="otherDocumentField" class="sdf-field" hidden><label for="otherDescription">Omschrijf het andere documenttype</label><input id="otherDescription" maxlength="500" /></div>
+        </fieldset>
+
+        <fieldset class="sdf-step" data-step="1" hidden>
+          <legend>Welke werkstappen zijn nodig?</legend>
+          <p>Selecteer wat er met de documenten moet kunnen gebeuren.</p>
+          <div class="sdf-options" id="workflowCapabilities">
+            <label><input type="checkbox" value="receive" /> Ontvangen</label><label><input type="checkbox" value="generate" /> Genereren</label>
+            <label><input type="checkbox" value="review" /> Controleren</label><label><input type="checkbox" value="approve" /> Goedkeuren</label>
+            <label><input type="checkbox" value="send" /> Verzenden</label><label><input type="checkbox" value="archive" /> Archiveren</label>
+            <label><input type="checkbox" value="retrieve" /> Terugvinden</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="sdf-step" data-step="2" hidden>
+          <legend>Beschrijf uw huidige en gewenste flow.</legend>
+          <div class="sdf-field"><label for="currentWorkflow">Hoe verloopt de verwerking vandaag?</label><textarea id="currentWorkflow" rows="6" maxlength="4000" required></textarea></div>
+          <div class="sdf-field"><label for="desiredWorkflow">Hoe wilt u dat de verwerking verloopt?</label><textarea id="desiredWorkflow" rows="6" maxlength="4000" required></textarea></div>
+          <div class="sdf-field"><label for="volumeBand">Aantal documenten</label><select id="volumeBand" required><option value="">Selecteer</option><option value="1_to_9">1 tot 9</option><option value="10_to_49">10 tot 49</option><option value="50_to_249">50 tot 249</option><option value="250_plus">250 of meer</option><option value="unknown">Nog niet bekend</option></select></div>
+          <div class="sdf-field"><label for="frequency">Frequentie</label><select id="frequency" required><option value="">Selecteer</option><option value="daily">Dagelijks</option><option value="weekly">Wekelijks</option><option value="monthly">Maandelijks</option><option value="ad_hoc">Wanneer nodig</option><option value="unknown">Nog niet bekend</option></select></div>
+          <div class="sdf-field"><label for="relevantDocumentTypes">Relevante documenttypes <span>(gescheiden door komma's)</span></label><input id="relevantDocumentTypes" maxlength="4000" required /></div>
+          <div class="sdf-field"><label for="rolesUsers">Betrokken rollen of gebruikers <span>(gescheiden door komma's)</span></label><input id="rolesUsers" maxlength="4000" required /></div>
+          <fieldset><legend>Voorbeelddocumenten</legend><label><input id="sampleAvailable" type="checkbox" /> Beschikbaar</label><label><input id="sampleRequestedByLws" type="checkbox" /> Door Lorenzo Web Solutions gevraagd</label><label><input id="sampleUploadRequiredLater" type="checkbox" /> Later aanleveren vereist</label></fieldset>
+          <label class="sdf-confirmation"><input id="confirmation" type="checkbox" /><span id="confirmationText"></span></label>
+        </fieldset>
+
+        <div class="sdf-actions">
+          <button id="previousButton" class="btn btn--ghost" type="button" hidden>Vorige</button>
+          <div class="sdf-actions__primary"><button id="saveButton" class="btn btn--ghost" type="button">Concept bewaren</button><button id="nextButton" class="btn btn--primary" type="button">Volgende</button><button id="submitButton" class="btn btn--primary" type="submit" hidden>Informatie indienen</button></div>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

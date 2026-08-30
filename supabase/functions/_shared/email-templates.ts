@@ -41,6 +41,22 @@ interface IntakeInvitationEmailData {
   intakeUrl: string;
 }
 
+export interface SdfRequestReceivedEmailData {
+  customerName: string;
+  applicationReference: string;
+}
+
+export interface SdfQualificationInvitationEmailData {
+  customerName: string;
+  intakeUrl: string;
+}
+
+export interface SdfQualificationMoreInformationEmailData {
+  customerName: string;
+  moreInformationReason: string;
+  intakeUrl: string;
+}
+
 export interface IntakeReminderEmailData {
   clientName: string;
   company: string | null;
@@ -73,6 +89,92 @@ export type QuotationEmailTemplate =
   | "ACCEPTANCE_CONFIRMATION_INTERNAL_NL_BE_v1";
 
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
+
+function buildSdfCustomerEmail(subject: string, paragraphs: string[], text: string) {
+  const htmlParagraphs = paragraphs.map((paragraph) =>
+    `<p style="margin:0 0 16px;">${paragraph}</p>`
+  ).join("\n");
+  return {
+    subject,
+    html: `<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="margin:0;padding:24px;background:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <main style="max-width:600px;margin:0 auto;padding:32px;background:#ffffff;border-top:4px solid #12346b;">
+    ${htmlParagraphs}
+  </main>
+</body>
+</html>`,
+    text,
+  };
+}
+
+export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) {
+  const subject = "We hebben uw aanvraag voor Slimme Documentenflow ontvangen";
+  const safeName = escapeHtml(data.customerName);
+  const safeReference = escapeHtml(data.applicationReference);
+  return buildSdfCustomerEmail(subject, [
+    `Beste ${safeName},`,
+    `We hebben uw aanvraag voor Slimme Documentenflow goed ontvangen.<br>Referentie: ${safeReference}`,
+    "Uw aanvraag is nog niet inhoudelijk beoordeeld. Als volgende stap ontvangt u een uitnodiging voor de SDF-intake. Met die informatie kunnen we uw gewenste documentenflow beoordelen.",
+    "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.",
+    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
+  ], [
+    `Beste ${data.customerName},`,
+    "",
+    "We hebben uw aanvraag voor Slimme Documentenflow goed ontvangen.",
+    `Referentie: ${data.applicationReference}`,
+    "",
+    "Uw aanvraag is nog niet inhoudelijk beoordeeld. Als volgende stap ontvangt u een uitnodiging voor de SDF-intake. Met die informatie kunnen we uw gewenste documentenflow beoordelen.",
+    "",
+    "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.",
+    "",
+    "Met vriendelijke groet,",
+    "Lorenzo Web Solutions",
+  ].join("\n"));
+}
+
+export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvitationEmailData) {
+  const subject = "Vul uw intake voor Slimme Documentenflow in";
+  const safeName = escapeHtml(data.customerName);
+  const safeUrl = escapeHtml(data.intakeUrl);
+  return buildSdfCustomerEmail(subject, [
+    `Beste ${safeName},`,
+    "Om uw aanvraag voor Slimme Documentenflow inhoudelijk te kunnen beoordelen, vragen we u de SDF-intake in te vullen.",
+    `Open de intake via deze persoonlijke link:<br><a href="${safeUrl}">${safeUrl}</a>`,
+    "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.",
+    "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.",
+    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
+  ], [
+    `Beste ${data.customerName},`, "",
+    "Om uw aanvraag voor Slimme Documentenflow inhoudelijk te kunnen beoordelen, vragen we u de SDF-intake in te vullen.", "",
+    "Open de intake via deze persoonlijke link:", data.intakeUrl, "",
+    "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.", "",
+    "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
+    "Met vriendelijke groet,", "Lorenzo Web Solutions",
+  ].join("\n"));
+}
+
+export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {
+  const subject = "Aanvullende informatie nodig voor uw Slimme Documentenflow";
+  const safeName = escapeHtml(data.customerName);
+  const safeReason = escapeHtml(data.moreInformationReason).replace(/\n/g, "<br>");
+  const safeUrl = escapeHtml(data.intakeUrl);
+  return buildSdfCustomerEmail(subject, [
+    `Beste ${safeName},`,
+    `We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:<br><br>${safeReason}`,
+    `Vul de informatie aan via uw persoonlijke intake-link:<br><a href="${safeUrl}">${safeUrl}</a>`,
+    "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.",
+    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
+  ], [
+    `Beste ${data.customerName},`, "",
+    "We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:", "",
+    data.moreInformationReason, "",
+    "Vul de informatie aan via uw persoonlijke intake-link:", data.intakeUrl, "",
+    "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.", "",
+    "Met vriendelijke groet,", "Lorenzo Web Solutions",
+  ].join("\n"));
+}
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
   const requestKindName = requestKindLabel(data.requestKind);

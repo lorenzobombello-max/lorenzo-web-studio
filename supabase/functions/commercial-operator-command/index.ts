@@ -41,9 +41,11 @@ import {
   hashCustomerRequestUploadCapabilityToken,
 } from "../_shared/customer-request-upload-capability.ts";
 import {
+  createRawIntakeToken,
   createApprovalTokenForIdempotencyKey,
   createInternalE2EIntakeTokenForIdempotencyKey,
   deriveAdminIntakeCapability,
+  encryptIntakeInvitationToken,
   hashAdminIntakeToken,
   hashApprovalToken,
   hashIntakeToken,
@@ -870,6 +872,20 @@ export async function executeCallerJwtInternalE2EAcceptedFileCleanupAction(
   return finalization.data;
 }
 
+export function normalizeWebsitePendingItems(data: unknown): Record<string, unknown>[] | null {
+  const items = (data as { items?: unknown[] } | null)?.items;
+  if (!Array.isArray(items)) return null;
+  return items.map((value) => {
+    const item = value as Record<string, unknown>;
+    return {
+      ...item,
+      sdf_package: null,
+      invitation_delivery_status: null,
+      last_activity_at: item.invitation_created_at,
+    };
+  });
+}
+
 if (import.meta.main) {
   Deno.serve((request) =>
     withCommercialOperatorCors(request, () => {
@@ -976,7 +992,14 @@ if (import.meta.main) {
             },
           );
           if (error) throw new Error(error.message);
-          return data;
+          const websiteItems = normalizeWebsitePendingItems(data);
+          if (!websiteItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+          if (retentionState !== "ACTIVE") return { items: websiteItems };
+          const sdf = await serviceClient().rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          if (sdf.error) throw new Error(sdf.error.message);
+          const sdfItems = (sdf.data as { items?: unknown[] } | null)?.items;
+          if (!Array.isArray(sdfItems)) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+          return { items: [...websiteItems, ...sdfItems].sort((left, right) => String((right as Record<string, unknown>).last_activity_at).localeCompare(String((left as Record<string, unknown>).last_activity_at))) };
         },
         executePendingIntakeCount: async (actorAuthUserId: string) => {
           const { data, error } = await serviceClient().rpc(
@@ -984,7 +1007,11 @@ if (import.meta.main) {
             { p_actor_auth_user_id: actorAuthUserId },
           );
           if (error) throw new Error(error.message);
-          return data;
+          const sdf = await serviceClient().rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          if (sdf.error) throw new Error(sdf.error.message);
+          const sdfItems = (sdf.data as { items?: unknown[] } | null)?.items;
+          if (!Array.isArray(sdfItems) || typeof (data as { active_count?: unknown } | null)?.active_count !== "number") throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
+          return { active_count: Number((data as { active_count: number }).active_count) + sdfItems.length };
         },
         executeApplicationFacetsV2: async (
           actorAuthUserId: string,
@@ -1025,6 +1052,35 @@ if (import.meta.main) {
               jwt,
               clientFor,
             );
+          }
+          if (input.action === "list_pending_sdf_qualification_intakes") {
+            const { data, error } = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "allow_sdf_qualification_intake" || input.action === "reissue_sdf_qualification_intake") {
+            const rawToken = createRawIntakeToken();
+            const digest = await hashIntakeToken(rawToken);
+            const encrypted = await encryptIntakeInvitationToken(rawToken, digest);
+            const rpcName = input.action === "allow_sdf_qualification_intake" ? "allow_sdf_qualification_intake_v1" : "reissue_sdf_qualification_intake_v1";
+            const { data, error } = await clientFor(jwt).rpc(rpcName, { p_quote_request_id: input.quote_request_id, p_customer_capability_digest: digest, p_encrypted_capability: encrypted, p_idempotency_key: input.idempotency_key });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "inspect_sdf_qualification_intake") {
+            const { data, error } = await clientFor(jwt).rpc("inspect_sdf_qualification_intake_for_operator_v1", { p_quote_request_id: input.quote_request_id });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "transition_sdf_qualification_intake") {
+            const { data, error } = await clientFor(jwt).rpc("transition_sdf_qualification_intake_v1", { p_quote_request_id: input.quote_request_id, p_action: input.transition, p_reason: input.reason, p_idempotency_key: input.idempotency_key, p_encrypted_capability: null });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "authorize_sdf_quotation_preparation_v1") {
+            const { data, error } = await clientFor(jwt).rpc("authorize_sdf_quotation_preparation_v1", { p_quote_request_id: input.quote_request_id, p_idempotency_key: input.idempotency_key });
+            if (error) throw new Error(error.message);
+            return data;
           }
           if (input.action === "get_assignment_operator_roster") {
             return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);

@@ -36,6 +36,12 @@ const APPLICATION_ACTIONS = new Set([
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
+  "list_pending_sdf_qualification_intakes",
+  "allow_sdf_qualification_intake",
+  "reissue_sdf_qualification_intake",
+  "inspect_sdf_qualification_intake",
+  "transition_sdf_qualification_intake",
+  "authorize_sdf_quotation_preparation_v1",
   "count_pending_intakes",
   "archive_pending_intake",
   "restore_pending_intake",
@@ -530,9 +536,11 @@ function validatePendingIntakesResult(value: unknown) {
     "email",
     "phone",
     "request_kind",
+    "sdf_package",
     "website_type",
     "invitation_created_at",
     "invitation_sent_at",
+    "invitation_delivery_status",
     "intake_status",
     "effective_access",
     "access_token_expires_at",
@@ -546,6 +554,7 @@ function validatePendingIntakesResult(value: unknown) {
     "current_reminder_cycle",
     "reminder_1_sent_at",
     "reminder_2_sent_at",
+    "last_activity_at",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, ["items"]) ||
@@ -562,12 +571,15 @@ function validatePendingIntakesResult(value: unknown) {
       (item.organization !== null && typeof item.organization !== "string") ||
       typeof item.email !== "string" || !item.email ||
       (item.phone !== null && typeof item.phone !== "string") ||
-      item.request_kind !== "website" ||
+      !["website", "slimme_documentenflow"].includes(String(item.request_kind)) ||
+      (item.sdf_package !== null && !["start", "groei", "maatwerk"].includes(String(item.sdf_package))) ||
       typeof item.website_type !== "string" || !item.website_type ||
       typeof item.invitation_created_at !== "string" ||
       !item.invitation_created_at ||
       (item.invitation_sent_at !== null &&
         typeof item.invitation_sent_at !== "string") ||
+      (item.invitation_delivery_status !== null &&
+        !["pending", "processing", "sent", "retry_wait", "failed"].includes(String(item.invitation_delivery_status))) ||
       !["invited", "in_progress"].includes(String(item.intake_status)) ||
       !["ACTIVE", "INTERRUPTED", "EXPIRED", "CANCELLED"].includes(
         String(item.effective_access),
@@ -598,7 +610,8 @@ function validatePendingIntakesResult(value: unknown) {
       (item.reminder_1_sent_at !== null &&
         typeof item.reminder_1_sent_at !== "string") ||
       (item.reminder_2_sent_at !== null &&
-        typeof item.reminder_2_sent_at !== "string")
+        typeof item.reminder_2_sent_at !== "string") ||
+      typeof item.last_activity_at !== "string" || !item.last_activity_at
     ) {
       throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
     }
@@ -718,6 +731,16 @@ function validateApplicationAction(value: UnvalidatedInput) {
   }
   const allowed = action === "list_applications"
     ? new Set(["action", "limit", "offset"])
+    : action === "list_pending_sdf_qualification_intakes"
+    ? new Set(["action"])
+    : action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake"
+    ? new Set(["action", "quote_request_id", "idempotency_key"])
+    : action === "inspect_sdf_qualification_intake"
+    ? new Set(["action", "quote_request_id"])
+    : action === "transition_sdf_qualification_intake"
+    ? new Set(["action", "quote_request_id", "transition", "reason", "idempotency_key"])
+    : action === "authorize_sdf_quotation_preparation_v1"
+    ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "list_pending_intakes"
     ? new Set(["action", "retention_state"])
     : action === "count_pending_intakes"
@@ -958,6 +981,26 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return { action, quote_request_id: quoteRequestId };
+  }
+  if (action === "list_pending_sdf_qualification_intakes") return { action };
+  if (action === "inspect_sdf_qualification_intake") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId };
+  }
+  if (action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake" || action === "authorize_sdf_quotation_preparation_v1") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId, idempotency_key: idempotencyKey };
+  }
+  if (action === "transition_sdf_qualification_intake") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const transition = String(value.transition || "");
+    const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey) || !["begin_review","request_more_information","mark_qualification_complete","close_qualification"].includes(transition) || ((transition === "request_more_information" || transition === "close_qualification") && (reason.length < 1 || reason.length > 2000)) || ((transition === "begin_review" || transition === "mark_qualification_complete") && reason.length > 0)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId, transition, reason: reason || null, idempotency_key: idempotencyKey };
   }
   if (action === "list_pending_intakes") {
     const retentionState = value.retention_state ?? "ACTIVE";
@@ -2061,6 +2104,7 @@ export async function handleCommercialOperator(
           "list_applications_v2",
           "get_application_facets_v2",
           "list_pending_intakes",
+          "list_pending_sdf_qualification_intakes",
           "count_pending_intakes",
           "archive_pending_intake",
           "restore_pending_intake",

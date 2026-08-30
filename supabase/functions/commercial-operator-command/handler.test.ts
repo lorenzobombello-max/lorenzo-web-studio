@@ -35,6 +35,7 @@ import {
   executeQuotationBusinessDraftAction,
   executeServiceRoleDossierDocumentAction,
   executeServiceRoleWorkforceCalendarAction,
+  normalizeWebsitePendingItems,
   verifySupabaseAuthUser,
 } from "./index.ts";
 import {
@@ -107,9 +108,11 @@ function pendingIntakeDto(
     email: "pending@example.test",
     phone: null,
     request_kind: "website",
+    sdf_package: null,
     website_type: "Website op maat",
     invitation_created_at: "2099-01-01T10:00:00Z",
     invitation_sent_at: "2099-01-01T10:01:00Z",
+    invitation_delivery_status: null,
     intake_status: "invited",
     effective_access: "ACTIVE",
     access_token_expires_at: "2099-01-08T10:00:00Z",
@@ -123,9 +126,20 @@ function pendingIntakeDto(
     current_reminder_cycle: 0,
     reminder_1_sent_at: null,
     reminder_2_sent_at: null,
+    last_activity_at: "2099-01-01T10:01:00Z",
     ...overrides,
   };
 }
+
+Deno.test("Website pending rows normalize to the canonical cross-product DTO", () => {
+  const legacy = pendingIntakeDto();
+  delete legacy.sdf_package;
+  delete legacy.invitation_delivery_status;
+  delete legacy.last_activity_at;
+  assertEquals(normalizeWebsitePendingItems({ items: [legacy] }), [pendingIntakeDto({
+    last_activity_at: "2099-01-01T10:00:00Z",
+  })]);
+});
 
 function cursorRequest(input: Record<string, unknown>) {
   return {
@@ -260,6 +274,23 @@ const quotationBusinessInput = {
   payment_schedule: { milestones: [] },
   validity_days: null,
 };
+
+Deno.test("SDF qualification transition uses the established application action boundary", async () => {
+  const harness = dependencies();
+  const input = {
+    action: "transition_sdf_qualification_intake",
+    quote_request_id: "a1800000-0000-4000-8000-000000000091",
+    transition: "request_more_information",
+    reason: "Bezorg meer context over de huidige goedkeuringsstap.",
+    idempotency_key: "a1800000-0000-4000-8000-000000000093",
+  };
+  const accepted = await handleCommercialOperator(request(input), harness.deps);
+  assertEquals(accepted.status, 200);
+  assertEquals(harness.calls[0].input, input);
+
+  const rejected = await handleCommercialOperator(request({ ...input, website_type: "Website" }), harness.deps);
+  assertEquals(rejected.status, 400);
+});
 const quotationBusinessRequest = {
   action: "upsert_quotation_business_draft" as const,
   intake_id: "a1800000-0000-4000-8000-000000000083",
@@ -3487,6 +3518,22 @@ Deno.test("pending-intake list accepts the current reminder DTO and rejects cont
       500,
     );
   }
+});
+
+Deno.test("pending-intake list accepts the canonical SDF delivery DTO", async () => {
+  const harness = dependencies({
+    executePendingIntakes: async () => ({
+      items: [pendingIntakeDto({
+        request_kind: "slimme_documentenflow",
+        sdf_package: "groei",
+        website_type: "Slimme documentenflow - groei",
+        invitation_delivery_status: "pending",
+      })],
+    }),
+  });
+  const response = await handleCommercialOperator(request({ action: "list_pending_intakes" }), harness.deps);
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).result.items[0].sdf_package, "groei");
 });
 
 Deno.test("pending-intake list and retention actions use fixed validated state", async () => {
