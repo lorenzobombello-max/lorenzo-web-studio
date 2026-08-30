@@ -241,14 +241,15 @@ export function initializeWorkforceCalendar(root, load) {
   const employeeCount = root.getElementById("calendarEmployeeCount");
   const empty = root.getElementById("calendarEmpty");
   const viewButtons = Array.from(root.querySelectorAll("[data-calendar-view]"));
-  const emptyMessage = empty.textContent;
+  const emptyContent = Array.from(empty.childNodes);
   let controller;
 
   function render(state = controller.state) {
     periodLabel.textContent = state.label;
     employeeCount.textContent = `${state.employees.length} ${state.employees.length === 1 ? "werknemer" : "werknemers"}`;
     empty.hidden = state.employees.length > 0 && !state.error;
-    empty.textContent = state.error || (state.loading ? "Kalendergegevens laden..." : emptyMessage);
+    if (state.error || state.loading) empty.textContent = state.error || "Kalendergegevens laden...";
+    else empty.replaceChildren(...emptyContent);
     viewport.setAttribute("aria-busy", String(state.loading));
     for (const button of viewButtons) button.setAttribute("aria-pressed", String(button.dataset.calendarView === state.view));
     viewport.replaceChildren();

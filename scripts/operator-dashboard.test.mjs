@@ -3572,13 +3572,16 @@ test("calendar foundation exposes accessible read-only controls and no mutation 
   assert.match(calendar, /id="calendarPrevious"[^>]*aria-label="Vorige periode"/);
   assert.match(calendar, /id="calendarToday"/);
   assert.match(calendar, /id="calendarNext"[^>]*aria-label="Volgende periode"/);
-  assert.match(calendar, /Nog geen werknemersgegevens beschikbaar/);
+  assert.match(calendar, /<strong>Nog geen werknemers beschikbaar<\/strong>\s+<p>Zodra werknemers aan de personeelsadministratie zijn toegevoegd, verschijnen ze hier automatisch in de kalender\.<\/p>/);
+  assert.doesNotMatch(calendar, /read-only personeelsbron wordt gekoppeld/i);
   assert.match(calendar, /<dt>Uren<\/dt><dd>Niet beschikbaar<\/dd>/);
   assert.doesNotMatch(calendar, /aanvragen|goedkeuren|melden|upload|boeken|clock|payroll|IBAN/i);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.calendar-heading/);
   assert.match(script, /initializeWorkforceCalendar\(root, load\)/);
   assert.match(script, /initializeWorkforceCalendar\(document, invoke\)/);
+  assert.match(script, /const emptyContent = Array\.from\(empty\.childNodes\)/);
+  assert.match(script, /else empty\.replaceChildren\(\.\.\.emptyContent\)/);
   assert.match(script, /action: "list_workforce_calendar"/);
   assert.doesNotMatch(script.match(/function initializeWorkforceCalendar[\s\S]*?\n\}/)?.[0] || "", /fetch\(|client\.rpc\(/);
   assert.doesNotMatch(script, /commercial_operators|mockEmployees|placeholder employee/i);
