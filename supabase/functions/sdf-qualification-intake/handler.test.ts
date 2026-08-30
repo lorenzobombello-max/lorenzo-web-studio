@@ -33,10 +33,12 @@ Deno.test("SDF intake submit rejects absent, unchecked, wrong-version, and clien
   }
 });
 
-Deno.test("SDF browser payload uses only the frozen C4A model",async()=>{
+Deno.test("SDF browser payload preserves C4A and adds only V2 commercial qualification inputs",async()=>{
   const source=await Deno.readTextFile(new URL("../../../assets/js/sdf-qualification-intake.js",import.meta.url));
-  for(const field of ["documentPurpose","workflowCapabilities","businessRequirements","currentWorkflow","desiredWorkflow","volumeBand","frequency","relevantDocumentTypes","rolesUsers","sampleDocumentMetadata","available","requestedByLws","uploadRequiredLater"]){
+  for(const field of ["documentPurpose","workflowCapabilities","businessRequirements","currentWorkflow","desiredWorkflow","volumeBand","frequency","relevantDocumentTypes","rolesUsers","sampleDocumentMetadata","available","requestedByLws","uploadRequiredLater","commercialQualification","packageDirection","customComplexity","documentVolumes","documentType","documentCount","period","averagePagesPerDocument"]){
     assertEquals(source.includes(field),true);
   }
-  assertEquals(source.includes("sampleNotes"),false);
+  for(const prohibited of ["sampleNotes","priceMinor","estimatedPagesPerPeriod","totalDocuments","totalPages"]){
+    assertEquals(source.includes(prohibited),false);
+  }
 });

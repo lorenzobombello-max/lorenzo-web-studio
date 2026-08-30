@@ -9,8 +9,8 @@
   <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260831-2" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260831-2"></script>
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260831-3" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260831-3"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -38,8 +38,8 @@
         <div class="sdf-progress__track" aria-hidden="true"><span id="sdfProgressBar"></span></div>
         <ol>
           <li><button type="button" data-step-target="0" aria-current="step"><span>1</span><span>Documenten</span></button></li>
-          <li><button type="button" data-step-target="1"><span>2</span><span>Werkstappen</span></button></li>
-          <li><button type="button" data-step-target="2"><span>3</span><span>Uw flow</span></button></li>
+          <li><button type="button" data-step-target="1" disabled aria-disabled="true" aria-label="Werkstappen, vergrendeld"><span>2</span><span>Werkstappen</span></button></li>
+          <li><button type="button" data-step-target="2" disabled aria-disabled="true" aria-label="Uw flow, vergrendeld"><span>3</span><span>Uw flow</span></button></li>
         </ol>
       </aside>
 
@@ -54,7 +54,24 @@
         <div id="formMessage" class="sdf-message" role="status" aria-live="polite" hidden></div>
         <fieldset class="sdf-step" data-step="0">
           <legend>Welke documenten gebruikt u?</legend>
-          <p>Selecteer alle documenttypes die deel uitmaken van de flow.</p>
+          <p>Kies eerst de richting die u overweegt en kwalificeer daarna de documentenstroom.</p>
+          <section class="sdf-form-section" aria-labelledby="packageDirectionLabel">
+            <div class="sdf-section-heading">
+              <div><p class="eyebrow">Commerciële richting</p><h2 id="packageDirectionLabel">Welke oplossing overweegt u?</h2></div>
+              <span>Één keuze</span>
+            </div>
+            <div class="sdf-package-options" id="packageDirection" role="radiogroup" aria-labelledby="packageDirectionLabel">
+              <label><input type="radio" name="packageDirection" value="start" /><span><strong>START</strong><small>Max. 1 flow, 2 documenttypes, 500 pagina's/maand en 3 gebruikers.</small><small>€2.850 implementatie · €175/maand · excl. btw</small></span></label>
+              <label><input type="radio" name="packageDirection" value="groei" /><span><strong>GROEI</strong><small>Max. 3 flows, 5 documenttypes, 2.500 pagina's/maand en 10 gebruikers.</small><small>€5.700 implementatie · €299/maand · excl. btw</small></span></label>
+              <label><input type="radio" name="packageDirection" value="pro" /><span><strong>PRO</strong><small>Max. 6 flows, 10 documenttypes, 7.500 pagina's/maand en 25 gebruikers.</small><small>€7.500 implementatie · €449/maand · excl. btw</small></span></label>
+              <label><input type="radio" name="packageDirection" value="maatwerk" /><span><strong>MAATWERK</strong><small>Boven PRO-grenzen of uitzonderlijke complexiteit.</small><small>Prijs na beoordeling en offerte.</small></span></label>
+              <label><input type="radio" name="packageDirection" value="advice_requested" /><span><strong>ADVIES GEWENST</strong><small>We bepalen samen welke richting passend is.</small></span></label>
+            </div>
+            <div id="customComplexityField" class="sdf-field" hidden><label for="customComplexity">Wat maakt uw documentenflow afwijkend of complex?</label><textarea id="customComplexity" rows="4" maxlength="2000"></textarea></div>
+          </section>
+
+          <section class="sdf-form-section" aria-labelledby="documentTypesLabel">
+          <div class="sdf-section-heading"><div><p class="eyebrow">Documenttypes</p><h2 id="documentTypesLabel">Welke documenten maken deel uit van de flow?</h2></div><span>Meerdere mogelijk</span></div>
           <div class="sdf-options" id="documentCategories">
             <label><input type="checkbox" value="quotation" /> Offerte</label><label><input type="checkbox" value="invoice" /> Factuur</label>
             <label><input type="checkbox" value="order_confirmation" /> Bestelbevestiging</label><label><input type="checkbox" value="work_order" /> Werkbon</label>
@@ -64,6 +81,13 @@
             <label><input type="checkbox" value="other_custom" /> Ander documenttype</label><label><input type="checkbox" value="unknown_qualification_required" /> Nog te bepalen</label>
           </div>
           <div id="otherDocumentField" class="sdf-field" hidden><label for="otherDescription">Omschrijf het andere documenttype</label><input id="otherDescription" maxlength="500" /></div>
+          </section>
+
+          <section id="documentVolumeSection" class="sdf-form-section" aria-labelledby="documentVolumeLabel" hidden>
+            <div class="sdf-section-heading"><div><p class="eyebrow">Volume-indicatie</p><h2 id="documentVolumeLabel">Hoe groot is de documentenstroom?</h2></div><span>Per documenttype</span></div>
+            <p class="sdf-section-help">Geef per geselecteerd type het aantal documenten, de periode en het gemiddelde aantal pagina's of bladen op.</p>
+            <div id="documentVolumes" class="sdf-volume-list" aria-live="polite"></div>
+          </section>
         </fieldset>
 
         <fieldset class="sdf-step" data-step="1" hidden>
@@ -86,6 +110,11 @@
           <div class="sdf-field"><label for="relevantDocumentTypes">Relevante documenttypes <span>(gescheiden door komma's)</span></label><input id="relevantDocumentTypes" maxlength="4000" required /></div>
           <div class="sdf-field"><label for="rolesUsers">Betrokken rollen of gebruikers <span>(gescheiden door komma's)</span></label><input id="rolesUsers" maxlength="4000" required /></div>
           <fieldset><legend>Voorbeelddocumenten</legend><label><input id="sampleAvailable" type="checkbox" /> Beschikbaar</label><label><input id="sampleRequestedByLws" type="checkbox" /> Door Lorenzo Web Solutions gevraagd</label><label><input id="sampleUploadRequiredLater" type="checkbox" /> Later aanleveren vereist</label></fieldset>
+          <section class="sdf-summary" aria-labelledby="qualificationSummaryTitle">
+            <div class="sdf-section-heading"><div><p class="eyebrow">Laatste controle</p><h2 id="qualificationSummaryTitle">Dit is wat u ons gaat bezorgen</h2></div><button id="printReviewButton" class="btn btn--ghost" type="button">Afdrukken / Opslaan als PDF</button></div>
+            <div id="qualificationSummary" class="sdf-summary__content"></div>
+            <p class="sdf-summary__disclaimer">De uiteindelijke scope en prijs worden bevestigd in uw offerte.</p>
+          </section>
           <label class="sdf-confirmation"><input id="confirmation" type="checkbox" /><span id="confirmationText"></span></label>
         </fieldset>
 

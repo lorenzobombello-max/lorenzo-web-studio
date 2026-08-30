@@ -55,9 +55,11 @@
 .sdf-progress ol { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; }
 .sdf-progress button { width: 100%; min-height: 48px; display: grid; grid-template-columns: 1.8rem 1fr; gap: 0.7rem; align-items: center; padding: 0.55rem; color: var(--sdf-muted); border: 0; border-radius: 0.5rem; background: transparent; text-align: left; font: inherit; cursor: pointer; transition: color 180ms ease, background-color 180ms ease; }
 .sdf-progress button:hover, .sdf-progress button:focus-visible, .sdf-progress button[aria-current="step"] { color: var(--sdf-text); background: rgba(14, 216, 230, 0.1); }
+.sdf-progress button:disabled { cursor: default; opacity: 0.48; }
 .sdf-progress button > span:first-child { display: grid; width: 1.8rem; height: 1.8rem; place-items: center; border: 1px solid var(--sdf-line); border-radius: 50%; font-size: 0.72rem; font-weight: 800; }
 .sdf-progress button > span:last-child { min-width: 0; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
 .sdf-progress button[aria-current="step"] > span:first-child { color: var(--sdf-ink); border-color: var(--sdf-signal); background: var(--sdf-signal); }
+.sdf-progress button.is-complete > span:first-child { color: #071014; border-color: #7ee7a5; background: #7ee7a5; }
 
 .sdf-content { min-width: 0; }
 .sdf-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--sdf-line); border-radius: 0.75rem; background: var(--sdf-line); }
@@ -69,6 +71,22 @@
 .sdf-step { min-width: 0; min-height: 420px; margin: 0; padding: 0; border: 0; }
 .sdf-step legend { width: 100%; padding: 0; color: var(--sdf-text); font: 700 clamp(1.75rem, 4vw, 2.35rem)/1.15 "Manrope", sans-serif; letter-spacing: 0; }
 .sdf-step > p { margin: 0.65rem 0 1.75rem; color: var(--sdf-muted); }
+.sdf-form-section { margin-top: 2rem; padding-top: 1.6rem; border-top: 1px solid var(--sdf-line); }
+.sdf-form-section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.sdf-section-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: 1rem; }
+.sdf-section-heading p { margin: 0 0 0.25rem; }
+.sdf-section-heading h2 { margin: 0; color: var(--sdf-text); font: 700 1.2rem/1.3 "Manrope", sans-serif; letter-spacing: 0; }
+.sdf-section-heading > span { flex: 0 0 auto; color: var(--sdf-muted); font-size: 0.76rem; }
+.sdf-section-help { margin: -0.35rem 0 1rem; color: var(--sdf-muted); font-size: 0.9rem; line-height: 1.55; }
+.sdf-package-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+.sdf-package-options label { display: flex; gap: 0.8rem; min-height: 88px; padding: 1rem; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-bg); cursor: pointer; }
+.sdf-package-options label:hover, .sdf-package-options label:has(input:checked) { border-color: var(--sdf-signal); }
+.sdf-package-options label:has(input:checked) { background: rgba(14, 216, 230, 0.08); box-shadow: inset 0 0 0 1px var(--sdf-signal); }
+.sdf-package-options label:has(input:focus-visible) { outline: 3px solid var(--sdf-focus); outline-offset: 2px; }
+.sdf-package-options input { width: 1.15rem; height: 1.15rem; margin-top: 0.15rem; flex: 0 0 auto; accent-color: var(--sdf-signal-deep); }
+.sdf-package-options span { display: grid; align-content: start; gap: 0.3rem; min-width: 0; }
+.sdf-package-options strong { color: var(--sdf-text); font-size: 0.82rem; letter-spacing: 0.08em; }
+.sdf-package-options small { color: var(--sdf-muted); font-size: 0.82rem; line-height: 1.45; }
 .sdf-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
 .sdf-options label { display: flex; align-items: center; gap: 0.75rem; min-height: 52px; padding: 0.75rem 0.9rem; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-bg); cursor: pointer; transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease; }
 .sdf-options label:hover { border-color: var(--sdf-signal); }
@@ -84,10 +102,30 @@
 .sdf-field input:hover, .sdf-field textarea:hover, .sdf-field select:hover { border-color: var(--sdf-signal); }
 .sdf-field input:focus-visible, .sdf-field textarea:focus-visible, .sdf-field select:focus-visible { outline: 3px solid var(--sdf-focus); outline-offset: 2px; border-color: var(--sdf-signal); }
 
+.sdf-volume-list { display: grid; gap: 0.75rem; }
+.sdf-volume-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; padding: 1rem; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-bg); }
+.sdf-volume-row legend { grid-column: 1 / -1; width: auto; padding: 0 0.35rem; color: var(--sdf-signal); font: 800 0.78rem/1.4 "Manrope", sans-serif; letter-spacing: 0.06em; text-transform: uppercase; }
+.sdf-volume-row label { display: grid; gap: 0.45rem; color: var(--sdf-muted); font-size: 0.78rem; font-weight: 700; line-height: 1.35; }
+.sdf-volume-row input, .sdf-volume-row select { width: 100%; min-height: 3rem; padding: 0.72rem 0.8rem; color: var(--sdf-text); border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-surface); font: inherit; }
+.sdf-volume-row input:hover, .sdf-volume-row select:hover { border-color: var(--sdf-signal); }
+.sdf-volume-row input:focus-visible, .sdf-volume-row select:focus-visible { outline: 3px solid var(--sdf-focus); outline-offset: 2px; border-color: var(--sdf-signal); }
+
 .sdf-step > fieldset { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.65rem; margin: 1.5rem 0 0; padding: 1rem; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-bg); }
 .sdf-step > fieldset legend { padding: 0 0.35rem; font: 800 0.76rem/1.4 "Manrope", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
 .sdf-step > fieldset label { display: flex; gap: 0.55rem; align-items: center; font-size: 0.88rem; }
 .sdf-confirmation { display: flex; gap: 0.75rem; align-items: flex-start; margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--sdf-line); border-left: 4px solid var(--sdf-signal); border-radius: 7px; background: var(--sdf-bg); line-height: 1.55; }
+.sdf-summary { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--sdf-line); }
+.sdf-summary__content dl { display: grid; gap: 0.65rem; margin: 0 0 1.25rem; }
+.sdf-summary__content section { margin-top: 1.35rem; }
+.sdf-summary__content section:first-child { margin-top: 0; }
+.sdf-summary__content dl div { display: grid; grid-template-columns: minmax(110px, 0.32fr) 1fr; gap: 1rem; }
+.sdf-summary__content dt { color: var(--sdf-muted); font-size: 0.82rem; }
+.sdf-summary__content dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; font-weight: 750; }
+.sdf-summary__content h3 { margin: 0 0 0.75rem; color: var(--sdf-muted); font-size: 0.82rem; }
+.sdf-summary__content ul { display: grid; gap: 1px; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-line); list-style: none; }
+.sdf-summary__content li { display: grid; grid-template-columns: minmax(120px, 0.35fr) 1fr; gap: 1rem; padding: 0.8rem 0.9rem; background: var(--sdf-bg); }
+.sdf-summary__content li span { color: var(--sdf-muted); line-height: 1.5; }
+.sdf-summary__disclaimer { margin: 1rem 0 0; color: var(--sdf-muted); font-size: 0.8rem; line-height: 1.55; }
 
 .sdf-actions { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1.3rem; border-top: 1px solid var(--sdf-line); }
 .sdf-actions__primary { display: flex; gap: 0.75rem; margin-left: auto; }
@@ -134,6 +172,10 @@
 	.sdf-form { padding: 1.15rem; }
 	.sdf-step { min-height: 0; }
 	.sdf-options { grid-template-columns: 1fr; }
+	.sdf-package-options { grid-template-columns: 1fr; }
+	.sdf-volume-row { grid-template-columns: 1fr; }
+	.sdf-section-heading { align-items: start; }
+	.sdf-summary__content dl div, .sdf-summary__content li { grid-template-columns: 1fr; gap: 0.25rem; }
 	.sdf-step > fieldset { grid-template-columns: 1fr; }
 	.sdf-actions { display: grid; grid-template-columns: 1fr 1fr; }
 	.sdf-actions__primary { display: contents; }
