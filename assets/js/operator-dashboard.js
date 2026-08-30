@@ -1486,7 +1486,7 @@ export function financeMilestoneStatus(project) {
   return "Nog geen betaalstatus beschikbaar";
 }
 const WEBSITE_DOSSIER_IDS = Object.freeze([
-  "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier", "documentsDossier",
+  "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
 const SDF_DOSSIER_IDS = Object.freeze(["sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier"]);
@@ -1928,7 +1928,7 @@ export function applyDetailVisibility(requestKind, nodes) {
   for (const section of nodes.sdfDossierSections) section.hidden = isWebsite;
   for (const row of nodes.websiteDetailRows) row.hidden = !isWebsite;
   for (const row of nodes.sdfDetailRows) row.hidden = isWebsite;
-  nodes.sdfDetailNotice.hidden = isWebsite;
+  nodes.sdfDetailNotice.hidden = true;
 }
 
 function setText(id, value) {
@@ -2684,6 +2684,12 @@ export async function startOperatorDashboard({
   const customerRequestUploadCreate = document.getElementById("customerRequestUploadCreate");
   const customerRequestUploadCopy = document.getElementById("customerRequestUploadCopy");
   const customerRequestUploadRevoke = document.getElementById("customerRequestUploadRevoke");
+  const sdfDocumentActions = document.getElementById("sdfDocumentActions");
+  const sdfDocumentActionStatus = document.getElementById("sdfDocumentActionStatus");
+  const sdfDocumentUploadUrl = document.getElementById("sdfDocumentUploadUrl");
+  const sdfDocumentUploadCreate = document.getElementById("sdfDocumentUploadCreate");
+  const sdfDocumentUploadCopy = document.getElementById("sdfDocumentUploadCopy");
+  const sdfDocumentUploadRevoke = document.getElementById("sdfDocumentUploadRevoke");
   const internalSmokePanel = document.getElementById("internalSmokePanel");
   const internalSmokeRun = document.getElementById("internalSmokeRun");
   const internalSmokeStatus = document.getElementById("internalSmokeStatus");
@@ -2806,6 +2812,33 @@ export async function startOperatorDashboard({
     }
     return response.body.result;
   }
+
+  const sdfDocumentController = createSdfDocumentWorkspaceController(invoke, (state)=>{
+    const activeUpload = state.request?.upload_request;
+    sdfDocumentActions.hidden = !state.application;
+    sdfDocumentActionStatus.textContent = state.loading
+      ? "Documentactie wordt voorbereid."
+      : state.error ? "De documentactie kon niet worden voorbereid. Probeer opnieuw."
+      : state.upload_url ? "De veilige uploadlink is klaar."
+      : activeUpload ? `Er bestaat een actieve uploadlink tot ${formatDate(activeUpload.expires_at)}.`
+      : "Maak alleen wanneer nodig een veilige uploadlink voor dit SDF-dossier.";
+    sdfDocumentUploadUrl.value = state.upload_url || "";
+    sdfDocumentUploadUrl.hidden = !state.upload_url;
+    sdfDocumentUploadCreate.hidden = Boolean(activeUpload);
+    sdfDocumentUploadCreate.disabled = state.loading;
+    sdfDocumentUploadCreate.textContent = state.error ? "Opnieuw proberen" : "Veilige uploadlink aanmaken";
+    sdfDocumentUploadCopy.hidden = !state.upload_url;
+    sdfDocumentUploadCopy.disabled = state.loading;
+    sdfDocumentUploadRevoke.hidden = !activeUpload;
+    sdfDocumentUploadRevoke.disabled = state.loading;
+  });
+  sdfDocumentUploadCreate.addEventListener("click", ()=>sdfDocumentController.startUpload());
+  sdfDocumentUploadCopy.addEventListener("click", async ()=>{
+    if (!sdfDocumentController.state.upload_url) return;
+    await navigator.clipboard.writeText(sdfDocumentController.state.upload_url);
+    sdfDocumentActionStatus.textContent = "Uploadlink gekopieerd.";
+  });
+  sdfDocumentUploadRevoke.addEventListener("click", ()=>sdfDocumentController.revokeUploadLink());
 
   const currentIdentity = verifiedIdentity || await invoke({ action: "get_current_operator_identity" });
   onIdentityReady(currentIdentity);
@@ -4172,6 +4205,7 @@ export async function startOperatorDashboard({
     selectedLocator = null;
     selectedSummary = null;
     selectedDetail = null;
+    sdfDocumentController.selectApplication(null);
     resetAssignment();
     applyDetailVisibility(null, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     detailMessage.textContent = "";
@@ -4494,6 +4528,7 @@ export async function startOperatorDashboard({
     if (!REQUEST_KINDS.has(application?.request_kind)) throw new Error("UNSUPPORTED_REQUEST_KIND");
     const isWebsite = application.request_kind === "website";
     selectedDetail = application;
+    sdfDocumentController.selectApplication(isWebsite ? null : application);
     applyDetailVisibility(application.request_kind, { detail, detailEmpty, promote, dossierSections, websiteDossierSections, sdfDossierSections, websiteDetailRows, sdfDetailRows, sdfDetailNotice });
     const dossierOutput = application.application;
     applicationDossierActions.hidden = true;
@@ -5232,6 +5267,135 @@ const CUSTOMER_REQUEST_DETAIL_FIELDS = new Set([
   "request_id", "request_reference", "source", "request_type", "title",
   "description", "status", "priority", "submitted_at", "revision", "updated_at", "upload_request",
 ]);
+const SDF_DOCUMENT_REQUEST_STATUSES = new Set(["NEW", "TRIAGED", "IN_PROGRESS", "WAITING_CUSTOMER", "RESOLVED"]);
+
+export function sdfDocumentCustomerRequest(application, idempotencyKey) {
+  const quoteRequestId = String(application?.quote_request_id || "");
+  if (application?.request_kind !== "slimme_documentenflow"
+    || !UUID.test(quoteRequestId) || !UUID.test(String(idempotencyKey || ""))) {
+    throw new Error("INVALID_SDF_DOCUMENT_REQUEST");
+  }
+  return {
+    action: "create_sdf_customer_request",
+    quote_request_id: quoteRequestId,
+    idempotency_key: idempotencyKey,
+    request_type: "FILE_DELIVERY",
+    title: "Documenten aanleveren",
+    description: "Lever de documenten voor dit Slimme Documentenflow-dossier veilig aan.",
+    priority: "NORMAL",
+  };
+}
+
+export async function sdfDocumentIdempotencyKey(quoteRequestId) {
+  if (!UUID.test(String(quoteRequestId || ""))) throw new Error("INVALID_SDF_DOCUMENT_REQUEST");
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`SDF_DOCUMENT_REQUEST_V1:${quoteRequestId}`),
+  ));
+  digest[6] = (digest[6] & 0x0f) | 0x50;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
+  const hex = [...digest.slice(0, 16)].map((value)=>value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function reusableSdfDocumentRequest(items) {
+  const requests = appendUniqueCustomerRequestItems([], items);
+  return requests.find((request)=>request.request_type === "FILE_DELIVERY"
+    && SDF_DOCUMENT_REQUEST_STATUSES.has(request.status)) || null;
+}
+
+export function createSdfDocumentWorkspaceController(
+  invoke,
+  onChange = ()=>{},
+  createRequestKey = sdfDocumentIdempotencyKey,
+  createUploadKey = ()=>crypto.randomUUID(),
+) {
+  const state = { application: null, request: null, upload_url: null, loading: false, error: null };
+  let generation = 0;
+  let operation = null;
+  const publish = ()=>onChange({ ...state, application: state.application ? { ...state.application } : null, request: state.request ? { ...state.request } : null });
+  const detailController = createCustomerRequestDetailController(invoke, (detailState)=>{
+    state.request = detailState.request;
+    state.upload_url = detailState.upload_url;
+    if (detailState.error) state.error = detailState.error;
+    publish();
+  }, createUploadKey);
+
+  function selectApplication(application) {
+    generation += 1;
+    operation = null;
+    state.application = application?.request_kind === "slimme_documentenflow" ? application : null;
+    state.request = null;
+    state.upload_url = null;
+    state.loading = false;
+    state.error = null;
+    detailController.clear();
+    publish();
+  }
+
+  async function startUpload() {
+    if (!state.application) return false;
+    if (operation) return operation;
+    const application = state.application;
+    const expectedGeneration = generation;
+    operation = (async ()=>{
+      state.loading = true;
+      state.error = null;
+      publish();
+      try {
+        const dossierReference = dossierReferenceFromDetail(application);
+        if (!dossierReference) throw new Error("SDF_DOSSIER_REFERENCE_REQUIRED");
+        let cursor = null;
+        let request = null;
+        do {
+          const page = await invoke(customerRequestsForDossierRequest(dossierReference, cursor));
+          if (expectedGeneration !== generation) return false;
+          if (!page || !Array.isArray(page.items) || typeof page.has_more !== "boolean"
+            || (page.next_cursor !== null && typeof page.next_cursor !== "string")
+            || (page.has_more && !page.next_cursor)) throw new Error("INVALID_CUSTOMER_REQUEST_LIST");
+          request = reusableSdfDocumentRequest(page.items);
+          cursor = page.has_more && !request ? page.next_cursor : null;
+        } while (cursor);
+        let requestId = request?.request_id || null;
+        if (!requestId) {
+          const created = await invoke(sdfDocumentCustomerRequest(
+            application,
+            await createRequestKey(application.quote_request_id),
+          ));
+          if (!created || !UUID.test(String(created.request_id || ""))) throw new Error("INVALID_SDF_DOCUMENT_REQUEST");
+          requestId = created.request_id;
+        }
+        if (expectedGeneration !== generation || !await detailController.selectRequest(requestId)) return false;
+        if (detailController.state.request?.upload_request) return true;
+        return await detailController.createUploadLink();
+      } catch (error) {
+        if (expectedGeneration === generation) state.error = error instanceof Error ? error.message : "OPERATOR_REQUEST_FAILED";
+        return false;
+      } finally {
+        if (expectedGeneration === generation) {
+          state.loading = false;
+          operation = null;
+          publish();
+        }
+      }
+    })();
+    return operation;
+  }
+
+  async function revokeUploadLink() {
+    if (state.loading || operation || !state.request?.upload_request) return false;
+    state.loading = true;
+    state.error = null;
+    publish();
+    const revoked = await detailController.revokeUploadLink();
+    state.loading = false;
+    publish();
+    return revoked;
+  }
+
+  publish();
+  return { state, selectApplication, startUpload, revokeUploadLink };
+}
 
 function exactCustomerRequestProjection(value, fields) {
   const keys = value && typeof value === "object" ? Object.keys(value) : [];

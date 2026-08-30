@@ -6,11 +6,12 @@ import { applicationIdentityPresentation, applicationLocatorFromUrl, application
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
+import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260830-recruitment-publication-control";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-recruitment-vacancy-owner-workspace";
+const OPERATOR_ASSET_RELEASE = "20260830-sdf-upload-workspace";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-recruitment-publication-control";
 
 const recruitmentVacancy = {
   id: "a1800000-0000-4000-8000-000000000081",
@@ -696,6 +697,143 @@ test("Customer Request upload-link builders expose only capability authority", (
   });
 });
 
+test("SDF document request uses canonical minimal authority and stable idempotency", async () => {
+  const application = {
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    application_reference: "LWS-AAN-2099-0090",
+    request_kind: "slimme_documentenflow",
+  };
+  const key = await sdfDocumentIdempotencyKey(application.quote_request_id);
+  assert.equal(key, await sdfDocumentIdempotencyKey(application.quote_request_id));
+  const command = sdfDocumentCustomerRequest(application, key);
+  assert.deepEqual(command, {
+    action: "create_sdf_customer_request",
+    quote_request_id: application.quote_request_id,
+    idempotency_key: key,
+    request_type: "FILE_DELIVERY",
+    title: "Documenten aanleveren",
+    description: "Lever de documenten voor dit Slimme Documentenflow-dossier veilig aan.",
+    priority: "NORMAL",
+  });
+  for (const forbidden of ["request_kind", "commercial_customer_id", "commercial_project_id", "customer_id", "project_id"]) {
+    assert.equal(Object.hasOwn(command, forbidden), false);
+  }
+});
+
+test("SDF dossier selection is mutation-free and reuses an operational file request", async () => {
+  const requestId = "a1800000-0000-4000-8000-000000000091";
+  const calls = [];
+  const controller = createSdfDocumentWorkspaceController(async (input)=>{
+    calls.push(input);
+    if (input.action === "list_customer_requests_for_dossier") {
+      return { items: [{ ...customerRequestListItem(requestId), request_type: "FILE_DELIVERY" }], has_more: false, next_cursor: null };
+    }
+    if (input.action === "get_customer_request") return { ...customerRequestDetail(requestId), request_type: "FILE_DELIVERY" };
+    if (input.action === "create_customer_request_upload_link") return {
+      state: "ACTIVE", upload_request_id: "a1800000-0000-4000-8000-000000000092", expires_at: "2099-01-04T11:00:00Z",
+      was_created: true, upload_url: `https://lorenzowebsolutions.be/pages/customer-request-upload.html#token=${"A".repeat(43)}`,
+    };
+    throw new Error("UNEXPECTED_CALL");
+  }, ()=>{}, async ()=>"a1800000-0000-4000-8000-000000000093", ()=>"a1800000-0000-4000-8000-000000000094");
+  controller.selectApplication({
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    application_reference: "LWS-AAN-2099-0090",
+    request_kind: "slimme_documentenflow",
+  });
+  assert.deepEqual(calls, []);
+  assert.equal(await controller.startUpload(), true);
+  assert.equal(calls.some((input)=>input.action === "create_sdf_customer_request"), false);
+  assert.equal(calls.at(-1).request_id, requestId);
+  assert.equal(controller.state.request.request_id, requestId);
+});
+
+test("SDF dossier reuses a resolved file request under stable dossier idempotency", async () => {
+  const requestId = "a1800000-0000-4000-8000-000000000099";
+  const calls = [];
+  const controller = createSdfDocumentWorkspaceController(async (input)=>{
+    calls.push(input);
+    if (input.action === "list_customer_requests_for_dossier") {
+      return { items: [{ ...customerRequestListItem(requestId), request_type: "FILE_DELIVERY", status: "RESOLVED" }], has_more: false, next_cursor: null };
+    }
+    if (input.action === "get_customer_request") return { ...customerRequestDetail(requestId, "RESOLVED"), request_type: "FILE_DELIVERY" };
+    if (input.action === "create_customer_request_upload_link") return {
+      state: "ACTIVE", upload_request_id: "a1800000-0000-4000-8000-000000000100", expires_at: "2099-01-04T11:00:00Z",
+      was_created: true, upload_url: `https://lorenzowebsolutions.be/pages/customer-request-upload.html#token=${"C".repeat(43)}`,
+    };
+    throw new Error("UNEXPECTED_CALL");
+  }, ()=>{}, async ()=>"a1800000-0000-4000-8000-000000000101", ()=>"a1800000-0000-4000-8000-000000000102");
+  controller.selectApplication({
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    application_reference: "LWS-AAN-2099-0090",
+    request_kind: "slimme_documentenflow",
+  });
+  assert.equal(await controller.startUpload(), true);
+  assert.equal(calls.some((input)=>input.action === "create_sdf_customer_request"), false);
+  assert.equal(controller.state.request.status, "RESOLVED");
+});
+
+test("SDF upload lazily creates one request and uses its returned id", async () => {
+  const requestId = "a1800000-0000-4000-8000-000000000095";
+  const calls = [];
+  let releaseCreate;
+  const controller = createSdfDocumentWorkspaceController(async (input)=>{
+    calls.push(input);
+    if (input.action === "list_customer_requests_for_dossier") return { items: [], has_more: false, next_cursor: null };
+    if (input.action === "create_sdf_customer_request") return await new Promise((resolve)=>{ releaseCreate = ()=>resolve({ request_id: requestId }); });
+    if (input.action === "get_customer_request") return { ...customerRequestDetail(requestId), request_type: "FILE_DELIVERY" };
+    if (input.action === "create_customer_request_upload_link") return {
+      state: "ACTIVE", upload_request_id: "a1800000-0000-4000-8000-000000000096", expires_at: "2099-01-04T11:00:00Z",
+      was_created: true, upload_url: `https://lorenzowebsolutions.be/pages/customer-request-upload.html#token=${"B".repeat(43)}`,
+    };
+    throw new Error("UNEXPECTED_CALL");
+  }, ()=>{}, async ()=>"a1800000-0000-4000-8000-000000000097", ()=>"a1800000-0000-4000-8000-000000000098");
+  controller.selectApplication({
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    application_reference: "LWS-AAN-2099-0090",
+    request_kind: "slimme_documentenflow",
+  });
+  const first = controller.startUpload();
+  const duplicate = controller.startUpload();
+  await Promise.resolve();
+  await Promise.resolve();
+  releaseCreate();
+  assert.equal(await first, true);
+  assert.equal(await duplicate, true);
+  assert.equal(calls.filter((input)=>input.action === "create_sdf_customer_request").length, 1);
+  assert.equal(calls.find((input)=>input.action === "get_customer_request").request_id, requestId);
+  assert.equal(calls.find((input)=>input.action === "create_customer_request_upload_link").request_id, requestId);
+});
+
+test("SDF document authority failures remain controlled and retryable", async () => {
+  let attempts = 0;
+  const states = [];
+  const controller = createSdfDocumentWorkspaceController(async ()=>{
+    attempts += 1;
+    throw new Error("SDF_CUSTOMER_REQUEST_ACCESS_DENIED");
+  }, (state)=>states.push(state));
+  controller.selectApplication({
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+    application_reference: "LWS-AAN-2099-0090",
+    request_kind: "slimme_documentenflow",
+  });
+  assert.equal(await controller.startUpload(), false);
+  assert.equal(await controller.startUpload(), false);
+  assert.equal(attempts, 2);
+  assert.equal(states.at(-1).loading, false);
+  assert.equal(states.at(-1).error, "SDF_CUSTOMER_REQUEST_ACCESS_DENIED");
+});
+
+test("SDF document workspace reuses the existing dossier section and URL context", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.equal((html.match(/id="documentsDossier"/g) || []).length, 1);
+  assert.match(html, /id="documentsDossier"[^]*id="sdfDocumentActions"/);
+  assert.doesNotMatch(script.match(/const WEBSITE_DOSSIER_IDS[^]*?\];/)?.[0] || "", /documentsDossier/);
+  assert.match(script, /sdfDocumentController\.selectApplication\(isWebsite \? null : application\)/);
+  assert.deepEqual(applicationLocatorFromUrl("https://example.test/operator/dashboard/?request=a1800000-0000-4000-8000-000000000090"), {
+    quote_request_id: "a1800000-0000-4000-8000-000000000090",
+  });
+});
+
 test("Customer Request upload URL exists only in controller memory until revoke or selection change", async () => {
   const requestId = "a1800000-0000-4000-8000-000000000070";
   const uploadRequestId = "a1800000-0000-4000-8000-000000000071";
@@ -1060,7 +1198,7 @@ test("assignment UI is bounded, accessible, stale-safe, and Edge-only", async ()
   assert.match(script, /await invoke\(input\);[\s\S]{0,180}await loadAssignment\(selectedDetail, requestId/);
   assert.match(script, /if \(outcome\.refresh\) await loadAssignment\(selectedDetail, requestId, outcome\.message\)/);
   assert.match(script, /requestId !== detailRequestId \|\| dossierReference !== dossierReferenceFromDetail\(selectedDetail\)/);
-  assert.match(script, /selectedDetail = null;\s*resetAssignment\(\)/);
+  assert.match(script, /selectedDetail = null;\s*sdfDocumentController\.selectApplication\(null\);\s*resetAssignment\(\)/);
   assert.doesNotMatch(assignmentHandler, /client\.rpc\(/);
   assert.doesNotMatch(script, /assignmentState\.revision\s*(?:\+\+|\+=|=\s*assignmentState\.revision\s*\+)/);
 });
@@ -1242,7 +1380,7 @@ test("SDF detail restores shared data without Website-only presentation", () => 
   assert.equal(harness.sdfSections.every((section) => !section.hidden), true);
   assert.equal(harness.nodes.websiteDetailRows.every((row) => row.hidden), true);
   assert.equal(harness.nodes.sdfDetailRows.every((row) => !row.hidden), true);
-  assert.equal(harness.nodes.sdfDetailNotice.hidden, false);
+  assert.equal(harness.nodes.sdfDetailNotice.hidden, true);
 });
 
 test("SDF detail hides every Website-only field and dossier section", async () => {
