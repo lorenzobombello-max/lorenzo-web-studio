@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(90);
+select plan(97);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
@@ -40,6 +40,22 @@ select ok(
   and has_function_privilege('service_role','public.inspect_sdf_qualification_intake_for_operator_v1(uuid)','execute')
   and has_function_privilege('service_role','public.transition_sdf_qualification_intake_v1(uuid,text,text,uuid,text)','execute'),
   'existing service-role execution remains available for internal flows with human authority context'
+);
+select ok(
+  has_function_privilege('service_role','public.list_operator_pending_sdf_intakes_v1(uuid)','execute'),
+  'service role can execute the SDF pending projection for the server-side operator readmodel'
+);
+select ok(
+  not has_function_privilege('anon','public.list_operator_pending_sdf_intakes_v1(uuid)','execute'),
+  'anon cannot execute the SDF pending projection'
+);
+select ok(
+  not has_function_privilege('public','public.list_operator_pending_sdf_intakes_v1(uuid)','execute'),
+  'PUBLIC cannot execute the SDF pending projection'
+);
+select ok(
+  not has_function_privilege('authenticated','public.list_operator_pending_sdf_intakes_v1(uuid)','execute'),
+  'authenticated callers use the guarded operator command route instead of direct projection access'
 );
 
 select lives_ok(
@@ -127,6 +143,19 @@ select is((select result->>'replayed' from allow_result),'false','Owner can expl
 select is((select count(*)::integer from public.sdf_qualification_intakes),1,'Owner allow creates exactly one intake');
 select is((select count(*)::integer from public.sdf_qualification_intake_email_jobs where kind='invitation'),1,'Owner allow creates exactly one invitation job');
 select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'invited SDF intake is visible in pending projection');
+select is(
+  public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000001')->'items'->0->>'request_kind',
+  'slimme_documentenflow',
+  'service-side projection returns the canonical SDF pending DTO for an active Owner actor'
+);
+select throws_ok(
+  $$select public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000099')$$,
+  '42501','UNKNOWN_OPERATOR','non-operator cannot read the SDF pending projection'
+);
+select throws_ok(
+  $$select public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000003')$$,
+  '42501','OPERATOR_DISABLED','disabled Owner cannot read the SDF pending projection'
+);
 select lives_ok(
   $$select public.inspect_sdf_qualification_intake_for_operator_v1('bd200000-0000-4000-8000-000000000001')$$,
   'authenticated Owner can inspect the SDF qualification intake'
