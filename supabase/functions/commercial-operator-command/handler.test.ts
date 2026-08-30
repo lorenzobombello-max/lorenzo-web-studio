@@ -292,19 +292,16 @@ Deno.test("SDF qualification transition uses the established application action 
   assertEquals(rejected.status, 400);
 });
 
-Deno.test("SDF active-work acceptance uses the established application action boundary", async () => {
+Deno.test("removed SDF active-work acceptance action fails closed", async () => {
   const harness = dependencies();
   const input = {
     action: "accept_sdf_for_active_work_v1",
     quote_request_id: "a1800000-0000-4000-8000-000000000094",
     idempotency_key: "a1800000-0000-4000-8000-000000000095",
   };
-  const accepted = await handleCommercialOperator(request(input), harness.deps);
-  assertEquals(accepted.status, 200);
-  assertEquals(harness.calls[0].input, input);
-
-  const rejected = await handleCommercialOperator(request({ ...input, actor_role: "owner" }), harness.deps);
+  const rejected = await handleCommercialOperator(request(input), harness.deps);
   assertEquals(rejected.status, 400);
+  assertEquals(harness.calls.length, 0);
 });
 const quotationBusinessRequest = {
   action: "upsert_quotation_business_draft" as const,

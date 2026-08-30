@@ -1082,11 +1082,6 @@ if (import.meta.main) {
             if (error) throw new Error(error.message);
             return data;
           }
-          if (input.action === "accept_sdf_for_active_work_v1") {
-            const { data, error } = await clientFor(jwt).rpc("accept_sdf_for_active_work_v1", { p_quote_request_id: input.quote_request_id, p_idempotency_key: input.idempotency_key });
-            if (error) throw new Error(error.message);
-            return data;
-          }
           if (input.action === "get_assignment_operator_roster") {
             return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
           }
