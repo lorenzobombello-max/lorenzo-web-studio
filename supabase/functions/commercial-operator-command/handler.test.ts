@@ -2408,6 +2408,9 @@ Deno.test("workforce calendar failures use stable authorization and internal env
 Deno.test("recruitment vacancy actions accept only exact authority-minimal input", async ()=>{
   const valid = [
     { action: "list_recruitment_vacancies" },
+    { action: "get_recruitment_publication_state" },
+    { action: "set_recruitment_publication_enabled", enabled: true },
+    { action: "set_recruitment_publication_enabled", enabled: false },
     { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent },
     { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...vacancyContent },
     { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" },
@@ -2422,6 +2425,9 @@ Deno.test("recruitment vacancy actions accept only exact authority-minimal input
 
   for (const input of [
     { action: "list_recruitment_vacancies", role: "owner" },
+    { action: "get_recruitment_publication_state", role: "owner" },
+    { action: "set_recruitment_publication_enabled", enabled: "true" },
+    { action: "set_recruitment_publication_enabled", enabled: true, header: false },
     { action: "create_recruitment_vacancy", slug: "Invalid Slug", ...vacancyContent },
     { action: "create_recruitment_vacancy", slug: "valid-slug", ...vacancyContent, title: " " },
     { action: "update_recruitment_vacancy", vacancy_id: "not-a-uuid", ...vacancyContent },
@@ -2441,6 +2447,10 @@ Deno.test("recruitment vacancy transports use exact RPC names and arguments", as
       calls.push({ name, args });
       const data = name === "list_owner_recruitment_vacancies_v1"
         ? [recruitmentVacancy()]
+        : name === "get_public_recruitment_publication_state_v1"
+        ? { enabled: true }
+        : name === "set_recruitment_publication_enabled_v1"
+        ? { enabled: false }
         : name === "set_recruitment_vacancy_status_v1"
         ? { id: vacancyId, slug: "senior-webontwikkelaar", status: "PUBLISHED", published_at: "2026-08-30T19:00:00.000Z", closed_at: null }
         : { id: vacancyId, slug: "senior-webontwikkelaar", status: "DRAFT" };
@@ -2448,11 +2458,15 @@ Deno.test("recruitment vacancy transports use exact RPC names and arguments", as
     },
   };
   assertEquals(await executeRecruitmentVacancyTransport(client, { action: "list_recruitment_vacancies" }), [recruitmentVacancy()]);
+  assertEquals(await executeRecruitmentVacancyTransport(client, { action: "get_recruitment_publication_state" }), { enabled: true });
+  assertEquals(await executeRecruitmentVacancyTransport(client, { action: "set_recruitment_publication_enabled", enabled: false }), { enabled: false });
   await executeRecruitmentVacancyTransport(client, { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent });
   await executeRecruitmentVacancyTransport(client, { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...vacancyContent });
   await executeRecruitmentVacancyTransport(client, { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" });
   assertEquals(calls, [
     { name: "list_owner_recruitment_vacancies_v1", args: {} },
+    { name: "get_public_recruitment_publication_state_v1", args: {} },
+    { name: "set_recruitment_publication_enabled_v1", args: { p_enabled: false } },
     { name: "create_recruitment_vacancy_v1", args: { p_title: vacancyContent.title, p_slug: "senior-webontwikkelaar", p_department: vacancyContent.department, p_location: vacancyContent.location, p_employment_type: vacancyContent.employment_type, p_summary: vacancyContent.summary, p_description: vacancyContent.description, p_requirements: vacancyContent.requirements } },
     { name: "update_recruitment_vacancy_v1", args: { p_vacancy_id: vacancyId, p_title: vacancyContent.title, p_department: vacancyContent.department, p_location: vacancyContent.location, p_employment_type: vacancyContent.employment_type, p_summary: vacancyContent.summary, p_description: vacancyContent.description, p_requirements: vacancyContent.requirements } },
     { name: "set_recruitment_vacancy_status_v1", args: { p_vacancy_id: vacancyId, p_status: "PUBLISHED" } },
@@ -2469,6 +2483,9 @@ Deno.test("recruitment vacancy response validators reject projection and lifecyc
   }
   await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: { id: vacancyId, slug: "senior-webontwikkelaar", status: "PUBLISHED" }, error: null }) }, { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent }), Error, "INVALID_RECRUITMENT_VACANCY_RESPONSE");
   await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: { id: vacancyId, slug: "senior-webontwikkelaar", status: "CLOSED", published_at: null, closed_at: "bad-date" }, error: null }) }, { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" }), Error, "INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  for (const invalid of [{}, { enabled: "true" }, { enabled: true, owner: true }]) {
+    await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: invalid, error: null }) }, { action: "get_recruitment_publication_state" }), Error, "INVALID_RECRUITMENT_PUBLICATION_RESPONSE");
+  }
 });
 
 Deno.test("recruitment vacancy index dispatch constructs only a caller JWT client", async ()=>{

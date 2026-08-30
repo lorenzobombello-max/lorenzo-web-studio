@@ -672,6 +672,8 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
         "create_recruitment_vacancy",
         "update_recruitment_vacancy",
         "set_recruitment_vacancy_status",
+        "get_recruitment_publication_state",
+        "set_recruitment_publication_enabled",
       ].includes(input.action)) {
         return await executeCallerJwtRecruitmentVacancyAction(
           jwt,

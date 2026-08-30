@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createPublicRecruitmentController, groupPublicVacancies, loadPublicVacancies, publicVacanciesResponse } from "../assets/js/recruitment-public.js";
+import { loadPublicRecruitmentPublicationState, publicRecruitmentLinkPlan, publicRecruitmentPublicationResponse } from "../assets/js/recruitment-publication.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path)=>readFile(new URL(path, root), "utf8");
@@ -26,18 +27,40 @@ test("public careers route has the required shell SEO heading and empty states",
   assert.match(html, /Momenteel zijn er geen openstaande vacatures\./);
   assert.match(html, /Nieuwe vacatures verschijnen hier zodra er een functie beschikbaar is\./);
   assert.match(html, /Vacatures konden momenteel niet worden geladen\./);
+  assert.match(html, /id="careersInactive"/);
+  assert.match(html, /Rekrutering is momenteel niet beschikbaar\./);
+  assert.match(html, /id="careersPublishedContent" hidden/);
   assert.doesNotMatch(html, /JobPosting|Solliciteer spontaan|type="file"|<form\b|testkamer/i);
   assert.match(sitemap, /<loc>https:\/\/lorenzowebsolutions\.be\/werken-bij\/<\/loc>/);
 });
 
 test("public navigation uses one careers label across both site script owners", async ()=>{
-  const [html, pages, redesign] = await Promise.all([read("werken-bij/index.html"), read("assets/js/pages.js"), read("assets/js/redesign.js")]);
-  assert.match(html, /data-careers-link[^>]*aria-current="page"[^>]*>Werken bij ons<\/a>/);
+  const [html, pages, redesign, publication] = await Promise.all([read("werken-bij/index.html"), read("assets/js/pages.js"), read("assets/js/redesign.js"), read("assets/js/recruitment-publication.js")]);
+  assert.doesNotMatch(html, /data-careers-link/);
   for (const source of [pages, redesign]) {
-    assert.match(source, /data-careers-link/);
-    assert.match(source, /\/werken-bij\//);
-    assert.match(source, /Werken bij ons/);
+    assert.match(source, /recruitment-publication\.js/);
+    assert.match(source, /initializePublicRecruitmentLinks/);
   }
+  assert.match(publication, /dataset\.careersLink/);
+  assert.match(publication, /\/werken-bij\//);
+  assert.match(publication, /Werken bij ons/);
+  assert.deepEqual(publicRecruitmentLinkPlan(true), { header: true, footer: true });
+  assert.deepEqual(publicRecruitmentLinkPlan(false), { header: false, footer: false });
+});
+
+test("public publication loader exposes only enabled through the anon RPC", async ()=>{
+  const calls = [];
+  const state = await loadPublicRecruitmentPublicationState(async (url, options)=>{
+    calls.push({ url, options });
+    if (calls.length === 1) return { ok: true, json: async ()=>({ supabaseUrl: "https://xcsptvntvrizwhskaphr.supabase.co", publishableKey: "sb_publishable_public" }) };
+    return { ok: true, json: async ()=>({ enabled: false }) };
+  });
+  assert.deepEqual(state, { enabled: false });
+  assert.deepEqual(publicRecruitmentPublicationResponse({ enabled: true }), { enabled: true });
+  assert.throws(()=>publicRecruitmentPublicationResponse({ enabled: true, owner: true }), /INVALID_PUBLIC_RECRUITMENT_PUBLICATION_RESPONSE/);
+  assert.equal(calls[1].url, "https://xcsptvntvrizwhskaphr.supabase.co/rest/v1/rpc/get_public_recruitment_publication_state_v1");
+  assert.equal(calls[1].options.cache, "no-store");
+  assert.equal(Object.hasOwn(calls[1].options.headers, "Authorization"), false);
 });
 
 test("public vacancy DTO is exact and contains no status or internal metadata", ()=>{
@@ -80,18 +103,30 @@ test("public loader calls only the anon public-list RPC", async ()=>{
 
 test("controller covers empty grouped and safe error states", async ()=>{
   const states = [];
-  const empty = createPublicRecruitmentController({ load: async ()=>[], onChange: (state)=>states.push(state) });
+  const enabledState = async ()=>({ enabled: true });
+  const empty = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>[], onChange: (state)=>states.push(state) });
   assert.equal(await empty.start(), true);
   assert.equal(empty.state.status, "empty");
 
-  const populated = createPublicRecruitmentController({ load: async ()=>[vacancy(), vacancy({ title: "Backend developer", slug: "backend-developer" }), vacancy({ title: "Security engineer", slug: "security-engineer", department: "Security" })] });
+  const populated = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>[vacancy(), vacancy({ title: "Backend developer", slug: "backend-developer" }), vacancy({ title: "Security engineer", slug: "security-engineer", department: "Security" })] });
   assert.equal(await populated.start(), true);
   assert.deepEqual(populated.state.groups.map((group)=>[group.department, group.items.length]), [["Development", 2], ["Security", 1]]);
 
-  const failed = createPublicRecruitmentController({ load: async ()=>{ throw new Error("private database detail"); } });
+  let vacancyCalls = 0;
+  const inactive = createPublicRecruitmentController({ loadState: async ()=>({ enabled: false }), load: async ()=>{ vacancyCalls += 1; return []; } });
+  assert.equal(await inactive.start(), true);
+  assert.equal(inactive.state.status, "inactive");
+  assert.equal(vacancyCalls, 0);
+
+  const unavailable = createPublicRecruitmentController({ loadState: async ()=>{ throw new Error("private database detail"); }, load: async ()=>{ vacancyCalls += 1; return []; } });
+  assert.equal(await unavailable.start(), false);
+  assert.deepEqual(unavailable.state, { status: "unavailable", groups: [] });
+  assert.equal(vacancyCalls, 0);
+
+  const failed = createPublicRecruitmentController({ loadState: enabledState, load: async ()=>{ throw new Error("private database detail"); } });
   assert.equal(await failed.start(), false);
   assert.deepEqual(failed.state, { status: "error", groups: [] });
-  assert.deepEqual(states.map((state)=>state.status), ["loading", "empty"]);
+  assert.deepEqual(states.map((state)=>state.status), ["checking", "loading", "empty"]);
 });
 
 test("renderer is textContent-only and responsive CSS has desktop and mobile grids", async ()=>{

@@ -27,6 +27,8 @@ const APPLICATION_ACTIONS = new Set([
   "create_recruitment_vacancy",
   "update_recruitment_vacancy",
   "set_recruitment_vacancy_status",
+  "get_recruitment_publication_state",
+  "set_recruitment_publication_enabled",
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
@@ -143,6 +145,11 @@ export type WorkforceCalendarActionInput = Readonly<{
 }>;
 export type RecruitmentVacancyActionInput = Readonly<{
   action: "list_recruitment_vacancies";
+}> | Readonly<{
+  action: "get_recruitment_publication_state";
+}> | Readonly<{
+  action: "set_recruitment_publication_enabled";
+  enabled: boolean;
 }> | Readonly<{
   action: "create_recruitment_vacancy";
   title: string;
@@ -579,6 +586,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "start_date", "end_date"])
     : action === "list_recruitment_vacancies"
     ? new Set(["action"])
+    : action === "get_recruitment_publication_state"
+    ? new Set(["action"])
+    : action === "set_recruitment_publication_enabled"
+    ? new Set(["action", "enabled"])
     : action === "create_recruitment_vacancy"
     ? new Set(["action", "title", "slug", "department", "location", "employment_type", "summary", "description", "requirements"])
     : action === "update_recruitment_vacancy"
@@ -709,6 +720,11 @@ function validateApplicationAction(value: UnvalidatedInput) {
     return { action, start_date: startDate, end_date: endDate };
   }
   if (action === "list_recruitment_vacancies") return { action };
+  if (action === "get_recruitment_publication_state") return { action };
+  if (action === "set_recruitment_publication_enabled") {
+    if (typeof value.enabled !== "boolean") throw new RequestError(400, "INVALID_REQUEST");
+    return { action, enabled: value.enabled };
+  }
   if (action === "create_recruitment_vacancy" || action === "update_recruitment_vacancy") {
     const vacancyId = action === "update_recruitment_vacancy" ? String(value.vacancy_id || "") : null;
     const fieldLimits = {
@@ -1541,7 +1557,11 @@ export async function executeRecruitmentVacancyTransport(
   client: DossierAssignmentRpcClient,
   input: RecruitmentVacancyActionInput,
 ): Promise<unknown> {
-  const rpc = input.action === "list_recruitment_vacancies"
+  const rpc = input.action === "get_recruitment_publication_state"
+    ? ["get_public_recruitment_publication_state_v1", {}] as const
+    : input.action === "set_recruitment_publication_enabled"
+    ? ["set_recruitment_publication_enabled_v1", { p_enabled: input.enabled }] as const
+    : input.action === "list_recruitment_vacancies"
     ? ["list_owner_recruitment_vacancies_v1", {}] as const
     : input.action === "create_recruitment_vacancy"
     ? ["create_recruitment_vacancy_v1", {
@@ -1558,6 +1578,15 @@ export async function executeRecruitmentVacancyTransport(
     : ["set_recruitment_vacancy_status_v1", { p_vacancy_id: input.vacancy_id, p_status: input.status }] as const;
   const { data, error } = await client.rpc(rpc[0], rpc[1]);
   if (error) throw new Error(error.message);
+  if (input.action === "get_recruitment_publication_state"
+    || input.action === "set_recruitment_publication_enabled") {
+    if (!data || typeof data !== "object" || Array.isArray(data)
+      || !hasExactKeys(data as Record<string, unknown>, ["enabled"])
+      || typeof (data as Record<string, unknown>).enabled !== "boolean") {
+      throw new Error("INVALID_RECRUITMENT_PUBLICATION_RESPONSE");
+    }
+    return data;
+  }
   if (input.action === "list_recruitment_vacancies") {
     if (!Array.isArray(data)) throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
     return data.map(validateRecruitmentVacancy);

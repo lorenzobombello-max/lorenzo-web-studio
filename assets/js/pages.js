@@ -522,13 +522,9 @@
     applyRequestMode();
   }
 
-  if (navigation && !navigation.querySelector("[data-careers-link]")) {
-    const careersLink = document.createElement("a");
-    careersLink.href = "/werken-bij/";
-    careersLink.dataset.careersLink = "";
-    careersLink.textContent = "Werken bij ons";
-    navigation.insertBefore(careersLink, navigation.querySelector(".nav-cta"));
-  }
+  void import("./recruitment-publication.js")
+    .then(({ initializePublicRecruitmentLinks })=>initializePublicRecruitmentLinks(document))
+    .catch(()=>document.querySelectorAll("[data-careers-link]").forEach((link)=>link.closest("li")?.remove() || link.remove()));
   if (menuToggle) menuToggle.addEventListener("click", toggleMenu);
   if (navigation) navigation.addEventListener("click", (event) => { if (event.target.closest("a")) closeMenu(false); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(true); });

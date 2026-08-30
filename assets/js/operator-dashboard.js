@@ -356,6 +356,75 @@ export function recruitmentVacancyStatusRequest(vacancyId, status) {
   return { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status };
 }
 
+export function recruitmentPublicationResponse(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== 1 || typeof value.enabled !== "boolean") {
+    throw new TypeError("INVALID_RECRUITMENT_PUBLICATION_RESPONSE");
+  }
+  return { enabled: value.enabled };
+}
+
+export function recruitmentPublicationRequest(enabled) {
+  if (typeof enabled !== "boolean") throw new TypeError("INVALID_RECRUITMENT_PUBLICATION_INPUT");
+  return { action: "set_recruitment_publication_enabled", enabled };
+}
+
+export function createRecruitmentPublicationController({ load, execute, onChange = ()=>{} }) {
+  let enabled = null;
+  let loading = false;
+  let mutating = false;
+  let error = null;
+  let generation = 0;
+  const state = ()=>({ enabled, loading, mutating, error });
+  const notify = ()=>onChange(state());
+
+  async function refresh() {
+    const requestGeneration = ++generation;
+    loading = true;
+    error = null;
+    notify();
+    try {
+      const result = recruitmentPublicationResponse(await load({ action: "get_recruitment_publication_state" }));
+      if (requestGeneration !== generation) return false;
+      enabled = result.enabled;
+      loading = false;
+      notify();
+      return true;
+    } catch {
+      if (requestGeneration !== generation) return false;
+      enabled = null;
+      loading = false;
+      error = "Publicatiestatus kon niet worden geladen.";
+      notify();
+      return false;
+    }
+  }
+
+  async function setEnabled(nextEnabled) {
+    if (mutating) return false;
+    const requestGeneration = ++generation;
+    mutating = true;
+    error = null;
+    notify();
+    try {
+      const result = recruitmentPublicationResponse(await execute(recruitmentPublicationRequest(nextEnabled)));
+      if (requestGeneration !== generation) return false;
+      enabled = result.enabled;
+      mutating = false;
+      notify();
+      return result.enabled === nextEnabled;
+    } catch {
+      if (requestGeneration !== generation) return false;
+      mutating = false;
+      error = "De publicatiestatus kon niet worden gewijzigd.";
+      notify();
+      return false;
+    }
+  }
+
+  return { get state() { return state(); }, refresh, setEnabled };
+}
+
 export function createRecruitmentVacancyController({ load, execute, onChange = ()=>{} }) {
   let items = [];
   let loading = false;
@@ -429,12 +498,18 @@ export function initializeRecruitmentVacancies(root, invoke) {
   const formMessage = root.getElementById("recruitmentVacancyFormMessage");
   const statusDialog = root.getElementById("recruitmentVacancyStatusDialog");
   const statusForm = root.getElementById("recruitmentVacancyStatusForm");
+  const publicationBadge = root.getElementById("recruitmentPublicationStatus");
+  const publicationAction = root.getElementById("recruitmentPublicationAction");
+  const publicationMessage = root.getElementById("recruitmentPublicationMessage");
+  const publicationDialog = root.getElementById("recruitmentPublicationDialog");
+  const publicationForm = root.getElementById("recruitmentPublicationForm");
   const statusButtons = Array.from(root.querySelectorAll("[data-recruitment-status]"));
   let filter = "ALL";
   let editingId = null;
   let pendingStatus = null;
   let lastTrigger = null;
   let controller;
+  let publicationController;
   const labels = { DRAFT: "Concept", PUBLISHED: "Gepubliceerd", CLOSED: "Gesloten" };
 
   function formContent() {
@@ -514,7 +589,36 @@ export function initializeRecruitmentVacancies(root, invoke) {
     empty.hidden = state.loading || visible.length > 0;
   }
 
+  function renderPublication(state = publicationController.state) {
+    const known = typeof state.enabled === "boolean";
+    publicationBadge.textContent = known ? (state.enabled ? "ACTIEF" : "NIET ACTIEF") : "NIET BESCHIKBAAR";
+    publicationBadge.dataset.publicationEnabled = known ? String(state.enabled) : "unknown";
+    publicationAction.textContent = state.enabled ? "Rekrutering offline zetten" : "Rekrutering publiceren";
+    publicationAction.disabled = !known || state.loading || state.mutating;
+    publicationAction.setAttribute("aria-busy", String(state.mutating));
+    publicationMessage.textContent = state.error || (state.loading ? "Publicatiestatus laden..." : state.mutating ? "Publicatiestatus wijzigen..." : "");
+  }
+
   controller = createRecruitmentVacancyController({ load: invoke, execute: invoke, onChange: render });
+  publicationController = createRecruitmentPublicationController({ load: invoke, execute: invoke, onChange: renderPublication });
+  publicationAction.addEventListener("click", ()=>{
+    const activating = publicationController.state.enabled === false;
+    lastTrigger = publicationAction;
+    root.getElementById("recruitmentPublicationDialogTitle").textContent = activating ? "Rekrutering publiceren?" : "Rekrutering offline zetten?";
+    root.getElementById("recruitmentPublicationDialogDescription").textContent = activating
+      ? "De headerlink, footerlink en recruitmentpagina worden samen zichtbaar."
+      : "De headerlink, footerlink en recruitmentpagina worden samen verborgen. Vacatures blijven bewaard.";
+    root.getElementById("recruitmentPublicationConfirm").textContent = activating ? "Rekrutering publiceren" : "Offline zetten";
+    publicationDialog.showModal();
+  });
+  root.getElementById("recruitmentPublicationCancel").addEventListener("click", ()=>{ if (!publicationController.state.mutating) publicationDialog.close(); });
+  publicationDialog.addEventListener("close", ()=>lastTrigger?.focus());
+  publicationForm.addEventListener("submit", async (event)=>{
+    event.preventDefault();
+    if (publicationController.state.mutating || typeof publicationController.state.enabled !== "boolean") return;
+    const changed = await publicationController.setEnabled(!publicationController.state.enabled);
+    if (changed) publicationDialog.close();
+  });
   root.getElementById("recruitmentVacancyCreate").addEventListener("click", (event)=>openWorkDialog(null, event.currentTarget));
   root.getElementById("recruitmentVacancyRefresh").addEventListener("click", ()=>{ void controller.refresh(); });
   for (const button of statusButtons) button.addEventListener("click", ()=>{
@@ -541,6 +645,8 @@ export function initializeRecruitmentVacancies(root, invoke) {
     if (changed) statusDialog.close();
   });
   render();
+  renderPublication();
+  void publicationController.refresh();
   void controller.refresh();
   return controller;
 }

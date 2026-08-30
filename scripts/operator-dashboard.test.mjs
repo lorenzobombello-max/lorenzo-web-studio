@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createRecruitmentVacancyController, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
+import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createRecruitmentPublicationController, createRecruitmentVacancyController, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, recruitmentPublicationRequest, recruitmentPublicationResponse, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
@@ -9,8 +9,8 @@ import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDo
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260830-recruitment-vacancy-owner-workspace";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-finance-subnav-client-nav";
+const OPERATOR_ASSET_RELEASE = "20260830-recruitment-publication-control";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260830-recruitment-vacancy-owner-workspace";
 
 const recruitmentVacancy = {
   id: "a1800000-0000-4000-8000-000000000081",
@@ -70,6 +70,29 @@ test("recruitment vacancy controller refreshes after writes and ignores stale li
   assert.equal(content.title, recruitmentVacancy.title);
 });
 
+test("recruitment publication controller is server-confirmed and stale-safe", async () => {
+  assert.deepEqual(recruitmentPublicationResponse({ enabled: true }), { enabled: true });
+  assert.deepEqual(recruitmentPublicationRequest(false), { action: "set_recruitment_publication_enabled", enabled: false });
+  assert.throws(()=>recruitmentPublicationResponse({ enabled: true, owner: true }), /INVALID_RECRUITMENT_PUBLICATION_RESPONSE/);
+  assert.throws(()=>recruitmentPublicationRequest("false"), /INVALID_RECRUITMENT_PUBLICATION_INPUT/);
+  const pending = [];
+  const calls = [];
+  const controller = createRecruitmentPublicationController({
+    load: (request)=>{ calls.push(request); return new Promise((resolve)=>pending.push(resolve)); },
+    execute: async (request)=>{ calls.push(request); return { enabled: request.enabled }; },
+  });
+  const stale = controller.refresh();
+  const current = controller.refresh();
+  pending[1]({ enabled: true });
+  assert.equal(await current, true);
+  pending[0]({ enabled: false });
+  assert.equal(await stale, false);
+  assert.equal(controller.state.enabled, true);
+  assert.equal(await controller.setEnabled(false), true);
+  assert.equal(controller.state.enabled, false);
+  assert.deepEqual(calls.at(-1), { action: "set_recruitment_publication_enabled", enabled: false });
+});
+
 test("recruitment owner workspace exposes bounded content and separate lifecycle dialogs", async () => {
   const [html, css, script] = await Promise.all([
     read("operator/dashboard/index.html"),
@@ -79,6 +102,7 @@ test("recruitment owner workspace exposes bounded content and separate lifecycle
   const workspace = html.match(/<section class="module-shell recruitment-workspace"[\s\S]*?<\/section>/)?.[0] || "";
   const workDialog = html.match(/<dialog id="recruitmentVacancyDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
   const statusDialog = html.match(/<dialog id="recruitmentVacancyStatusDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
+  const publicationDialog = html.match(/<dialog id="recruitmentPublicationDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
   assert.match(workspace, /data-module-panel="recruitment"/);
   assert.match(workspace, /data-recruitment-status="DRAFT"/);
   assert.match(workspace, /data-recruitment-status="PUBLISHED"/);
@@ -88,6 +112,11 @@ test("recruitment owner workspace exposes bounded content and separate lifecycle
   assert.match(workDialog, /name="slug"[^>]*pattern=/);
   assert.match(workDialog, /name="description"[^>]*maxlength="20000"/);
   assert.match(statusDialog, /class="operator-modal--action-confirm"/);
+  assert.match(workspace, /id="recruitmentPublicationStatus"/);
+  assert.match(workspace, /id="recruitmentPublicationAction"/);
+  assert.match(publicationDialog, /class="operator-modal--action-confirm"/);
+  assert.match(script, /Rekrutering publiceren\?/);
+  assert.match(script, /Rekrutering offline zetten\?/);
   assert.doesNotMatch(workspace, /kandidaat|testprofiel|testtoewijzing|contract/i);
   const initializer = script.match(/export function initializeRecruitmentVacancies[\s\S]*?\n\}/)?.[0] || "";
   assert.match(script, /initializeRecruitmentVacancies\(document, invoke\)/);
@@ -110,6 +139,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     ["supplierDocumentDialog", "operator-modal--work"],
     ["recruitmentVacancyDialog", "operator-modal--work"],
     ["recruitmentVacancyStatusDialog", "operator-modal--action-confirm"],
+    ["recruitmentPublicationDialog", "operator-modal--action-confirm"],
     ["promotionDialog", "operator-modal--compact"],
     ["lifecycleDialog", "operator-modal--action-confirm"],
     ["pendingIntakeCommandDialog", "operator-modal--action-confirm"],

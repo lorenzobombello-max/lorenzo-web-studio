@@ -1,3 +1,5 @@
+import { loadSharedPublicRecruitmentPublicationState } from "./recruitment-publication.js";
+
 const PUBLIC_VACANCY_RPC = "list_public_recruitment_vacancies_v1";
 const PUBLIC_VACANCY_KEYS = ["title", "slug", "department", "location", "employment_type", "summary", "description", "requirements", "published_at"];
 
@@ -59,19 +61,25 @@ export async function loadPublicVacancies(fetchImpl = fetch) {
   return publicVacanciesResponse(await response.json());
 }
 
-export function createPublicRecruitmentController({ load, onChange = ()=>{} }) {
+export function createPublicRecruitmentController({ loadState, load, onChange = ()=>{} }) {
   let state = { status: "idle", groups: [] };
   const update = (next)=>{ state = next; onChange(state); };
   return {
     get state() { return state; },
     async start() {
-      update({ status: "loading", groups: [] });
+      update({ status: "checking", groups: [] });
       try {
+        const publication = await loadState();
+        if (!publication.enabled) {
+          update({ status: "inactive", groups: [] });
+          return true;
+        }
+        update({ status: "loading", groups: [] });
         const groups = groupPublicVacancies(await load());
         update({ status: groups.length ? "ready" : "empty", groups });
         return true;
       } catch {
-        update({ status: "error", groups: [] });
+        update({ status: state.status === "loading" ? "error" : "unavailable", groups: [] });
         return false;
       }
     },
@@ -79,10 +87,23 @@ export function createPublicRecruitmentController({ load, onChange = ()=>{} }) {
 }
 
 export function renderPublicRecruitment(root, state) {
+  const inactive = root.getElementById("careersInactive");
+  const published = root.getElementById("careersPublishedContent");
+  const inactiveTitle = root.getElementById("careersInactiveTitle");
+  const inactiveDescription = root.getElementById("careersInactiveDescription");
   const loading = root.getElementById("vacancyLoading");
   const empty = root.getElementById("vacancyEmpty");
   const error = root.getElementById("vacancyError");
   const groups = root.getElementById("vacancyGroups");
+  const publicationClosed = ["checking", "inactive", "unavailable"].includes(state.status);
+  inactive.hidden = !publicationClosed;
+  published.hidden = publicationClosed;
+  inactiveTitle.textContent = state.status === "inactive"
+    ? "Rekrutering is momenteel niet actief."
+    : "Rekrutering is momenteel niet beschikbaar.";
+  inactiveDescription.textContent = state.status === "inactive"
+    ? "Op dit moment zijn er geen openstaande aanwervingen bij Lorenzo Web Solutions."
+    : "Probeer het later opnieuw.";
   loading.hidden = state.status !== "loading";
   empty.hidden = state.status !== "empty";
   error.hidden = state.status !== "error";
@@ -137,6 +158,7 @@ export function renderPublicRecruitment(root, state) {
 if (typeof document !== "undefined" && document.getElementById("vacancyGroups")) {
   let controller;
   controller = createPublicRecruitmentController({
+    loadState: ()=>loadSharedPublicRecruitmentPublicationState(),
     load: ()=>loadPublicVacancies(),
     onChange: (state)=>renderPublicRecruitment(document, state),
   });

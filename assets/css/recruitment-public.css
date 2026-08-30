@@ -6,6 +6,10 @@
 .careers-hero h1 { max-width:15ch; font-size:4.75rem; line-height:1; letter-spacing:0; }
 .careers-hero .page-hero__lead { max-width:48ch; color:rgba(255,255,255,.86); }
 .careers-intro { min-height:480px; background:linear-gradient(180deg,#f5f7f8,#eef3f4); }
+.careers-inactive { min-height:calc(100vh - 90px); display:grid; align-items:center; background:linear-gradient(180deg,#f5f7f8,#e7eef0); }
+.careers-inactive[hidden],#careersPublishedContent[hidden] { display:none; }
+.careers-inactive h1 { max-width:18ch; color:var(--ink); font-size:clamp(2.2rem,5vw,4.5rem); line-height:1.05; letter-spacing:0; overflow-wrap:anywhere; }
+.careers-inactive p:last-child { max-width:54ch; margin-top:1rem; color:var(--muted); font-size:1.05rem; }
 .vacancy-state { min-height:150px; margin-top:2rem; padding:2rem; display:grid; align-content:center; border:1px solid var(--line); border-left:4px solid var(--signal-deep); border-radius:var(--radius); background:var(--white); }
 .vacancy-state[hidden],.vacancy-groups[hidden] { display:none; }
 .vacancy-state strong { color:var(--ink); font-size:1.2rem; }
