@@ -27,10 +27,49 @@ test("SDF qualification intake preserves its three-step form contract", async ()
     "sampleRequestedByLws",
     "sampleUploadRequiredLater",
     "confirmation",
+    "saveButton",
     "submitButton",
   ]) {
     assert.match(html, new RegExp(`id="${id}"`), `Missing required #${id}`);
   }
+
+  for (const value of [
+    "quotation",
+    "invoice",
+    "order_confirmation",
+    "work_order",
+    "delivery_note",
+    "contract",
+    "customer_document",
+    "supplier_document",
+    "internal_administrative_document",
+    "multiple_document_types",
+    "other_custom",
+    "unknown_qualification_required",
+    "receive",
+    "generate",
+    "review",
+    "approve",
+    "send",
+    "archive",
+    "retrieve",
+  ]) {
+    assert.match(html, new RegExp(`value="${value}"`), `Missing option value ${value}`);
+  }
+});
+
+test("SDF progress presentation mirrors the active three-step structure", async () => {
+  const [html, script] = await Promise.all([
+    read("pages/sdf-qualification-intake.html"),
+    read("assets/js/sdf-qualification-intake.js"),
+  ]);
+
+  assert.match(html, /id="sdfStepLabel">Documenten/);
+  assert.match(html, /id="sdfCompletionValue">Fase 1 van 3/);
+  assert.match(html, /id="sdfProgressBar"/);
+  assert.match(script, /stepLabels=\["Documenten","Werkstappen","Uw flow"\]/);
+  assert.match(script, /completionValue\.textContent=`Fase \$\{currentStep\+1\} van 3`/);
+  assert.match(script, /progressBar\.style\.width=/);
 });
 
 test("SDF qualification intake preserves capability and API contracts", async () => {

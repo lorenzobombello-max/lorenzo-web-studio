@@ -9,8 +9,8 @@
   <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260831-1" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260831"></script>
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260831-2" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260831-2"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -34,15 +34,23 @@
 
     <div id="workspace" class="sdf-workspace" hidden>
       <aside class="sdf-progress" aria-label="Voortgang">
+        <div class="sdf-progress__meta"><span id="sdfStepLabel">Documenten</span><span id="sdfCompletionValue">Fase 1 van 3</span></div>
+        <div class="sdf-progress__track" aria-hidden="true"><span id="sdfProgressBar"></span></div>
         <ol>
-          <li><button type="button" data-step-target="0" aria-current="step"><span>01</span> Documenten</button></li>
-          <li><button type="button" data-step-target="1"><span>02</span> Werkstappen</button></li>
-          <li><button type="button" data-step-target="2"><span>03</span> Uw flow</button></li>
+          <li><button type="button" data-step-target="0" aria-current="step"><span>1</span><span>Documenten</span></button></li>
+          <li><button type="button" data-step-target="1"><span>2</span><span>Werkstappen</span></button></li>
+          <li><button type="button" data-step-target="2"><span>3</span><span>Uw flow</span></button></li>
         </ol>
-        <div class="sdf-progress__status"><span>Status</span><strong id="draftStatus">Nog niet bewaard</strong></div>
       </aside>
 
-      <form id="qualificationForm" class="sdf-form" novalidate>
+      <div class="sdf-content">
+        <div class="sdf-context" aria-live="polite">
+          <div><span>Traject</span><strong>Slimme documentenflow</strong></div>
+          <div><span>Onderdeel</span><strong>Kwalificatie</strong></div>
+          <div><span>Status</span><strong id="draftStatus">Nog niet bewaard</strong></div>
+        </div>
+
+        <form id="qualificationForm" class="sdf-form" novalidate>
         <div id="formMessage" class="sdf-message" role="status" aria-live="polite" hidden></div>
         <fieldset class="sdf-step" data-step="0">
           <legend>Welke documenten gebruikt u?</legend>
@@ -85,7 +93,8 @@
           <button id="previousButton" class="btn btn--ghost" type="button" hidden>Vorige</button>
           <div class="sdf-actions__primary"><button id="saveButton" class="btn btn--ghost" type="button">Concept bewaren</button><button id="nextButton" class="btn btn--primary" type="button">Volgende</button><button id="submitButton" class="btn btn--primary" type="submit" hidden>Informatie indienen</button></div>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   </main>
 </body>
