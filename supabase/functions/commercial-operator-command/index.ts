@@ -9,6 +9,7 @@ import {
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
+  executeRecruitmentVacancyTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   type InternalE2EAcceptedFileCleanupActionInput,
@@ -18,6 +19,7 @@ import {
   type QuotationBusinessApprovalPromotionActionInput,
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
+  type RecruitmentVacancyActionInput,
   type WorkforceCalendarActionInput,
   withCommercialOperatorCors
 } from "./handler.ts";
@@ -189,6 +191,14 @@ export async function executeCallerJwtCurrentOperatorIdentityAction(
   clientFor: (jwt: string)=>DossierAssignmentClient
 ): Promise<unknown> {
   return await executeCurrentOperatorIdentityTransport(clientFor(jwt));
+}
+
+export async function executeCallerJwtRecruitmentVacancyAction(
+  jwt: string,
+  input: RecruitmentVacancyActionInput,
+  clientFor: (jwt: string)=>DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeRecruitmentVacancyTransport(clientFor(jwt), input);
 }
 
 export async function executeServiceRoleWorkforceCalendarAction(
@@ -655,6 +665,18 @@ if (import.meta.main) Deno.serve((request)=>withCommercialOperatorCors(request, 
           actorAuthUserId,
           input as WorkforceCalendarActionInput,
           serviceClient(),
+        );
+      }
+      if ([
+        "list_recruitment_vacancies",
+        "create_recruitment_vacancy",
+        "update_recruitment_vacancy",
+        "set_recruitment_vacancy_status",
+      ].includes(input.action)) {
+        return await executeCallerJwtRecruitmentVacancyAction(
+          jwt,
+          input as RecruitmentVacancyActionInput,
+          clientFor,
         );
       }
       if (input.action === "upsert_quotation_business_draft") {

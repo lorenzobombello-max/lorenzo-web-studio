@@ -10,12 +10,13 @@ import {
   executeCustomerRequestTransport,
   executeCurrentOperatorIdentityTransport,
   executeOperatorPersonalQueueTransport,
+  executeRecruitmentVacancyTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   withCommercialOperatorCors
 } from "./handler.ts";
 import { OPERATOR_CURSOR_TTL_MS, signOperatorCursor, verifyOperatorCursor } from "../_shared/operator-cursor.ts";
-import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction, executeServiceRoleDossierDocumentAction, executeServiceRoleWorkforceCalendarAction } from "./index.ts";
+import { executeCallerJwtAssignmentRosterAction, executeCallerJwtCurrentOperatorIdentityAction, executeCallerJwtCustomerRequestAction, executeCallerJwtCustomerRequestSmokeFixtureAction, executeCallerJwtCustomerRequestUploadAction, executeCallerJwtDossierAssignmentAction, executeCallerJwtInternalE2EAcceptedFileCleanupAction, executeCallerJwtOperatorPersonalQueueAction, executeCallerJwtRecruitmentVacancyAction, executeQuotationBusinessApprovalPromotionAction, executeQuotationBusinessDraftAction, executeServiceRoleDossierDocumentAction, executeServiceRoleWorkforceCalendarAction } from "./index.ts";
 import { createQuotationApprovalIntegrity, verifyQuotationApprovalIntegrity } from "../_shared/quotation-approval-integrity.ts";
 
 const userId = "a1000000-0000-4000-8000-000000000001";
@@ -28,6 +29,30 @@ function workforceCalendarResult(overrides: Record<string, unknown> = {}) {
     start_date: "2026-08-24",
     end_date: "2026-08-30",
     employees: [],
+    ...overrides,
+  };
+}
+
+const vacancyId = "a1800000-0000-4000-8000-000000000081";
+const vacancyContent = {
+  title: "Senior webontwikkelaar",
+  department: "Delivery",
+  location: "Antwerpen",
+  employment_type: "Voltijds",
+  summary: "Bouw betrouwbare webproducten.",
+  description: "Je ontwikkelt en onderhoudt webproducten voor onze klanten.",
+  requirements: "Ervaring met moderne webtechnologie en kwaliteitsbewaking.",
+};
+function recruitmentVacancy(overrides: Record<string, unknown> = {}) {
+  return {
+    id: vacancyId,
+    ...vacancyContent,
+    slug: "senior-webontwikkelaar",
+    status: "DRAFT",
+    published_at: null,
+    closed_at: null,
+    created_at: "2026-08-30T18:00:00.000Z",
+    updated_at: "2026-08-30T18:00:00.000Z",
     ...overrides,
   };
 }
@@ -2375,6 +2400,94 @@ Deno.test("workforce calendar failures use stable authorization and internal env
     const response = await handleCommercialOperator(request({
       action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30",
     }), harness.deps);
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, publicCode);
+  }
+});
+
+Deno.test("recruitment vacancy actions accept only exact authority-minimal input", async ()=>{
+  const valid = [
+    { action: "list_recruitment_vacancies" },
+    { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent },
+    { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...vacancyContent },
+    { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" },
+    { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "CLOSED" },
+  ];
+  for (const input of valid) {
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(input), harness.deps);
+    assertEquals(response.status, 200);
+    assertEquals(harness.calls[0].input, input);
+  }
+
+  for (const input of [
+    { action: "list_recruitment_vacancies", role: "owner" },
+    { action: "create_recruitment_vacancy", slug: "Invalid Slug", ...vacancyContent },
+    { action: "create_recruitment_vacancy", slug: "valid-slug", ...vacancyContent, title: " " },
+    { action: "update_recruitment_vacancy", vacancy_id: "not-a-uuid", ...vacancyContent },
+    { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...vacancyContent, status: "PUBLISHED" },
+    { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "DRAFT" },
+    { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED", actor_id: userId },
+  ]) {
+    const response = await handleCommercialOperator(request(input), dependencies().deps);
+    assertEquals(response.status, 400);
+  }
+});
+
+Deno.test("recruitment vacancy transports use exact RPC names and arguments", async ()=>{
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const client = {
+    rpc: (name: string, args: Record<string, unknown>)=>{
+      calls.push({ name, args });
+      const data = name === "list_owner_recruitment_vacancies_v1"
+        ? [recruitmentVacancy()]
+        : name === "set_recruitment_vacancy_status_v1"
+        ? { id: vacancyId, slug: "senior-webontwikkelaar", status: "PUBLISHED", published_at: "2026-08-30T19:00:00.000Z", closed_at: null }
+        : { id: vacancyId, slug: "senior-webontwikkelaar", status: "DRAFT" };
+      return Promise.resolve({ data, error: null });
+    },
+  };
+  assertEquals(await executeRecruitmentVacancyTransport(client, { action: "list_recruitment_vacancies" }), [recruitmentVacancy()]);
+  await executeRecruitmentVacancyTransport(client, { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent });
+  await executeRecruitmentVacancyTransport(client, { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...vacancyContent });
+  await executeRecruitmentVacancyTransport(client, { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" });
+  assertEquals(calls, [
+    { name: "list_owner_recruitment_vacancies_v1", args: {} },
+    { name: "create_recruitment_vacancy_v1", args: { p_title: vacancyContent.title, p_slug: "senior-webontwikkelaar", p_department: vacancyContent.department, p_location: vacancyContent.location, p_employment_type: vacancyContent.employment_type, p_summary: vacancyContent.summary, p_description: vacancyContent.description, p_requirements: vacancyContent.requirements } },
+    { name: "update_recruitment_vacancy_v1", args: { p_vacancy_id: vacancyId, p_title: vacancyContent.title, p_department: vacancyContent.department, p_location: vacancyContent.location, p_employment_type: vacancyContent.employment_type, p_summary: vacancyContent.summary, p_description: vacancyContent.description, p_requirements: vacancyContent.requirements } },
+    { name: "set_recruitment_vacancy_status_v1", args: { p_vacancy_id: vacancyId, p_status: "PUBLISHED" } },
+  ]);
+});
+
+Deno.test("recruitment vacancy response validators reject projection and lifecycle drift", async ()=>{
+  for (const invalid of [
+    { ...recruitmentVacancy(), operator_id: userId },
+    { ...recruitmentVacancy(), status: "UNKNOWN" },
+    { ...recruitmentVacancy(), created_at: "not-a-date" },
+  ]) {
+    await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: [invalid], error: null }) }, { action: "list_recruitment_vacancies" }), Error, "INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  }
+  await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: { id: vacancyId, slug: "senior-webontwikkelaar", status: "PUBLISHED" }, error: null }) }, { action: "create_recruitment_vacancy", slug: "senior-webontwikkelaar", ...vacancyContent }), Error, "INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  await assertRejects(()=>executeRecruitmentVacancyTransport({ rpc: ()=>Promise.resolve({ data: { id: vacancyId, slug: "senior-webontwikkelaar", status: "CLOSED", published_at: null, closed_at: "bad-date" }, error: null }) }, { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status: "PUBLISHED" }), Error, "INVALID_RECRUITMENT_VACANCY_RESPONSE");
+});
+
+Deno.test("recruitment vacancy index dispatch constructs only a caller JWT client", async ()=>{
+  const clientJwts: string[] = [];
+  const result = await executeCallerJwtRecruitmentVacancyAction(jwt, { action: "list_recruitment_vacancies" }, (token)=>{
+    clientJwts.push(token);
+    return { rpc: ()=>Promise.resolve({ data: [recruitmentVacancy()], error: null }) };
+  });
+  assertEquals(clientJwts, [jwt]);
+  assertEquals(result, [recruitmentVacancy()]);
+});
+
+Deno.test("recruitment vacancy failures expose stable authorization and conflict envelopes", async ()=>{
+  for (const [databaseCode, status, publicCode] of [
+    ["RECRUITMENT_OWNER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["RECRUITMENT_VACANCY_NOT_FOUND", 404, "RECRUITMENT_VACANCY_NOT_FOUND"],
+    ['duplicate key value violates unique constraint "recruitment_vacancies_slug_key"', 409, "RECRUITMENT_VACANCY_SLUG_CONFLICT"],
+  ] as const) {
+    const response = await handleCommercialOperator(request({ action: "list_recruitment_vacancies" }), dependencies({ executeApplicationAction: async ()=>{ throw new Error(databaseCode); } }).deps);
     assertEquals(response.status, status);
     assertEquals((await response.json()).code, publicCode);
   }

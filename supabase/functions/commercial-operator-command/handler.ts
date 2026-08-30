@@ -23,6 +23,10 @@ const COMMANDS = new Set([
 const APPLICATION_ACTIONS = new Set([
   "get_current_operator_identity",
   "list_workforce_calendar",
+  "list_recruitment_vacancies",
+  "create_recruitment_vacancy",
+  "update_recruitment_vacancy",
+  "set_recruitment_vacancy_status",
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
@@ -136,6 +140,33 @@ export type WorkforceCalendarActionInput = Readonly<{
   action: "list_workforce_calendar";
   start_date: string;
   end_date: string;
+}>;
+export type RecruitmentVacancyActionInput = Readonly<{
+  action: "list_recruitment_vacancies";
+}> | Readonly<{
+  action: "create_recruitment_vacancy";
+  title: string;
+  slug: string;
+  department: string;
+  location: string;
+  employment_type: string;
+  summary: string;
+  description: string;
+  requirements: string;
+}> | Readonly<{
+  action: "update_recruitment_vacancy";
+  vacancy_id: string;
+  title: string;
+  department: string;
+  location: string;
+  employment_type: string;
+  summary: string;
+  description: string;
+  requirements: string;
+}> | Readonly<{
+  action: "set_recruitment_vacancy_status";
+  vacancy_id: string;
+  status: "PUBLISHED" | "CLOSED";
 }>;
 export type CustomerRequestActionInput = Readonly<{
   action: "list_customer_requests_for_dossier";
@@ -546,6 +577,14 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action"])
     : action === "list_workforce_calendar"
     ? new Set(["action", "start_date", "end_date"])
+    : action === "list_recruitment_vacancies"
+    ? new Set(["action"])
+    : action === "create_recruitment_vacancy"
+    ? new Set(["action", "title", "slug", "department", "location", "employment_type", "summary", "description", "requirements"])
+    : action === "update_recruitment_vacancy"
+    ? new Set(["action", "vacancy_id", "title", "department", "location", "employment_type", "summary", "description", "requirements"])
+    : action === "set_recruitment_vacancy_status"
+    ? new Set(["action", "vacancy_id", "status"])
     : action === "get_my_assigned_dossiers"
     ? new Set(["action", "cursor", "limit"])
     : action === "get_dossier_document_manifest"
@@ -668,6 +707,37 @@ function validateApplicationAction(value: UnvalidatedInput) {
     const rangeDays = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000;
     if (rangeDays < 0 || rangeDays > 365) throw new RequestError(400, "INVALID_REQUEST");
     return { action, start_date: startDate, end_date: endDate };
+  }
+  if (action === "list_recruitment_vacancies") return { action };
+  if (action === "create_recruitment_vacancy" || action === "update_recruitment_vacancy") {
+    const vacancyId = action === "update_recruitment_vacancy" ? String(value.vacancy_id || "") : null;
+    const fieldLimits = {
+      title: 160,
+      department: 120,
+      location: 160,
+      employment_type: 80,
+      summary: 500,
+      description: 20_000,
+      requirements: 20_000,
+    } as const;
+    const fields = Object.fromEntries(Object.entries(fieldLimits).map(([key, limit])=>{
+      const fieldValue = typeof value[key] === "string" ? value[key].trim() : "";
+      if (fieldValue.length < 1 || fieldValue.length > limit) throw new RequestError(400, "INVALID_REQUEST");
+      return [key, fieldValue];
+    }));
+    if (vacancyId !== null && !UUID.test(vacancyId)) throw new RequestError(400, "INVALID_REQUEST");
+    if (action === "create_recruitment_vacancy") {
+      const slug = typeof value.slug === "string" ? value.slug.trim() : "";
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 120) throw new RequestError(400, "INVALID_REQUEST");
+      return { action, slug, ...fields };
+    }
+    return { action, vacancy_id: vacancyId, ...fields };
+  }
+  if (action === "set_recruitment_vacancy_status") {
+    const vacancyId = String(value.vacancy_id || "");
+    const status = String(value.status || "");
+    if (!UUID.test(vacancyId) || !["PUBLISHED", "CLOSED"].includes(status)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, vacancy_id: vacancyId, status };
   }
   if (action === "get_my_assigned_dossiers") {
     const cursor = value.cursor ?? null;
@@ -944,6 +1014,7 @@ function mapDatabaseError(error: unknown) {
     "CUSTOMER_REQUEST_ACCESS_DENIED",
     "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED",
     "WORKFORCE_MANAGEMENT_READER_REQUIRED"
+    ,"RECRUITMENT_OWNER_REQUIRED"
     ,"PROJECT_SITE_OWNER_ADMIN_REQUIRED"
     ,"INTERNAL_E2E_OWNER_REQUIRED"
     ,"INTERNAL_E2E_CLEANUP_BINDING_REQUIRED"
@@ -1025,7 +1096,12 @@ function mapDatabaseError(error: unknown) {
     ,"WORKFORCE_DATE_RANGE_REQUIRED"
     ,"WORKFORCE_DATE_RANGE_REVERSED"
     ,"WORKFORCE_DATE_RANGE_TOO_LARGE"
+    ,"INVALID_RECRUITMENT_VACANCY_STATUS"
+    ,"RECRUITMENT_VACANCY_DRAFT_REVERSION_DENIED"
+    ,"RECRUITMENT_VACANCY_MUST_BE_PUBLISHED_BEFORE_CLOSE"
   ].includes(code)) return response(400, "INVALID_REQUEST");
+  if (code === "RECRUITMENT_VACANCY_NOT_FOUND") return response(404, code);
+  if (code.includes("recruitment_vacancies_slug_key") || code === "23505") return response(409, "RECRUITMENT_VACANCY_SLUG_CONFLICT");
   if (code === "INVALID_OPERATOR_CURSOR") return response(400, code);
   if (code === "OPERATOR_CURSOR_CONFIGURATION_ERROR" || code === "SERVER_CONFIGURATION_ERROR") {
     return response(500, "SERVER_CONFIGURATION_ERROR");
@@ -1439,4 +1515,66 @@ export async function executeCurrentOperatorIdentityTransport(
     throw new Error("INVALID_OPERATOR_IDENTITY_RESPONSE");
   }
   return identity as CurrentOperatorIdentity;
+}
+
+const RECRUITMENT_VACANCY_KEYS = [
+  "id", "title", "slug", "department", "location", "employment_type",
+  "summary", "description", "requirements", "status", "published_at",
+  "closed_at", "created_at", "updated_at",
+];
+
+function validateRecruitmentVacancy(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  const vacancy = value as Record<string, unknown>;
+  if (!hasExactKeys(vacancy, RECRUITMENT_VACANCY_KEYS)
+    || !UUID.test(String(vacancy.id || ""))
+    || !["DRAFT", "PUBLISHED", "CLOSED"].includes(String(vacancy.status || ""))
+    || !["title", "slug", "department", "location", "employment_type", "summary", "description", "requirements"].every((key)=>typeof vacancy[key] === "string" && String(vacancy[key]).length > 0)
+    || !["created_at", "updated_at"].every((key)=>typeof vacancy[key] === "string" && Number.isFinite(Date.parse(String(vacancy[key]))))
+    || !["published_at", "closed_at"].every((key)=>vacancy[key] === null || (typeof vacancy[key] === "string" && Number.isFinite(Date.parse(String(vacancy[key])))))) {
+    throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  }
+  return vacancy;
+}
+
+export async function executeRecruitmentVacancyTransport(
+  client: DossierAssignmentRpcClient,
+  input: RecruitmentVacancyActionInput,
+): Promise<unknown> {
+  const rpc = input.action === "list_recruitment_vacancies"
+    ? ["list_owner_recruitment_vacancies_v1", {}] as const
+    : input.action === "create_recruitment_vacancy"
+    ? ["create_recruitment_vacancy_v1", {
+      p_title: input.title, p_slug: input.slug, p_department: input.department,
+      p_location: input.location, p_employment_type: input.employment_type,
+      p_summary: input.summary, p_description: input.description, p_requirements: input.requirements,
+    }] as const
+    : input.action === "update_recruitment_vacancy"
+    ? ["update_recruitment_vacancy_v1", {
+      p_vacancy_id: input.vacancy_id, p_title: input.title, p_department: input.department,
+      p_location: input.location, p_employment_type: input.employment_type,
+      p_summary: input.summary, p_description: input.description, p_requirements: input.requirements,
+    }] as const
+    : ["set_recruitment_vacancy_status_v1", { p_vacancy_id: input.vacancy_id, p_status: input.status }] as const;
+  const { data, error } = await client.rpc(rpc[0], rpc[1]);
+  if (error) throw new Error(error.message);
+  if (input.action === "list_recruitment_vacancies") {
+    if (!Array.isArray(data)) throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+    return data.map(validateRecruitmentVacancy);
+  }
+  const result = data as Record<string, unknown>;
+  const expectedKeys = input.action === "set_recruitment_vacancy_status"
+    ? ["id", "slug", "status", "published_at", "closed_at"]
+    : ["id", "slug", "status"];
+  if (!result || typeof result !== "object" || Array.isArray(result)
+    || !hasExactKeys(result, expectedKeys) || !UUID.test(String(result.id || ""))
+    || typeof result.slug !== "string" || !["DRAFT", "PUBLISHED", "CLOSED"].includes(String(result.status || ""))
+    || (input.action === "create_recruitment_vacancy" && result.status !== "DRAFT")
+    || (input.action === "set_recruitment_vacancy_status" && (
+      result.status !== input.status
+      || !["published_at", "closed_at"].every((key)=>result[key] === null || (typeof result[key] === "string" && Number.isFinite(Date.parse(String(result[key])))))
+    ))) {
+    throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  }
+  return result;
 }

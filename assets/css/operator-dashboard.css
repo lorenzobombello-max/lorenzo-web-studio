@@ -91,6 +91,33 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .calendar-availability dd { margin:.15rem 0 0; color:var(--navy); font-weight:800; }
 @media (max-width:900px) { .calendar-toolbar { grid-template-columns:1fr auto; } .calendar-toolbar h2 { grid-column:1/-1; grid-row:1; } .calendar-period-actions { grid-column:1; grid-row:2; } .calendar-view-switcher { grid-column:2; grid-row:2; } }
 @media (max-width:540px) { .calendar-heading { flex-direction:column; } .calendar-toolbar { padding:.75rem; grid-template-columns:1fr; } .calendar-toolbar h2,.calendar-period-actions,.calendar-view-switcher { grid-column:1; } .calendar-toolbar h2 { grid-row:1; font-size:1rem; } .calendar-period-actions { grid-row:2; justify-content:center; } .calendar-view-switcher { grid-row:3; justify-content:stretch; overflow-x:auto; } .calendar-view-switcher button { flex:1 0 auto; } .calendar-legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .calendar-availability { grid-template-columns:1fr; } .calendar-viewport { max-width:100%; } }
+.recruitment-workspace { width:100%; max-width:none; padding-top:1.5rem; }
+.recruitment-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; }
+.recruitment-heading p:last-child { margin:.75rem 0 0; color:var(--muted); }
+.recruitment-heading__actions,.recruitment-vacancy-item__actions { display:flex; flex-wrap:wrap; align-items:center; gap:.55rem; }
+.recruitment-heading__actions :is(.primary-action,.secondary-action),.recruitment-vacancy-item__actions :is(.primary-action,.secondary-action,.danger-action) { margin:0; }
+.recruitment-status-filters { width:max-content; max-width:100%; margin:1.75rem 0 1rem; padding:.25rem; display:flex; gap:.2rem; overflow-x:auto; border:1px solid var(--line); border-radius:6px; background:var(--white); }
+.recruitment-status-filters button { min-height:40px; padding:.5rem .8rem; flex:0 0 auto; color:var(--muted); border:0; border-radius:4px; background:transparent; font-size:.76rem; font-weight:850; }
+.recruitment-status-filters button[aria-pressed="true"] { color:var(--white); background:var(--navy); }
+.recruitment-vacancy-list { margin:0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; list-style:none; }
+.recruitment-vacancy-item { min-width:0; padding:1.25rem; display:flex; flex-direction:column; border:1px solid var(--line); border-top:3px solid var(--turquoise); border-radius:var(--radius); background:var(--white); box-shadow:0 12px 30px rgba(17,29,54,.06); }
+.recruitment-vacancy-item__heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.recruitment-vacancy-item h2 { margin:0; color:var(--navy); font-size:1.15rem; overflow-wrap:anywhere; }
+.recruitment-vacancy-item__metadata,.recruitment-vacancy-item__updated { color:var(--muted); font-size:.78rem; font-weight:700; }
+.recruitment-vacancy-item__updated { margin-top:auto; padding-top:.75rem; }
+.recruitment-vacancy-item__actions { padding-top:.7rem; border-top:1px solid var(--line); }
+[data-vacancy-status="DRAFT"] { color:var(--amber); background:#fff7df; }
+[data-vacancy-status="PUBLISHED"] { color:var(--green); background:#e8f6ef; }
+[data-vacancy-status="CLOSED"] { color:var(--muted); background:var(--navy-soft); }
+.recruitment-vacancy-empty { margin-top:1rem; }
+.recruitment-vacancy-empty p { margin:.25rem 0 0; }
+.recruitment-vacancy-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.recruitment-vacancy-fields label { display:grid; align-content:start; gap:.35rem; color:var(--navy); font-weight:800; }
+.recruitment-vacancy-fields :is(input,textarea) { width:100%; padding:.75rem; color:var(--text); border:1px solid var(--line-strong); border-radius:6px; background:var(--white); }
+.recruitment-vacancy-fields textarea { resize:vertical; }
+.recruitment-vacancy-field--wide { grid-column:1/-1; }
+@media (max-width:800px) { .recruitment-heading { flex-direction:column; } .recruitment-vacancy-list { grid-template-columns:1fr; } .recruitment-vacancy-fields { grid-template-columns:1fr; } .recruitment-vacancy-field--wide { grid-column:auto; } }
+@media (max-width:540px) { .recruitment-heading__actions { width:100%; } .recruitment-heading__actions :is(.primary-action,.secondary-action) { flex:1 1 auto; } .recruitment-status-filters { width:100%; } .recruitment-status-filters button { flex:1 0 auto; } .recruitment-vacancy-item__heading { align-items:flex-start; } }
 .finance-visual { position:relative; min-height:220px; margin-top:2.2rem; overflow:hidden; border:1px solid rgba(20,124,118,.22); border-radius:var(--radius); background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(232,246,244,.58)); box-shadow:0 18px 45px rgba(17,29,54,.08); }
 .finance-visual__grid { position:absolute; inset:0; background-image:linear-gradient(rgba(27,42,74,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(27,42,74,.055) 1px,transparent 1px); background-size:48px 44px; mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 94%); }
 .finance-visual__graph { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }

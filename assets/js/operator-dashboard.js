@@ -306,6 +306,245 @@ export function initializeWorkforceCalendar(root, load) {
   return controller;
 }
 
+const RECRUITMENT_VACANCY_FIELDS = ["title", "department", "location", "employment_type", "summary", "description", "requirements"];
+const RECRUITMENT_VACANCY_KEYS = [
+  "id", ...RECRUITMENT_VACANCY_FIELDS, "slug", "status", "published_at", "closed_at", "created_at", "updated_at",
+];
+
+function validRecruitmentTimestamp(value, nullable = false) {
+  return (nullable && value === null) || (typeof value === "string" && Number.isFinite(Date.parse(value)));
+}
+
+export function recruitmentVacanciesResponse(value) {
+  if (!Array.isArray(value)) throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+  for (const vacancy of value) {
+    if (!exactObjectKeys(vacancy, RECRUITMENT_VACANCY_KEYS)
+      || !UUID.test(vacancy.id) || !["DRAFT", "PUBLISHED", "CLOSED"].includes(vacancy.status)
+      || !RECRUITMENT_VACANCY_FIELDS.every((field)=>typeof vacancy[field] === "string" && vacancy[field].length > 0)
+      || typeof vacancy.slug !== "string" || !vacancy.slug
+      || !validRecruitmentTimestamp(vacancy.created_at) || !validRecruitmentTimestamp(vacancy.updated_at)
+      || !validRecruitmentTimestamp(vacancy.published_at, true) || !validRecruitmentTimestamp(vacancy.closed_at, true)) {
+      throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
+    }
+  }
+  return value;
+}
+
+function recruitmentVacancyContent(input) {
+  const content = {};
+  for (const field of RECRUITMENT_VACANCY_FIELDS) {
+    const value = typeof input[field] === "string" ? input[field].trim() : "";
+    if (!value) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
+    content[field] = value;
+  }
+  return content;
+}
+
+export function recruitmentVacancyCreateRequest(input) {
+  const slug = typeof input.slug === "string" ? input.slug.trim() : "";
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
+  return { action: "create_recruitment_vacancy", slug, ...recruitmentVacancyContent(input) };
+}
+
+export function recruitmentVacancyUpdateRequest(vacancyId, input) {
+  if (!UUID.test(vacancyId)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
+  return { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...recruitmentVacancyContent(input) };
+}
+
+export function recruitmentVacancyStatusRequest(vacancyId, status) {
+  if (!UUID.test(vacancyId) || !["PUBLISHED", "CLOSED"].includes(status)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
+  return { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status };
+}
+
+export function createRecruitmentVacancyController({ load, execute, onChange = ()=>{} }) {
+  let items = [];
+  let loading = false;
+  let mutating = false;
+  let error = null;
+  let generation = 0;
+  const state = ()=>({ items: [...items], loading, mutating, error });
+  const notify = ()=>onChange(state());
+
+  async function refresh() {
+    const requestGeneration = ++generation;
+    loading = true;
+    error = null;
+    notify();
+    try {
+      const result = recruitmentVacanciesResponse(await load({ action: "list_recruitment_vacancies" }));
+      if (requestGeneration !== generation) return false;
+      items = result;
+      loading = false;
+      notify();
+      return true;
+    } catch {
+      if (requestGeneration !== generation) return false;
+      loading = false;
+      error = "Vacatures konden niet worden geladen.";
+      notify();
+      return false;
+    }
+  }
+
+  async function mutate(request) {
+    if (mutating) return false;
+    const requestGeneration = ++generation;
+    mutating = true;
+    error = null;
+    notify();
+    try {
+      await execute(request);
+      if (requestGeneration !== generation) return false;
+      mutating = false;
+      notify();
+      return await refresh();
+    } catch {
+      if (requestGeneration !== generation) return false;
+      mutating = false;
+      error = "De vacaturewijziging kon niet worden opgeslagen.";
+      notify();
+      return false;
+    }
+  }
+
+  return {
+    get state() { return state(); },
+    refresh,
+    create: (input)=>mutate(recruitmentVacancyCreateRequest(input)),
+    update: (vacancyId, input)=>mutate(recruitmentVacancyUpdateRequest(vacancyId, input)),
+    setStatus: (vacancyId, status)=>mutate(recruitmentVacancyStatusRequest(vacancyId, status)),
+  };
+}
+
+export function initializeRecruitmentVacancies(root, invoke) {
+  const list = root.getElementById("recruitmentVacancyList");
+  if (!list || list.dataset.initialized === "true") return;
+  if (typeof invoke !== "function") throw new TypeError("RECRUITMENT_VACANCY_LOADER_REQUIRED");
+  list.dataset.initialized = "true";
+  const count = root.getElementById("recruitmentVacancyCount");
+  const message = root.getElementById("recruitmentVacancyMessage");
+  const empty = root.getElementById("recruitmentVacancyEmpty");
+  const workDialog = root.getElementById("recruitmentVacancyDialog");
+  const form = root.getElementById("recruitmentVacancyForm");
+  const formMessage = root.getElementById("recruitmentVacancyFormMessage");
+  const statusDialog = root.getElementById("recruitmentVacancyStatusDialog");
+  const statusForm = root.getElementById("recruitmentVacancyStatusForm");
+  const statusButtons = Array.from(root.querySelectorAll("[data-recruitment-status]"));
+  let filter = "ALL";
+  let editingId = null;
+  let pendingStatus = null;
+  let lastTrigger = null;
+  let controller;
+  const labels = { DRAFT: "Concept", PUBLISHED: "Gepubliceerd", CLOSED: "Gesloten" };
+
+  function formContent() {
+    return Object.fromEntries([...RECRUITMENT_VACANCY_FIELDS, "slug"].map((field)=>[field, form.elements.namedItem(field).value]));
+  }
+
+  function openWorkDialog(vacancy = null, trigger = null) {
+    editingId = vacancy?.id || null;
+    lastTrigger = trigger;
+    form.reset();
+    for (const field of RECRUITMENT_VACANCY_FIELDS) form.elements.namedItem(field).value = vacancy?.[field] || "";
+    const slug = form.elements.namedItem("slug");
+    slug.value = vacancy?.slug || "";
+    slug.readOnly = Boolean(vacancy);
+    root.getElementById("recruitmentVacancyDialogTitle").textContent = vacancy ? "Vacature bewerken" : "Nieuwe vacature";
+    root.getElementById("recruitmentVacancySave").textContent = vacancy ? "Wijzigingen opslaan" : "Concept aanmaken";
+    formMessage.textContent = "";
+    workDialog.showModal();
+    form.elements.namedItem("title").focus();
+  }
+
+  function render(state = controller.state) {
+    const visible = filter === "ALL" ? state.items : state.items.filter((vacancy)=>vacancy.status === filter);
+    count.textContent = `${state.items.length} ${state.items.length === 1 ? "vacature" : "vacatures"}`;
+    message.textContent = state.error || (state.loading ? "Vacatures laden..." : state.mutating ? "Wijziging opslaan..." : "");
+    list.setAttribute("aria-busy", String(state.loading || state.mutating));
+    list.replaceChildren();
+    for (const vacancy of visible) {
+      const item = root.createElement("li");
+      const heading = root.createElement("div");
+      const title = root.createElement("h2");
+      const badge = root.createElement("span");
+      const metadata = root.createElement("p");
+      const summary = root.createElement("p");
+      const updated = root.createElement("p");
+      const actions = root.createElement("div");
+      item.className = "recruitment-vacancy-item";
+      heading.className = "recruitment-vacancy-item__heading";
+      title.textContent = vacancy.title;
+      badge.className = "badge";
+      badge.dataset.vacancyStatus = vacancy.status;
+      badge.textContent = labels[vacancy.status];
+      metadata.className = "recruitment-vacancy-item__metadata";
+      metadata.textContent = `${vacancy.department} · ${vacancy.location} · ${vacancy.employment_type}`;
+      summary.textContent = vacancy.summary;
+      updated.className = "recruitment-vacancy-item__updated";
+      updated.textContent = `Bijgewerkt ${formatDate(vacancy.updated_at)}`;
+      actions.className = "recruitment-vacancy-item__actions";
+      const edit = root.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary-action";
+      edit.textContent = "Bewerken";
+      edit.disabled = state.mutating;
+      edit.addEventListener("click", ()=>openWorkDialog(vacancy, edit));
+      actions.append(edit);
+      const nextStatus = vacancy.status === "DRAFT" ? "PUBLISHED" : vacancy.status === "PUBLISHED" ? "CLOSED" : null;
+      if (nextStatus) {
+        const lifecycle = root.createElement("button");
+        lifecycle.type = "button";
+        lifecycle.className = nextStatus === "CLOSED" ? "danger-action" : "primary-action primary-action--compact";
+        lifecycle.textContent = nextStatus === "PUBLISHED" ? "Publiceren" : "Sluiten";
+        lifecycle.disabled = state.mutating;
+        lifecycle.addEventListener("click", ()=>{
+          pendingStatus = { vacancy, status: nextStatus };
+          lastTrigger = lifecycle;
+          root.getElementById("recruitmentVacancyStatusTitle").textContent = nextStatus === "PUBLISHED" ? "Vacature publiceren" : "Vacature sluiten";
+          root.getElementById("recruitmentVacancyStatusDescription").textContent = nextStatus === "PUBLISHED" ? `Publiceer “${vacancy.title}”.` : `Sluit “${vacancy.title}”.`;
+          root.getElementById("recruitmentVacancyStatusConfirm").textContent = nextStatus === "PUBLISHED" ? "Publiceren" : "Sluiten";
+          statusDialog.showModal();
+        });
+        actions.append(lifecycle);
+      }
+      heading.append(title, badge);
+      item.append(heading, metadata, summary, updated, actions);
+      list.append(item);
+    }
+    empty.hidden = state.loading || visible.length > 0;
+  }
+
+  controller = createRecruitmentVacancyController({ load: invoke, execute: invoke, onChange: render });
+  root.getElementById("recruitmentVacancyCreate").addEventListener("click", (event)=>openWorkDialog(null, event.currentTarget));
+  root.getElementById("recruitmentVacancyRefresh").addEventListener("click", ()=>{ void controller.refresh(); });
+  for (const button of statusButtons) button.addEventListener("click", ()=>{
+    filter = button.dataset.recruitmentStatus;
+    for (const candidate of statusButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
+    render();
+  });
+  root.getElementById("recruitmentVacancyCancel").addEventListener("click", ()=>{ if (!controller.state.mutating) workDialog.close(); });
+  workDialog.addEventListener("close", ()=>lastTrigger?.focus());
+  form.addEventListener("submit", async (event)=>{
+    event.preventDefault();
+    if (!form.reportValidity() || controller.state.mutating) return;
+    const input = formContent();
+    const saved = editingId ? await controller.update(editingId, input) : await controller.create(input);
+    if (saved) workDialog.close();
+    else formMessage.textContent = controller.state.error || "De vacature kon niet worden opgeslagen.";
+  });
+  root.getElementById("recruitmentVacancyStatusCancel").addEventListener("click", ()=>{ if (!controller.state.mutating) statusDialog.close(); });
+  statusDialog.addEventListener("close", ()=>{ pendingStatus = null; lastTrigger?.focus(); });
+  statusForm.addEventListener("submit", async (event)=>{
+    event.preventDefault();
+    if (!pendingStatus || controller.state.mutating) return;
+    const changed = await controller.setStatus(pendingStatus.vacancy.id, pendingStatus.status);
+    if (changed) statusDialog.close();
+  });
+  render();
+  void controller.refresh();
+  return controller;
+}
+
 function localDateInputValue(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -2471,6 +2710,7 @@ export async function startOperatorDashboard({
   moduleNavigation.hidden = currentIdentity.role !== "owner";
   presentOperatorModule(document, activeModule);
   if (activeModule === "calendar") initializeWorkforceCalendar(document, invoke);
+  if (activeModule === "recruitment") initializeRecruitmentVacancies(document, invoke);
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;
