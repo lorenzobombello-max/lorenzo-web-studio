@@ -295,14 +295,16 @@
 
 **Files:**
 - Create: `scripts/sdf-initial-confirmation-email-concurrency.integration.cjs`
-- Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`
-- Test: both files
+- Read/regression only: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`
+- Test: the new concurrency script plus the existing SDF and Website preservation suites
 
 **Interfaces:**
 - Consumes: SDF prepare/claim/validate/complete RPCs
 - Produces: deterministic proof of one semantic job, one live lease and one provider identity
 
-- [ ] Add failing pgTAP assertions that two sequential prepare calls return the same `job_id`, leave one SDF row and leave zero SDF `customer_confirmation` rows in `public.quote_request_email_jobs`.
+- [ ] Treat these existing assertions in `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql` as inherited immutable Task-3 checkpoint evidence from `233b23354dcfd8ebf412d79adb8b29654b3355aa`: `Prepare replay preserves immutable job_id`, `Prepare replay preserves one semantic row`, and `SDF prepare creates no Website mail-authority row`. Do not rewrite or artificially fail them; keep them in the final regression proof.
+
+- [ ] Apply TDD to any future production remediation, but treat this task initially as verification against committed Task-3 production code. Write the concurrency integration test first and run it against the current implementation. A first behavioral PASS is valid characterization/concurrency proof and requires no manufactured RED or production change. Correct fixture, environment or syntax errors only until the script produces a valid behavioral result; those errors are neither PASS nor meaningful RED.
 
 - [ ] Build the concurrency script from `scripts/sdf-qualification-delivery-reissue-concurrency.integration.cjs`: use the local container `supabase_db_xcsptvntvrizwhskaphr`, fixed UUID fixtures, `application_name` markers, `pg_blocking_pids`, and `finally` cleanup.
 
@@ -314,23 +316,33 @@
   if (summary.shared_confirmation_count !== 0) throw new Error("SHARED_SDF_JOB_CREATED");
   ```
 
-- [ ] Run two concurrent claim calls and prove exactly one receives a lease. Validate that a spoofed token returns false and cannot complete.
+  Both calls must return the same provider identity, exactly `sdf-initial-confirmation/{job_id}`. Target only the isolated SDF authority path and do not expand the approved read-only legacy compatibility lookup.
+
+- [ ] Run two concurrent claim calls and prove exactly one receives an active valid lease; the losing claimant receives no second processing authority. Validate that a spoofed token returns false and cannot complete.
 
 - [ ] Model provider acceptance before database completion by leaving the first lease in `processing`, expiring it, reclaiming the same job and asserting the derived provider key remains exactly `sdf-initial-confirmation/{same_job_id}`. Do not claim database-level exactly-once delivery; the invariant is stable provider idempotency plus no send after durable `sent`.
 
 - [ ] Complete successfully, then prove all later claims return zero rows and the job-id never changes.
 
+- [ ] Prove concurrent activity leaves `public.quote_request_email_jobs` unchanged, creates no shared SDF semantic row, invokes no Website RPC and mutates no Website business state.
+
+- [ ] If the first valid behavioral run fails because of a genuine concurrency defect, classify Task 4 as `BLOCKED — CONCURRENCY DEFECT FOUND` and hard-stop without production remediation. Report the exact failing interleaving, duplicate row or lease behavior, affected authority, minimal likely remediation surface and whether Website remains unaffected. Do not modify committed migrations `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql` or `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql`, invent a migration, alter an RPC or broaden filescope without separate authorization.
+
 - [ ] Run and require PASS:
 
   ```powershell
-  npx supabase test db supabase/tests/sdf_initial_confirmation_email_authority_v1.sql
   node scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
+  npx supabase test db supabase/tests/sdf_initial_confirmation_email_authority_v1.sql
+  npx supabase test db supabase/tests/quote_request_review_partial_conflict_target.sql
+  npx supabase test db supabase/tests/request_kind_contract.sql
   ```
+
+  Task 4 contains no migration; do not run a full migration reset without a concrete reason from the concurrency test.
 
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/tests/sdf_initial_confirmation_email_authority_v1.sql scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
+  git add scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
   git commit -m "test(sdf): prove initial mail concurrency safety"
   ```
 
