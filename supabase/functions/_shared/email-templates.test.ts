@@ -119,15 +119,25 @@ Deno.test("admin email identifies Documentenflow without fabricated website fiel
 });
 
 Deno.test("SDF customer templates preserve exact authority copy and escape customer data", () => {
+  const customerLogoUrl = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
   const confirmation = buildSdfRequestReceivedEmail({
     customerName: "Klant <script>",
     supportReference: "#E07F8F06",
   });
   assertEquals(confirmation.subject, "We hebben uw Slimme Documentenflow-aanvraag ontvangen — #E07F8F06");
+  assertStringIncludes(confirmation.html, `src="${customerLogoUrl}"`);
+  assertStringIncludes(confirmation.html, "We hebben uw SDF-aanvraag voor dossier #E07F8F06 goed ontvangen.");
+  assertStringIncludes(confirmation.html, "display:none!important;visibility:hidden;mso-hide:all");
+  assertStringIncludes(confirmation.html, "Beste Klant &lt;script&gt;,");
+  assertStringIncludes(confirmation.html, ">Dossier<");
+  assertStringIncludes(confirmation.html, "max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px");
+  assertStringIncludes(confirmation.html, "Professionele websites voor zelfstandigen en kleine ondernemingen");
   assertStringIncludes(confirmation.html, "#E07F8F06");
   assertStringIncludes(confirmation.text, "Referentie: #E07F8F06");
+  assertStringIncludes(confirmation.text, "We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.");
   assertStringIncludes(confirmation.html, "Klant &lt;script&gt;");
   assertFalse(confirmation.html.includes("Uw persoonlijke SDF-intake voor dossier"));
+  assertFalse(confirmation.html.includes("#token="));
 
   const intakeUrl = "https://example.test/pages/sdf-qualification-intake.html#token=TEST_TOKEN";
   const invitation = buildSdfQualificationInvitationEmail({
@@ -136,12 +146,17 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
     intakeUrl,
   });
   assertEquals(invitation.subject, "Uw SDF-intake staat klaar — #E07F8F06");
+  assertStringIncludes(invitation.html, `src="${customerLogoUrl}"`);
+  assertStringIncludes(invitation.html, "display:none!important;visibility:hidden;mso-hide:all");
+  assertStringIncludes(invitation.html, "Beste Testklant &lt;script&gt; BCC: ongewenst@example.test,");
+  assertStringIncludes(invitation.html, ">Dossier<");
+  assertStringIncludes(invitation.html, "max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px");
+  assertStringIncludes(invitation.html, "Professionele websites voor zelfstandigen en kleine ondernemingen");
   assertEquals(invitation.subject.includes("TEST_TOKEN"), false);
   assertEquals(invitation.html.split(intakeUrl).length - 1, 1);
   assertEquals(invitation.text.split(intakeUrl).length - 1, 1);
-  assertStringIncludes(invitation.html, "Dossierreferentie");
   assertStringIncludes(invitation.html, "#E07F8F06");
-  assertStringIncludes(invitation.html, "OPEN UW SDF-INTAKE");
+  assertStringIncludes(invitation.html, "Mijn SDF-intake invullen");
   assertStringIncludes(invitation.html, `href="${intakeUrl}"`);
   assertStringIncludes(invitation.html, "Uw persoonlijke SDF-intake voor dossier #E07F8F06 staat klaar.");
   assertStringIncludes(invitation.html, "Werkt de knop niet?");
@@ -161,6 +176,8 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
   });
   assertStringIncludes(websiteInvitation.html, "De volgende stap voor je website is klaar.");
   assertStringIncludes(websiteInvitation.html, "Werkt de knop niet? Open dan:");
+  assertStringIncludes(websiteInvitation.html, `src="${customerLogoUrl}"`);
+  assertStringIncludes(websiteInvitation.html, "Vertel ons wat je website nodig heeft");
 
   const otherReference = buildSdfQualificationInvitationEmail({
     customerName: "Andere klant",

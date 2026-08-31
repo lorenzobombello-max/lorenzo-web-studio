@@ -92,10 +92,25 @@ export type QuotationEmailTemplate =
 
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
-function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string, preheader = "") {
+function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string, preheader = "", websiteQuality = false) {
   const hiddenPreheader = preheader
     ? `<div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${escapeHtml(preheader)}</div>`
     : "";
+  const containerStyle = websiteQuality
+    ? "width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;"
+    : "width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;";
+  const header = websiteQuality
+    ? `<tr><td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;"><img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;"></td></tr>`
+    : '<tr><td style="padding:24px 32px 18px;border-bottom:1px solid #e8edf1;color:#172033;font-size:16px;font-weight:bold;">Lorenzo Web Solutions</td></tr>';
+  const contentStyle = websiteQuality
+    ? "padding:8px 32px 32px;color:#172033;font-size:16px;line-height:1.65;"
+    : "padding:32px;color:#172033;font-size:16px;line-height:1.65;";
+  const headingStyle = websiteQuality
+    ? "margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;"
+    : "margin:0 0 24px;color:#12346b;font-size:26px;line-height:1.25;";
+  const footer = websiteQuality
+    ? '<tr><td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;"><strong style="color:#172033;">Lorenzo Web Solutions</strong><br>Professionele websites voor zelfstandigen en kleine ondernemingen<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a></td></tr>'
+    : '<tr><td style="padding:18px 32px;background:#f8fafb;color:#5a6475;font-size:12px;line-height:1.5;">Lorenzo Web Solutions<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;">lorenzowebsolutions.be</a></td></tr>';
   return {
     subject,
     html: `<!doctype html>
@@ -104,13 +119,13 @@ function buildSdfCustomerEmail(subject: string, heading: string, content: string
 <body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">${hiddenPreheader}
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f7" style="width:100%;background-color:#f3f5f7;">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;">
-        <tr><td style="padding:24px 32px 18px;border-bottom:1px solid #e8edf1;color:#172033;font-size:16px;font-weight:bold;">Lorenzo Web Solutions</td></tr>
-        <tr><td style="padding:32px;color:#172033;font-size:16px;line-height:1.65;">
-          <h1 style="margin:0 0 24px;color:#12346b;font-size:26px;line-height:1.25;">${escapeHtml(heading)}</h1>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${containerStyle}">
+        ${header}
+        <tr><td style="${contentStyle}">
+          <h1 style="${headingStyle}">${escapeHtml(heading)}</h1>
           ${content}
         </td></tr>
-        <tr><td style="padding:18px 32px;background:#f8fafb;color:#5a6475;font-size:12px;line-height:1.5;">Lorenzo Web Solutions<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;">lorenzowebsolutions.be</a></td></tr>
+        ${footer}
       </table>
     </td></tr>
   </table>
@@ -128,8 +143,8 @@ export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) 
   return buildSdfCustomerEmail(subject, "Uw aanvraag voor Slimme Documentenflow is ontvangen", `
           <p style="margin:0 0 16px;">Beste ${safeName},</p>
           <p style="margin:0 0 20px;">We hebben uw aanvraag goed ontvangen.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:#f3f7f8;border-left:4px solid #0ed8e6;">
-            <tr><td style="padding:14px 18px;color:#5a6475;font-size:13px;">Referentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
+            <tr><td style="padding:18px 20px;color:#5a6475;font-size:13px;">Dossier<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
           </table>
           <p style="margin:0 0 16px;">We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.</p>
           <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
@@ -143,7 +158,7 @@ export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) 
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",
-  ].join("\n"));
+  ].join("\n"), `We hebben uw SDF-aanvraag voor dossier ${data.supportReference} goed ontvangen.`, true);
 }
 
 export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvitationEmailData) {
@@ -155,11 +170,11 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
   return buildSdfCustomerEmail(subject, "Uw SDF-intake staat klaar", `
           <p style="margin:0 0 16px;">Beste ${safeName},</p>
           <p style="margin:0 0 20px;">Om uw aanvraag voor Slimme Documentenflow inhoudelijk te beoordelen, vragen we u de persoonlijke SDF-intake in te vullen.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:#f3f7f8;border-left:4px solid #0ed8e6;">
-            <tr><td style="padding:14px 18px;color:#5a6475;font-size:13px;">Dossierreferentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
+            <tr><td style="padding:18px 20px;color:#5a6475;font-size:13px;">Dossier<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
           </table>
           <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
-            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">OPEN UW SDF-INTAKE</a></td></tr>
+            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">Mijn SDF-intake invullen</a></td></tr>
           </table>
           <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Werkt de knop niet? Neem contact met ons op en vermeld dossier ${safeReference}.</p>
           <p style="margin:0 0 16px;color:#5a6475;font-size:14px;">De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.</p>
@@ -172,7 +187,7 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
     "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.", "",
     "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
-  ].join("\n"), `Uw persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`);
+  ].join("\n"), `Uw persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`, true);
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {
