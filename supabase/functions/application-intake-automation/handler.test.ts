@@ -4,6 +4,7 @@ import type {
   ResendTransportInput,
   ResendTransportResult,
 } from "../_shared/resend-transport.ts";
+import { sendEmailViaResend } from "../_shared/resend-transport.ts";
 import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
 
 const sdfClaim: AutomationClaim = {
@@ -124,6 +125,32 @@ function dependencies(claims: AutomationClaim[]) {
   } };
 }
 
+Deno.test("stateless transport sends without Supabase client or RPC dependency", async () => {
+  const requests: Request[] = [];
+  const result = await sendEmailViaResend({
+    apiKey: "resend-test-key",
+    from: "sender@example.test",
+    to: "customer@example.test",
+    subject: "Task 9 isolation",
+    html: "<p>Task 9 isolation</p>",
+    text: "Task 9 isolation",
+    idempotencyKey:
+      "sdf-initial-confirmation/88888888-8888-4888-8888-888888888888",
+    timeoutMs: 100,
+  }, (input, init) => {
+    requests.push(new Request(input, init));
+    return Promise.resolve(
+      new Response('{"id":"task9-provider-message"}', { status: 200 }),
+    );
+  });
+
+  assertEquals(result, {
+    ok: true,
+    providerMessageId: "task9-provider-message",
+  });
+  assertEquals(requests.length, 1);
+});
+
 Deno.test("worker rejects invalid secret", async () => {
   const fixture = dependencies([]);
   const invalid = request(); invalid.headers.set("x-lws-automation-secret", "wrong");
@@ -144,10 +171,22 @@ Deno.test("worker dispatches Website and SDF phases without fallback", async () 
 
 Deno.test("Website dispatch continues under every SDF authority mode", async () => {
   for (const mode of ["legacy", "isolated", undefined, "unknown"]) {
+    const websiteClaim: AutomationClaim = {
+      work_id: 1,
+      quote_request_id: "22222222-2222-4222-8222-222222222222",
+      phase: "APPROVAL",
+      claim_token: "33333333-3333-4333-8333-333333333333",
+    };
     const fixture = dependencies([
-      { work_id: 1, quote_request_id: "22222222-2222-4222-8222-222222222222", phase: "APPROVAL", claim_token: "33333333-3333-4333-8333-333333333333" },
+      websiteClaim,
       sdfClaim,
     ]);
+    const websiteClaims: AutomationClaim[] = [];
+    fixture.value.executeWebsite = async (claim) => {
+      websiteClaims.push(claim);
+      fixture.phases.push(claim.phase);
+      return { status: "sent" as const };
+    };
     fixture.value.executeSdfConfirmation = async () => {
       if (mode !== "legacy" && mode !== "isolated") {
         throw new Error("SDF_INITIAL_CONFIRMATION_MODE_INVALID");
@@ -161,13 +200,17 @@ Deno.test("Website dispatch continues under every SDF authority mode", async () 
     );
 
     assertEquals(fixture.phases, ["APPROVAL"]);
-    assertEquals(await response.json(), {
+    assertEquals(websiteClaims, [websiteClaim]);
+    const counters = await response.json();
+    assertEquals(counters, {
       ok: true,
       claimed: 2,
       completed: mode === "legacy" || mode === "isolated" ? 2 : 1,
       retry_scheduled: mode === "legacy" || mode === "isolated" ? 0 : 1,
       manual_review: 0,
     });
+    assertEquals(counters.claimed, 2);
+    assertEquals(counters.completed + counters.retry_scheduled, 2);
   }
 });
 

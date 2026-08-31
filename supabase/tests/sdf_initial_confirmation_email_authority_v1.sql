@@ -1436,5 +1436,284 @@ select is(
   'Website mail authority remains free of SDF template state'
 );
 
+create temporary table task9_website_authority_before_sdf as
+select jsonb_build_object(
+  'row_count', count(*),
+  'rows', coalesce(jsonb_agg(jsonb_build_object(
+    'id', job.id,
+    'status', job.status,
+    'attempt_count', job.attempt_count,
+    'next_attempt_at', job.next_attempt_at,
+    'locked_at', job.locked_at,
+    'last_error_code', job.last_error_code
+  ) order by job.id), '[]'::jsonb)
+) as snapshot
+from public.quote_request_email_jobs as job;
+
+insert into public.quote_requests (
+  id, record_classification, request_kind, sdf_package, name, email,
+  description, privacy_consent, status, approval_token_hash,
+  approval_token_expires_at
+) values (
+  'fc900001-0000-4000-8000-000000000001', 'production',
+  'slimme_documentenflow', 'start', 'Task 9 SDF failure',
+  'task9-sdf@example.test', 'Task 9 isolated failure fixture.', true,
+  'pending', repeat('6', 64), clock_timestamp() + interval '1 day'
+);
+
+insert into lws_internal.application_intake_automation_work (
+  quote_request_id, phase, approval_due_at, next_attempt_at
+) values (
+  'fc900001-0000-4000-8000-000000000001', 'SDF_CONFIRMATION',
+  clock_timestamp(), clock_timestamp()
+)
+on conflict (quote_request_id) do update
+set phase = excluded.phase,
+    approval_due_at = excluded.approval_due_at,
+    next_attempt_at = excluded.next_attempt_at;
+
+update lws_internal.application_intake_automation_work
+set claim_token = 'fc910001-0000-4000-8000-000000000001',
+    claimed_by = 'fc920001-0000-4000-8000-000000000001',
+    claimed_at = clock_timestamp(),
+    claim_expires_at = clock_timestamp() + interval '10 minutes'
+where quote_request_id = 'fc900001-0000-4000-8000-000000000001';
+
+create temporary table task9_sdf_prepared as
+select prepared.*
+from lws_internal.application_intake_automation_work as work
+cross join lateral public.prepare_sdf_initial_confirmation_v2(
+  work.work_id,
+  work.claim_token
+) as prepared
+where work.quote_request_id = 'fc900001-0000-4000-8000-000000000001';
+
+select is((select authority_source from task9_sdf_prepared), 'sdf_initial', 'Task 9 SDF prepare uses only isolated authority');
+select is(
+  (select count(*)::integer from public.quote_request_email_jobs
+   where quote_request_id = 'fc900001-0000-4000-8000-000000000001'),
+  0,
+  'Task 9 new isolated SDF request creates no legacy Website mail row'
+);
+
+create temporary table task9_sdf_first_claim as
+select * from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from task9_sdf_prepared)
+);
+
+select is(
+  (select provider_idempotency_key from task9_sdf_first_claim),
+  'sdf-initial-confirmation/' || (select job_id::text from task9_sdf_prepared),
+  'Task 9 SDF provider identity uses only the isolated namespace'
+);
+
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from task9_sdf_first_claim),
+  (select delivery_lease_token from task9_sdf_first_claim),
+  false,
+  true,
+  'TASK9_TRANSIENT',
+  null
+);
+
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from task9_sdf_prepared)),
+  'retry_wait',
+  'Task 9 isolated retry mutates only isolated SDF authority'
+);
+
+update public.sdf_initial_confirmation_email_jobs
+set next_attempt_at = clock_timestamp()
+where job_id = (select job_id from task9_sdf_prepared);
+
+create temporary table task9_sdf_second_claim as
+select * from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from task9_sdf_prepared)
+);
+
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from task9_sdf_second_claim),
+  (select delivery_lease_token from task9_sdf_second_claim),
+  false,
+  false,
+  'TASK9_TERMINAL',
+  null
+);
+
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from task9_sdf_prepared)),
+  'failed',
+  'Task 9 isolated terminal failure remains inside isolated SDF authority'
+);
+select is(
+  (select jsonb_build_object(
+    'row_count', count(*),
+    'rows', coalesce(jsonb_agg(jsonb_build_object(
+      'id', job.id,
+      'status', job.status,
+      'attempt_count', job.attempt_count,
+      'next_attempt_at', job.next_attempt_at,
+      'locked_at', job.locked_at,
+      'last_error_code', job.last_error_code
+    ) order by job.id), '[]'::jsonb)
+  )
+   from public.quote_request_email_jobs as job),
+  (select snapshot from task9_website_authority_before_sdf),
+  'SDF prepare retry and terminal failure leave Website mail authority byte-identical'
+);
+
+create temporary table task9_sdf_authority_before_website as
+select jsonb_build_object(
+  'row_count', count(*),
+  'rows', coalesce(jsonb_agg(to_jsonb(job) order by job.job_id), '[]'::jsonb)
+) as snapshot
+from public.sdf_initial_confirmation_email_jobs as job;
+
+create temporary table task9_website_created as
+select * from public.create_quote_request_idempotent(
+  p_idempotency_key => 'fc900002-0000-4000-8000-000000000002',
+  p_request_fingerprint => repeat('7', 64),
+  p_request_kind => 'website',
+  p_sdf_package => null,
+  p_name => 'Task 9 Website failure',
+  p_customer_type => 'individual',
+  p_company => null,
+  p_enterprise_number => null,
+  p_enterprise_validation_status => 'not_checked',
+  p_vat_number => null,
+  p_vat_validation_status => 'not_checked',
+  p_vat_validated_at => null,
+  p_billing_address => null,
+  p_billing_postal_code => null,
+  p_billing_city => null,
+  p_billing_country => null,
+  p_billing_email => null,
+  p_email => 'task9-website@example.test',
+  p_phone => null,
+  p_website_type => 'Bedrijfswebsite',
+  p_budget => 'EUR 3.000 - EUR 6.000',
+  p_timing => 'Binnen 2 tot 3 maanden',
+  p_description => 'Task 9 Website failure fixture.',
+  p_privacy_consent => true,
+  p_approval_token_hash => repeat('8', 64),
+  p_approval_token_expires_at => clock_timestamp() + interval '1 day',
+  p_client_ip_hash => repeat('9', 64),
+  p_user_agent => 'pgtap-task9-isolation'
+);
+
+create temporary table task9_website_approved as
+select * from public.transition_quote_request_review(repeat('8', 64), 'approved');
+
+create temporary table task9_website_claim as
+select * from public.claim_quote_request_email_job(
+  (select confirmation_job_id from task9_website_approved)
+);
+
+create temporary table task9_website_retry as
+select * from public.complete_quote_request_email_job(
+  (select confirmation_job_id from task9_website_approved),
+  false,
+  true,
+  'TASK9_WEBSITE_RETRY',
+  null
+);
+
+select ok(
+  public.requeue_quote_request_email_job(
+    (select confirmation_job_id from task9_website_approved),
+    'customer_confirmation'
+  ),
+  'Task 9 Website retry remains executable through Website authority'
+);
+
+update lws_internal.application_intake_automation_work
+set phase = 'SDF_CONFIRMATION',
+    claim_token = 'fc910002-0000-4000-8000-000000000002',
+    claimed_by = 'fc920002-0000-4000-8000-000000000002',
+    claimed_at = clock_timestamp(),
+    claim_expires_at = clock_timestamp() + interval '10 minutes'
+where quote_request_id = (select request_id from task9_website_created);
+
+create temporary table task9_website_sdf_prepare as
+select prepared.*
+from lws_internal.application_intake_automation_work as work
+cross join lateral public.prepare_sdf_initial_confirmation_v2(
+  work.work_id,
+  work.claim_token
+) as prepared
+where work.quote_request_id = (select request_id from task9_website_created);
+
+select is((select count(*)::integer from task9_website_sdf_prepare), 0, 'Website request cannot activate SDF prepare authority');
+select is(
+  (select count(*)::integer from public.claim_sdf_initial_confirmation_email_job_v1(
+    (select confirmation_job_id from task9_website_approved)
+  )),
+  0,
+  'Website job cannot be claimed through SDF authority'
+);
+select is(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select confirmation_job_id from task9_website_approved),
+    'fc930002-0000-4000-8000-000000000002'
+  ),
+  false,
+  'Website job cannot validate an SDF delivery lease'
+);
+select is(
+  public.complete_sdf_initial_confirmation_email_job_v1(
+    (select confirmation_job_id from task9_website_approved),
+    'fc930002-0000-4000-8000-000000000002',
+    true,
+    false,
+    null,
+    'forbidden-cross-product-provider-id'
+  ),
+  null::jsonb,
+  'Website job cannot use SDF completion authority'
+);
+select is(
+  (select count(*)::integer from public.sdf_initial_confirmation_email_jobs
+   where quote_request_id = (select request_id from task9_website_created)),
+  0,
+  'Website lifecycle creates no isolated SDF authority row'
+);
+
+select is(
+  (select count(*)::integer from public.claim_quote_request_email_job(
+    (select job_id from task9_sdf_prepared)
+  )),
+  0,
+  'Isolated SDF job cannot be claimed through Website authority'
+);
+select is(
+  (select count(*)::integer from public.complete_quote_request_email_job(
+    (select job_id from task9_sdf_prepared),
+    true,
+    false,
+    null,
+    'forbidden-website-provider-id'
+  )),
+  0,
+  'Isolated SDF job cannot use Website completion authority'
+);
+select is(
+  public.requeue_quote_request_email_job(
+    (select job_id from task9_sdf_prepared),
+    'customer_confirmation'
+  ),
+  false,
+  'Isolated SDF job cannot use Website retry authority'
+);
+select is(
+  (select jsonb_build_object(
+    'row_count', count(*),
+    'rows', coalesce(jsonb_agg(to_jsonb(job) order by job.job_id), '[]'::jsonb)
+   ) from public.sdf_initial_confirmation_email_jobs as job),
+  (select snapshot from task9_sdf_authority_before_website),
+  'Website approval claim retry completion and requeue leave isolated SDF authority byte-identical'
+);
+
 select * from finish();
 rollback;

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(120);
+select plan(122);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
@@ -12,6 +12,22 @@ select has_table('public','sdf_quotation_preparation_authorities','quotation pre
 select has_function('public','authorize_sdf_quotation_preparation_v1',array['uuid','uuid'],'quotation bridge command exists');
 select hasnt_table('public','sdf_owner_work_acceptance_authorities','withdrawn Owner work-acceptance authority is removed');
 select hasnt_function('public','accept_sdf_for_active_work_v1',array['uuid','uuid'],'withdrawn Owner work-acceptance command is removed');
+select ok(
+  not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and tablename = 'quote_request_email_jobs'
+      and indexdef ilike '%sdf_initial_confirmation%'
+  ),
+  'Website indexes contain no SDF initial authority'
+);
+select ok(
+  not (pg_get_functiondef(
+    'public.transition_quote_request_review(text,text)'::regprocedure
+  ) ilike '%sdf_initial_confirmation_email_jobs%'),
+  'Website review contains no SDF authority dependency'
+);
 
 insert into auth.users(id,email) values
   ('bd100000-0000-4000-8000-000000000001','sdf-owner@example.test'),
