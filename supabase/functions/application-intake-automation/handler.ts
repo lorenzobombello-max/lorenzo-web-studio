@@ -5,6 +5,7 @@ export type AutomationPhase = "APPROVAL" | "INTAKE" | "SDF_CONFIRMATION" | "SDF_
 export interface AutomationClaim { work_id: number; quote_request_id: string; phase: AutomationPhase; claim_token: string }
 interface RpcResult { data: unknown; error: { message: string } | null }
 interface DeliveryResult { status: "pending" | "processing" | "sent" | "retry_wait" | "failed" }
+interface WorkerRequest { workId: number | null }
 
 export function websiteTypeOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
@@ -55,14 +56,21 @@ function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-async function validBody(request: Request): Promise<boolean> {
-  if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") return false;
+async function workerRequest(request: Request): Promise<WorkerRequest | null> {
+  if (request.headers.get("content-type")?.split(";", 1)[0].trim() !== "application/json") return null;
   const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return false;
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return null;
   try {
     const value = JSON.parse(text);
-    return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && value.version === 1;
-  } catch { return false; }
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1) return null;
+    const keys = Object.keys(value);
+    if (keys.length === 1 && keys[0] === "version") return { workId: null };
+    if (
+      keys.length === 2 && keys.includes("version") && keys.includes("work_id") &&
+      Number.isSafeInteger(value.work_id) && value.work_id > 0
+    ) return { workId: value.work_id };
+    return null;
+  } catch { return null; }
 }
 
 async function secretMatches(incoming: string | null, expected: string | undefined, digest: AutomationDependencies["digest"]) {
@@ -89,11 +97,19 @@ function claims(data: unknown): AutomationClaim[] | null {
 
 export async function handleApplicationIntakeAutomation(request: Request, dependencies: AutomationDependencies): Promise<Response> {
   const rejected = { ok: false, claimed: 0, completed: 0, retry_scheduled: 0, manual_review: 0 };
-  if (request.method !== "POST" || new URL(request.url).search || !await validBody(request)) return response(400, rejected);
+  if (request.method !== "POST" || new URL(request.url).search) return response(400, rejected);
+  const workerRequestBody = await workerRequest(request);
+  if (!workerRequestBody) return response(400, rejected);
   if (!dependencies.configurationReady || !await secretMatches(request.headers.get("x-lws-automation-secret"), dependencies.workerSecret, dependencies.digest)) return response(401, rejected);
   const workerId = dependencies.randomUUID();
   if (!UUID.test(workerId)) return response(500, rejected);
-  const claimed = await dependencies.rpc("claim_application_intake_automation_work_v1", { p_worker_id: workerId, p_limit: 5 });
+  const targeted = workerRequestBody.workId !== null;
+  const claimed = targeted
+    ? await dependencies.rpc("claim_application_intake_automation_work_by_id_v1", {
+      p_worker_id: workerId,
+      p_work_id: workerRequestBody.workId,
+    })
+    : await dependencies.rpc("claim_application_intake_automation_work_v1", { p_worker_id: workerId, p_limit: 5 });
   const work = claimed.error ? null : claims(claimed.data);
   if (!work) return response(500, rejected);
   const counters = { ok: true, claimed: work.length, completed: 0, retry_scheduled: 0, manual_review: 0 };
@@ -117,13 +133,15 @@ export async function handleApplicationIntakeAutomation(request: Request, depend
       else counters.manual_review += 1;
     }
   }
-  try {
-    const queued = await dependencies.executeQueuedSdfEmail();
-    if (queued?.status === "sent") counters.completed += 1;
-    else if (queued?.status === "retry_wait") counters.retry_scheduled += 1;
-    else if (queued?.status === "failed") counters.manual_review += 1;
-  } catch {
-    counters.manual_review += 1;
+  if (!targeted) {
+    try {
+      const queued = await dependencies.executeQueuedSdfEmail();
+      if (queued?.status === "sent") counters.completed += 1;
+      else if (queued?.status === "retry_wait") counters.retry_scheduled += 1;
+      else if (queued?.status === "failed") counters.manual_review += 1;
+    } catch {
+      counters.manual_review += 1;
+    }
   }
   return response(200, counters);
 }

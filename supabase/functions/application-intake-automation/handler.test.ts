@@ -110,14 +110,14 @@ function isolatedDependencies(
 }
 
 const secret = "x".repeat(32);
-function request() { return new Request("https://example.test/worker", { method: "POST", headers: { "content-type": "application/json", "x-lws-automation-secret": secret }, body: '{"version":1}' }); }
+function request(body = '{"version":1}') { return new Request("https://example.test/worker", { method: "POST", headers: { "content-type": "application/json", "x-lws-automation-secret": secret }, body }); }
 function dependencies(claims: AutomationClaim[]) {
   const phases: string[] = [];
   return { phases, value: {
     configurationReady: true, workerSecret: secret,
     randomUUID: () => "11111111-1111-4111-8111-111111111111",
     digest: async (data: Uint8Array) => await crypto.subtle.digest("SHA-256", Uint8Array.from(data)),
-    rpc: async (name: string) => ({ data: name.startsWith("claim_") ? claims : [{ outcome: "retry_scheduled" }], error: null }),
+    rpc: async (name: string, _parameters: Record<string, unknown>) => ({ data: name.startsWith("claim_") ? claims : [{ outcome: "retry_scheduled" }], error: null }),
     executeWebsite: async (claim: AutomationClaim) => { phases.push(claim.phase); return { status: "sent" as const }; },
     executeSdfConfirmation: async (claim: AutomationClaim) => { phases.push(claim.phase); return { status: "sent" as const }; },
     executeSdfInvitation: async (claim: AutomationClaim) => { phases.push(claim.phase); return { status: "sent" as const }; },
@@ -167,6 +167,136 @@ Deno.test("worker dispatches Website and SDF phases without fallback", async () 
   assertEquals(response.status, 200);
   assertEquals(fixture.phases, ["APPROVAL", "SDF_CONFIRMATION", "SDF_INTAKE"]);
   assertEquals(await response.json(), { ok: true, claimed: 3, completed: 3, retry_scheduled: 0, manual_review: 0 });
+});
+
+Deno.test("targeted worker claims and executes only the requested work without queued tail", async () => {
+  const fixture = dependencies([sdfClaim]);
+  const rpcCalls: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+  let queuedCalls = 0;
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    rpcCalls.push({ name, parameters });
+    return await originalRpc(name, parameters);
+  };
+  fixture.value.executeQueuedSdfEmail = async () => {
+    queuedCalls += 1;
+    return { status: "sent" as const };
+  };
+
+  const response = await handleApplicationIntakeAutomation(
+    request('{"version":1,"work_id":2}'),
+    fixture.value,
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), {
+    ok: true,
+    claimed: 1,
+    completed: 1,
+    retry_scheduled: 0,
+    manual_review: 0,
+  });
+  assertEquals(fixture.phases, ["SDF_CONFIRMATION"]);
+  assertEquals(rpcCalls, [{
+    name: "claim_application_intake_automation_work_by_id_v1",
+    parameters: {
+      p_worker_id: "11111111-1111-4111-8111-111111111111",
+      p_work_id: 2,
+    },
+  }]);
+  assertEquals(queuedCalls, 0);
+});
+
+Deno.test("targeted worker returns an empty success without global fallback", async () => {
+  const fixture = dependencies([]);
+  const rpcNames: string[] = [];
+  let queuedCalls = 0;
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    rpcNames.push(name);
+    return await originalRpc(name, parameters);
+  };
+  fixture.value.executeQueuedSdfEmail = async () => {
+    queuedCalls += 1;
+    return null;
+  };
+
+  const response = await handleApplicationIntakeAutomation(
+    request('{"version":1,"work_id":404}'),
+    fixture.value,
+  );
+
+  assertEquals(await response.json(), {
+    ok: true,
+    claimed: 0,
+    completed: 0,
+    retry_scheduled: 0,
+    manual_review: 0,
+  });
+  assertEquals(rpcNames, ["claim_application_intake_automation_work_by_id_v1"]);
+  assertEquals(fixture.phases, []);
+  assertEquals(queuedCalls, 0);
+});
+
+Deno.test("targeted execution failure uses canonical failure authority without queued tail", async () => {
+  const fixture = dependencies([sdfClaim]);
+  const rpcCalls: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+  let queuedCalls = 0;
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    rpcCalls.push({ name, parameters });
+    return await originalRpc(name, parameters);
+  };
+  fixture.value.executeSdfConfirmation = () => {
+    throw new Error("interrupted");
+  };
+  fixture.value.executeQueuedSdfEmail = async () => {
+    queuedCalls += 1;
+    return null;
+  };
+
+  const response = await handleApplicationIntakeAutomation(
+    request('{"version":1,"work_id":2}'),
+    fixture.value,
+  );
+
+  assertEquals((await response.json()).retry_scheduled, 1);
+  assertEquals(rpcCalls.map(({ name }) => name), [
+    "claim_application_intake_automation_work_by_id_v1",
+    "fail_application_intake_automation_work_v1",
+  ]);
+  assertEquals(rpcCalls[1].parameters, {
+    p_work_id: 2,
+    p_claim_token: "55555555-5555-4555-8555-555555555555",
+    p_error_code: "WORKER_INTERRUPTED",
+    p_retryable: true,
+  });
+  assertEquals(queuedCalls, 0);
+});
+
+Deno.test("targeted worker body fails closed for invalid work IDs and extra fields", async () => {
+  for (const body of [
+    '{"version":1,"work_id":0}',
+    '{"version":1,"work_id":-1}',
+    '{"version":1,"work_id":"2"}',
+    '{"version":1,"work_id":2.5}',
+    '{"version":1,"work_id":2,"extra":true}',
+  ]) {
+    const fixture = dependencies([sdfClaim]);
+    let rpcCalls = 0;
+    fixture.value.rpc = async () => {
+      rpcCalls += 1;
+      return { data: [], error: null };
+    };
+
+    const response = await handleApplicationIntakeAutomation(
+      request(body),
+      fixture.value,
+    );
+
+    assertEquals(response.status, 400);
+    assertEquals(rpcCalls, 0);
+  }
 });
 
 Deno.test("Website dispatch continues under every SDF authority mode", async () => {

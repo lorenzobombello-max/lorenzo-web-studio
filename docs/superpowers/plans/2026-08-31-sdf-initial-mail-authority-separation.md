@@ -805,17 +805,21 @@ Every task below requires a new, explicit user authorization. Do not execute any
 ### Task 13: Producer cutover
 
 **Files:**
-- Create: none
-- Modify: none
-- Test: one controlled post-cutover SDF request plus Website preservation
+- Create: `supabase/migrations/20260901059000_add_targeted_application_intake_automation_work_claim_v1.sql`, `supabase/tests/application_intake_automation_targeted_claim_v1.sql`, `scripts/application-intake-automation-targeted-claim-concurrency.integration.cjs`
+- Modify: `supabase/functions/application-intake-automation/handler.ts`, `supabase/functions/application-intake-automation/handler.test.ts`
+- Test: targeted claim contract and scheduler race, then one controlled post-cutover SDF request plus Website preservation
 
 **Interfaces:**
 - Consumes: compatible Edge release and additive SDF authority
-- Produces: new SDF requests routed to isolated mail state
+- Produces: deterministic by-ID worker execution and new SDF requests routed to isolated mail state
 
+- [ ] Release `20260901059000` and the compatible Edge handler before cutover. Preserve `POST {"version":1}` globally; add only strict `POST {"version":1,"work_id":<positive integer>}` targeted mode.
+- [ ] Prove global and targeted claiming share one eligibility implementation, lease/token/attempt semantics and row lock. The targeted RPC must be service-role-only; ineligible, missing or actively leased IDs return no claim.
+- [ ] Prove targeted mode calls only `claim_application_intake_automation_work_by_id_v1`, executes at most that returned row, never falls back to the global claim and never runs the global queued-SDF-mail tail.
+- [ ] Prove a global scheduler claim racing the targeted claim yields exactly one winner and one attempt increment.
 - [ ] Reconfirm the legacy inventory immediately before activation.
 - [ ] Set `SDF_INITIAL_CONFIRMATION_AUTHORITY_MODE=isolated`; do not change any Website configuration.
-- [ ] Submit one controlled SDF request and prove exactly one new SDF job, zero shared SDF `customer_confirmation` rows, canonical template, stable job-id and provider key.
+- [ ] Submit one controlled SDF request, resolve its exact `work_id`, invoke only `{"version":1,"work_id":<work_id>}`, and prove exactly one new SDF job, zero shared SDF `customer_confirmation` rows, canonical template, stable job-id and provider key.
 - [ ] Prove one Website approval still creates and delivers through `public.quote_request_email_jobs` with unchanged semantics.
 - [ ] If the SDF probe fails, stop new SDF confirmation processing fail-closed. Do not set mode back to `legacy` for requests that have a new SDF job and do not create a shared fallback row.
 
