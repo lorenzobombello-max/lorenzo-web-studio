@@ -1286,6 +1286,45 @@ select job.id, to_jsonb(job) as row_snapshot
 from public.quote_request_email_jobs as job
 join task8_legacy_cases as test_case on test_case.job_id = job.id;
 
+select throws_ok(
+  $$select lws_internal.assert_sdf_initial_confirmation_runtime_finalizable_v1()$$,
+  'P0001',
+  'SDF_INITIAL_CONFIRMATION_ACTIVE_LEGACY_REMAINS',
+  'Finalization rejects active shared SDF confirmation work'
+);
+
+select throws_ok(
+  $$do $guard$
+  begin
+    delete from public.quote_request_email_jobs
+    where id in (
+      select test_case.job_id
+      from task8_legacy_cases as test_case
+      where test_case.legacy_status <> 'sent'
+    );
+    insert into public.sdf_initial_confirmation_email_jobs (quote_request_id)
+    values ('fb800001-0000-4000-8000-000000000001');
+    perform lws_internal.assert_sdf_initial_confirmation_runtime_finalizable_v1();
+  end
+  $guard$;$$,
+  'P0001',
+  'SDF_INITIAL_CONFIRMATION_DUAL_AUTHORITY_EXISTS',
+  'Finalization rejects dual shared and isolated SDF authority'
+);
+
+select throws_ok(
+  $$do $guard$
+  begin
+    delete from public.quote_request_email_jobs
+    where id in (select job_id from task8_legacy_cases);
+    perform lws_internal.assert_sdf_initial_confirmation_runtime_finalizable_v1();
+  end
+  $guard$;$$,
+  'P0001',
+  'SDF_INITIAL_CONFIRMATION_UNRESOLVED_WITHOUT_AUTHORITY',
+  'Finalization rejects unresolved SDF work without authority'
+);
+
 create temporary table task8_legacy_prepared as
 select test_case.legacy_status, prepared.*
 from task8_legacy_cases as test_case
@@ -1302,68 +1341,32 @@ select is(
   'Task 8 prepare returns one result for every historical legacy state'
 );
 select is(
-  (select outcome from task8_legacy_prepared where legacy_status = 'sent'),
-  'already_sent',
-  'Legacy sent normalizes to canonical already_sent'
+  (select count(*)::integer from task8_legacy_prepared
+   where authority_source = 'sdf_initial' and outcome = 'due'),
+  5,
+  'Finalized prepare returns only due isolated authority for unresolved SDF work'
 );
 select is(
-  (select authority_source from task8_legacy_prepared where legacy_status = 'sent'),
-  null::text,
-  'Legacy sent exposes no active delivery authority source'
+  (select count(*)::integer from task8_legacy_prepared
+   where authority_source = 'legacy'),
+  0,
+  'Finalized prepare never returns shared legacy authority'
 );
 select is(
-  (select job_id from task8_legacy_prepared where legacy_status = 'sent'),
-  null::uuid,
-  'Legacy sent exposes no new delivery job identity'
-);
-select is(
-  (select outcome from task8_legacy_prepared where legacy_status = 'failed'),
-  'failed',
-  'Legacy terminal failure remains failed'
-);
-select is(
-  (select phase from lws_internal.application_intake_automation_work
-   where quote_request_id = 'fb800002-0000-4000-8000-000000000002'),
-  'MANUAL_REVIEW',
-  'Legacy terminal failure moves only its SDF work to MANUAL_REVIEW'
-);
-select is(
-  (select authority_source from task8_legacy_prepared where legacy_status = 'pending'),
-  'legacy',
-  'Legacy pending remains the exclusive delivery authority'
-);
-select is(
-  (select job_id from task8_legacy_prepared where legacy_status = 'pending'),
-  'fb820003-0000-4000-8000-000000000003'::uuid,
-  'Legacy pending preserves its job identity'
-);
-select is(
-  (select outcome from task8_legacy_prepared where legacy_status = 'retry_wait'),
-  'retry_wait',
-  'Legacy non-due retry_wait remains deferred in legacy authority'
-);
-select is(
-  (select job_id from task8_legacy_prepared where legacy_status = 'retry_wait'),
-  'fb820004-0000-4000-8000-000000000004'::uuid,
-  'Legacy retry_wait preserves its job identity'
-);
-select is(
-  (select outcome from task8_legacy_prepared where legacy_status = 'processing'),
-  'processing',
-  'Legacy processing remains active in legacy authority'
-);
-select is(
-  (select job_id from task8_legacy_prepared where legacy_status = 'processing'),
-  'fb820005-0000-4000-8000-000000000005'::uuid,
-  'Legacy processing preserves its job identity'
+  (select count(*)::integer
+   from task8_legacy_prepared as prepared
+   join task8_legacy_cases as test_case using (legacy_status)
+   where prepared.job_id = test_case.job_id),
+  0,
+  'Finalized prepare never returns a shared confirmation job identity'
 );
 select is(
   (select count(*)::integer
    from public.sdf_initial_confirmation_email_jobs as isolated
    join task8_legacy_cases as test_case
      on test_case.request_id = isolated.quote_request_id),
-  0,
-  'No legacy state creates an isolated duplicate authority'
+  5,
+  'Finalized prepare creates only isolated authority for unresolved SDF work'
 );
 select is(
   (select count(*)::integer

@@ -6,10 +6,6 @@ const quoteRequestId = "db200000-0000-4000-8000-000000000001";
 const workClaimToken = "db210000-0000-4000-8000-000000000001";
 const claimedBy = "db220000-0000-4000-8000-000000000001";
 const spoofedLeaseToken = "db230000-0000-4000-8000-000000000099";
-const legacyFirstRequestId = "db200001-0000-4000-8000-000000000002";
-const legacyFirstClaimToken = "db210000-0000-4000-8000-000000000002";
-const isolatedFirstRequestId = "db200002-0000-4000-8000-000000000003";
-const isolatedFirstClaimToken = "db210000-0000-4000-8000-000000000003";
 const websiteControlRequestId = "db200003-0000-4000-8000-000000000004";
 const websiteControlJobId = "db240003-0000-4000-8000-000000000004";
 
@@ -120,99 +116,35 @@ function websiteMailSnapshot() {
   `));
 }
 
-function setupRolloutFixture(requestId, claimToken, suffix, tokenCharacter) {
-  query(`
-    insert into public.quote_requests (
-      id, record_classification, request_kind, sdf_package, name, email,
-      description, privacy_consent, status, approval_token_hash,
-      approval_token_expires_at
-    ) values (
-      '${requestId}', 'production', 'slimme_documentenflow', 'start',
-      'SDF rollout race ${suffix}', 'sdf-rollout-${suffix}@example.test',
-      'Local Task-8 rollout race fixture.', true, 'pending',
-      repeat('${tokenCharacter}', 64),
-      clock_timestamp() + interval '1 day'
-    );
-
-    insert into lws_internal.application_intake_automation_work (
-      quote_request_id, phase, approval_due_at, next_attempt_at,
-      claim_token, claimed_by, claimed_at, claim_expires_at
-    ) values (
-      '${requestId}', 'SDF_CONFIRMATION', clock_timestamp(), clock_timestamp(),
-      '${claimToken}', '${claimedBy}', clock_timestamp(),
-      clock_timestamp() + interval '10 minutes'
-    )
-    on conflict (quote_request_id) do update
-    set phase = excluded.phase,
-        next_attempt_at = excluded.next_attempt_at,
-        claim_token = excluded.claim_token,
-        claimed_by = excluded.claimed_by,
-        claimed_at = excluded.claimed_at,
-        claim_expires_at = excluded.claim_expires_at;
-  `);
-  return query(`
-    select work_id
-    from lws_internal.application_intake_automation_work
-    where quote_request_id = '${requestId}'
-  `);
-}
-
-function semanticOwners(requestId) {
-  return JSON.parse(query(`
-    select json_build_object(
-      'legacy_count', (
-        select count(*)::integer
-        from public.quote_request_email_jobs
-        where quote_request_id = '${requestId}'
-          and kind = 'customer_confirmation'
-          and template_key = 'SDF_REQUEST_RECEIVED_NL_BE_v1'
-      ),
-      'isolated_count', (
-        select count(*)::integer
-        from public.sdf_initial_confirmation_email_jobs
-        where quote_request_id = '${requestId}'
-      )
-    )
-  `));
-}
-
 function cleanup() {
   query(`
     begin;
     set local session_replication_role = replica;
     delete from public.sdf_initial_confirmation_email_jobs
-    where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}'
-    );
+    where quote_request_id = '${quoteRequestId}';
     delete from public.quote_request_email_jobs
     where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     delete from lws_internal.application_intake_automation_work
     where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     delete from lws_internal.operator_dossier_assignments
     where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     delete from lws_internal.operator_dossier_states
     where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     delete from lws_internal.dossier_identity_anchors
     where quote_request_id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     delete from public.quote_requests
     where id in (
-      '${quoteRequestId}', '${legacyFirstRequestId}', '${isolatedFirstRequestId}',
-      '${websiteControlRequestId}'
+      '${quoteRequestId}', '${websiteControlRequestId}'
     );
     commit;
   `);
@@ -223,11 +155,12 @@ async function main() {
   let prepareWaiter = null;
   let claimHolder = null;
   let claimWaiter = null;
-  let rolloutHolder = null;
-  let rolloutWaiter = null;
 
   if (query("select current_database()") !== "postgres") {
     throw new Error("LOCAL_TEST_ENVIRONMENT_REQUIRED");
+  }
+  if (query("select to_regprocedure('public.execute_application_intake_automation_sdf_confirmation_v1(bigint,uuid)') is null") !== "t") {
+    throw new Error("LEGACY_SDF_PRODUCER_STILL_EXISTS");
   }
 
   try {
@@ -515,129 +448,6 @@ async function main() {
       throw new Error("FINAL_AUTHORITY_IDENTITY_INVALID");
     }
 
-    const legacyFirstWorkId = setupRolloutFixture(
-      legacyFirstRequestId,
-      legacyFirstClaimToken,
-      "legacy-first",
-      "7",
-    );
-    rolloutHolder = startHoldingTransaction({
-      applicationName: "sdf_rollout_legacy_first_holder",
-      marker: "LEGACY_FIRST_HELD",
-      sql: `
-        select row_to_json(legacy)::text
-        from public.execute_application_intake_automation_sdf_confirmation_v1(
-          ${legacyFirstWorkId}, '${legacyFirstClaimToken}'
-        ) as legacy;
-      `,
-    });
-    await rolloutHolder.ready;
-    rolloutWaiter = run(`
-      set application_name = 'sdf_rollout_isolated_after_legacy';
-      begin;
-      set local role service_role;
-      select row_to_json(prepared)::text
-      from public.prepare_sdf_initial_confirmation_v2(
-        ${legacyFirstWorkId}, '${legacyFirstClaimToken}'
-      ) as prepared;
-      commit;
-    `);
-    await proveBlocked(
-      "sdf_rollout_isolated_after_legacy",
-      "sdf_rollout_legacy_first_holder",
-      "LEGACY_FIRST_ROLLOUT_LOCK_WAIT_NOT_PROVEN",
-    );
-    const legacyFirstResult = await rolloutHolder.release();
-    rolloutHolder = null;
-    const isolatedAfterLegacyResult = await rolloutWaiter;
-    rolloutWaiter = null;
-    if (legacyFirstResult.code !== 0 || isolatedAfterLegacyResult.code !== 0) {
-      throw new Error("LEGACY_FIRST_ROLLOUT_FAILED");
-    }
-    const legacyFirstRows = parseJsonRows(legacyFirstResult.stdout);
-    const isolatedAfterLegacyRows = parseJsonRows(isolatedAfterLegacyResult.stdout);
-    const legacyFirstOwners = semanticOwners(legacyFirstRequestId);
-    const legacyFirstProviderIdentities = [
-      ...legacyFirstRows.map((result) =>
-        `quote-request-email/${result.confirmation_job_id}`),
-      ...isolatedAfterLegacyRows.map((result) =>
-        `quote-request-email/${result.job_id}`),
-    ];
-    if (legacyFirstRows.length !== 1
-        || isolatedAfterLegacyRows.length !== 1
-        || isolatedAfterLegacyRows[0].authority_source !== "legacy"
-        || isolatedAfterLegacyRows[0].job_id !== legacyFirstRows[0].confirmation_job_id
-        || legacyFirstOwners.legacy_count !== 1
-        || legacyFirstOwners.isolated_count !== 0
-        || legacyFirstOwners.legacy_count + legacyFirstOwners.isolated_count !== 1
-        || new Set(legacyFirstProviderIdentities).size !== 1) {
-      throw new Error(`LEGACY_FIRST_EXCLUSIVITY_FAILED:${JSON.stringify({
-        legacyFirstRows,
-        isolatedAfterLegacyRows,
-        legacyFirstOwners,
-        legacyFirstProviderIdentities,
-      })}`);
-    }
-
-    const isolatedFirstWorkId = setupRolloutFixture(
-      isolatedFirstRequestId,
-      isolatedFirstClaimToken,
-      "isolated-first",
-      "6",
-    );
-    rolloutHolder = startHoldingTransaction({
-      applicationName: "sdf_rollout_isolated_first_holder",
-      marker: "ISOLATED_FIRST_HELD",
-      sql: `
-        select row_to_json(prepared)::text
-        from public.prepare_sdf_initial_confirmation_v2(
-          ${isolatedFirstWorkId}, '${isolatedFirstClaimToken}'
-        ) as prepared;
-      `,
-    });
-    await rolloutHolder.ready;
-    rolloutWaiter = run(`
-      set application_name = 'sdf_rollout_legacy_after_isolated';
-      begin;
-      set local role service_role;
-      select row_to_json(legacy)::text
-      from public.execute_application_intake_automation_sdf_confirmation_v1(
-        ${isolatedFirstWorkId}, '${isolatedFirstClaimToken}'
-      ) as legacy;
-      commit;
-    `);
-    await proveBlocked(
-      "sdf_rollout_legacy_after_isolated",
-      "sdf_rollout_isolated_first_holder",
-      "ISOLATED_FIRST_ROLLOUT_LOCK_WAIT_NOT_PROVEN",
-    );
-    const isolatedFirstResult = await rolloutHolder.release();
-    rolloutHolder = null;
-    const legacyAfterIsolatedResult = await rolloutWaiter;
-    rolloutWaiter = null;
-    if (isolatedFirstResult.code !== 0 || legacyAfterIsolatedResult.code !== 0) {
-      throw new Error("ISOLATED_FIRST_ROLLOUT_FAILED");
-    }
-    const isolatedFirstRows = parseJsonRows(isolatedFirstResult.stdout);
-    const legacyAfterIsolatedRows = parseJsonRows(legacyAfterIsolatedResult.stdout);
-    const isolatedFirstOwners = semanticOwners(isolatedFirstRequestId);
-    const isolatedFirstProviderIdentities = isolatedFirstRows.map((result) =>
-      `sdf-initial-confirmation/${result.job_id}`);
-    if (isolatedFirstRows.length !== 1
-        || isolatedFirstRows[0].authority_source !== "sdf_initial"
-        || legacyAfterIsolatedRows.length !== 0
-        || isolatedFirstOwners.legacy_count !== 0
-        || isolatedFirstOwners.isolated_count !== 1
-        || isolatedFirstOwners.legacy_count + isolatedFirstOwners.isolated_count !== 1
-        || new Set(isolatedFirstProviderIdentities).size !== 1) {
-      throw new Error(`ISOLATED_FIRST_EXCLUSIVITY_FAILED:${JSON.stringify({
-        isolatedFirstRows,
-        legacyAfterIsolatedRows,
-        isolatedFirstOwners,
-        isolatedFirstProviderIdentities,
-      })}`);
-    }
-
     const websiteAfter = websiteMailSnapshot();
     const websiteMailstateUnchanged = JSON.stringify(websiteAfter) === JSON.stringify(websiteBefore);
     if (!websiteMailstateUnchanged) throw new Error("WEBSITE_MAILSTATE_MUTATED");
@@ -663,20 +473,13 @@ async function main() {
       claims_after_sent: claimsAfterSent,
       final_status: finalAuthority.status,
       website_mailstate_unchanged: websiteMailstateUnchanged,
-      legacy_first_lock_wait_proven: true,
-      legacy_first_owners: legacyFirstOwners,
-      legacy_first_provider_identities: [...new Set(legacyFirstProviderIdentities)],
-      isolated_first_lock_wait_proven: true,
-      isolated_first_owners: isolatedFirstOwners,
-      isolated_first_provider_identities: [...new Set(isolatedFirstProviderIdentities)],
+      legacy_sdf_producer_absent: true,
     }) + "\n");
   } finally {
     if (prepareHolder) await prepareHolder.abort();
     if (claimHolder) await claimHolder.abort();
-    if (rolloutHolder) await rolloutHolder.abort();
     if (prepareWaiter) await prepareWaiter;
     if (claimWaiter) await claimWaiter;
-    if (rolloutWaiter) await rolloutWaiter;
     cleanup();
   }
 }

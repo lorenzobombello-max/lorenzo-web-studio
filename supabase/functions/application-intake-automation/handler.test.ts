@@ -24,10 +24,6 @@ interface TestSdfDependencies {
     name: string,
     parameters: Record<string, unknown>,
   ): Promise<{ data: unknown; error: { message: string } | null }>;
-  deliverLegacy(input: {
-    jobId: string;
-    email: ResendTransportInput;
-  }): Promise<EmailDeliveryResult>;
   sendTransport(input: ResendTransportInput): Promise<ResendTransportResult>;
 }
 
@@ -105,11 +101,6 @@ function isolatedDependencies(
       }
       throw new Error(`unexpected RPC: ${name}`);
     },
-    deliverLegacy: async () => ({
-      status: "sent",
-      attempted: true,
-      attemptCount: 1,
-    }),
     sendTransport: async (input) => {
       transportInputs.push(input);
       return transportResult;
@@ -327,7 +318,7 @@ Deno.test("Website dispatch continues under every SDF authority mode", async () 
       return { status: "sent" as const };
     };
     fixture.value.executeSdfConfirmation = async () => {
-      if (mode !== "legacy" && mode !== "isolated") {
+      if (mode !== "isolated") {
         throw new Error("SDF_INITIAL_CONFIRMATION_MODE_INVALID");
       }
       return { status: "sent" as const };
@@ -344,8 +335,8 @@ Deno.test("Website dispatch continues under every SDF authority mode", async () 
     assertEquals(counters, {
       ok: true,
       claimed: 2,
-      completed: mode === "legacy" || mode === "isolated" ? 2 : 1,
-      retry_scheduled: mode === "legacy" || mode === "isolated" ? 0 : 1,
+      completed: mode === "isolated" ? 2 : 1,
+      retry_scheduled: mode === "isolated" ? 0 : 1,
       manual_review: 0,
     });
     assertEquals(counters.claimed, 2);
@@ -353,7 +344,7 @@ Deno.test("Website dispatch continues under every SDF authority mode", async () 
   }
 });
 
-Deno.test("legacy mode routes only through the existing SDF legacy authority", async () => {
+Deno.test("legacy mode fails before every mail authority", async () => {
   const createExecutor = await sdfExecutorFactory();
   const calls: string[] = [];
   const executor = createExecutor({
@@ -378,22 +369,20 @@ Deno.test("legacy mode routes only through the existing SDF legacy authority", a
         error: null,
       };
     },
-    deliverLegacy: async () => {
-      calls.push("deliver_legacy");
-      return { status: "sent", attempted: true, attemptCount: 1 };
-    },
     sendTransport: async () => {
       calls.push("send_transport");
       return { ok: true, providerMessageId: "unexpected" };
     },
   });
 
-  assertEquals((await executor(sdfClaim)).status, "sent");
-  assertEquals(calls, [
-    "execute_application_intake_automation_sdf_confirmation_v1",
-    "resolve_sdf_support_reference_v1",
-    "deliver_legacy",
-  ]);
+  let errorCode = "";
+  try {
+    await executor(sdfClaim);
+  } catch (error) {
+    errorCode = error instanceof Error ? error.message : String(error);
+  }
+  assertEquals(errorCode, "SDF_INITIAL_CONFIRMATION_MODE_INVALID");
+  assertEquals(calls, []);
 });
 
 Deno.test("missing or unknown SDF mode fails before every mail authority", async () => {
@@ -407,10 +396,6 @@ Deno.test("missing or unknown SDF mode fails before every mail authority", async
       rpc: async (name: string) => {
         calls.push(name);
         return { data: null, error: null };
-      },
-      deliverLegacy: async () => {
-        calls.push("deliver_legacy");
-        return { status: "sent", attempted: true, attemptCount: 1 };
       },
       sendTransport: async () => {
         calls.push("send_transport");
@@ -489,10 +474,9 @@ Deno.test("malformed already-sent prepare outcome fails closed", async () => {
   assertEquals(fixture.transportInputs, []);
 });
 
-Deno.test("isolated legacy outcome uses only the returned legacy job", async () => {
+Deno.test("legacy prepare outcome fails closed without delivery", async () => {
   const createExecutor = await sdfExecutorFactory();
   const fixture = isolatedDependencies();
-  const deliveredJobIds: string[] = [];
   fixture.value.rpc = async (name, parameters) => {
     fixture.calls.push({ name, parameters });
     if (name === "resolve_sdf_support_reference_v1") {
@@ -512,13 +496,13 @@ Deno.test("isolated legacy outcome uses only the returned legacy job", async () 
       error: null,
     };
   };
-  fixture.value.deliverLegacy = async ({ jobId }) => {
-    deliveredJobIds.push(jobId);
-    return { status: "sent", attempted: true, attemptCount: 1 };
-  };
 
-  assertEquals((await createExecutor(fixture.value)(sdfClaim)).status, "sent");
-  assertEquals(deliveredJobIds, [sdfJobId]);
+  assertEquals(await createExecutor(fixture.value)(sdfClaim), {
+    status: "failed",
+    attempted: false,
+    attemptCount: 0,
+    errorCode: "SDF_INITIAL_CONFIRMATION_PREPARE_INVALID",
+  });
   assertEquals(fixture.transportInputs, []);
 });
 

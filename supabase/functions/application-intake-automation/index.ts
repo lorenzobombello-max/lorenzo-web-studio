@@ -10,7 +10,7 @@ import {
   buildSdfQualificationInvitationEmail, buildSdfQualificationMoreInformationEmail, buildSdfRequestReceivedEmail,
 } from "../_shared/email-templates.ts";
 import { createRawIntakeToken, decryptIntakeInvitationToken, encryptIntakeInvitationToken, hashIntakeToken } from "../_shared/security.ts";
-import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, sdfInvitationOutcome, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
+import { handleApplicationIntakeAutomation, sdfInvitationOutcome, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -59,10 +59,6 @@ export interface SdfConfirmationExecutorDependencies {
     name: string,
     parameters: Record<string, unknown>,
   ): Promise<SdfConfirmationRpcResult>;
-  deliverLegacy(input: {
-    jobId: string;
-    email: ResendTransportInput;
-  }): Promise<EmailDeliveryResult>;
   sendTransport(input: ResendTransportInput): Promise<ResendTransportResult>;
 }
 
@@ -129,40 +125,8 @@ export function createSdfConfirmationExecutor(
   dependencies: SdfConfirmationExecutorDependencies,
 ): (claim: AutomationClaim) => Promise<EmailDeliveryResult> {
   return async (claim) => {
-    if (
-      dependencies.authorityMode !== "legacy" &&
-      dependencies.authorityMode !== "isolated"
-    ) {
+    if (dependencies.authorityMode !== "isolated") {
       throw new Error("SDF_INITIAL_CONFIRMATION_MODE_INVALID");
-    }
-
-    if (dependencies.authorityMode === "legacy") {
-      const result = await dependencies.rpc(
-        "execute_application_intake_automation_sdf_confirmation_v1",
-        { p_work_id: claim.work_id, p_claim_token: claim.claim_token },
-      );
-      const authority = row(result.data);
-      if (
-        result.error || !authority ||
-        authority.request_kind !== "slimme_documentenflow" ||
-        !hasCanonicalSdfConfirmationTemplate(authority) ||
-        !isNonEmptyString(authority.confirmation_job_id)
-      ) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
-      const supportReference = await resolveSdfSupportReference(
-        dependencies.rpc,
-        { p_quote_request_id: claim.quote_request_id, p_intake_id: null },
-      );
-      const email = sdfEmail(
-        { ...authority, support_reference: supportReference },
-        dependencies.resendApiKey,
-        dependencies.fromEmail,
-        `quote-request-email/${authority.confirmation_job_id}`,
-      );
-      if (!email) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
-      return await dependencies.deliverLegacy({
-        jobId: authority.confirmation_job_id,
-        email,
-      });
     }
 
     const preparedResult = await dependencies.rpc(
@@ -178,28 +142,6 @@ export function createSdfConfirmationExecutor(
       prepared.authority_source == null && prepared.job_id == null
     ) {
       return { status: "sent", attempted: false, attemptCount: 0 };
-    }
-    if (prepared.authority_source === "legacy") {
-      if (
-        !isNonEmptyString(prepared.job_id) ||
-        prepared.request_kind !== "slimme_documentenflow" ||
-        prepared.template_version !== "v1"
-      ) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
-      const supportReference = await resolveSdfSupportReference(
-        dependencies.rpc,
-        { p_quote_request_id: claim.quote_request_id, p_intake_id: null },
-      );
-      const email = sdfEmail(
-        { ...prepared, support_reference: supportReference },
-        dependencies.resendApiKey,
-        dependencies.fromEmail,
-        `quote-request-email/${prepared.job_id}`,
-      );
-      if (!email) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
-      return await dependencies.deliverLegacy({
-        jobId: prepared.job_id,
-        email,
-      });
     }
     if (prepared.authority_source !== "sdf_initial") {
       return sdfFailure("SDF_INITIAL_CONFIRMATION_PREPARE_INVALID");
@@ -289,8 +231,6 @@ const executeSdfConfirmation = createSdfConfirmationExecutor({
   resendApiKey,
   fromEmail,
   rpc,
-  deliverLegacy: async ({ jobId, email }) =>
-    await deliverEmailJob({ supabase, jobId, resendApiKey, email }),
   sendTransport: sendEmailViaResend,
 });
 
