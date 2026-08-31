@@ -1,6 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { deliverEmailJob, type EmailDeliveryResult } from "../_shared/email-delivery.ts";
 import {
+  type ResendTransportInput,
+  type ResendTransportResult,
+  sendEmailViaResend,
+} from "../_shared/resend-transport.ts";
+import {
   buildApprovedConfirmationEmail, buildIntakeInvitationEmail,
   buildSdfQualificationInvitationEmail, buildSdfQualificationMoreInformationEmail, buildSdfRequestReceivedEmail,
 } from "../_shared/email-templates.ts";
@@ -13,6 +18,9 @@ const workerSecret = Deno.env.get("APPLICATION_INTAKE_AUTOMATION_WORKER_SECRET")
 const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
 const fromEmail = Deno.env.get("FROM_EMAIL") || "";
 const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
+const sdfInitialConfirmationAuthorityMode = Deno.env.get(
+  "SDF_INITIAL_CONFIRMATION_AUTHORITY_MODE",
+);
 const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
 async function rpc(name: string, parameters: Record<string, unknown>) { return await supabase.rpc(name, parameters); }
@@ -38,11 +46,221 @@ async function executeWebsite(claim: AutomationClaim): Promise<EmailDeliveryResu
   return await deliverEmailJob({ supabase, jobId: String(authority.invitation_job_id), resendApiKey, email: { from: fromEmail, to: String(authority.request_email), ...buildIntakeInvitationEmail({ clientName: String(authority.request_name), company: authority.request_company as string | null, requestId: claim.quote_request_id, intakeUrl: url.toString() }) } });
 }
 
-async function executeSdfConfirmation(claim: AutomationClaim): Promise<EmailDeliveryResult> {
-  const result = await rpc("execute_application_intake_automation_sdf_confirmation_v1", { p_work_id: claim.work_id, p_claim_token: claim.claim_token });
-  const authority = row(result.data); if (result.error || !authority || authority.request_kind !== "slimme_documentenflow" || !hasCanonicalSdfConfirmationTemplate(authority)) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
-  return await deliverEmailJob({ supabase, jobId: String(authority.confirmation_job_id), resendApiKey, email: { from: fromEmail, to: String(authority.request_email), ...buildSdfRequestReceivedEmail({ customerName: String(authority.request_name), applicationReference: String(authority.application_reference || `#${claim.quote_request_id.slice(0,8).toUpperCase()}`) }) } });
+interface SdfConfirmationRpcResult {
+  data: unknown;
+  error: { message: string } | null;
 }
+
+export interface SdfConfirmationExecutorDependencies {
+  authorityMode: string | undefined;
+  resendApiKey: string;
+  fromEmail: string;
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): Promise<SdfConfirmationRpcResult>;
+  deliverLegacy(input: {
+    jobId: string;
+    email: ResendTransportInput;
+  }): Promise<EmailDeliveryResult>;
+  sendTransport(input: ResendTransportInput): Promise<ResendTransportResult>;
+}
+
+function sdfFailure(
+  errorCode: string,
+  attempted = false,
+  attemptCount = 0,
+): EmailDeliveryResult {
+  return { status: "failed", attempted, attemptCount, errorCode };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function sdfEmail(
+  authority: Record<string, unknown>,
+  apiKey: string,
+  from: string,
+  idempotencyKey: string,
+): ResendTransportInput | null {
+  if (
+    !isNonEmptyString(authority.request_name) ||
+    !isNonEmptyString(authority.request_email) ||
+    !isNonEmptyString(authority.application_reference)
+  ) return null;
+  return {
+    apiKey,
+    from,
+    to: authority.request_email,
+    ...buildSdfRequestReceivedEmail({
+      customerName: authority.request_name,
+      applicationReference: authority.application_reference,
+    }),
+    idempotencyKey,
+  };
+}
+
+function completionStatus(value: unknown): EmailDeliveryResult["status"] | null {
+  return value === "sent" || value === "retry_wait" || value === "failed"
+    ? value
+    : null;
+}
+
+export function createSdfConfirmationExecutor(
+  dependencies: SdfConfirmationExecutorDependencies,
+): (claim: AutomationClaim) => Promise<EmailDeliveryResult> {
+  return async (claim) => {
+    if (
+      dependencies.authorityMode !== "legacy" &&
+      dependencies.authorityMode !== "isolated"
+    ) {
+      throw new Error("SDF_INITIAL_CONFIRMATION_MODE_INVALID");
+    }
+
+    if (dependencies.authorityMode === "legacy") {
+      const result = await dependencies.rpc(
+        "execute_application_intake_automation_sdf_confirmation_v1",
+        { p_work_id: claim.work_id, p_claim_token: claim.claim_token },
+      );
+      const authority = row(result.data);
+      if (
+        result.error || !authority ||
+        authority.request_kind !== "slimme_documentenflow" ||
+        !hasCanonicalSdfConfirmationTemplate(authority) ||
+        !isNonEmptyString(authority.confirmation_job_id)
+      ) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
+      const email = sdfEmail(
+        authority,
+        dependencies.resendApiKey,
+        dependencies.fromEmail,
+        `quote-request-email/${authority.confirmation_job_id}`,
+      );
+      if (!email) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
+      return await dependencies.deliverLegacy({
+        jobId: authority.confirmation_job_id,
+        email,
+      });
+    }
+
+    const preparedResult = await dependencies.rpc(
+      "prepare_sdf_initial_confirmation_v2",
+      { p_work_id: claim.work_id, p_work_claim_token: claim.claim_token },
+    );
+    const prepared = row(preparedResult.data);
+    if (preparedResult.error || !prepared) {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_PREPARE_FAILED");
+    }
+    if (
+      prepared.outcome === "already_sent" &&
+      prepared.authority_source == null && prepared.job_id == null
+    ) {
+      return { status: "sent", attempted: false, attemptCount: 0 };
+    }
+    if (prepared.authority_source === "legacy") {
+      if (
+        !isNonEmptyString(prepared.job_id) ||
+        prepared.request_kind !== "slimme_documentenflow" ||
+        prepared.template_version !== "v1"
+      ) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
+      const email = sdfEmail(
+        prepared,
+        dependencies.resendApiKey,
+        dependencies.fromEmail,
+        `quote-request-email/${prepared.job_id}`,
+      );
+      if (!email) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
+      return await dependencies.deliverLegacy({
+        jobId: prepared.job_id,
+        email,
+      });
+    }
+    if (prepared.authority_source !== "sdf_initial") {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_PREPARE_INVALID");
+    }
+    if (prepared.outcome === "retry_wait" || prepared.outcome === "processing") {
+      return { status: "retry_wait", attempted: false, attemptCount: 0 };
+    }
+    if (prepared.outcome === "failed") {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_FAILED");
+    }
+    if (prepared.outcome !== "due" || !isNonEmptyString(prepared.job_id)) {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_PREPARE_INVALID");
+    }
+
+    const jobId = prepared.job_id;
+    const idempotencyKey = `sdf-initial-confirmation/${jobId}`;
+    const claimResult = await dependencies.rpc(
+      "claim_sdf_initial_confirmation_email_job_v1",
+      { p_job_id: jobId },
+    );
+    const claimed = row(claimResult.data);
+    const attemptCount = Number(claimed?.attempt_count) || 0;
+    if (
+      claimResult.error || !claimed || claimed.job_id !== jobId ||
+      claimed.template_version !== "SDF_REQUEST_RECEIVED_NL_BE_v1" ||
+      claimed.provider_idempotency_key !== idempotencyKey ||
+      !isNonEmptyString(claimed.delivery_lease_token)
+    ) return sdfFailure("SDF_INITIAL_CONFIRMATION_CLAIM_FAILED", false, attemptCount);
+
+    const transportInput = sdfEmail(
+      claimed,
+      dependencies.resendApiKey,
+      dependencies.fromEmail,
+      idempotencyKey,
+    );
+    if (!transportInput) {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_PAYLOAD_INVALID", false, attemptCount);
+    }
+    const leaseToken = claimed.delivery_lease_token;
+    const validation = await dependencies.rpc(
+      "validate_sdf_initial_confirmation_email_delivery_v1",
+      { p_job_id: jobId, p_delivery_lease_token: leaseToken },
+    );
+    if (validation.error || validation.data !== true) {
+      return sdfFailure("SDF_INITIAL_CONFIRMATION_LEASE_INVALID", false, attemptCount);
+    }
+
+    const transport = await dependencies.sendTransport(transportInput);
+    const completion = await dependencies.rpc(
+      "complete_sdf_initial_confirmation_email_job_v1",
+      {
+        p_job_id: jobId,
+        p_delivery_lease_token: leaseToken,
+        p_succeeded: transport.ok,
+        p_retryable: transport.ok ? false : transport.retryable,
+        p_error_code: transport.ok ? null : transport.code,
+        p_provider_message_id: transport.ok
+          ? transport.providerMessageId
+          : null,
+      },
+    );
+    const completed = row(completion.data);
+    const status = completionStatus(completed?.status);
+    if (completion.error || !completed || !status) {
+      return sdfFailure(
+        "SDF_INITIAL_CONFIRMATION_COMPLETION_FAILED",
+        true,
+        attemptCount,
+      );
+    }
+    return {
+      status,
+      attempted: true,
+      attemptCount: Number(completed.attempt_count) || attemptCount,
+    };
+  };
+}
+
+const executeSdfConfirmation = createSdfConfirmationExecutor({
+  authorityMode: sdfInitialConfirmationAuthorityMode,
+  resendApiKey,
+  fromEmail,
+  rpc,
+  deliverLegacy: async ({ jobId, email }) =>
+    await deliverEmailJob({ supabase, jobId, resendApiKey, email }),
+  sendTransport: sendEmailViaResend,
+});
 
 async function executeSdfInvitation(claim: AutomationClaim): Promise<EmailDeliveryResult> {
   const result = await rpc("execute_application_intake_automation_sdf_intake_v1", { p_work_id: claim.work_id, p_claim_token: claim.claim_token });

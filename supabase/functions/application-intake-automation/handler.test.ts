@@ -1,5 +1,112 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import type { EmailDeliveryResult } from "../_shared/email-delivery.ts";
+import type {
+  ResendTransportInput,
+  ResendTransportResult,
+} from "../_shared/resend-transport.ts";
 import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
+
+const sdfClaim: AutomationClaim = {
+  work_id: 2,
+  quote_request_id: "44444444-4444-4444-8444-444444444444",
+  phase: "SDF_CONFIRMATION",
+  claim_token: "55555555-5555-4555-8555-555555555555",
+};
+const sdfJobId = "88888888-8888-4888-8888-888888888888";
+const sdfLeaseToken = "99999999-9999-4999-8999-999999999999";
+
+interface TestSdfDependencies {
+  authorityMode: string | undefined;
+  resendApiKey: string;
+  fromEmail: string;
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: { message: string } | null }>;
+  deliverLegacy(input: {
+    jobId: string;
+    email: ResendTransportInput;
+  }): Promise<EmailDeliveryResult>;
+  sendTransport(input: ResendTransportInput): Promise<ResendTransportResult>;
+}
+
+async function sdfExecutorFactory() {
+  Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
+  return (await import("./index.ts")).createSdfConfirmationExecutor;
+}
+
+function isolatedDependencies(
+  transportResult: ResendTransportResult = {
+    ok: true,
+    providerMessageId: "provider-message-1",
+  },
+) {
+  const calls: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+  const transportInputs: ResendTransportInput[] = [];
+  const value: TestSdfDependencies = {
+    authorityMode: "isolated",
+    resendApiKey: "resend-test-key",
+    fromEmail: "Lorenzo Web Solutions <noreply@example.test>",
+    rpc: async (name, parameters) => {
+      calls.push({ name, parameters });
+      if (name === "prepare_sdf_initial_confirmation_v2") {
+        return {
+          data: [{
+            outcome: "due",
+            authority_source: "sdf_initial",
+            job_id: sdfJobId,
+            request_kind: "slimme_documentenflow",
+          }],
+          error: null,
+        };
+      }
+      if (name === "claim_sdf_initial_confirmation_email_job_v1") {
+        return {
+          data: [{
+            job_id: sdfJobId,
+            request_name: "SDF klant",
+            request_email: "customer@example.test",
+            application_reference: "SDF-2026-0001",
+            template_version: "SDF_REQUEST_RECEIVED_NL_BE_v1",
+            attempt_count: 1,
+            provider_idempotency_key:
+              `sdf-initial-confirmation/${sdfJobId}`,
+            delivery_lease_token: sdfLeaseToken,
+          }],
+          error: null,
+        };
+      }
+      if (name === "validate_sdf_initial_confirmation_email_delivery_v1") {
+        return { data: true, error: null };
+      }
+      if (name === "complete_sdf_initial_confirmation_email_job_v1") {
+        return {
+          data: {
+            status: transportResult.ok
+              ? "sent"
+              : transportResult.retryable
+              ? "retry_wait"
+              : "failed",
+            attempt_count: 1,
+          },
+          error: null,
+        };
+      }
+      throw new Error(`unexpected RPC: ${name}`);
+    },
+    deliverLegacy: async () => ({
+      status: "sent",
+      attempted: true,
+      attemptCount: 1,
+    }),
+    sendTransport: async (input) => {
+      transportInputs.push(input);
+      return transportResult;
+    },
+  };
+  return { calls, transportInputs, value };
+}
 
 const secret = "x".repeat(32);
 function request() { return new Request("https://example.test/worker", { method: "POST", headers: { "content-type": "application/json", "x-lws-automation-secret": secret }, body: '{"version":1}' }); }
@@ -33,6 +140,306 @@ Deno.test("worker dispatches Website and SDF phases without fallback", async () 
   assertEquals(response.status, 200);
   assertEquals(fixture.phases, ["APPROVAL", "SDF_CONFIRMATION", "SDF_INTAKE"]);
   assertEquals(await response.json(), { ok: true, claimed: 3, completed: 3, retry_scheduled: 0, manual_review: 0 });
+});
+
+Deno.test("Website dispatch continues under every SDF authority mode", async () => {
+  for (const mode of ["legacy", "isolated", undefined, "unknown"]) {
+    const fixture = dependencies([
+      { work_id: 1, quote_request_id: "22222222-2222-4222-8222-222222222222", phase: "APPROVAL", claim_token: "33333333-3333-4333-8333-333333333333" },
+      sdfClaim,
+    ]);
+    fixture.value.executeSdfConfirmation = async () => {
+      if (mode !== "legacy" && mode !== "isolated") {
+        throw new Error("SDF_INITIAL_CONFIRMATION_MODE_INVALID");
+      }
+      return { status: "sent" as const };
+    };
+
+    const response = await handleApplicationIntakeAutomation(
+      request(),
+      fixture.value,
+    );
+
+    assertEquals(fixture.phases, ["APPROVAL"]);
+    assertEquals(await response.json(), {
+      ok: true,
+      claimed: 2,
+      completed: mode === "legacy" || mode === "isolated" ? 2 : 1,
+      retry_scheduled: mode === "legacy" || mode === "isolated" ? 0 : 1,
+      manual_review: 0,
+    });
+  }
+});
+
+Deno.test("legacy mode routes only through the existing SDF legacy authority", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const calls: string[] = [];
+  const executor = createExecutor({
+    authorityMode: "legacy",
+    resendApiKey: "resend-test-key",
+    fromEmail: "sender@example.test",
+    rpc: async (name: string) => {
+      calls.push(name);
+      return {
+        data: [{
+          confirmation_job_id: sdfJobId,
+          request_name: "SDF klant",
+          request_email: "customer@example.test",
+          application_reference: "SDF-2026-0001",
+          request_kind: "slimme_documentenflow",
+          template_key: "SDF_REQUEST_RECEIVED_NL_BE_v1",
+          template_version: "v1",
+        }],
+        error: null,
+      };
+    },
+    deliverLegacy: async () => {
+      calls.push("deliver_legacy");
+      return { status: "sent", attempted: true, attemptCount: 1 };
+    },
+    sendTransport: async () => {
+      calls.push("send_transport");
+      return { ok: true, providerMessageId: "unexpected" };
+    },
+  });
+
+  assertEquals((await executor(sdfClaim)).status, "sent");
+  assertEquals(calls, [
+    "execute_application_intake_automation_sdf_confirmation_v1",
+    "deliver_legacy",
+  ]);
+});
+
+Deno.test("missing or unknown SDF mode fails before every mail authority", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  for (const authorityMode of [undefined, "", "unknown"]) {
+    const calls: string[] = [];
+    const executor = createExecutor({
+      authorityMode,
+      resendApiKey: "resend-test-key",
+      fromEmail: "sender@example.test",
+      rpc: async (name: string) => {
+        calls.push(name);
+        return { data: null, error: null };
+      },
+      deliverLegacy: async () => {
+        calls.push("deliver_legacy");
+        return { status: "sent", attempted: true, attemptCount: 1 };
+      },
+      sendTransport: async () => {
+        calls.push("send_transport");
+        return { ok: true, providerMessageId: "unexpected" };
+      },
+    });
+
+    let errorCode = "";
+    try {
+      await executor(sdfClaim);
+    } catch (error) {
+      errorCode = error instanceof Error ? error.message : String(error);
+    }
+    assertEquals(errorCode, "SDF_INITIAL_CONFIRMATION_MODE_INVALID");
+    assertEquals(calls, []);
+  }
+});
+
+Deno.test("canonical non-deliverable prepare outcomes never call provider", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const cases = [
+    { outcome: "already_sent", authoritySource: null, status: "sent" },
+    { outcome: "retry_wait", authoritySource: "sdf_initial", status: "retry_wait" },
+    { outcome: "processing", authoritySource: "sdf_initial", status: "retry_wait" },
+    { outcome: "failed", authoritySource: "sdf_initial", status: "failed" },
+    { outcome: "unknown", authoritySource: "sdf_initial", status: "failed" },
+  ];
+  for (const testCase of cases) {
+    const fixture = isolatedDependencies();
+    fixture.value.rpc = async (name, parameters) => {
+      fixture.calls.push({ name, parameters });
+      return {
+        data: [{
+          outcome: testCase.outcome,
+          authority_source: testCase.authoritySource,
+        }],
+        error: null,
+      };
+    };
+
+    const result = await createExecutor(fixture.value)(sdfClaim);
+
+    assertEquals(result.status, testCase.status);
+    assertEquals(result.attempted, false);
+    assertEquals(fixture.calls.map(({ name }) => name), [
+      "prepare_sdf_initial_confirmation_v2",
+    ]);
+    assertEquals(fixture.transportInputs, []);
+  }
+});
+
+Deno.test("malformed already-sent prepare outcome fails closed", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+  fixture.value.rpc = async (name, parameters) => {
+    fixture.calls.push({ name, parameters });
+    return {
+      data: [{
+        outcome: "already_sent",
+        authority_source: "sdf_initial",
+        job_id: sdfJobId,
+      }],
+      error: null,
+    };
+  };
+
+  assertEquals(await createExecutor(fixture.value)(sdfClaim), {
+    status: "failed",
+    attempted: false,
+    attemptCount: 0,
+    errorCode: "SDF_INITIAL_CONFIRMATION_PREPARE_INVALID",
+  });
+  assertEquals(fixture.transportInputs, []);
+});
+
+Deno.test("isolated legacy outcome uses only the returned legacy job", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+  const deliveredJobIds: string[] = [];
+  fixture.value.rpc = async (name, parameters) => {
+    fixture.calls.push({ name, parameters });
+    return {
+      data: [{
+        outcome: "due",
+        authority_source: "legacy",
+        job_id: sdfJobId,
+        request_name: "SDF klant",
+        request_email: "customer@example.test",
+        application_reference: "SDF-2026-0001",
+        request_kind: "slimme_documentenflow",
+        template_version: "v1",
+      }],
+      error: null,
+    };
+  };
+  fixture.value.deliverLegacy = async ({ jobId }) => {
+    deliveredJobIds.push(jobId);
+    return { status: "sent", attempted: true, attemptCount: 1 };
+  };
+
+  assertEquals((await createExecutor(fixture.value)(sdfClaim)).status, "sent");
+  assertEquals(deliveredJobIds, [sdfJobId]);
+  assertEquals(fixture.transportInputs, []);
+});
+
+Deno.test("isolated due validates its lease immediately before stateless delivery", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+
+  const result = await createExecutor(fixture.value)(sdfClaim);
+
+  assertEquals(result, { status: "sent", attempted: true, attemptCount: 1 });
+  assertEquals(fixture.calls.map(({ name }) => name), [
+    "prepare_sdf_initial_confirmation_v2",
+    "claim_sdf_initial_confirmation_email_job_v1",
+    "validate_sdf_initial_confirmation_email_delivery_v1",
+    "complete_sdf_initial_confirmation_email_job_v1",
+  ]);
+  assertEquals(fixture.transportInputs.length, 1);
+  assertEquals(
+    fixture.transportInputs[0].idempotencyKey,
+    `sdf-initial-confirmation/${sdfJobId}`,
+  );
+  assertEquals(fixture.calls[3].parameters, {
+    p_job_id: sdfJobId,
+    p_delivery_lease_token: sdfLeaseToken,
+    p_succeeded: true,
+    p_retryable: false,
+    p_error_code: null,
+    p_provider_message_id: "provider-message-1",
+  });
+});
+
+Deno.test("invalid or expired SDF lease fails before provider and completion", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  for (const validation of [{ data: false, error: null }, {
+    data: null,
+    error: { message: "validation failed" },
+  }]) {
+    const fixture = isolatedDependencies();
+    const originalRpc = fixture.value.rpc;
+    fixture.value.rpc = async (name, parameters) => {
+      if (name === "validate_sdf_initial_confirmation_email_delivery_v1") {
+        fixture.calls.push({ name, parameters });
+        return validation;
+      }
+      return await originalRpc(name, parameters);
+    };
+
+    assertEquals(await createExecutor(fixture.value)(sdfClaim), {
+      status: "failed",
+      attempted: false,
+      attemptCount: 1,
+      errorCode: "SDF_INITIAL_CONFIRMATION_LEASE_INVALID",
+    });
+    assertEquals(fixture.transportInputs, []);
+    assertEquals(
+      fixture.calls.some(({ name }) =>
+        name === "complete_sdf_initial_confirmation_email_job_v1"
+      ),
+      false,
+    );
+  }
+});
+
+Deno.test("transport outcomes pass only technical data to SDF completion", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const outcomes: Array<Extract<ResendTransportResult, { ok: false }>> = [
+    { ok: false, retryable: true, code: "RESEND_HTTP_RETRYABLE" },
+    { ok: false, retryable: false, code: "RESEND_HTTP_PERMANENT" },
+    { ok: false, retryable: true, code: "RESEND_TIMEOUT" },
+    { ok: false, retryable: true, code: "RESEND_NETWORK_ERROR" },
+    { ok: false, retryable: true, code: "PROVIDER_RESPONSE_INVALID" },
+  ];
+  for (const transportResult of outcomes) {
+    const fixture = isolatedDependencies(transportResult);
+    const result = await createExecutor(fixture.value)(sdfClaim);
+    const completion = fixture.calls.find(({ name }) =>
+      name === "complete_sdf_initial_confirmation_email_job_v1"
+    );
+
+    assertEquals(result.status, transportResult.retryable
+      ? "retry_wait"
+      : "failed");
+    assertEquals(completion?.parameters, {
+      p_job_id: sdfJobId,
+      p_delivery_lease_token: sdfLeaseToken,
+      p_succeeded: false,
+      p_retryable: transportResult.retryable,
+      p_error_code: transportResult.code,
+      p_provider_message_id: null,
+    });
+    assertEquals("p_work_id" in (completion?.parameters || {}), false);
+    assertEquals("p_claim_token" in (completion?.parameters || {}), false);
+  }
+});
+
+Deno.test("isolated completion failure fails closed without fallback", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    if (name === "complete_sdf_initial_confirmation_email_job_v1") {
+      fixture.calls.push({ name, parameters });
+      return { data: null, error: { message: "completion failed" } };
+    }
+    return await originalRpc(name, parameters);
+  };
+
+  assertEquals(await createExecutor(fixture.value)(sdfClaim), {
+    status: "failed",
+    attempted: true,
+    attemptCount: 1,
+    errorCode: "SDF_INITIAL_CONFIRMATION_COMPLETION_FAILED",
+  });
 });
 
 Deno.test("worker accounts for one independently queued SDF email", async () => {

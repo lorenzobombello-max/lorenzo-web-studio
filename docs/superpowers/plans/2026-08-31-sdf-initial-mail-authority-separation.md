@@ -503,7 +503,7 @@
   already_sent       -> sent, no provider call
   legacy             -> existing deliverEmailJob with the returned legacy job_id
   sdf_initial/due    -> claim, validate, stateless send, complete
-  sdf_initial/deferred or processing -> retry_wait, no provider call
+  sdf_initial/retry_wait or processing -> retry_wait, no provider call
   sdf_initial/failed -> failed, no provider call
   anything else      -> fail closed, no provider call
   ```
