@@ -8,6 +8,7 @@ import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pe
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
+import { sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -147,6 +148,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     ["pendingIntakeCommandDialog", "operator-modal--action-confirm"],
     ["dossierLifecycleDialog", "operator-modal--action-confirm"],
     ["dossierPurgeDialog", "operator-modal--action-confirm"],
+    ["sdfDossierPurgeDialog", "operator-modal--action-confirm"],
   ]);
   const dialogs = [...html.matchAll(/<dialog\b[^>]*>/g)].map(([tag])=>({
     tag,
@@ -927,7 +929,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /if \(!isCurrent\(\)\) return currentIdentity;\s*if \(dashboardRoute !== "manager"\) \{\s*if \(isOperatorAuthorizationFailure\(listController\.state\.error\)\) onAuthorizationFailure\(\);\s*return currentIdentity;\s*\}\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 15);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 17);
   assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
@@ -1312,10 +1314,53 @@ test("permanent dossier deletion is trashed, owner, server eligibility, reason, 
 
 test("legacy trash detail keeps lifecycle and purge eligibility reachable without output controls", async () => {
   const script = await read("assets/js/operator-dashboard.js");
-  assert.match(script, /const dossierOutput = application\.application;\s*applicationDossierActions\.hidden = true;\s*if \(isWebsite && dossierOutput\)/);
+  assert.match(script, /const dossierOutput = application\.application;[\s\S]{0,300}applicationDossierActions\.hidden = true;[\s\S]{0,300}if \(isWebsite && dossierOutput\)/);
   assert.match(script, /renderDossierLifecycle\(application\);/);
   assert.match(script, /void refreshDossierPurgeEligibility\(detailApplication, detailRequestId\);/);
   assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
+});
+
+test("SDF danger zone is server-authoritative and gives exact blocker feedback", async () => {
+  const detail = {
+    quote_request_id: "a1100000-0000-4000-8000-000000000003",
+    request_kind: "slimme_documentenflow",
+    dossier_lifecycle: { state: "TRASHED" },
+  };
+  const owner = { role: "owner", status: "ACTIVE" };
+  assert.deepEqual(
+    sdfDossierPurgePresentation(detail, owner, { can_purge: true, reason: null }),
+    { canPurge: true, message: "Dit dossier bevat geen beschermde commerciële gegevens en kan definitief worden verwijderd." },
+  );
+  assert.deepEqual(
+    sdfDossierPurgePresentation(detail, owner, { can_purge: false, reason: "SDF_QUOTATION_EXISTS" }),
+    { canPurge: false, message: "Dit dossier kan niet definitief worden verwijderd omdat er al een offerte bestaat." },
+  );
+  assert.equal(sdfDossierPurgePresentation({ ...detail, request_kind: "website" }, owner, { can_purge: true, reason: null }), null);
+  assert.equal(sdfDossierPurgePresentation(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }).canPurge, false);
+  assert.deepEqual(
+    sdfDossierPurgeRequest(detail, "  Testdata opschonen  ", "a1800000-0000-4000-8000-000000000031"),
+    {
+      p_quote_request_id: detail.quote_request_id,
+      p_reason: "Testdata opschonen",
+      p_idempotency_key: "a1800000-0000-4000-8000-000000000031",
+    },
+  );
+  assert.throws(
+    ()=>sdfDossierPurgeRequest({ ...detail, request_kind: "website" }, "Reden", "a1800000-0000-4000-8000-000000000031"),
+    /INVALID_SDF_DOSSIER_PURGE_REQUEST/,
+  );
+
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="sdfDossierDangerZone"[^>]*hidden/);
+  assert.match(html, /id="sdfDossierPurge"[^>]*hidden>Definitief verwijderen</);
+  assert.match(html, /id="sdfDossierPurgeReason"[^>]*maxlength="500"[^>]*required/);
+  assert.match(html, /Dit kan niet ongedaan worden gemaakt/);
+  assert.match(script, /client\.rpc\("can_purge_sdf_dossier_v1"/);
+  assert.match(script, /client\.rpc\("purge_sdf_dossier_v1", input\)/);
+  assert.match(script, /detailApplication\?\.request_kind === "website"[\s\S]{0,180}refreshDossierPurgeEligibility[\s\S]{0,180}refreshSdfDossierPurgeEligibility/);
+  assert.match(script, /sdfDossierPurgeBusy = true;[\s\S]{0,140}sdfDossierPurge\.disabled = true;[\s\S]{0,140}sdfDossierPurgeConfirm\.disabled = true/);
+  assert.match(script, /clearDetail\(\);[\s\S]{0,80}await listController\.refresh\(\)/);
+  assert.match(script, /catch \{[\s\S]{0,250}refreshSdfDossierPurgeEligibility\(selectedDetail, detailRequestId\)/);
 });
 
 test("successful dossier transition focuses only an action allowed by refreshed detail", () => {

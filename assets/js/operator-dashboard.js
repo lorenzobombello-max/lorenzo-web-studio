@@ -1493,7 +1493,7 @@ const WEBSITE_DOSSIER_IDS = Object.freeze([
   "lifecycleDossier", "pricingDossier", "projectDossier", "quotationDossier",
   "paymentDossier", "workflowDossier", "historyDossier"
 ]);
-const SDF_DOSSIER_IDS = Object.freeze(["sdfQualificationDossier", "sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier"]);
+const SDF_DOSSIER_IDS = Object.freeze(["sdfQualificationDossier", "sdfPricingDossier", "sdfQuotationDossier", "sdfM1InvoiceDossier", "sdfProjectDossier", "sdfDossierDangerZone"]);
 const PACKAGE_LABELS = Object.freeze({ starter_v1: "Starter", professional_v1: "Professional", professional_v2: "Professional" });
 const SDF_PACKAGE_LABELS = Object.freeze({ start: "START", groei: "GROEI", maatwerk: "MAATWERK" });
 const LIFECYCLE_PRESENTATION = Object.freeze({
@@ -1613,6 +1613,47 @@ export function dossierPurgeRequest(detail, reason, idempotencyKey) {
     p_reason: normalizedReason,
     p_idempotency_key: idempotencyKey,
   };
+}
+
+const SDF_PURGE_BLOCKER_MESSAGES = Object.freeze({
+  ALREADY_PURGED: "Dit dossier is al definitief verwijderd.",
+  DOSSIER_NOT_FOUND: "Dit dossier is niet meer beschikbaar.",
+  WRONG_PRODUCT_KIND: "Definitief verwijderen is niet beschikbaar voor dit type dossier.",
+  DOSSIER_NOT_TRASHED: "Verplaats dit dossier eerst naar de prullenbak.",
+  SDF_QUOTATION_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een offerte bestaat.",
+  QUOTATION_PREPARATION_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat de commerciële voorbereiding al is gestart.",
+  QUOTATION_ACCEPTANCE_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat de offerte al is aanvaard.",
+  ACCEPTED_COMMERCIAL_TERMS_EXIST: "Dit dossier kan niet definitief worden verwijderd omdat er al commerciële voorwaarden zijn aanvaard.",
+  COMMERCIAL_OBLIGATION_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een commerciële verplichting bestaat.",
+  INVOICE_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een factuur of factuurvoorbereiding bestaat.",
+  VAT_COMMERCIAL_BINDING_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al fiscale gegevens aan gekoppeld zijn.",
+  PROJECT_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een project aan gekoppeld is.",
+  PAYMENT_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er betalingsgegevens aan gekoppeld zijn.",
+  CUSTOMER_REQUEST_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een klantverzoek aan gekoppeld is.",
+  OTHER_PROTECTED_DEPENDENCY: "Dit dossier kan niet definitief worden verwijderd omdat er beschermde commerciële gegevens aan gekoppeld zijn.",
+});
+
+export function sdfDossierPurgePresentation(detail, identity, eligibility) {
+  if (detail?.request_kind !== "slimme_documentenflow") return null;
+  if (identity?.status !== "ACTIVE" || identity.role !== "owner") {
+    return { canPurge: false, message: "Alleen de Owner kan dit dossier definitief verwijderen." };
+  }
+  if (!eligibility || typeof eligibility !== "object") {
+    return { canPurge: false, message: "De verwijderstatus kon niet veilig worden vastgesteld. Vernieuw het dossier." };
+  }
+  if (eligibility.can_purge === true && eligibility.reason === null) {
+    return { canPurge: true, message: "Dit dossier bevat geen beschermde commerciële gegevens en kan definitief worden verwijderd." };
+  }
+  return {
+    canPurge: false,
+    message: SDF_PURGE_BLOCKER_MESSAGES[eligibility.reason]
+      || "Dit dossier kan niet definitief worden verwijderd omdat er beschermde gegevens aan gekoppeld zijn.",
+  };
+}
+
+export function sdfDossierPurgeRequest(detail, reason, idempotencyKey) {
+  if (detail?.request_kind !== "slimme_documentenflow") throw new Error("INVALID_SDF_DOSSIER_PURGE_REQUEST");
+  return dossierPurgeRequest(detail, reason, idempotencyKey);
 }
 const STATE_LABELS = Object.freeze({
   QUOTE_ACCEPTED: "Offerte geaccepteerd",
@@ -2836,6 +2877,13 @@ export async function startOperatorDashboard({
   const dossierPurgeReason = document.getElementById("dossierPurgeReason");
   const dossierPurgeConfirm = document.getElementById("dossierPurgeConfirm");
   const dossierPurgeCancel = document.getElementById("dossierPurgeCancel");
+  const sdfDossierPurge = document.getElementById("sdfDossierPurge");
+  const sdfDossierPurgeMessage = document.getElementById("sdfDossierPurgeMessage");
+  const sdfDossierPurgeDialog = document.getElementById("sdfDossierPurgeDialog");
+  const sdfDossierPurgeForm = document.getElementById("sdfDossierPurgeForm");
+  const sdfDossierPurgeReason = document.getElementById("sdfDossierPurgeReason");
+  const sdfDossierPurgeConfirm = document.getElementById("sdfDossierPurgeConfirm");
+  const sdfDossierPurgeCancel = document.getElementById("sdfDossierPurgeCancel");
   const lifecycleDossier = document.getElementById("lifecycleDossier");
   const lifecycleDossierTitle = document.getElementById("lifecycleDossierTitle");
   const lifecycleMessage = document.getElementById("lifecycleActionMessage");
@@ -2871,6 +2919,8 @@ export async function startOperatorDashboard({
   let pendingDossierLifecycleAction = null;
   let dossierPurgeBusy = false;
   let pendingDossierPurge = null;
+  let sdfDossierPurgeBusy = false;
+  let pendingSdfDossierPurge = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
   let pendingIntakeItems = [];
@@ -4288,6 +4338,8 @@ export async function startOperatorDashboard({
     detailMessage.textContent = "";
     dossierLifecycleMessage.textContent = "";
     dossierPurge.hidden = true;
+    sdfDossierPurge.hidden = true;
+    sdfDossierPurgeMessage.textContent = "";
     lifecycleMessage.textContent = "";
     quotationActionButton.hidden = true;
     quotationActionMessage.textContent = "";
@@ -4571,7 +4623,11 @@ export async function startOperatorDashboard({
       button.hidden = !presentation.actions.includes(button.dataset.dossierLifecycleAction);
       button.disabled = dossierLifecycleBusy;
     }
-    void refreshDossierPurgeEligibility(detailApplication, detailRequestId);
+    if (detailApplication?.request_kind === "website") {
+      void refreshDossierPurgeEligibility(detailApplication, detailRequestId);
+    } else {
+      void refreshSdfDossierPurgeEligibility(detailApplication, detailRequestId);
+    }
   }
 
   async function refreshDossierPurgeEligibility(detailApplication, requestId) {
@@ -4586,6 +4642,25 @@ export async function startOperatorDashboard({
     if (requestId !== detailRequestId || selectedDetail !== detailApplication) return;
     dossierPurge.hidden = Boolean(error) || !canOfferDossierPurge(detailApplication, currentIdentity, data);
     dossierPurge.disabled = false;
+  }
+
+  async function refreshSdfDossierPurgeEligibility(detailApplication, requestId) {
+    sdfDossierPurge.hidden = true;
+    const initial = sdfDossierPurgePresentation(detailApplication, currentIdentity, null);
+    sdfDossierPurgeMessage.textContent = initial?.message || "";
+    if (sdfDossierPurgeBusy
+        || detailApplication?.request_kind !== "slimme_documentenflow"
+        || currentIdentity?.status !== "ACTIVE"
+        || currentIdentity.role !== "owner"
+        || !UUID.test(String(detailApplication?.quote_request_id || ""))) return;
+    const { data, error } = await client.rpc("can_purge_sdf_dossier_v1", {
+      p_quote_request_id: detailApplication.quote_request_id,
+    });
+    if (requestId !== detailRequestId || selectedDetail !== detailApplication) return;
+    const presentation = sdfDossierPurgePresentation(detailApplication, currentIdentity, error ? null : data);
+    sdfDossierPurgeMessage.textContent = presentation?.message || "";
+    sdfDossierPurge.hidden = !presentation?.canPurge;
+    sdfDossierPurge.disabled = false;
   }
 
   function setDossierLifecycleBusy(busy) {
@@ -5110,6 +5185,65 @@ export async function startOperatorDashboard({
       dossierPurgeBusy = false;
       dossierPurgeConfirm.disabled = false;
       if (selectedDetail) dossierPurge.disabled = false;
+    }
+  });
+
+  sdfDossierPurge.addEventListener("click", ()=>{
+    if (sdfDossierPurgeBusy || sdfDossierPurge.hidden || !selectedDetail) return;
+    pendingSdfDossierPurge = {
+      detail: selectedDetail,
+      selectionRequestId: detailRequestId,
+    };
+    sdfDossierPurgeReason.value = "";
+    sdfDossierPurgeReason.setCustomValidity("");
+    sdfDossierPurgeDialog.returnValue = "";
+    sdfDossierPurgeDialog.showModal();
+    sdfDossierPurgeReason.focus();
+  });
+  sdfDossierPurgeReason.addEventListener("input", ()=>sdfDossierPurgeReason.setCustomValidity(""));
+  sdfDossierPurgeCancel.addEventListener("click", ()=>sdfDossierPurgeDialog.close("cancel"));
+  sdfDossierPurgeForm.addEventListener("submit", (event)=>{
+    const reason = sdfDossierPurgeReason.value.trim();
+    if (reason.length >= 1 && reason.length <= 500) return;
+    event.preventDefault();
+    sdfDossierPurgeReason.setCustomValidity("Vul een korte reden in.");
+    sdfDossierPurgeReason.reportValidity();
+  });
+  sdfDossierPurgeDialog.addEventListener("close", async ()=>{
+    const command = pendingSdfDossierPurge;
+    pendingSdfDossierPurge = null;
+    if (sdfDossierPurgeDialog.returnValue !== "confirm" || !command || sdfDossierPurgeBusy) return;
+    if (command.selectionRequestId !== detailRequestId || selectedDetail !== command.detail) {
+      sdfDossierPurgeMessage.textContent = "De dossierselectie is gewijzigd. Open de actie opnieuw vanuit het actuele dossier.";
+      return;
+    }
+    let input;
+    try {
+      input = sdfDossierPurgeRequest(command.detail, sdfDossierPurgeReason.value, crypto.randomUUID());
+    } catch {
+      sdfDossierPurgeMessage.textContent = "Vul een geldige reden in en probeer opnieuw.";
+      return;
+    }
+    sdfDossierPurgeBusy = true;
+    sdfDossierPurge.disabled = true;
+    sdfDossierPurgeConfirm.disabled = true;
+    sdfDossierPurgeMessage.textContent = "Dossier wordt definitief verwijderd.";
+    try {
+      const { data, error } = await client.rpc("purge_sdf_dossier_v1", input);
+      if (error
+          || data?.quote_request_id !== command.detail.quote_request_id
+          || data?.deleted !== true
+          || typeof data?.replayed !== "boolean") throw new Error(error?.message || "SDF_DOSSIER_PURGE_FAILED");
+      clearDetail();
+      await listController.refresh();
+      listMessage.textContent = "SDF-dossier is definitief verwijderd.";
+    } catch {
+      sdfDossierPurgeMessage.textContent = "Definitief verwijderen is niet uitgevoerd. De actuele dossierstatus wordt opnieuw geladen.";
+      if (selectedDetail) await refreshSdfDossierPurgeEligibility(selectedDetail, detailRequestId);
+    } finally {
+      sdfDossierPurgeBusy = false;
+      sdfDossierPurgeConfirm.disabled = false;
+      if (selectedDetail) sdfDossierPurge.disabled = false;
     }
   });
 
