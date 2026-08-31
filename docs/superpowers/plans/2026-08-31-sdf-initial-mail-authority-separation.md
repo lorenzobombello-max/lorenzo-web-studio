@@ -788,11 +788,19 @@ Every task below requires a new, explicit user authorization. Do not execute any
 - Consumes: additive production schema and reviewed Edge artifact
 - Produces: a worker capable of both explicit legacy drain and isolated authority, still operating in `legacy` mode
 
-- [ ] Set `SDF_INITIAL_CONFIRMATION_AUTHORITY_MODE=legacy` explicitly before deploying the compatible Edge artifact. Missing mode is not accepted as legacy.
+- [ ] Treat this compatible Edge deployment as high-risk and require new, explicit user authorization immediately before executing it. Re-run the preservation gate and hard-stop unless HEAD is the approved release SHA, the worktree is clean, the project ref is `xcsptvntvrizwhskaphr`, production schema max is `20260901057500`, `20260901060000` is absent, and the required mode secret is present.
+- [ ] Preserve the proven prerequisite `SDF_INITIAL_CONFIRMATION_AUTHORITY_MODE`: present with intended value `legacy`. Missing mode is not accepted as legacy. When the platform exposes presence only, verify presence without attempting to read the secret value back and do not rewrite it merely to prove its value.
+- [ ] Use artifact SHA as the decisive code-artifact identity check when available. The SHA before the authorized secret propagation and after it is `3d84184e4c7aaea4e37749e9aa2db28eeee1a7c6ed10f30afbd44d5f26aa0fa8`; the artifact is identical, so that propagation did not alter the deployed code artifact.
+- [ ] A numeric function-version change caused solely by authorized runtime secret/config propagation is not by itself a deployment blocker. Platform metadata may change, including the numeric function version. The observed `application-intake-automation` state is `ACTIVE`, numeric version `14`; do not roll it back merely to restore metadata equality.
+- [ ] Accept a secret/config-propagation-only version change as non-blocking only when all of these remain proven: the mutation was explicitly authorized; artifact SHA is identical; no explicit Edge deploy command executed; production source is unchanged; routing behavior is unchanged; and no producer cutover occurred.
+- [ ] Before explicit Edge deployment authorization, enforce the deployment safety invariant: production code artifact, artifact SHA, deploy scope and routing behavior remain unchanged, and no explicit functions deploy command has executed. Numeric version alone neither proves nor disproves a deployment.
+- [ ] Reconfirm that Task-7 `application-intake-automation/index.ts` is immutable until deployment and Task-6 `_shared/resend-transport.ts` is immutable. Authorize exactly one deploy target: `application-intake-automation`.
 - [ ] Deploy only `application-intake-automation`; do not alter cron, Website functions or database objects.
+- [ ] Keep `legacy` mode before and after the compatible deployment. Do not activate isolated producer routing, mutate the mode secret to `isolated`, alter a scheduler or perform the producer cutover; that boundary remains Task 13.
 - [ ] Verify Website work continues and an existing legacy SDF job retains the same table, job-id and provider namespace.
 - [ ] Verify no row exists yet in `public.sdf_initial_confirmation_email_jobs` as a consequence of compatibility deployment alone.
 - [ ] Hard-stop on any Website counter, retry or delivery regression.
+- [ ] Do not delete or overwrite the secret, roll back Edge, redeploy an old artifact, delete the function or repair a version number solely because secret propagation incremented numeric metadata. Rollback or remediation is required only when the artifact, routing or deploy-scope invariant is actually violated.
 
 ### Task 13: Producer cutover
 
