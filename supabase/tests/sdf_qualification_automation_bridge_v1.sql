@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(122);
+select plan(127);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
@@ -163,6 +163,31 @@ select public.allow_sdf_qualification_intake_v1(
 select is((select result->>'replayed' from allow_result),'false','Owner can explicitly allow SDF qualification intake');
 select is((select count(*)::integer from public.sdf_qualification_intakes),1,'Owner allow creates exactly one intake');
 select is((select count(*)::integer from public.sdf_qualification_intake_email_jobs where kind='invitation'),1,'Owner allow creates exactly one invitation job');
+select ok(
+  has_function_privilege('service_role','public.resolve_sdf_support_reference_v1(uuid,uuid)','execute')
+  and not has_function_privilege('anon','public.resolve_sdf_support_reference_v1(uuid,uuid)','execute')
+  and not has_function_privilege('authenticated','public.resolve_sdf_support_reference_v1(uuid,uuid)','execute'),
+  'only service role can resolve an SDF support reference for mail delivery'
+);
+select is(
+  public.resolve_sdf_support_reference_v1('bd200000-0000-4000-8000-000000000001',null),
+  (select support_reference from public.quote_requests where id='bd200000-0000-4000-8000-000000000001'),
+  'mail authority resolves the canonical support reference by quote request'
+);
+select is(
+  public.resolve_sdf_support_reference_v1(null,(select intake_id from public.sdf_qualification_intakes where quote_request_id='bd200000-0000-4000-8000-000000000001')),
+  (select support_reference from public.quote_requests where id='bd200000-0000-4000-8000-000000000001'),
+  'mail authority resolves the canonical support reference by intake'
+);
+select is(
+  public.inspect_sdf_qualification_intake_v1(repeat('a',64))->>'support_reference',
+  (select support_reference from public.quote_requests where id='bd200000-0000-4000-8000-000000000001'),
+  'customer capability inspection exposes the canonical support reference'
+);
+select throws_ok(
+  $$select public.resolve_sdf_support_reference_v1(null,null)$$,
+  '22023','EXACTLY_ONE_SDF_IDENTIFIER_REQUIRED','mail authority requires exactly one identifier'
+);
 select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),1,'invited SDF intake is visible in pending projection');
 select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),0,'invited SDF intake is not active');
 select is(

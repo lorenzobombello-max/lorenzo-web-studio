@@ -120,27 +120,47 @@ Deno.test("admin email identifies Documentenflow without fabricated website fiel
 Deno.test("SDF customer templates preserve exact authority copy and escape customer data", () => {
   const confirmation = buildSdfRequestReceivedEmail({
     customerName: "Klant <script>",
-    applicationReference: "LWS-AAN-2026-0042",
+    supportReference: "#E07F8F06",
   });
-  assertEquals(confirmation.subject, "We hebben uw aanvraag voor Slimme Documentenflow ontvangen");
-  assertStringIncludes(confirmation.text, "Uw aanvraag is nog niet inhoudelijk beoordeeld.");
-  assertStringIncludes(confirmation.text, "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.");
+  assertEquals(confirmation.subject, "We hebben uw Slimme Documentenflow-aanvraag ontvangen — #E07F8F06");
+  assertStringIncludes(confirmation.html, "#E07F8F06");
+  assertStringIncludes(confirmation.text, "Referentie: #E07F8F06");
   assertStringIncludes(confirmation.html, "Klant &lt;script&gt;");
 
   const invitation = buildSdfQualificationInvitationEmail({
-    customerName: "Testklant",
-    intakeUrl: "https://example.test/pages/sdf-qualification-intake.html#token=secret",
+    customerName: "Testklant <script>\r\nBCC: ongewenst@example.test",
+    supportReference: "#E07F8F06",
+    intakeUrl: "https://example.test/pages/sdf-qualification-intake.html?next=&quot;unsafe#token=secret&amp;value",
   });
-  assertEquals(invitation.subject, "Vul uw intake voor Slimme Documentenflow in");
+  assertEquals(invitation.subject, "Uw SDF-intake staat klaar — #E07F8F06");
+  assertStringIncludes(invitation.html, "Dossierreferentie");
+  assertStringIncludes(invitation.html, "#E07F8F06");
+  assertStringIncludes(invitation.html, "OPEN UW SDF-INTAKE");
+  assertStringIncludes(invitation.html, "Werkt de knop niet?");
+  assertStringIncludes(invitation.html, "Testklant &lt;script&gt;");
+  assertFalse(invitation.text.includes("\nBCC:"));
+  assertStringIncludes(invitation.html, "&amp;quot;unsafe");
+  assertStringIncludes(invitation.text, "Dossierreferentie: #E07F8F06");
+  assertStringIncludes(invitation.text, "Open uw intake:\nhttps://example.test/pages/sdf-qualification-intake.html?next=&quot;unsafe#token=secret&amp;value");
   assertStringIncludes(invitation.text, "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.");
   assertStringIncludes(invitation.text, "leidt niet automatisch tot een offerte of prijsbevestiging");
 
+  const otherReference = buildSdfQualificationInvitationEmail({
+    customerName: "Andere klant",
+    supportReference: "#A1B2C3D4",
+    intakeUrl: "https://example.test/intake#token=other",
+  });
+  assertStringIncludes(otherReference.html, "#A1B2C3D4");
+  assertFalse(otherReference.html.includes("#E07F8F06"));
+
   const moreInformation = buildSdfQualificationMoreInformationEmail({
     customerName: "Testklant",
+    supportReference: "#E07F8F06",
     moreInformationReason: "Beschrijf de goedkeuringsstappen <volledig>.",
     intakeUrl: "https://example.test/pages/sdf-qualification-intake.html#token=secret",
   });
-  assertEquals(moreInformation.subject, "Aanvullende informatie nodig voor uw Slimme Documentenflow");
+  assertEquals(moreInformation.subject, "Aanvullende informatie nodig voor uw Slimme Documentenflow — #E07F8F06");
+  assertStringIncludes(moreInformation.text, "Dossierreferentie: #E07F8F06");
   assertStringIncludes(moreInformation.text, "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.");
   assertStringIncludes(moreInformation.html, "&lt;volledig&gt;");
 });

@@ -49,6 +49,8 @@ test("SDF qualification intake preserves its three-step form contract", async ()
     "sampleRequestedByLws",
     "sampleUploadRequiredLater",
     "confirmation",
+    "sdfDossierReference",
+    "sdfSuccessReference",
     "saveButton",
     "submitButton",
   ]) {
@@ -100,11 +102,14 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     read("assets/js/sdf-qualification-intake.js"),
   ]);
 
-  assert.match(html, /sdf-qualification-intake\.js\?v=20260831-4/);
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-1/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
   assert.match(script, /sdfQualificationInitialView\(intake\.status\)/);
+  assert.match(script, /reference:intake\.support_reference/);
+  assert.match(script, /sdfDossierReference/);
+  assert.doesNotMatch(script, /intake\.application_reference/);
   assert.match(script, /applySdfQualificationView\("workspace",stateViews\)/);
 
   for (const key of [

@@ -62,7 +62,7 @@
 .sdf-progress button.is-complete > span:first-child { color: #071014; border-color: #7ee7a5; background: #7ee7a5; }
 
 .sdf-content { min-width: 0; }
-.sdf-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--sdf-line); border-radius: 0.75rem; background: var(--sdf-line); }
+.sdf-context { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--sdf-line); border-radius: 0.75rem; background: var(--sdf-line); }
 .sdf-context div { display: grid; gap: 0.2rem; min-width: 0; padding: 0.85rem 1rem; background: var(--sdf-surface); }
 .sdf-context span { color: var(--sdf-muted); font-size: 0.74rem; }
 .sdf-context strong { overflow: hidden; color: var(--sdf-text); text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }

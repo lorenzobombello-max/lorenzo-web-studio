@@ -43,16 +43,18 @@ interface IntakeInvitationEmailData {
 
 export interface SdfRequestReceivedEmailData {
   customerName: string;
-  applicationReference: string;
+  supportReference: string;
 }
 
 export interface SdfQualificationInvitationEmailData {
   customerName: string;
+  supportReference: string;
   intakeUrl: string;
 }
 
 export interface SdfQualificationMoreInformationEmailData {
   customerName: string;
+  supportReference: string;
   moreInformationReason: string;
   intakeUrl: string;
 }
@@ -90,19 +92,25 @@ export type QuotationEmailTemplate =
 
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
-function buildSdfCustomerEmail(subject: string, paragraphs: string[], text: string) {
-  const htmlParagraphs = paragraphs.map((paragraph) =>
-    `<p style="margin:0 0 16px;">${paragraph}</p>`
-  ).join("\n");
+function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string) {
   return {
     subject,
     html: `<!doctype html>
 <html lang="nl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
-<body style="margin:0;padding:24px;background:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
-  <main style="max-width:600px;margin:0 auto;padding:32px;background:#ffffff;border-top:4px solid #12346b;">
-    ${htmlParagraphs}
-  </main>
+<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f7" style="width:100%;background-color:#f3f5f7;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;">
+        <tr><td style="padding:24px 32px 18px;border-bottom:1px solid #e8edf1;color:#172033;font-size:16px;font-weight:bold;">Lorenzo Web Solutions</td></tr>
+        <tr><td style="padding:32px;color:#172033;font-size:16px;line-height:1.65;">
+          <h1 style="margin:0 0 24px;color:#12346b;font-size:26px;line-height:1.25;">${escapeHtml(heading)}</h1>
+          ${content}
+        </td></tr>
+        <tr><td style="padding:18px 32px;background:#f8fafb;color:#5a6475;font-size:12px;line-height:1.5;">Lorenzo Web Solutions<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;">lorenzowebsolutions.be</a></td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`,
     text,
@@ -110,24 +118,25 @@ function buildSdfCustomerEmail(subject: string, paragraphs: string[], text: stri
 }
 
 export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) {
-  const subject = "We hebben uw aanvraag voor Slimme Documentenflow ontvangen";
-  const safeName = escapeHtml(data.customerName);
-  const safeReference = escapeHtml(data.applicationReference);
-  return buildSdfCustomerEmail(subject, [
-    `Beste ${safeName},`,
-    `We hebben uw aanvraag voor Slimme Documentenflow goed ontvangen.<br>Referentie: ${safeReference}`,
-    "Uw aanvraag is nog niet inhoudelijk beoordeeld. Als volgende stap ontvangt u een uitnodiging voor de SDF-intake. Met die informatie kunnen we uw gewenste documentenflow beoordelen.",
-    "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.",
-    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
-  ], [
-    `Beste ${data.customerName},`,
+  const subject = `We hebben uw Slimme Documentenflow-aanvraag ontvangen — ${data.supportReference}`;
+  const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
+  const safeName = escapeHtml(customerName);
+  const safeReference = escapeHtml(data.supportReference);
+  return buildSdfCustomerEmail(subject, "Uw aanvraag voor Slimme Documentenflow is ontvangen", `
+          <p style="margin:0 0 16px;">Beste ${safeName},</p>
+          <p style="margin:0 0 20px;">We hebben uw aanvraag goed ontvangen.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:#f3f7f8;border-left:4px solid #0ed8e6;">
+            <tr><td style="padding:14px 18px;color:#5a6475;font-size:13px;">Referentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
+          </table>
+          <p style="margin:0 0 16px;">We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.</p>
+          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
+    `Beste ${customerName},`,
     "",
-    "We hebben uw aanvraag voor Slimme Documentenflow goed ontvangen.",
-    `Referentie: ${data.applicationReference}`,
+    "We hebben uw aanvraag goed ontvangen.",
     "",
-    "Uw aanvraag is nog niet inhoudelijk beoordeeld. Als volgende stap ontvangt u een uitnodiging voor de SDF-intake. Met die informatie kunnen we uw gewenste documentenflow beoordelen.",
+    `Referentie: ${data.supportReference}`,
     "",
-    "Deze bevestiging is geen offerte, prijsbevestiging of aanvaarding van een opdracht.",
+    "We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.",
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",
@@ -135,20 +144,28 @@ export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) 
 }
 
 export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvitationEmailData) {
-  const subject = "Vul uw intake voor Slimme Documentenflow in";
-  const safeName = escapeHtml(data.customerName);
+  const subject = `Uw SDF-intake staat klaar — ${data.supportReference}`;
+  const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
+  const safeName = escapeHtml(customerName);
+  const safeReference = escapeHtml(data.supportReference);
   const safeUrl = escapeHtml(data.intakeUrl);
-  return buildSdfCustomerEmail(subject, [
-    `Beste ${safeName},`,
-    "Om uw aanvraag voor Slimme Documentenflow inhoudelijk te kunnen beoordelen, vragen we u de SDF-intake in te vullen.",
-    `Open de intake via deze persoonlijke link:<br><a href="${safeUrl}">${safeUrl}</a>`,
-    "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.",
-    "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.",
-    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
-  ], [
-    `Beste ${data.customerName},`, "",
-    "Om uw aanvraag voor Slimme Documentenflow inhoudelijk te kunnen beoordelen, vragen we u de SDF-intake in te vullen.", "",
-    "Open de intake via deze persoonlijke link:", data.intakeUrl, "",
+  return buildSdfCustomerEmail(subject, "Uw SDF-intake staat klaar", `
+          <p style="margin:0 0 16px;">Beste ${safeName},</p>
+          <p style="margin:0 0 20px;">Om uw aanvraag voor Slimme Documentenflow inhoudelijk te beoordelen, vragen we u de persoonlijke SDF-intake in te vullen.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background:#f3f7f8;border-left:4px solid #0ed8e6;">
+            <tr><td style="padding:14px 18px;color:#5a6475;font-size:13px;">Dossierreferentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
+          </table>
+          <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
+            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">OPEN UW SDF-INTAKE</a></td></tr>
+          </table>
+          <p style="margin:0 0 20px;color:#5a6475;font-size:13px;overflow-wrap:anywhere;word-break:break-word;">Werkt de knop niet? Kopieer dan deze link in uw browser:<br><a href="${safeUrl}" style="color:#12346b;text-decoration:underline;">${safeUrl}</a></p>
+          <p style="margin:0 0 16px;color:#5a6475;font-size:14px;">De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.</p>
+          <p style="margin:0 0 16px;">Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.</p>
+          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
+    `Beste ${customerName},`, "",
+    "Uw SDF-intake staat klaar.", "",
+    `Dossierreferentie: ${data.supportReference}`, "",
+    "Open uw intake:", data.intakeUrl, "",
     "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.", "",
     "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
@@ -156,19 +173,23 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {
-  const subject = "Aanvullende informatie nodig voor uw Slimme Documentenflow";
-  const safeName = escapeHtml(data.customerName);
+  const subject = `Aanvullende informatie nodig voor uw Slimme Documentenflow — ${data.supportReference}`;
+  const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
+  const safeName = escapeHtml(customerName);
+  const safeReference = escapeHtml(data.supportReference);
   const safeReason = escapeHtml(data.moreInformationReason).replace(/\n/g, "<br>");
   const safeUrl = escapeHtml(data.intakeUrl);
-  return buildSdfCustomerEmail(subject, [
-    `Beste ${safeName},`,
-    `We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:<br><br>${safeReason}`,
-    `Vul de informatie aan via uw persoonlijke intake-link:<br><a href="${safeUrl}">${safeUrl}</a>`,
-    "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.",
-    "Met vriendelijke groet,<br>Lorenzo Web Solutions",
-  ], [
-    `Beste ${data.customerName},`, "",
+  return buildSdfCustomerEmail(subject, "Aanvullende informatie nodig", `
+          <p style="margin:0 0 16px;">Beste ${safeName},</p>
+          <p style="margin:0 0 16px;">We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:</p>
+          <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Dossierreferentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></p>
+          <p style="margin:0 0 20px;padding:14px 18px;background:#f3f7f8;border-left:4px solid #0ed8e6;">${safeReason}</p>
+          <p style="margin:0 0 20px;overflow-wrap:anywhere;word-break:break-word;">Vul de informatie aan via uw persoonlijke intake-link:<br><a href="${safeUrl}" style="color:#12346b;">${safeUrl}</a></p>
+          <p style="margin:0 0 16px;">Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.</p>
+          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
+    `Beste ${customerName},`, "",
     "We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:", "",
+    `Dossierreferentie: ${data.supportReference}`, "",
     data.moreInformationReason, "",
     "Vul de informatie aan via uw persoonlijke intake-link:", data.intakeUrl, "",
     "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.", "",

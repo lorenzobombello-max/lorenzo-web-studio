@@ -16,7 +16,7 @@ const application = {
   quote_request_id: quoteRequestId,
   request_kind: "slimme_documentenflow",
   application_reference: "LWS-AAN-2026-0001",
-  support_reference: "A1B2C3D4",
+  support_reference: "#A1B2C3D4",
   name: "Ada Lovelace",
   company: "Analytical Engines BV",
   email: "ada@example.test",
@@ -67,11 +67,12 @@ test("operator detail requests only the existing SDF inspect action", () => {
 test("submitted PRO detail reuses the complete canonical customer presentation", () => {
   const output = sdfQualificationDetailPresentation(readModel(), application, "2026-08-31T10:00:00.000Z");
   assert.equal(output.meta.intakeReference, intakeId);
-  assert.equal(output.context.intakeReference, "#BD300000");
+  assert.equal(output.context.reference, "#A1B2C3D4");
+  assert.equal(output.context.intakeReference, undefined);
   const presentation = buildSdfQualificationPresentation(output.answers, output.context);
   const rendered = text(presentation);
   for (const expected of [
-    "LWS-AAN-2026-0001", "#BD300000", "Ada Lovelace", "Analytical Engines BV", "ada@example.test",
+    "#A1B2C3D4", "Ada Lovelace", "Analytical Engines BV", "ada@example.test",
     "Ingediend", "sdf_qualification_intake/2.0.0", "PRO", "Factuur", "Contract",
     "120 documenten per maand", "Gemiddeld 2 pagina's per document", "Geschat volume: 240 pagina's per maand",
     "12 documenten per kwartaal", "Geschat volume: 96 pagina's per kwartaal", "Ontvangen, Controleren, Goedkeuren",
@@ -81,6 +82,7 @@ test("submitted PRO detail reuses the complete canonical customer presentation",
   const printHtml = sdfQualificationPrintHtml(presentation);
   assert.match(printHtml, /Afdrukweergave|Slimme Documentenflow|PRO/);
   assert.doesNotMatch(printHtml, /capability|authorization|bearer|token|latest_submission_sha256/i);
+  assert.doesNotMatch(printHtml, /LWS-AAN-2026-0001|#BD300000/);
 });
 
 test("all authority statuses remain human-readable without changing active-work semantics", () => {

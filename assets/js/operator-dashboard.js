@@ -2078,8 +2078,7 @@ export function sdfQualificationDetailPresentation(readModel, application, prepa
     answers: hasAnswers ? answers : null,
     status,
     context: {
-      reference: application.application_reference || application.support_reference || shortTechnicalReference(readModel.quote_request_id),
-      intakeReference: shortTechnicalReference(readModel.intake_id),
+      reference: application.support_reference || "",
       customerName: readModel.name || application.name || "",
       organization: readModel.company || application.company || "",
       email: readModel.email || application.email || "",
@@ -4800,11 +4799,7 @@ export async function startOperatorDashboard({
       setText("sdfQualificationCustomer", output.context.customerName || "Niet beschikbaar");
       setText("sdfQualificationOrganization", output.context.organization || "Niet beschikbaar");
       setText("sdfQualificationEmail", output.context.email || "Niet beschikbaar");
-      const intakeReference = document.getElementById("sdfQualificationIntakeReference");
-      const intakeDisplayReference = shortTechnicalReference(output.meta.intakeReference);
-      setText("sdfQualificationIntakeReference", intakeDisplayReference);
-      intakeReference.title = output.meta.intakeReference;
-      intakeReference.setAttribute("aria-label", `Kwalificatiereferentie ${intakeDisplayReference}. Volledige technische referentie ${output.meta.intakeReference}`);
+      setText("sdfQualificationIntakeReference", output.context.reference || "Niet beschikbaar");
       setText("sdfQualificationTaxonomy", output.meta.taxonomyVersion);
       setText("sdfQualificationSubmission", output.meta.submissionSequence);
       if (!output.answers) {

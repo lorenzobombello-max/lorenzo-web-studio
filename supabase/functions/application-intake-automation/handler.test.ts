@@ -84,6 +84,9 @@ function isolatedDependencies(
           error: null,
         };
       }
+      if (name === "resolve_sdf_support_reference_v1") {
+        return { data: "#A1B2C3D4", error: null };
+      }
       if (name === "validate_sdf_initial_confirmation_email_delivery_v1") {
         return { data: true, error: null };
       }
@@ -359,6 +362,9 @@ Deno.test("legacy mode routes only through the existing SDF legacy authority", a
     fromEmail: "sender@example.test",
     rpc: async (name: string) => {
       calls.push(name);
+      if (name === "resolve_sdf_support_reference_v1") {
+        return { data: "#A1B2C3D4", error: null };
+      }
       return {
         data: [{
           confirmation_job_id: sdfJobId,
@@ -385,6 +391,7 @@ Deno.test("legacy mode routes only through the existing SDF legacy authority", a
   assertEquals((await executor(sdfClaim)).status, "sent");
   assertEquals(calls, [
     "execute_application_intake_automation_sdf_confirmation_v1",
+    "resolve_sdf_support_reference_v1",
     "deliver_legacy",
   ]);
 });
@@ -460,6 +467,9 @@ Deno.test("malformed already-sent prepare outcome fails closed", async () => {
   const fixture = isolatedDependencies();
   fixture.value.rpc = async (name, parameters) => {
     fixture.calls.push({ name, parameters });
+    if (name === "resolve_sdf_support_reference_v1") {
+      return { data: "#A1B2C3D4", error: null };
+    }
     return {
       data: [{
         outcome: "already_sent",
@@ -485,6 +495,9 @@ Deno.test("isolated legacy outcome uses only the returned legacy job", async () 
   const deliveredJobIds: string[] = [];
   fixture.value.rpc = async (name, parameters) => {
     fixture.calls.push({ name, parameters });
+    if (name === "resolve_sdf_support_reference_v1") {
+      return { data: "#A1B2C3D4", error: null };
+    }
     return {
       data: [{
         outcome: "due",
@@ -519,6 +532,7 @@ Deno.test("isolated due validates its lease immediately before stateless deliver
   assertEquals(fixture.calls.map(({ name }) => name), [
     "prepare_sdf_initial_confirmation_v2",
     "claim_sdf_initial_confirmation_email_job_v1",
+    "resolve_sdf_support_reference_v1",
     "validate_sdf_initial_confirmation_email_delivery_v1",
     "complete_sdf_initial_confirmation_email_job_v1",
   ]);
@@ -527,9 +541,9 @@ Deno.test("isolated due validates its lease immediately before stateless deliver
     fixture.transportInputs[0].idempotencyKey,
     `sdf-initial-confirmation/${sdfJobId}`,
   );
-  assertEquals(fixture.transportInputs[0].text.includes("Referentie: #44444444"), true);
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: #A1B2C3D4"), true);
   assertEquals(fixture.transportInputs[0].text.includes("SDF-2026-0001"), false);
-  assertEquals(fixture.calls[3].parameters, {
+  assertEquals(fixture.calls[4].parameters, {
     p_job_id: sdfJobId,
     p_delivery_lease_token: sdfLeaseToken,
     p_succeeded: true,
@@ -539,7 +553,7 @@ Deno.test("isolated due validates its lease immediately before stateless deliver
   });
 });
 
-Deno.test("SDF confirmation preserves an existing application reference", async () => {
+Deno.test("SDF confirmation always uses the canonical support reference", async () => {
   const createExecutor = await sdfExecutorFactory();
   const fixture = isolatedDependencies();
   const originalRpc = fixture.value.rpc;
@@ -551,16 +565,24 @@ Deno.test("SDF confirmation preserves an existing application reference", async 
   };
 
   assertEquals((await createExecutor(fixture.value)(sdfClaim)).status, "sent");
-  assertEquals(fixture.transportInputs[0].text.includes("Referentie: LWS-AAN-2026-0001"), true);
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: #A1B2C3D4"), true);
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: LWS-AAN-2026-0001"), false);
   assertEquals(fixture.transportInputs[0].text.includes("Referentie: #44444444"), false);
 });
 
-Deno.test("SDF confirmation fails closed without any canonical request identity", async () => {
+Deno.test("SDF confirmation fails closed without a canonical support reference", async () => {
   const createExecutor = await sdfExecutorFactory();
   const fixture = isolatedDependencies();
-  const invalidClaim = { ...sdfClaim, quote_request_id: "not-a-request-id" };
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    if (name === "resolve_sdf_support_reference_v1") {
+      fixture.calls.push({ name, parameters });
+      return { data: null, error: null };
+    }
+    return await originalRpc(name, parameters);
+  };
 
-  assertEquals(await createExecutor(fixture.value)(invalidClaim), {
+  assertEquals(await createExecutor(fixture.value)(sdfClaim), {
     status: "failed",
     attempted: false,
     attemptCount: 1,

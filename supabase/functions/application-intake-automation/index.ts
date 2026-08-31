@@ -80,25 +80,19 @@ function isNonEmptyString(value: unknown): value is string {
 
 function sdfRequestReference(
   authority: Record<string, unknown>,
-  quoteRequestId: string,
 ): string | null {
-  if (isNonEmptyString(authority.application_reference)) {
-    return authority.application_reference;
-  }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteRequestId)) {
-    return null;
-  }
-  return `#${quoteRequestId.slice(0, 8).toUpperCase()}`;
+  return isNonEmptyString(authority.support_reference)
+    ? authority.support_reference
+    : null;
 }
 
 function sdfEmail(
   authority: Record<string, unknown>,
-  quoteRequestId: string,
   apiKey: string,
   from: string,
   idempotencyKey: string,
 ): ResendTransportInput | null {
-  const requestReference = sdfRequestReference(authority, quoteRequestId);
+  const requestReference = sdfRequestReference(authority);
   if (
     !isNonEmptyString(authority.request_name) ||
     !isNonEmptyString(authority.request_email) ||
@@ -110,10 +104,19 @@ function sdfEmail(
     to: authority.request_email,
     ...buildSdfRequestReceivedEmail({
       customerName: authority.request_name,
-      applicationReference: requestReference,
+      supportReference: requestReference,
     }),
     idempotencyKey,
   };
+}
+
+async function resolveSdfSupportReference(
+  rpc: SdfConfirmationExecutorDependencies["rpc"],
+  identifiers: { p_quote_request_id: string | null; p_intake_id: string | null },
+): Promise<string | null> {
+  const result = await rpc("resolve_sdf_support_reference_v1", identifiers);
+  const value = Array.isArray(result.data) ? result.data[0] : result.data;
+  return result.error || !isNonEmptyString(value) ? null : value;
 }
 
 function completionStatus(value: unknown): EmailDeliveryResult["status"] | null {
@@ -145,9 +148,12 @@ export function createSdfConfirmationExecutor(
         !hasCanonicalSdfConfirmationTemplate(authority) ||
         !isNonEmptyString(authority.confirmation_job_id)
       ) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
+      const supportReference = await resolveSdfSupportReference(
+        dependencies.rpc,
+        { p_quote_request_id: claim.quote_request_id, p_intake_id: null },
+      );
       const email = sdfEmail(
-        authority,
-        claim.quote_request_id,
+        { ...authority, support_reference: supportReference },
         dependencies.resendApiKey,
         dependencies.fromEmail,
         `quote-request-email/${authority.confirmation_job_id}`,
@@ -179,9 +185,12 @@ export function createSdfConfirmationExecutor(
         prepared.request_kind !== "slimme_documentenflow" ||
         prepared.template_version !== "v1"
       ) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
+      const supportReference = await resolveSdfSupportReference(
+        dependencies.rpc,
+        { p_quote_request_id: claim.quote_request_id, p_intake_id: null },
+      );
       const email = sdfEmail(
-        prepared,
-        claim.quote_request_id,
+        { ...prepared, support_reference: supportReference },
         dependencies.resendApiKey,
         dependencies.fromEmail,
         `quote-request-email/${prepared.job_id}`,
@@ -221,8 +230,13 @@ export function createSdfConfirmationExecutor(
     ) return sdfFailure("SDF_INITIAL_CONFIRMATION_CLAIM_FAILED", false, attemptCount);
 
     const transportInput = sdfEmail(
-      claimed,
-      claim.quote_request_id,
+      {
+        ...claimed,
+        support_reference: await resolveSdfSupportReference(
+          dependencies.rpc,
+          { p_quote_request_id: claim.quote_request_id, p_intake_id: null },
+        ),
+      },
       dependencies.resendApiKey,
       dependencies.fromEmail,
       idempotencyKey,
@@ -310,7 +324,9 @@ export function createSdfInvitationExecutor(dependencies: SdfInvitationExecutorD
   if (claimResult.error || !claimedAuthority) throw new Error("SDF_EMAIL_JOB_NOT_CLAIMED");
   const deliveryAuthority = await dependencies.rpc("validate_sdf_qualification_email_delivery_v1", { p_job_id: authority.job_id, p_delivery_lease_token: claimedAuthority.delivery_lease_token });
   if (deliveryAuthority.error || deliveryAuthority.data !== true) return { status: "failed", attempted: false, attemptCount: 0 };
-  const email = buildSdfQualificationInvitationEmail({ customerName: String(authority.request_name), intakeUrl: url.toString() });
+  const supportReference = await resolveSdfSupportReference(dependencies.rpc, { p_quote_request_id: claim.quote_request_id, p_intake_id: null });
+  if (!supportReference) throw new Error("SDF_SUPPORT_REFERENCE_AUTHORITY_FAILED");
+  const email = buildSdfQualificationInvitationEmail({ customerName: String(authority.request_name), supportReference, intakeUrl: url.toString() });
   const response = await dependencies.fetchProvider("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${dependencies.resendApiKey}`, "Content-Type": "application/json", "Idempotency-Key": `sdf-qualification-email/${authority.job_id}` }, body: JSON.stringify({ from: dependencies.fromEmail, to: [authority.request_email], ...email }) });
   const provider = response.ok ? await response.json().catch(() => ({})) as Record<string, unknown> : {};
   const completion = await dependencies.rpc("complete_sdf_qualification_email_job_v1", { p_job_id: authority.job_id, p_delivery_lease_token: claimedAuthority.delivery_lease_token, p_succeeded: response.ok, p_retryable: response.status === 429 || response.status >= 500, p_error_code: response.ok ? null : `RESEND_HTTP_${response.status}`, p_provider_message_id: typeof provider.id === "string" ? provider.id : null });
@@ -340,9 +356,11 @@ async function executeQueuedSdfEmail(): Promise<EmailDeliveryResult | null> {
   if (deliveryAuthority.error || deliveryAuthority.data !== true) return { status: "failed", attempted: false, attemptCount: Number(authority.attempt_count || 0) };
   const rawToken = await decryptIntakeInvitationToken(String(authority.encrypted_capability), String(authority.customer_capability_digest));
   const url = new URL("/pages/sdf-qualification-intake.html", siteUrl); url.hash = new URLSearchParams({ token: rawToken }).toString();
+  const supportReference = await resolveSdfSupportReference(rpc, { p_quote_request_id: null, p_intake_id: String(authority.intake_id) });
+  if (!supportReference) throw new Error("SDF_SUPPORT_REFERENCE_AUTHORITY_FAILED");
   const email = authority.kind === "invitation"
-    ? buildSdfQualificationInvitationEmail({ customerName: String(authority.request_name), intakeUrl: url.toString() })
-    : buildSdfQualificationMoreInformationEmail({ customerName: String(authority.request_name), moreInformationReason: String(authority.reason || ""), intakeUrl: url.toString() });
+    ? buildSdfQualificationInvitationEmail({ customerName: String(authority.request_name), supportReference, intakeUrl: url.toString() })
+    : buildSdfQualificationMoreInformationEmail({ customerName: String(authority.request_name), supportReference, moreInformationReason: String(authority.reason || ""), intakeUrl: url.toString() });
   const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json", "Idempotency-Key": `sdf-qualification-email/${authority.job_id}` }, body: JSON.stringify({ from: fromEmail, to: [authority.request_email], ...email }) });
   const provider = response.ok ? await response.json().catch(() => ({})) as Record<string, unknown> : {};
   const completion = await rpc("complete_sdf_qualification_email_job_v1", { p_job_id: authority.job_id, p_delivery_lease_token: authority.delivery_lease_token, p_succeeded: response.ok, p_retryable: response.status === 429 || response.status >= 500, p_error_code: response.ok ? null : `RESEND_HTTP_${response.status}`, p_provider_message_id: typeof provider.id === "string" ? provider.id : null });
