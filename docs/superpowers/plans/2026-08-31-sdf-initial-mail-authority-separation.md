@@ -406,12 +406,15 @@
 - Create: `supabase/functions/_shared/resend-transport.ts`, `supabase/functions/_shared/resend-transport.test.ts`
 - Modify: none
 - Test: `supabase/functions/_shared/resend-transport.test.ts`
+- Migration: none; keep `20260901060000_finalize_sdf_initial_confirmation_email_cutover_v1.sql` reserved and absent
 
 **Interfaces:**
 - Consumes: provider configuration, email payload and caller-owned idempotency key
 - Produces: technical provider result only; no businessstate mutation
 
-- [ ] Write failing Deno tests for HTTP 2xx, 408, 425, 429, 4xx, 5xx, timeout, network error, missing configuration and header sanitization.
+- [ ] Keep this helper strictly state-free. It must not accept, derive, read or mutate `quote_request_id`, job lifecycle state, `pending`, `processing`, `retry_wait`, `sent`, `failed`, `attempt_count`, leases, `next_attempt_at`, `sent_at`, `MANUAL_REVIEW` or Website/SDF businessstate. It must have no Supabase import, database client, RPC name or table name. Task 3 remains the sole owner of business retry and failure transitions; this helper returns only technical classification.
+
+- [ ] First create the test file while the module is absent and require a genuine import/module RED. Then define failing behavior tests using only an injected fake `fetch`: exact Resend URL and POST request, safe headers, exact serialized payload, successful provider-id normalization, unchanged caller key, HTTP 408/425/429/5xx retryability, ordinary 4xx permanence, timeout, network exception, malformed 2xx variants, missing configuration, invalid recipient/sender/subject/body, CR/LF rejection, empty idempotency key, businessstate-free results and absence of database/RPC dependencies. No test may make a live provider call, send real email or incur provider cost.
 
 - [ ] Fix the transport interface before implementation:
 
@@ -427,24 +430,43 @@
     timeoutMs?: number;
   }
 
-  export interface ResendTransportResult {
-    accepted: boolean;
-    retryable: boolean;
-    errorCode: string | null;
-    providerMessageId: string | null;
-  }
+  export type ResendTransportErrorCode =
+    | "EMAIL_CONFIGURATION_INVALID"
+    | "EMAIL_INPUT_INVALID"
+    | "EMAIL_HEADER_INVALID"
+    | "RESEND_HTTP_RETRYABLE"
+    | "RESEND_HTTP_PERMANENT"
+    | "RESEND_TIMEOUT"
+    | "RESEND_NETWORK_ERROR"
+    | "PROVIDER_RESPONSE_INVALID";
+
+  export type ResendTransportResult =
+    | { ok: true; providerMessageId: string }
+    | { ok: false; retryable: boolean; code: ResendTransportErrorCode };
   ```
 
-- [ ] Implement `sendEmailViaResend(input, fetchImpl = fetch)` with no Supabase import, no database client, no RPC name, no table name and no Website/SDF status. It may classify only technical outcomes.
+- [ ] Validate before provider I/O. `apiKey`, `from`, `to`, `subject`, `html`, `text` and `idempotencyKey` must all be strings whose trimmed values are non-empty; both HTML and text representations are required by this transport contract. The trusted caller must supply `apiKey` from runtime environment/secret configuration; the helper must have no hardcoded credential or fallback key. `to` must be a basic valid mailbox address. `from` must be a provider-compatible mailbox value, either a plain valid mailbox or a display-name form containing one valid mailbox. This is only syntax/header safety: do not perform DNS, mailbox existence or SDF/Website eligibility checks.
 
-- [ ] Require the caller-supplied idempotency key verbatim after CR/LF rejection. Do not construct product keys inside the generic helper.
+- [ ] Reject CR or LF in every HTTP header source: `apiKey`, `from`, `to`, `subject` and `idempotencyKey`. Return `EMAIL_HEADER_INVALID`, non-retryable, and do not call the provider. Return `EMAIL_CONFIGURATION_INVALID`, non-retryable, for missing/blank `apiKey`. Return `EMAIL_INPUT_INVALID`, non-retryable, for other missing/invalid transport input. Never silently strip an unsafe header value.
 
-- [ ] Assert that the fake fetch receives `Idempotency-Key: sdf-initial-confirmation/fa240000-0000-4000-8000-000000000001` and that a 2xx response exposes only `providerMessageId` and technical flags.
+- [ ] Implement `sendEmailViaResend(input, fetchImpl = fetch)` against `https://api.resend.com/emails`. Send `Authorization: Bearer <apiKey>`, `Content-Type: application/json` and the exact caller-owned `Idempotency-Key`, with JSON `{ from, to: [to], subject, html, text }`. Do not expose the API key or Authorization value in any result or error.
+
+- [ ] Require the caller-supplied idempotency key verbatim after non-empty and CR/LF validation. Do not trim, construct, suffix by attempt, regenerate or fall back to a different key inside the generic helper. Assert that fake fetch receives exactly `Idempotency-Key: sdf-initial-confirmation/fa240000-0000-4000-8000-000000000001`; retries and reclaims must receive that same caller-owned key.
+
+- [ ] Treat HTTP 2xx as success only when its JSON body is an object whose Resend `id` field is a string with a non-empty trimmed value. Return `{ ok: true, providerMessageId: id }`. Missing, empty, whitespace-only, non-string or otherwise unparseable/structurally invalid 2xx success payload returns `{ ok: false, retryable: true, code: "PROVIDER_RESPONSE_INVALID" }`; the request may have reached Resend, and a later caller-controlled retry remains safe through the unchanged provider idempotency key. Never return the raw provider body.
+
+- [ ] Normalize HTTP failures without returning response bodies: 408, 425, 429 and every 5xx return `RESEND_HTTP_RETRYABLE` with `retryable: true`; other ordinary 4xx responses return `RESEND_HTTP_PERMANENT` with `retryable: false`. A configured timeout returns `RESEND_TIMEOUT` with `retryable: true`; another fetch/network exception returns `RESEND_NETWORK_ERROR` with `retryable: true`. Distinguish an abort caused by this helper's timeout from unrelated exceptions where practical, and never throw an error containing credentials or raw provider content.
+
+- [ ] The helper itself must not log. Do not persist, return or otherwise expose `RESEND_API_KEY`, the Authorization header, full request headers, raw secret configuration, raw provider response bodies, customer capability tokens or provider credentials. Normalized failures contain only the defined safe code and retryable flag.
+
+- [ ] Keep templates and presentation outside this task. Task 6 transports the supplied technical payload and does not redesign SDF HTML/text. Do not import or reuse stateful `supabase/functions/_shared/email-delivery.ts`, and do not change any Website sender or authority. A generic helper may be reused later only because it owns zero product businessstate.
+
+- [ ] Keep all Edge integration and orchestration in Task 7 or later: no handler change, work loop, job claim, lease validation call, completion RPC call, producer/cutover behavior, legacy drain or finalization in Task 6.
 
 - [ ] Run the test before implementation and expect import/module failure, then implement and require PASS:
 
   ```powershell
-  deno test --allow-env --allow-net supabase/functions/_shared/resend-transport.test.ts
+  deno test supabase/functions/_shared/resend-transport.test.ts
   ```
 
 - [ ] Proposed checkpoint commit:
