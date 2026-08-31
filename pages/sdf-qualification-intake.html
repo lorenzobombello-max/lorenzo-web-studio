@@ -9,8 +9,8 @@
   <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260901-1" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260901-1"></script>
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260901-2" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260901-2"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -44,10 +44,24 @@
       </aside>
 
       <div class="sdf-content">
+        <section class="sdf-personalization" aria-labelledby="sdfCustomerGreeting">
+          <p class="eyebrow">Uw persoonlijke dossier</p>
+          <h2 id="sdfCustomerGreeting"></h2>
+          <p>Onderstaande gegevens horen bij uw aanvraag voor Slimme Documentenflow. Uw antwoorden in deze intake worden aan dit dossier gekoppeld.</p>
+          <dl id="sdfCustomerDossier" class="sdf-customer-dossier">
+            <div data-customer-field="name"><dt>Naam</dt><dd></dd></div>
+            <div data-customer-field="company"><dt>Bedrijf</dt><dd></dd></div>
+            <div data-customer-field="email"><dt>E-mail</dt><dd></dd></div>
+            <div data-customer-field="phone"><dt>Telefoon</dt><dd></dd></div>
+            <div data-customer-field="service"><dt>Dienst</dt><dd></dd></div>
+            <div data-customer-field="request_created_at"><dt>Aanvraagdatum</dt><dd></dd></div>
+            <div data-customer-field="support_reference"><dt>Dossierreferentie</dt><dd id="sdfDossierReference"></dd></div>
+          </dl>
+        </section>
+
         <div class="sdf-context" aria-live="polite">
           <div><span>Traject</span><strong>Slimme documentenflow</strong></div>
           <div><span>Onderdeel</span><strong>Kwalificatie</strong></div>
-          <div><span>Dossierreferentie</span><strong id="sdfDossierReference"></strong></div>
           <div><span>Status</span><strong id="draftStatus">Nog niet bewaard</strong></div>
         </div>
 

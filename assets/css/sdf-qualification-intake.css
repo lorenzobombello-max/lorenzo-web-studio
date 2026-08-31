@@ -62,7 +62,15 @@
 .sdf-progress button.is-complete > span:first-child { color: #071014; border-color: #7ee7a5; background: #7ee7a5; }
 
 .sdf-content { min-width: 0; }
-.sdf-context { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--sdf-line); border-radius: 0.75rem; background: var(--sdf-line); }
+.sdf-personalization { margin-bottom: 1rem; padding: clamp(1.25rem, 4vw, 2rem); border: 1px solid var(--sdf-line); border-top: 3px solid var(--sdf-signal); border-radius: 8px; background: var(--sdf-surface); box-shadow: var(--sdf-shadow); }
+.sdf-personalization .eyebrow { margin: 0 0 0.45rem; }
+.sdf-personalization h2 { margin: 0; color: var(--sdf-text); font: 700 clamp(1.45rem, 3vw, 2rem)/1.2 "Manrope", sans-serif; letter-spacing: 0; }
+.sdf-personalization > p:last-of-type { max-width: 720px; margin: 0.65rem 0 1.35rem; color: var(--sdf-muted); line-height: 1.65; }
+.sdf-customer-dossier { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--sdf-line); border-radius: 7px; background: var(--sdf-line); }
+.sdf-customer-dossier div { min-width: 0; padding: 0.8rem 0.9rem; background: var(--sdf-bg); }
+.sdf-customer-dossier dt { color: var(--sdf-muted); font-size: 0.74rem; }
+.sdf-customer-dossier dd { margin: 0.2rem 0 0; overflow-wrap: anywhere; color: var(--sdf-text); font-size: 0.9rem; font-weight: 750; }
+.sdf-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--sdf-line); border-radius: 0.75rem; background: var(--sdf-line); }
 .sdf-context div { display: grid; gap: 0.2rem; min-width: 0; padding: 0.85rem 1rem; background: var(--sdf-surface); }
 .sdf-context span { color: var(--sdf-muted); font-size: 0.74rem; }
 .sdf-context strong { overflow: hidden; color: var(--sdf-text); text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
@@ -169,6 +177,7 @@
 	.sdf-progress button > span:first-child { width: 1.7rem; height: 1.7rem; }
 	.sdf-progress button > span:last-child { font-size: 0.64rem; overflow-wrap: anywhere; }
 	.sdf-context { grid-template-columns: 1fr; }
+	.sdf-customer-dossier { grid-template-columns: 1fr; }
 	.sdf-form { padding: 1.15rem; }
 	.sdf-step { min-height: 0; }
 	.sdf-options { grid-template-columns: 1fr; }

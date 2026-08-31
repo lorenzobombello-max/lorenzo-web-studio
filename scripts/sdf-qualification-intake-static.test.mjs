@@ -102,13 +102,13 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     read("assets/js/sdf-qualification-intake.js"),
   ]);
 
-  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-1/);
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-2/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
   assert.match(script, /sdfQualificationInitialView\(intake\.status\)/);
   assert.match(script, /reference:intake\.support_reference/);
-  assert.match(script, /sdfDossierReference/);
+  assert.match(html, /id="sdfDossierReference"/);
   assert.doesNotMatch(script, /intake\.application_reference/);
   assert.match(script, /applySdfQualificationView\("workspace",stateViews\)/);
 
@@ -124,6 +124,24 @@ test("SDF qualification intake preserves capability and API contracts", async ()
   for (const action of ["inspect", "save_draft", "submit"]) {
     assert.match(script, new RegExp(`action:"${action}"`), `Missing API action ${action}`);
   }
+});
+
+test("SDF qualification intake personalizes only the capability-bound customer dossier", async () => {
+  const [html, script, customerModule] = await Promise.all([
+    read("pages/sdf-qualification-intake.html"),
+    read("assets/js/sdf-qualification-intake.js"),
+    read("assets/js/sdf-qualification-customer.mjs"),
+  ]);
+
+  for (const id of ["sdfCustomerGreeting", "sdfCustomerDossier"]) {
+    assert.match(html, new RegExp(`id="${id}"`), `Missing customer personalization #${id}`);
+  }
+  assert.match(script, /renderSdfQualificationCustomer\(.*intake/);
+  for (const field of ["name", "company", "email", "phone", "support_reference"]) {
+    assert.match(customerModule, new RegExp(`\\b${field}\\b`), `Missing safe customer field ${field}`);
+  }
+  assert.match(customerModule, /Slimme Documentenflow/);
+  assert.doesNotMatch(customerModule, /quote_request_id|application_id|application_reference|automation|provider|token|capability/i);
 });
 
 test("SDF commercial qualification V2 captures package direction and per-type volumes without pricing authority", async () => {
