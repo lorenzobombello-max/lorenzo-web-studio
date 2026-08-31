@@ -5,7 +5,7 @@ import type {
   ResendTransportResult,
 } from "../_shared/resend-transport.ts";
 import { sendEmailViaResend } from "../_shared/resend-transport.ts";
-import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
+import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, sdfInvitationOutcome, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
 
 const sdfClaim: AutomationClaim = {
   work_id: 2,
@@ -35,6 +35,12 @@ async function sdfExecutorFactory() {
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
   Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
   return (await import("./index.ts")).createSdfConfirmationExecutor;
+}
+
+async function sdfInvitationExecutorFactory() {
+  Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
+  return (await import("./index.ts")).createSdfInvitationExecutor;
 }
 
 function isolatedDependencies(
@@ -689,4 +695,48 @@ Deno.test("SDF confirmation accepts only its persisted template authority", () =
   assertEquals(hasCanonicalSdfConfirmationTemplate({ template_key: "SDF_REQUEST_RECEIVED_NL_BE_v1", template_version: "v1" }), true);
   assertEquals(hasCanonicalSdfConfirmationTemplate({ template_key: "SDF_REQUEST_RECEIVED_NL_BE_v1", template_version: "v2" }), false);
   assertEquals(hasCanonicalSdfConfirmationTemplate({ template_key: "WEBSITE_CONFIRMATION", template_version: "v1" }), false);
+});
+
+Deno.test("SDF invitation authority distinguishes delivery from already-sent reconciliation", () => {
+  const base = {
+    job_id: "88888888-8888-4888-8888-888888888888",
+    intake_id: "99999999-9999-4999-8999-999999999999",
+    request_id: "77777777-7777-4777-8777-777777777777",
+  };
+  assertEquals(sdfInvitationOutcome({ outcome: "already_sent", ...base }), "already_sent");
+  assertEquals(sdfInvitationOutcome({
+    outcome: "invitation_pending",
+    ...base,
+    request_name: "SDF klant",
+    request_email: "customer@example.test",
+    template_version: "SDF_QUALIFICATION_INTAKE_INVITATION_NL_BE_v1",
+    encrypted_capability: "v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    customer_capability_digest: "a".repeat(64),
+    expires_at: "2099-01-01T00:00:00Z",
+  }), "deliver");
+  assertEquals(sdfInvitationOutcome({ outcome: "already_sent", ...base, encrypted_capability: "secret" }), "already_sent");
+  assertEquals(sdfInvitationOutcome({ outcome: "invitation_pending", ...base }), "invalid");
+});
+
+Deno.test("already-sent SDF invitation reconciliation never reaches provider delivery", async () => {
+  const createExecutor = await sdfInvitationExecutorFactory();
+  const rpcCalls: string[] = [];
+  let decryptCalls = 0;
+  let providerCalls = 0;
+  const execute = createExecutor({
+    siteUrl: "https://example.test",
+    resendApiKey: "resend-test-key",
+    fromEmail: "Lorenzo Web Solutions <noreply@example.test>",
+    createCapabilityMaterial: async () => ({ digest: "a".repeat(64), encrypted: "v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }),
+    decryptCapability: async () => { decryptCalls += 1; return "raw-token"; },
+    fetchProvider: async () => { providerCalls += 1; return new Response(null, { status: 200 }); },
+    rpc: async (name) => {
+      rpcCalls.push(name);
+      return { data: { outcome: "already_sent", job_id: sdfJobId, intake_id: "77777777-7777-4777-8777-777777777777", request_id: sdfClaim.quote_request_id }, error: null };
+    },
+  });
+  assertEquals(await execute({ ...sdfClaim, phase: "SDF_INTAKE" }), { status: "sent", attempted: false, attemptCount: 0 });
+  assertEquals(rpcCalls, ["execute_application_intake_automation_sdf_intake_v1"]);
+  assertEquals(decryptCalls, 0);
+  assertEquals(providerCalls, 0);
 });

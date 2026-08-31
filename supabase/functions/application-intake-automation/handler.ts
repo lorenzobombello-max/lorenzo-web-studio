@@ -145,3 +145,23 @@ export async function handleApplicationIntakeAutomation(request: Request, depend
   }
   return response(200, counters);
 }
+
+export function sdfInvitationOutcome(value: unknown): "deliver" | "already_sent" | "invalid" {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "invalid";
+  const authority = value as Record<string, unknown>;
+  if (authority.outcome === "already_sent"
+      && UUID.test(String(authority.job_id || ""))
+      && UUID.test(String(authority.intake_id || ""))
+      && UUID.test(String(authority.request_id || ""))) return "already_sent";
+  if (authority.outcome === "invitation_pending"
+      && UUID.test(String(authority.job_id || ""))
+      && UUID.test(String(authority.intake_id || ""))
+      && UUID.test(String(authority.request_id || ""))
+      && typeof authority.request_name === "string" && authority.request_name.trim()
+      && typeof authority.request_email === "string" && authority.request_email.trim()
+      && authority.template_version === "SDF_QUALIFICATION_INTAKE_INVITATION_NL_BE_v1"
+      && typeof authority.encrypted_capability === "string" && authority.encrypted_capability.length > 0
+      && /^[0-9a-f]{64}$/.test(String(authority.customer_capability_digest || ""))
+      && validTimestamp(authority.expires_at)) return "deliver";
+  return "invalid";
+}
