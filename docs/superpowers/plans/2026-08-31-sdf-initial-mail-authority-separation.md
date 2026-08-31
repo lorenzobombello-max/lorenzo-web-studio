@@ -667,19 +667,68 @@
 - Consumes: the complete local implementation diff
 - Produces: a reviewable local checkpoint; no production mutation
 
+**Release-readiness rule:**
+- All strict SDF/local parity gates below must pass.
+- The repository-wide database gate is baseline-aware: current HEAD must introduce no new repository-wide regression versus the authoritative `origin/main` baseline captured by the preservation gate.
+- The authoritative baseline is `origin/main` at the exact preservation-gate SHA used for the release-readiness comparison, not an arbitrary historical commit.
+
 - [ ] Rebuild from the full migration chain:
 
   ```powershell
   npx supabase db reset
   ```
 
-- [ ] Run focused pgTAP, Deno and concurrency checks from Task 9, then run the repository-wide database suite:
+- [ ] Require every strict SDF/local parity gate to pass without exception:
+
+  - full local migration chain
+  - SDF authority suite
+  - qualification bridge
+  - Website targeted regression
+  - request-kind contract
+  - Deno handler and transport suites
+  - Edge typecheck
+  - concurrency and exclusivity proof
+  - cross-product isolation proof
+  - Website freeze proof
+  - provider and secret safety proof
+  - no shared business authority
+  - no third mail-state authority
+  - `git diff --check`
+  - clean worktree
+  - empty staging area
+
+- [ ] Run the focused pgTAP, Deno, Edge typecheck and concurrency checks from Task 9, then run the repository-wide database suite:
 
   ```powershell
   npx supabase test db
   deno test --allow-env --allow-net supabase/functions/application-intake-automation/handler.test.ts supabase/functions/_shared/resend-transport.test.ts
+  deno check supabase/functions/application-intake-automation/index.ts
   node scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
   ```
+
+- [ ] Compare the repository-wide result with an isolated snapshot of the authoritative `origin/main` baseline using equivalent test semantics. Classify each relevant difference as `BASELINE_EXISTING`, `NEW_ON_CURRENT_HEAD`, `RESOLVED_ON_CURRENT_HEAD` or `INCOMPARABLE`.
+
+- [ ] Apply the no-new-regression contract:
+
+  - local release readiness requires `NEW_ON_CURRENT_HEAD = 0`;
+  - if `NEW_ON_CURRENT_HEAD > 0`, local release readiness is `NOT READY` and remediation must target only the new delta;
+  - `BASELINE_EXISTING` failures do not block this SDF checkpoint by themselves, remain separately tracked repository debt, and must not be hidden or called fixed;
+  - `RESOLVED_ON_CURRENT_HEAD` failures may be reported positively but are not required for readiness and do not broaden this task into unrelated validation;
+  - every `INCOMPARABLE` result must remain explicitly visible and must not be treated as a pass or forced to a conclusion;
+  - a single test-harness or environmental `INCOMPARABLE` does not automatically block readiness when it is not a `NEW_ON_CURRENT_HEAD` failure, no current-only failure evidence exists, and all SDF-targeted suites are green;
+  - no current-only SDF-related root cause may exist.
+
+- [ ] Record the current proven baseline comparison as Task 10 evidence:
+
+  - current HEAD `3ab95388b122b6346918eff8fb05e3d2cac29d0d`: 100 files / 3470 tests / `FAIL`;
+  - authoritative `origin/main` `2e09dfb3dfff80c4625b36fe3db0462d572680f6`: 99 files / 3324 tests / `FAIL`;
+  - `BASELINE_EXISTING = 17` failurefiles;
+  - `NEW_ON_CURRENT_HEAD = 0`;
+  - `RESOLVED_ON_CURRENT_HEAD = 2`: `budget_guard_phase32d_preview_rate_limit.sql` and `operations_manager_authority_foundation.sql`;
+  - `INCOMPARABLE = 1`: `operator_dossier_assignment_foundation.sql`; a clean targeted rerun hung before producing a TAP result;
+  - Website/intake `ON CONFLICT` failures are `BASELINE_EXISTING`;
+  - operations-manager projection failures are `BASELINE_EXISTING`;
+  - there is no evidence of an SDF-caused repository-wide regression.
 
 - [ ] Inspect the final diff and enforce scope:
 
@@ -696,7 +745,9 @@
 
 - [ ] Verify `public.transition_quote_request_review(text,text)` and the Website partial unique index definitions are unchanged from checkpoint `2e09dfb3dfff80c4625b36fe3db0462d572680f6`.
 
-- [ ] Record a local evidence summary containing exact test counts, migration chain result, changed files and unresolved legacy-row counts as unknown until production preflight.
+- [ ] Record a local evidence summary containing the targeted green suites, migration-chain result, baseline comparison, exact test counts, `NEW_ON_CURRENT_HEAD = 0`, every `INCOMPARABLE` result, changed files and unresolved legacy-row counts as unknown until production preflight. Do not silently rewrite the historical Task 10 evidence; reevaluate it explicitly under this corrected gate.
+
+- [ ] Classify local release readiness as `READY` only when both conditions hold: all strict SDF/local parity gates are green, and the repository-wide baseline comparison has `NEW_ON_CURRENT_HEAD = 0`. Pre-existing baseline debt must remain reported but does not automatically block this SDF release-readiness gate.
 
 - [ ] Do not deploy. Present the local checkpoint for user review and explicit release authorization.
 
