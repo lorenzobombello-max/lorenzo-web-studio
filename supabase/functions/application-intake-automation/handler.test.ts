@@ -68,7 +68,7 @@ function isolatedDependencies(
             job_id: sdfJobId,
             request_name: "SDF klant",
             request_email: "customer@example.test",
-            application_reference: "SDF-2026-0001",
+            application_reference: null,
             template_version: "SDF_REQUEST_RECEIVED_NL_BE_v1",
             attempt_count: 1,
             provider_idempotency_key:
@@ -521,6 +521,8 @@ Deno.test("isolated due validates its lease immediately before stateless deliver
     fixture.transportInputs[0].idempotencyKey,
     `sdf-initial-confirmation/${sdfJobId}`,
   );
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: #44444444"), true);
+  assertEquals(fixture.transportInputs[0].text.includes("SDF-2026-0001"), false);
   assertEquals(fixture.calls[3].parameters, {
     p_job_id: sdfJobId,
     p_delivery_lease_token: sdfLeaseToken,
@@ -529,6 +531,39 @@ Deno.test("isolated due validates its lease immediately before stateless deliver
     p_error_code: null,
     p_provider_message_id: "provider-message-1",
   });
+});
+
+Deno.test("SDF confirmation preserves an existing application reference", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+  const originalRpc = fixture.value.rpc;
+  fixture.value.rpc = async (name, parameters) => {
+    const result = await originalRpc(name, parameters);
+    if (name !== "claim_sdf_initial_confirmation_email_job_v1") return result;
+    const claimed = (result.data as Array<Record<string, unknown>>)[0];
+    return { data: [{ ...claimed, application_reference: "LWS-AAN-2026-0001" }], error: null };
+  };
+
+  assertEquals((await createExecutor(fixture.value)(sdfClaim)).status, "sent");
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: LWS-AAN-2026-0001"), true);
+  assertEquals(fixture.transportInputs[0].text.includes("Referentie: #44444444"), false);
+});
+
+Deno.test("SDF confirmation fails closed without any canonical request identity", async () => {
+  const createExecutor = await sdfExecutorFactory();
+  const fixture = isolatedDependencies();
+  const invalidClaim = { ...sdfClaim, quote_request_id: "not-a-request-id" };
+
+  assertEquals(await createExecutor(fixture.value)(invalidClaim), {
+    status: "failed",
+    attempted: false,
+    attemptCount: 1,
+    errorCode: "SDF_INITIAL_CONFIRMATION_PAYLOAD_INVALID",
+  });
+  assertEquals(fixture.transportInputs, []);
+  assertEquals(fixture.calls.some(({ name }) =>
+    name === "validate_sdf_initial_confirmation_email_delivery_v1"
+  ), false);
 });
 
 Deno.test("invalid or expired SDF lease fails before provider and completion", async () => {

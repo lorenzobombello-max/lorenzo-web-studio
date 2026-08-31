@@ -78,16 +78,31 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function sdfRequestReference(
+  authority: Record<string, unknown>,
+  quoteRequestId: string,
+): string | null {
+  if (isNonEmptyString(authority.application_reference)) {
+    return authority.application_reference;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteRequestId)) {
+    return null;
+  }
+  return `#${quoteRequestId.slice(0, 8).toUpperCase()}`;
+}
+
 function sdfEmail(
   authority: Record<string, unknown>,
+  quoteRequestId: string,
   apiKey: string,
   from: string,
   idempotencyKey: string,
 ): ResendTransportInput | null {
+  const requestReference = sdfRequestReference(authority, quoteRequestId);
   if (
     !isNonEmptyString(authority.request_name) ||
     !isNonEmptyString(authority.request_email) ||
-    !isNonEmptyString(authority.application_reference)
+    !requestReference
   ) return null;
   return {
     apiKey,
@@ -95,7 +110,7 @@ function sdfEmail(
     to: authority.request_email,
     ...buildSdfRequestReceivedEmail({
       customerName: authority.request_name,
-      applicationReference: authority.application_reference,
+      applicationReference: requestReference,
     }),
     idempotencyKey,
   };
@@ -132,6 +147,7 @@ export function createSdfConfirmationExecutor(
       ) throw new Error("SDF_CONFIRMATION_AUTHORITY_FAILED");
       const email = sdfEmail(
         authority,
+        claim.quote_request_id,
         dependencies.resendApiKey,
         dependencies.fromEmail,
         `quote-request-email/${authority.confirmation_job_id}`,
@@ -165,6 +181,7 @@ export function createSdfConfirmationExecutor(
       ) return sdfFailure("SDF_INITIAL_CONFIRMATION_LEGACY_INVALID");
       const email = sdfEmail(
         prepared,
+        claim.quote_request_id,
         dependencies.resendApiKey,
         dependencies.fromEmail,
         `quote-request-email/${prepared.job_id}`,
@@ -205,6 +222,7 @@ export function createSdfConfirmationExecutor(
 
     const transportInput = sdfEmail(
       claimed,
+      claim.quote_request_id,
       dependencies.resendApiKey,
       dependencies.fromEmail,
       idempotencyKey,
