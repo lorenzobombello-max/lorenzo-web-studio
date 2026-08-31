@@ -1826,6 +1826,17 @@ export function pendingIntakeCountRequest() {
   return { action: "count_pending_intakes" };
 }
 
+export function pendingIntakeIdentityPresentation(item) {
+  const display = (value) => typeof value === "string" && value.trim() ? value.trim() : "Niet opgegeven";
+  return {
+    contactName: display(item?.name),
+    organization: display(item?.organization),
+    supportReference: /^#[0-9A-F]{8}$/.test(String(item?.support_reference || ""))
+      ? item.support_reference
+      : "Niet opgegeven",
+  };
+}
+
 export function pendingIntakePresentation(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)
       || !UUID.test(String(item.quote_request_id || ""))
@@ -3837,14 +3848,17 @@ export async function startOperatorDashboard({
     const renderPendingWorkspaceDetail = (item)=>{
       const presentation = pendingIntakePresentation(item);
       if (!presentation) return clearPendingWorkspaceDetail();
+      const identity = pendingIntakeIdentityPresentation(item);
       selectedPendingIntake = item;
       pendingIntakeDetail.hidden = false;
       pendingIntakeDetailEmpty.hidden = true;
-      setText("pendingIntakeName", item.name);
-      setText("pendingIntakeOrganization", item.organization || "Niet opgegeven");
+      setText("pendingIntakeName", identity.contactName);
+      setText("pendingIntakeOrganization", identity.organization);
+      setText("pendingIntakeContactName", identity.contactName);
       setText("pendingIntakeEmail", item.email);
       setText("pendingIntakePhone", item.phone || "Niet opgegeven");
       setText("pendingIntakeRequestKind", item.request_kind === "slimme_documentenflow" ? "Slimme documentenflow" : "Website");
+      setText("pendingIntakeSupportReference", identity.supportReference);
       setText("pendingIntakeWebsiteType", item.website_type);
       setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
       setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));

@@ -87,6 +87,11 @@ select is(
   'new pending records default to ACTIVE in the readmodel'
 );
 select is(
+  public.list_operator_pending_intakes_v1('fb000000-0000-4000-8000-000000000001', 'ACTIVE')->'items'->0->>'support_reference',
+  (select support_reference from public.quote_requests where id = 'fb100006-0000-4000-8000-000000000006'),
+  'Website pending operator projection exposes its own canonical public dossier reference'
+);
+select is(
   public.execute_operator_pending_intake_retention_v1(
     'fb000000-0000-4000-8000-000000000001',
     'fb200000-0000-4000-8000-000000000001', 'ARCHIVED', 0,

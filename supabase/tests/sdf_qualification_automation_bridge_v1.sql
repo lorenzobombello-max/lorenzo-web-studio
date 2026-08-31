@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(127);
+select plan(128);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
@@ -194,6 +194,11 @@ select is(
   public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000001')->'items'->0->>'request_kind',
   'slimme_documentenflow',
   'service-side projection returns the canonical SDF pending DTO for an active Owner actor'
+);
+select is(
+  public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000001')->'items'->0->>'support_reference',
+  (select support_reference from public.quote_requests where id='bd200000-0000-4000-8000-000000000001'),
+  'SDF pending operator projection exposes the canonical public dossier reference'
 );
 select throws_ok(
   $$select public.list_operator_pending_sdf_intakes_v1('bd100000-0000-4000-8000-000000000099')$$,

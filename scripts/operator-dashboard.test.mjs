@@ -4,7 +4,7 @@ import test from "node:test";
 import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createRecruitmentPublicationController, createRecruitmentVacancyController, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, recruitmentPublicationRequest, recruitmentPublicationResponse, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
-import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
+import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakeIdentityPresentation, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
@@ -3782,6 +3782,7 @@ function pendingIntake(overrides = {}) {
     intake_id: "a1800000-0000-4000-8000-000000000092",
     name: "Pending Prospect",
     organization: "Prospect BV",
+    support_reference: "#5C19F9DD",
     email: "pending@example.test",
     phone: null,
     request_kind: "website",
@@ -3856,6 +3857,40 @@ test("pending workspace keeps Website and SDF rows aligned with the backend coun
   assert.equal(pendingIntakePresentation(pendingIntake({ request_kind: "email" })), null);
 });
 
+test("pending Website and SDF details present equal identity density without stale fallback", async () => {
+  const website = pendingIntakeIdentityPresentation(pendingIntake({
+    name: "Nathalie Florens",
+    organization: "Yuna lashes and nails",
+    support_reference: "#5C19F9DD",
+  }));
+  const nextWebsite = pendingIntakeIdentityPresentation(pendingIntake({
+    name: null,
+    organization: null,
+    support_reference: "#2E23978C",
+  }));
+  const sdf = pendingIntakeIdentityPresentation(pendingIntake({
+    request_kind: "slimme_documentenflow",
+    name: "SDF Contact",
+    organization: "SDF Bedrijf",
+    support_reference: "#A1B2C3D4",
+  }));
+  assert.deepEqual(website, { contactName: "Nathalie Florens", organization: "Yuna lashes and nails", supportReference: "#5C19F9DD" });
+  assert.deepEqual(nextWebsite, { contactName: "Niet opgegeven", organization: "Niet opgegeven", supportReference: "#2E23978C" });
+  assert.deepEqual(sdf, { contactName: "SDF Contact", organization: "SDF Bedrijf", supportReference: "#A1B2C3D4" });
+  assert.notEqual(website.contactName, nextWebsite.contactName);
+  assert.notEqual(website.supportReference, nextWebsite.supportReference);
+
+  const html = await read("operator/dashboard/index.html");
+  const dashboardScript = await read("assets/js/operator-dashboard.js");
+  const detail = html.match(/<div id="pendingIntakeDetail"[\s\S]*?<section id="pendingIntakeDangerZone"/)?.[0] || "";
+  assert.match(detail, /<dt>Bedrijf<\/dt><dd id="pendingIntakeOrganization"/);
+  assert.match(detail, /id="pendingIntakeContactNameRow"><dt>Contactpersoon<\/dt><dd id="pendingIntakeContactName"/);
+  assert.match(detail, /id="pendingIntakeSupportReferenceRow"><dt>Dossierreferentie<\/dt><dd id="pendingIntakeSupportReference"/);
+  assert.doesNotMatch(dashboardScript, /pendingIntake(?:ContactName|SupportReference)Row"\)\.hidden/);
+  assert.match(detail, /<details class="pending-intake-technical"><summary>Technische details<\/summary>[\s\S]*id="pendingIntakeQuoteRequestId"/);
+  assert.doesNotMatch(detail.split('<details class="pending-intake-technical">')[0], /pendingIntakeQuoteRequestId/);
+});
+
 test("pending retention and delete commands remain authority-minimal", () => {
   const idempotencyKey = "a1800000-0000-4000-8000-000000000095";
   const active = pendingIntake();
@@ -3893,7 +3928,8 @@ test("Intake opvolging is a lazy dedicated workspace with guarded cleanup", asyn
   assert.match(html, /id="pendingIntakeCommandDialog"/);
   assert.match(html, /id="pendingIntakeCommandReason"[^>]*maxlength="500"[^>]*required/);
   for (const id of [
-    "pendingIntakeName", "pendingIntakeOrganization", "pendingIntakeEmail", "pendingIntakePhone",
+    "pendingIntakeName", "pendingIntakeOrganization", "pendingIntakeContactName", "pendingIntakeEmail", "pendingIntakePhone",
+    "pendingIntakeSupportReference",
     "pendingIntakeRequestKind", "pendingIntakeWebsiteType", "pendingIntakeInvitedAt",
     "pendingIntakeStatus", "pendingIntakeAccess", "pendingIntakeExpiresAt",
     "pendingIntakeQuoteRequestId", "pendingIntakeId"

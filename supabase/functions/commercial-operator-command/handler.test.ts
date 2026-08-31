@@ -105,6 +105,7 @@ function pendingIntakeDto(
     intake_id: "a1800000-0000-4000-8000-000000000092",
     name: "Pending prospect",
     organization: "Prospect BV",
+    support_reference: "#5C19F9DD",
     email: "pending@example.test",
     phone: null,
     request_kind: "website",
@@ -3558,6 +3559,7 @@ Deno.test("pending-intake list accepts the canonical SDF delivery DTO", async ()
     executePendingIntakes: async () => ({
       items: [pendingIntakeDto({
         request_kind: "slimme_documentenflow",
+        support_reference: "#5C19F9DD",
         sdf_package: "groei",
         website_type: "Slimme documentenflow - groei",
         invitation_delivery_status: "pending",
@@ -3566,7 +3568,21 @@ Deno.test("pending-intake list accepts the canonical SDF delivery DTO", async ()
   });
   const response = await handleCommercialOperator(request({ action: "list_pending_intakes" }), harness.deps);
   assertEquals(response.status, 200);
-  assertEquals((await response.json()).result.items[0].sdf_package, "groei");
+  const item = (await response.json()).result.items[0];
+  assertEquals(item.sdf_package, "groei");
+  assertEquals(item.support_reference, "#5C19F9DD");
+
+  for (const support_reference of [undefined, null, "5C19F9DD", "#not-valid"]) {
+    const invalid = pendingIntakeDto({
+      request_kind: "slimme_documentenflow",
+      sdf_package: "groei",
+      website_type: "Slimme documentenflow - groei",
+      invitation_delivery_status: "pending",
+      support_reference,
+    });
+    const malformed = dependencies({ executePendingIntakes: async () => ({ items: [invalid] }) });
+    assertEquals((await handleCommercialOperator(request({ action: "list_pending_intakes" }), malformed.deps)).status, 500);
+  }
 });
 
 Deno.test("pending-intake list and retention actions use fixed validated state", async () => {

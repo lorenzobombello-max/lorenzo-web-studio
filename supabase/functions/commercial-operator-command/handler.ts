@@ -533,6 +533,7 @@ function validatePendingIntakesResult(value: unknown) {
     "intake_id",
     "name",
     "organization",
+    "support_reference",
     "email",
     "phone",
     "request_kind",
@@ -569,6 +570,7 @@ function validatePendingIntakesResult(value: unknown) {
       !UUID.test(String(item.intake_id || "")) ||
       typeof item.name !== "string" || !item.name ||
       (item.organization !== null && typeof item.organization !== "string") ||
+      typeof item.support_reference !== "string" || !/^#[0-9A-F]{8}$/.test(item.support_reference) ||
       typeof item.email !== "string" || !item.email ||
       (item.phone !== null && typeof item.phone !== "string") ||
       !["website", "slimme_documentenflow"].includes(String(item.request_kind)) ||
