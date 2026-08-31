@@ -67,6 +67,7 @@ function buildHarness(
     "window",
     "request",
     "restoreData",
+    "renderCustomerContext",
     "document",
     "contextStatus",
     "loading",
@@ -80,6 +81,7 @@ function buildHarness(
     `"use strict";
       let previewStopped = false;
       let draftRevision = null;
+      let inspectedRequest = null;
       return (${sourceFunction("inspect")});`,
   )(
     token,
@@ -88,6 +90,7 @@ function buildHarness(
     AbortController,
     window,
     request,
+    () => {},
     () => {},
     document,
     contextStatus,

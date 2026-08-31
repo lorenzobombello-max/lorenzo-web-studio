@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="../assets/css/intake.css?v=20260828-dossier-copy-remediation" />
     <script defer src="../assets/js/cookie-consent.js"></script>
 <script defer src="../assets/js/pages.js"></script>
-  <script type="module" src="../assets/js/intake.js?v=20260828-dossier-ux"></script>
+  <script type="module" src="../assets/js/intake.js?v=20260901-intake-context"></script>
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
 </head>
 <body class="intake-page">
@@ -102,11 +102,19 @@
         </aside>
 
         <div class="intake-content">
-          <div class="intake-context" id="requestContext" aria-live="polite">
-            <div><span>Project voor</span><strong id="contextName">-</strong></div>
-            <div><span>Type website</span><strong id="contextType">-</strong></div>
-            <div><span>Status</span><strong id="contextStatus">Nog niet gestart</strong></div>
-          </div>
+          <section class="intake-customer-context" id="requestContext" aria-labelledby="requestContextTitle" aria-live="polite">
+            <p class="eyebrow">Uw persoonlijke websiteproject</p>
+            <h2 id="requestContextTitle">Beste <span id="contextGreetingName">klant</span></h2>
+            <dl class="intake-context">
+              <div><dt>Naam</dt><dd id="contextName">-</dd></div>
+              <div><dt>E-mail</dt><dd id="contextEmail">-</dd></div>
+              <div><dt>Dienst</dt><dd id="contextService">Website</dd></div>
+              <div><dt>Aanvraagdatum</dt><dd id="contextRequestedAt">-</dd></div>
+              <div><dt>Dossierreferentie</dt><dd id="contextReference">Beschikbaar na indiening</dd></div>
+              <div><dt>Website</dt><dd id="contextType">-</dd></div>
+              <div><dt>Status</dt><dd id="contextStatus">Nog niet gestart</dd></div>
+            </dl>
+          </section>
 
           <section id="budgetGuardPreview" class="budget-guard" aria-labelledby="budgetGuardTitle" aria-live="polite" aria-atomic="true" aria-busy="false" hidden>
             <div class="budget-guard__heading">

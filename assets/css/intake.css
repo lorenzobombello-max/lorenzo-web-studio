@@ -78,10 +78,13 @@
 .intake-progress button.has-error > span:first-child { color: #ff9b9b; border-color: #c9686e; box-shadow: inset 0 0 0 2px var(--color-surface); }
 .intake-progress button.has-error[aria-current="step"] > span:first-child { color: #fff; border-color: #b84f57; background: #9e3842; }
 .intake-content { min-width: 0; }
-.intake-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-border); }
-.intake-context div { display: grid; gap: 0.2rem; padding: 0.85rem 1rem; background: var(--color-surface); }
-.intake-context span { color: var(--color-text-soft); font-size: 0.74rem; }
-.intake-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.intake-customer-context { margin-bottom: 1rem; }
+.intake-customer-context > .eyebrow { margin-bottom: 0.35rem; }
+.intake-customer-context > h2 { margin: 0 0 1rem; font-size: 1.35rem; }
+.intake-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 0; border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-border); }
+.intake-context div { display: grid; gap: 0.2rem; min-width: 0; padding: 0.85rem 1rem; background: var(--color-surface); }
+.intake-context dt { color: var(--color-text-soft); font-size: 0.74rem; }
+.intake-context dd { overflow-wrap: anywhere; margin: 0; font-size: 0.9rem; font-weight: 700; }
 .budget-guard { --budget-guard-strip-color: var(--color-accent); position: relative; overflow: hidden; margin-bottom: 1rem; padding: 1.1rem 1.2rem; border: 1px solid var(--color-border); border-left: 4px solid var(--budget-guard-strip-color); border-radius: 0.65rem; background: var(--color-surface); }
 .budget-guard::before { position: absolute; inset: 0 auto 0 -1px; width: 4px; content: ""; pointer-events: none; background: linear-gradient(180deg, oklch(from var(--budget-guard-strip-color) l c h / 0) 0%, oklch(from var(--budget-guard-strip-color) calc(l + 0.1) c h / 0.55) 25%, oklch(from var(--budget-guard-strip-color) calc(l + 0.22) c h) 50%, oklch(from var(--budget-guard-strip-color) calc(l + 0.1) c h / 0.55) 75%, oklch(from var(--budget-guard-strip-color) l c h / 0) 100%) 0 -2rem / 100% 2rem no-repeat, var(--budget-guard-strip-color); animation: budget-guard-strip-scan 4.8s ease-in-out infinite; }
 .budget-guard[hidden] { display: none; }

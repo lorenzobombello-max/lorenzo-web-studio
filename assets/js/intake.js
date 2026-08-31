@@ -3,6 +3,7 @@ import {
   printApplicationDossier,
   renderApplicationDossier,
 } from "./application-dossier-copy.js?v=20260828-dossier-ux";
+import { websiteIntakeContextPresentation } from "./intake-customer-context.js?v=20260901-intake-context";
 
 (function () {
   "use strict";
@@ -173,6 +174,7 @@ import {
   let previewAbortController = null;
   let previewPausedUntil = 0;
   let previewStopped = false;
+  let inspectedRequest = null;
   let currentBudgetGuardStatus = "";
   let currentBudgetGuardKey = "";
   let currentBudgetGuardEvidenceFingerprint = "";
@@ -1890,6 +1892,18 @@ import {
     summary.hidden = false;
   }
 
+  function renderCustomerContext(request, intake, application = null) {
+    const context = websiteIntakeContextPresentation({ request, intake, application });
+    document.getElementById("contextGreetingName").textContent = context.name;
+    document.getElementById("contextName").textContent = context.name;
+    document.getElementById("contextEmail").textContent = context.email;
+    document.getElementById("contextService").textContent = context.service;
+    document.getElementById("contextRequestedAt").textContent = context.requestedAt;
+    document.getElementById("contextReference").textContent = context.reference;
+    document.getElementById("contextType").textContent = context.projectType;
+    contextStatus.textContent = context.status;
+  }
+
   function setReadOnly(status, application) {
     stopPricingPreview();
     readOnly = true;
@@ -1899,6 +1913,7 @@ import {
     document.getElementById("intakeActions").hidden = true;
     form.classList.add("is-readonly");
     contextStatus.textContent = status === "reviewed" ? "Verwerkt" : "Verzonden";
+    renderCustomerContext(inspectedRequest, { status }, application);
     success.hidden = false;
     success.querySelector("h2").textContent = status === "reviewed" ? "Je aanvraag werd al verwerkt" : "Aanvraag ontvangen";
     renderSuccessSummary(application);
@@ -1919,10 +1934,9 @@ import {
         return showUnavailable("De intake kon niet worden geladen. Probeer later opnieuw.");
       }
       draftRevision = body.intake.revision;
-      document.getElementById("contextName").textContent = body.request?.company || body.request?.name || "Websiteproject";
-      document.getElementById("contextType").textContent = body.request?.website_type || "Website";
+      inspectedRequest = body.request || null;
       const status = body.intake?.status;
-      contextStatus.textContent = status === "in_progress" ? "Concept hersteld" : status === "submitted" ? "Verzonden" : status === "reviewed" ? "Verwerkt" : "Nog niet gestart";
+      renderCustomerContext(inspectedRequest, body.intake, body.application);
       loading.hidden = true;
       workspace.hidden = false;
       showStep(0);

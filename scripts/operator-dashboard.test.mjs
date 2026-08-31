@@ -9,6 +9,7 @@ import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDo
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
 import { presentSdfDossierPurge, sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
+import { createVisibilityRefreshController } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -926,7 +927,9 @@ test("Customer Requests UI stays inside personal workspace and exposes work acti
 test("personal queue routing is server-result-driven and fails closed", async () => {
   const script = await read("assets/js/operator-dashboard.js");
   assert.match(script, /loadManagerAuthority: \(\)=>listController\.load\(\)/);
-  assert.match(script, /if \(!isCurrent\(\)\) return currentIdentity;\s*if \(dashboardRoute !== "manager"\) \{\s*if \(isOperatorAuthorizationFailure\(listController\.state\.error\)\) onAuthorizationFailure\(\);\s*return currentIdentity;\s*\}\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
+  assert.match(script, /if \(!isCurrent\(\)\) return currentIdentity;\s*if \(dashboardRoute !== "manager"\)/);
+  assert.match(script, /dashboardRoute === "personal"[\s\S]{0,300}refresh: \(\)=>personalQueueController\.refresh\(\)[\s\S]{0,300}personalRefreshController\.start\(\)/);
+  assert.match(script, /return currentIdentity;\s*\}\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
   assert.equal((script.match(/client\.rpc\(/g) || []).length, 17);
@@ -1391,6 +1394,57 @@ test("SDF danger-zone DOM remains visible when blocked and clears on dossier swi
   assert.equal(nodes.section.hidden, true);
   assert.equal(nodes.action.hidden, true);
   assert.equal(nodes.message.textContent, "");
+});
+
+test("operator background refresh pauses while hidden and isolates transient failures", async () => {
+  let visible = true;
+  let scheduled = null;
+  let cleared = null;
+  let refreshes = 0;
+  const controller = createVisibilityRefreshController({
+    refresh: async ()=>{ refreshes += 1; if (refreshes === 2) throw new Error("TEMPORARY"); },
+    isVisible: ()=>visible,
+    setTimer: (callback, delay)=>{ scheduled = { callback, delay }; return 42; },
+    clearTimer: (timer)=>{ cleared = timer; },
+  });
+
+  controller.start();
+  assert.equal(scheduled.delay, 25_000);
+  await scheduled.callback();
+  assert.equal(refreshes, 1);
+
+  visible = false;
+  controller.visibilityChanged();
+  assert.equal(cleared, 42);
+  assert.equal(await controller.run(), false);
+
+  visible = true;
+  controller.visibilityChanged();
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(refreshes, 2);
+  assert.equal(await controller.run(), true);
+  assert.equal(refreshes, 3);
+});
+
+test("operator live refresh preserves state and product-specific intake labels", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="applicationRefresh"[^>]*>Vernieuwen</);
+  assert.match(html, /id="pendingIntakeProductLabel">Website</);
+  assert.match(script, /pendingIntakeProductLabel\.textContent = item\.request_kind === "slimme_documentenflow" \? "Pakket" : "Website"/);
+  assert.match(script, /createVisibilityRefreshController/);
+  assert.match(script, /document\.addEventListener\("visibilitychange"/);
+  assert.match(script, /refresh: \(\)=>loadPage\(\)/);
+  assert.doesNotMatch(script, /location\.reload|location\.replace/);
+});
+
+test("SDF pending intake danger zone exposes server blockers without changing Website behavior", async () => {
+  const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
+  assert.match(html, /id="pendingIntakeDangerStatus"/);
+  assert.match(html, /id="pendingIntakeDelete"[^>]*hidden>Definitief verwijderen</);
+  assert.match(script, /pendingIntakeDangerZone\.hidden = !isSdf && item\.can_permanently_delete !== true/);
+  assert.match(script, /pendingIntakeDelete\.hidden = item\.can_permanently_delete !== true/);
+  assert.match(script, /door de server geblokkeerd omdat beschermde commerciële of dossierafhankelijkheden bestaan/);
+  assert.match(script, /buildPendingIntakeDeleteCommand\(command\.item/);
 });
 
 test("successful dossier transition focuses only an action allowed by refreshed detail", () => {

@@ -2850,6 +2850,8 @@ export async function startOperatorDashboard({
   const pendingIntakeClearFilters = document.getElementById("pendingIntakeClearFilters");
   const pendingIntakeRetentionAction = document.getElementById("pendingIntakeRetentionAction");
   const pendingIntakeDangerZone = document.getElementById("pendingIntakeDangerZone");
+  const pendingIntakeDangerStatus = document.getElementById("pendingIntakeDangerStatus");
+  const pendingIntakeProductLabel = document.getElementById("pendingIntakeProductLabel");
   const pendingIntakeDelete = document.getElementById("pendingIntakeDelete");
   const pendingIntakeDeleteUnavailable = document.getElementById("pendingIntakeDeleteUnavailable");
   const pendingIntakeCommandDialog = document.getElementById("pendingIntakeCommandDialog");
@@ -2859,6 +2861,7 @@ export async function startOperatorDashboard({
   const pendingIntakeCommandConfirm = document.getElementById("pendingIntakeCommandConfirm");
   const pendingLifecycleButtons = Array.from(document.querySelectorAll("[data-pending-lifecycle-action]"));
   const list = document.getElementById("applicationList");
+  const applicationRefresh = document.getElementById("applicationRefresh");
   const empty = document.getElementById("applicationEmpty");
   const listMessage = document.getElementById("applicationListMessage");
   const detail = document.getElementById("applicationDetail");
@@ -3859,6 +3862,7 @@ export async function startOperatorDashboard({
       setText("pendingIntakePhone", item.phone || "Niet opgegeven");
       setText("pendingIntakeRequestKind", item.request_kind === "slimme_documentenflow" ? "Slimme documentenflow" : "Website");
       setText("pendingIntakeSupportReference", identity.supportReference);
+      pendingIntakeProductLabel.textContent = item.request_kind === "slimme_documentenflow" ? "Pakket" : "Website";
       setText("pendingIntakeWebsiteType", item.website_type);
       setText("pendingIntakeInvitedAt", formatDate(presentation.invitedAt));
       setText("pendingIntakeExpiresAt", formatDate(item.access_token_expires_at));
@@ -3875,7 +3879,12 @@ export async function startOperatorDashboard({
       pendingIntakeRetentionAction.textContent = archived ? "Terugzetten naar actief" : "Archiveren";
       pendingIntakeRetentionAction.dataset.action = archived ? "restore" : "archive";
       pendingIntakeRetentionAction.disabled = pendingWorkspaceBusy;
-      pendingIntakeDangerZone.hidden = item.can_permanently_delete !== true;
+      const isSdf = item.request_kind === "slimme_documentenflow";
+      pendingIntakeDangerZone.hidden = !isSdf && item.can_permanently_delete !== true;
+      pendingIntakeDelete.hidden = item.can_permanently_delete !== true;
+      pendingIntakeDangerStatus.textContent = item.can_permanently_delete === true
+        ? "Deze nog niet ingediende intake heeft geen beschermde afhankelijkheden en kan definitief worden verwijderd."
+        : "Definitief verwijderen is door de server geblokkeerd omdat beschermde commerciële of dossierafhankelijkheden bestaan.";
       pendingIntakeDeleteUnavailable.textContent = item.can_permanently_delete === true
         ? "Definitief verwijderen is voor dit dependency-vrije historie-item toegestaan."
         : "Definitief verwijderen is beschermd zolang commerciële of dossierafhankelijkheden bestaan.";
@@ -3918,9 +3927,9 @@ export async function startOperatorDashboard({
         pendingIntakesList.append(row);
       }
     };
-    const loadPendingWorkspace = async (message = "")=>{
+    const loadPendingWorkspace = async (message = "", { background = false } = {})=>{
       pendingIntakesRefresh.disabled = true;
-      pendingIntakesMessage.textContent = "Intakes worden geladen.";
+      if (!background) pendingIntakesMessage.textContent = "Intakes worden geladen.";
       try {
         const result = await invoke(pendingIntakesRequest(pendingRetentionState));
         pendingIntakeItems = Array.isArray(result?.items) ? result.items.filter((item)=>pendingIntakePresentation(item)) : [];
@@ -3929,7 +3938,7 @@ export async function startOperatorDashboard({
         renderPendingWorkspaceDetail(pendingIntakeItems.find((item)=>item.intake_id === selectedId) || null);
         pendingIntakesMessage.textContent = message;
       } catch {
-        pendingIntakesMessage.textContent = "Intakes konden niet worden geladen.";
+        if (!background) pendingIntakesMessage.textContent = "Intakes konden niet worden geladen.";
       } finally {
         pendingIntakesRefresh.disabled = false;
       }
@@ -4069,6 +4078,15 @@ export async function startOperatorDashboard({
     personalQueueWorkspace.hidden = true;
     managerWorkspace.hidden = true;
     await Promise.all([loadPendingWorkspace(), loadPendingIntakeCount()]);
+    const pendingRefreshController = createVisibilityRefreshController({
+      refresh: async ()=>{
+        if (pendingWorkspaceBusy || document.querySelector("dialog[open]")) return;
+        await Promise.all([loadPendingWorkspace("", { background: true }), loadPendingIntakeCount()]);
+      },
+    });
+    document.addEventListener("visibilitychange", pendingRefreshController.visibilityChanged);
+    window.addEventListener("pagehide", pendingRefreshController.stop, { once: true });
+    pendingRefreshController.start();
     return currentIdentity;
   }
   if (activeModule !== "dossiers") {
@@ -4332,6 +4350,14 @@ export async function startOperatorDashboard({
   if (!isCurrent()) return currentIdentity;
   if (dashboardRoute !== "manager") {
     if (isOperatorAuthorizationFailure(listController.state.error)) onAuthorizationFailure();
+    if (dashboardRoute === "personal") {
+      const personalRefreshController = createVisibilityRefreshController({
+        refresh: ()=>personalQueueController.refresh(),
+      });
+      document.addEventListener("visibilitychange", personalRefreshController.visibilityChanged);
+      window.addEventListener("pagehide", personalRefreshController.stop, { once: true });
+      personalRefreshController.start();
+    }
     return currentIdentity;
   }
   personalQueueWorkspace.hidden = true;
@@ -4922,6 +4948,17 @@ export async function startOperatorDashboard({
     return await listController.load();
   }
 
+  async function refreshDashboard({ background = false } = {}) {
+    const locator = selectedLocator ? { ...selectedLocator } : null;
+    const loaded = await listController.refresh();
+    if (!loaded || !locator) return loaded;
+    if (background && (document.querySelector("dialog[open]")
+        || document.activeElement?.matches("input, textarea, select"))) return true;
+    const summary = listController.state.items.find((item)=>locatorMatchesApplication(locator, item));
+    if (summary) await loadDetail(locator, summary);
+    return true;
+  }
+
   async function refreshMutationDetail(locator, selectionRequestId) {
     return await refreshOperatorSelection(listController, locator, {
       isCurrent: ()=>selectionRequestId === detailRequestId && locatorMatchesApplication(locator, selectedLocator),
@@ -4981,6 +5018,7 @@ export async function startOperatorDashboard({
     listController.updateQuery({ quarter: quarterFilter.value || null });
   });
   loadMore.addEventListener("click", ()=>listController.loadMore());
+  applicationRefresh.addEventListener("click", ()=>void refreshDashboard());
 
   assignmentOperator.addEventListener("change", renderAssignment);
   assignmentReason.addEventListener("input", renderAssignment);
@@ -5334,6 +5372,12 @@ export async function startOperatorDashboard({
     if (summary) await loadDetail(selectedLocator, summary);
     else clearDetail();
   }
+  const dashboardRefreshController = createVisibilityRefreshController({
+    refresh: ()=>refreshDashboard({ background: true }),
+  });
+  document.addEventListener("visibilitychange", dashboardRefreshController.visibilityChanged);
+  window.addEventListener("pagehide", dashboardRefreshController.stop, { once: true });
+  dashboardRefreshController.start();
   return currentIdentity;
 }
 
@@ -5524,15 +5568,7 @@ export function createPersonalQueueController(invoke, onChange = ()=>{}) {
     state,
     load: ()=>loadPage(),
     loadMore: ()=>loadPage({ append: true }),
-    refresh: ()=>{
-      if (state.loading) return Promise.resolve(false);
-      state.items = [];
-      state.has_more = false;
-      state.next_cursor = null;
-      state.error = null;
-      publish();
-      return loadPage();
-    },
+    refresh: ()=>loadPage(),
   };
 }
 
@@ -5988,6 +6024,49 @@ export async function refreshAfterOperatorMutation(invokeMutation, refreshSelect
   return await refreshSelection(selectionRequestId);
 }
 
+export function createVisibilityRefreshController({
+  refresh,
+  isVisible = ()=>document.visibilityState === "visible",
+  setTimer = (callback, delay)=>window.setInterval(callback, delay),
+  clearTimer = (timer)=>window.clearInterval(timer),
+  cadenceMs = 25_000,
+}) {
+  let timer = null;
+  let refreshing = false;
+
+  async function run() {
+    if (!isVisible() || refreshing) return false;
+    refreshing = true;
+    try {
+      await refresh();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  function start() {
+    if (timer !== null || !isVisible()) return;
+    timer = setTimer(()=>void run(), cadenceMs);
+  }
+
+  function stop() {
+    if (timer === null) return;
+    clearTimer(timer);
+    timer = null;
+  }
+
+  function visibilityChanged() {
+    if (!isVisible()) return stop();
+    void run();
+    start();
+  }
+
+  return { run, start, stop, visibilityChanged };
+}
+
 export function createOperatorListController(invoke, onChange = ()=>{}) {
   const state = {
     zone: "ACTIVE",
@@ -6076,7 +6155,7 @@ export function createOperatorListController(invoke, onChange = ()=>{}) {
   return {
     state,
     load: ()=>loadPage(),
-    refresh: ()=>updateQuery({}),
+    refresh: ()=>loadPage(),
     loadMore: ()=>loadPage({ append: true }),
     updateQuery,
   };
