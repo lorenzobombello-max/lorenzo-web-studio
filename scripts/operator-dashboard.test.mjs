@@ -8,12 +8,12 @@ import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pe
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
-import { sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
+import { presentSdfDossierPurge, sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
-const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-qualification-detail";
+const OPERATOR_ASSET_RELEASE = "20260901-sdf-danger-zone-ui";
+const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
   id: "a1800000-0000-4000-8000-000000000081",
@@ -1336,7 +1336,8 @@ test("SDF danger zone is server-authoritative and gives exact blocker feedback",
     { canPurge: false, message: "Dit dossier kan niet definitief worden verwijderd omdat er al een offerte bestaat." },
   );
   assert.equal(sdfDossierPurgePresentation({ ...detail, request_kind: "website" }, owner, { can_purge: true, reason: null }), null);
-  assert.equal(sdfDossierPurgePresentation(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }).canPurge, false);
+  assert.equal(sdfDossierPurgePresentation(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }), null);
+  assert.equal(sdfDossierPurgePresentation({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }), null);
   assert.deepEqual(
     sdfDossierPurgeRequest(detail, "  Testdata opschonen  ", "a1800000-0000-4000-8000-000000000031"),
     {
@@ -1357,10 +1358,39 @@ test("SDF danger zone is server-authoritative and gives exact blocker feedback",
   assert.match(html, /Dit kan niet ongedaan worden gemaakt/);
   assert.match(script, /client\.rpc\("can_purge_sdf_dossier_v1"/);
   assert.match(script, /client\.rpc\("purge_sdf_dossier_v1", input\)/);
+  assert.match(script, /presentSdfDossierPurge\(nodes, detailApplication, currentIdentity, null\)/);
+  assert.match(script, /presentSdfDossierPurge\(nodes, detailApplication, currentIdentity, error \? null : data\)/);
   assert.match(script, /detailApplication\?\.request_kind === "website"[\s\S]{0,180}refreshDossierPurgeEligibility[\s\S]{0,180}refreshSdfDossierPurgeEligibility/);
   assert.match(script, /sdfDossierPurgeBusy = true;[\s\S]{0,140}sdfDossierPurge\.disabled = true;[\s\S]{0,140}sdfDossierPurgeConfirm\.disabled = true/);
   assert.match(script, /clearDetail\(\);[\s\S]{0,80}await listController\.refresh\(\)/);
   assert.match(script, /catch \{[\s\S]{0,250}refreshSdfDossierPurgeEligibility\(selectedDetail, detailRequestId\)/);
+});
+
+test("SDF danger-zone DOM remains visible when blocked and clears on dossier switch", () => {
+  const nodes = {
+    section: { hidden: true },
+    message: { textContent: "" },
+    action: { hidden: true },
+  };
+  const owner = { role: "owner", status: "ACTIVE" };
+  const trashedSdf = {
+    request_kind: "slimme_documentenflow",
+    dossier_lifecycle: { state: "TRASHED" },
+  };
+
+  presentSdfDossierPurge(nodes, trashedSdf, owner, { can_purge: false, reason: "SDF_QUOTATION_EXISTS" });
+  assert.equal(nodes.section.hidden, false);
+  assert.equal(nodes.action.hidden, true);
+  assert.equal(nodes.message.textContent, "Dit dossier kan niet definitief worden verwijderd omdat er al een offerte bestaat.");
+
+  presentSdfDossierPurge(nodes, trashedSdf, owner, { can_purge: true, reason: null });
+  assert.equal(nodes.section.hidden, false);
+  assert.equal(nodes.action.hidden, false);
+
+  presentSdfDossierPurge(nodes, { ...trashedSdf, request_kind: "website" }, owner, null);
+  assert.equal(nodes.section.hidden, true);
+  assert.equal(nodes.action.hidden, true);
+  assert.equal(nodes.message.textContent, "");
 });
 
 test("successful dossier transition focuses only an action allowed by refreshed detail", () => {

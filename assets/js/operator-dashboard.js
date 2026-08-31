@@ -1635,9 +1635,8 @@ const SDF_PURGE_BLOCKER_MESSAGES = Object.freeze({
 
 export function sdfDossierPurgePresentation(detail, identity, eligibility) {
   if (detail?.request_kind !== "slimme_documentenflow") return null;
-  if (identity?.status !== "ACTIVE" || identity.role !== "owner") {
-    return { canPurge: false, message: "Alleen de Owner kan dit dossier definitief verwijderen." };
-  }
+  if (identity?.status !== "ACTIVE" || identity.role !== "owner"
+      || detail?.dossier_lifecycle?.state !== "TRASHED") return null;
   if (!eligibility || typeof eligibility !== "object") {
     return { canPurge: false, message: "De verwijderstatus kon niet veilig worden vastgesteld. Vernieuw het dossier." };
   }
@@ -1649,6 +1648,14 @@ export function sdfDossierPurgePresentation(detail, identity, eligibility) {
     message: SDF_PURGE_BLOCKER_MESSAGES[eligibility.reason]
       || "Dit dossier kan niet definitief worden verwijderd omdat er beschermde gegevens aan gekoppeld zijn.",
   };
+}
+
+export function presentSdfDossierPurge(nodes, detail, identity, eligibility) {
+  const presentation = sdfDossierPurgePresentation(detail, identity, eligibility);
+  nodes.section.hidden = !presentation;
+  nodes.message.textContent = presentation?.message || "";
+  nodes.action.hidden = !presentation?.canPurge;
+  return presentation;
 }
 
 export function sdfDossierPurgeRequest(detail, reason, idempotencyKey) {
@@ -2876,6 +2883,7 @@ export async function startOperatorDashboard({
   const dossierPurgeReason = document.getElementById("dossierPurgeReason");
   const dossierPurgeConfirm = document.getElementById("dossierPurgeConfirm");
   const dossierPurgeCancel = document.getElementById("dossierPurgeCancel");
+  const sdfDossierDangerZone = document.getElementById("sdfDossierDangerZone");
   const sdfDossierPurge = document.getElementById("sdfDossierPurge");
   const sdfDossierPurgeMessage = document.getElementById("sdfDossierPurgeMessage");
   const sdfDossierPurgeDialog = document.getElementById("sdfDossierPurgeDialog");
@@ -4644,21 +4652,15 @@ export async function startOperatorDashboard({
   }
 
   async function refreshSdfDossierPurgeEligibility(detailApplication, requestId) {
-    sdfDossierPurge.hidden = true;
-    const initial = sdfDossierPurgePresentation(detailApplication, currentIdentity, null);
-    sdfDossierPurgeMessage.textContent = initial?.message || "";
-    if (sdfDossierPurgeBusy
-        || detailApplication?.request_kind !== "slimme_documentenflow"
-        || currentIdentity?.status !== "ACTIVE"
-        || currentIdentity.role !== "owner"
+    const nodes = { section: sdfDossierDangerZone, message: sdfDossierPurgeMessage, action: sdfDossierPurge };
+    const initial = presentSdfDossierPurge(nodes, detailApplication, currentIdentity, null);
+    if (sdfDossierPurgeBusy || !initial
         || !UUID.test(String(detailApplication?.quote_request_id || ""))) return;
     const { data, error } = await client.rpc("can_purge_sdf_dossier_v1", {
       p_quote_request_id: detailApplication.quote_request_id,
     });
     if (requestId !== detailRequestId || selectedDetail !== detailApplication) return;
-    const presentation = sdfDossierPurgePresentation(detailApplication, currentIdentity, error ? null : data);
-    sdfDossierPurgeMessage.textContent = presentation?.message || "";
-    sdfDossierPurge.hidden = !presentation?.canPurge;
+    presentSdfDossierPurge(nodes, detailApplication, currentIdentity, error ? null : data);
     sdfDossierPurge.disabled = false;
   }
 
