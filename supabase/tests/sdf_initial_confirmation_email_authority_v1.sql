@@ -1151,6 +1151,229 @@ select is(
   'Failed SDF initial confirmation does not project completion'
 );
 
+create temporary table task8_legacy_cases (
+  legacy_status text primary key,
+  request_id uuid not null,
+  job_id uuid not null,
+  claim_token uuid not null
+);
+
+insert into task8_legacy_cases (
+  legacy_status,
+  request_id,
+  job_id,
+  claim_token
+) values
+  ('sent', 'fb800001-0000-4000-8000-000000000001', 'fb820001-0000-4000-8000-000000000001', 'fb810001-0000-4000-8000-000000000001'),
+  ('failed', 'fb800002-0000-4000-8000-000000000002', 'fb820002-0000-4000-8000-000000000002', 'fb810002-0000-4000-8000-000000000002'),
+  ('pending', 'fb800003-0000-4000-8000-000000000003', 'fb820003-0000-4000-8000-000000000003', 'fb810003-0000-4000-8000-000000000003'),
+  ('retry_wait', 'fb800004-0000-4000-8000-000000000004', 'fb820004-0000-4000-8000-000000000004', 'fb810004-0000-4000-8000-000000000004'),
+  ('processing', 'fb800005-0000-4000-8000-000000000005', 'fb820005-0000-4000-8000-000000000005', 'fb810005-0000-4000-8000-000000000005');
+
+insert into public.quote_requests (
+  id,
+  record_classification,
+  request_kind,
+  sdf_package,
+  name,
+  email,
+  description,
+  privacy_consent,
+  status,
+  approval_token_hash,
+  approval_token_expires_at
+)
+select
+  test_case.request_id,
+  'production',
+  'slimme_documentenflow',
+  'start',
+  'Task 8 legacy ' || test_case.legacy_status,
+  'task8-' || test_case.legacy_status || '@example.test',
+  'Task 8 legacy compatibility fixture.',
+  true,
+  'pending',
+  md5('task8-' || test_case.legacy_status) ||
+    md5('task8-secondary-' || test_case.legacy_status),
+  clock_timestamp() + interval '1 day'
+from task8_legacy_cases as test_case;
+
+insert into lws_internal.application_intake_automation_work (
+  quote_request_id,
+  phase,
+  approval_due_at,
+  next_attempt_at
+)
+select
+  test_case.request_id,
+  'SDF_CONFIRMATION',
+  clock_timestamp(),
+  clock_timestamp()
+from task8_legacy_cases as test_case
+on conflict (quote_request_id) do update
+set phase = excluded.phase,
+    approval_due_at = excluded.approval_due_at,
+    next_attempt_at = excluded.next_attempt_at;
+
+update lws_internal.application_intake_automation_work as work
+set claim_token = test_case.claim_token,
+    claimed_by = 'fb830000-0000-4000-8000-000000000001',
+    claimed_at = clock_timestamp(),
+    claim_expires_at = clock_timestamp() + interval '10 minutes'
+from task8_legacy_cases as test_case
+where work.quote_request_id = test_case.request_id;
+
+insert into public.quote_request_email_jobs (
+  id,
+  quote_request_id,
+  kind,
+  status,
+  attempt_count,
+  next_attempt_at,
+  locked_at,
+  last_attempt_at,
+  sent_at,
+  provider_message_id,
+  last_error_code,
+  template_key,
+  template_version
+)
+select
+  test_case.job_id,
+  test_case.request_id,
+  'customer_confirmation',
+  test_case.legacy_status::public.quote_request_email_status,
+  case test_case.legacy_status
+    when 'sent' then 1
+    when 'failed' then 5
+    when 'retry_wait' then 2
+    when 'processing' then 1
+    else 0
+  end,
+  case
+    when test_case.legacy_status = 'retry_wait'
+      then clock_timestamp() + interval '1 hour'
+    else clock_timestamp()
+  end,
+  case
+    when test_case.legacy_status = 'processing' then clock_timestamp()
+    else null
+  end,
+  case
+    when test_case.legacy_status in ('sent', 'failed', 'retry_wait', 'processing')
+      then clock_timestamp()
+    else null
+  end,
+  case
+    when test_case.legacy_status = 'sent' then clock_timestamp()
+    else null
+  end,
+  case
+    when test_case.legacy_status = 'sent' then 'task8-legacy-provider-id'
+    else null
+  end,
+  case
+    when test_case.legacy_status = 'failed' then 'TASK8_LEGACY_TERMINAL'
+    when test_case.legacy_status = 'retry_wait' then 'TASK8_LEGACY_RETRY'
+    else null
+  end,
+  'SDF_REQUEST_RECEIVED_NL_BE_v1',
+  'v1'
+from task8_legacy_cases as test_case;
+
+create temporary table task8_legacy_snapshot as
+select job.id, to_jsonb(job) as row_snapshot
+from public.quote_request_email_jobs as job
+join task8_legacy_cases as test_case on test_case.job_id = job.id;
+
+create temporary table task8_legacy_prepared as
+select test_case.legacy_status, prepared.*
+from task8_legacy_cases as test_case
+join lws_internal.application_intake_automation_work as work
+  on work.quote_request_id = test_case.request_id
+cross join lateral public.prepare_sdf_initial_confirmation_v2(
+  work.work_id,
+  test_case.claim_token
+) as prepared;
+
+select is(
+  (select count(*)::integer from task8_legacy_prepared),
+  5,
+  'Task 8 prepare returns one result for every historical legacy state'
+);
+select is(
+  (select outcome from task8_legacy_prepared where legacy_status = 'sent'),
+  'already_sent',
+  'Legacy sent normalizes to canonical already_sent'
+);
+select is(
+  (select authority_source from task8_legacy_prepared where legacy_status = 'sent'),
+  null::text,
+  'Legacy sent exposes no active delivery authority source'
+);
+select is(
+  (select job_id from task8_legacy_prepared where legacy_status = 'sent'),
+  null::uuid,
+  'Legacy sent exposes no new delivery job identity'
+);
+select is(
+  (select outcome from task8_legacy_prepared where legacy_status = 'failed'),
+  'failed',
+  'Legacy terminal failure remains failed'
+);
+select is(
+  (select phase from lws_internal.application_intake_automation_work
+   where quote_request_id = 'fb800002-0000-4000-8000-000000000002'),
+  'MANUAL_REVIEW',
+  'Legacy terminal failure moves only its SDF work to MANUAL_REVIEW'
+);
+select is(
+  (select authority_source from task8_legacy_prepared where legacy_status = 'pending'),
+  'legacy',
+  'Legacy pending remains the exclusive delivery authority'
+);
+select is(
+  (select job_id from task8_legacy_prepared where legacy_status = 'pending'),
+  'fb820003-0000-4000-8000-000000000003'::uuid,
+  'Legacy pending preserves its job identity'
+);
+select is(
+  (select outcome from task8_legacy_prepared where legacy_status = 'retry_wait'),
+  'retry_wait',
+  'Legacy non-due retry_wait remains deferred in legacy authority'
+);
+select is(
+  (select job_id from task8_legacy_prepared where legacy_status = 'retry_wait'),
+  'fb820004-0000-4000-8000-000000000004'::uuid,
+  'Legacy retry_wait preserves its job identity'
+);
+select is(
+  (select outcome from task8_legacy_prepared where legacy_status = 'processing'),
+  'processing',
+  'Legacy processing remains active in legacy authority'
+);
+select is(
+  (select job_id from task8_legacy_prepared where legacy_status = 'processing'),
+  'fb820005-0000-4000-8000-000000000005'::uuid,
+  'Legacy processing preserves its job identity'
+);
+select is(
+  (select count(*)::integer
+   from public.sdf_initial_confirmation_email_jobs as isolated
+   join task8_legacy_cases as test_case
+     on test_case.request_id = isolated.quote_request_id),
+  0,
+  'No legacy state creates an isolated duplicate authority'
+);
+select is(
+  (select count(*)::integer
+   from task8_legacy_snapshot as snapshot
+   join public.quote_request_email_jobs as job on job.id = snapshot.id
+   where to_jsonb(job) <> snapshot.row_snapshot),
+  0,
+  'Prepare leaves every historical legacy row byte-identical'
+);
+
 create temporary table invalid_prepare as
 select *
 from public.prepare_sdf_initial_confirmation_v2(

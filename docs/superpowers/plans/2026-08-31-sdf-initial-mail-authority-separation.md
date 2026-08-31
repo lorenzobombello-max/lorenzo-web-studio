@@ -538,15 +538,23 @@
 ### Task 8: Make legacy drain exclusive and race-safe
 
 **Files:**
-- Create: none
+- Create: `supabase/migrations/20260901057500_make_sdf_initial_confirmation_legacy_drain_exclusive_v1.sql`
 - Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `scripts/sdf-initial-confirmation-email-concurrency.integration.cjs`
-- Test: both test files
+- Test: both proof files and the full local migration chain through `20260901057500`
 
-**Forward-only prerequisite:** Hard-stop before Task 8 implementation until its compatibility SQL receives a separate forward-only migration path after `20260901050000` and before `20260901060000`. Do not modify committed migration `20260901040000` or the Task-3-only migration `20260901050000`.
+**Forward-only migration:** Add only `20260901057500_make_sdf_initial_confirmation_legacy_drain_exclusive_v1.sql`, after Task-3 authority migration `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql` and Task-5 projection migration `20260901055000_project_sdf_initial_confirmation_completion_v1.sql`. Keep `20260901060000_finalize_sdf_initial_confirmation_email_cutover_v1.sql` reserved and absent.
+
+**Immutable migrations — DO NOT MODIFY:**
+- `20260831110000_add_sdf_qualification_automation_bridge_v1.sql`
+- `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`
+- `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql`
+- `20260901055000_project_sdf_initial_confirmation_completion_v1.sql`
 
 **Interfaces:**
 - Consumes: existing SDF `customer_confirmation` rows in `public.quote_request_email_jobs`
 - Produces: one exclusive authority source per request during cutover
+
+- [ ] Start with a failing pgTAP or real-concurrency test that proves the current legacy lookup and isolated prepare can race into two semantic delivery authorities. Do not use sequential calls as concurrency proof. Make GREEN only with the new `20260901057500` migration plus the two listed proof files.
 
 - [ ] Add fixtures for every legacy state: `sent`, `failed`, `pending`, `retry_wait`, `processing`. Snapshot all columns before invoking v2.
 
@@ -561,13 +569,23 @@
   no row     -> sdf_initial; exactly one new SDF row
   ```
 
-- [ ] In the foundation migration, replace only the SDF-specific `execute_application_intake_automation_sdf_confirmation_v1` body to lock the same request row and fail closed when a new SDF initial job already exists. Preserve its return signature for old Edge instances. Do not modify shared Website tables, indexes or delivery RPCs.
+- [ ] In the new `20260901057500` migration, use forward-only `create or replace function` for `execute_application_intake_automation_sdf_confirmation_v1(bigint,uuid)` with its exact existing public signature. Lock the same production-SDF request row used by `prepare_sdf_initial_confirmation_v2`, then fail closed without creating a shared row when an SDF initial job already exists.
+
+- [ ] In that same new migration, use forward-only `create or replace function` for `prepare_sdf_initial_confirmation_v2(bigint,uuid)` with its exact existing public signature and result type. Retain its read-only legacy lookup under the request-row lock. Normalize legacy `sent` to the existing Task-7 canonical `already_sent` result with no authority source or job-id; for legacy terminal `failed`, move only the matching current SDF work claim to `MANUAL_REVIEW` and return the historical legacy authority without mutating that mail row; for active legacy states, return the same legacy job and state. Never edit a committed migration.
+
+- [ ] Serialize legacy-v1 ownership and isolated-v2 preparation on the same database lock boundary so one request has at most one semantic delivery authority. Legacy owns or isolated owns, never both. Use a database row/advisory-lock/constraint pattern consistent with the existing authority; no in-memory lock and no third queue or retry state.
 
 - [ ] Extend the concurrency script with the rollout race: hold producer-v1 after request lock acquisition, start producer-v2, release v1, and prove v2 selects the legacy row; reverse the order and prove producer-v1 creates no shared row after v2 has created the SDF row.
 
 - [ ] Ensure legacy delivery uses the existing `quote-request-email/{legacy_job_id}` key. Never derive the new namespace for a legacy job.
 
 - [ ] Assert historical rows are byte-identical after preparation. Delivery tests may mutate active legacy statuses only through the existing claim/completion path.
+
+- [ ] Prove all acceptance cases: legacy `sent` and terminal `failed` remain historical evidence without an isolated row or resend; legacy `pending`, `retry_wait` and `processing` remain the sole legacy drain owner with unchanged identity/history; a request with no legacy row gets exactly one isolated row and no new Website row; concurrent ownership produces at most one semantic owner, one provider identity and one send authority; an ordinary Website row is unchanged; Task-3 isolated behavior and Task-5 projection remain unchanged.
+
+- [ ] Keep ordinary Website confirmation, claim, completion, retry, approval/intake and quotation/project behavior frozen. Do not copy legacy rows, create a third mail authority, redesign Task-7 Edge or Task-6 transport, switch production routing, remove a shared scheduler, drain production, deploy or implement Task 9.
+
+- [ ] Apply the full local migration chain in order through `20260901040000`, `20260901050000`, `20260901055000` and new `20260901057500`. Require `20260901060000` to remain absent and reserved. Do not touch a production database.
 
 - [ ] Run and require PASS:
 
@@ -579,7 +597,7 @@
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/tests/sdf_initial_confirmation_email_authority_v1.sql scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
+  git add supabase/migrations/20260901057500_make_sdf_initial_confirmation_legacy_drain_exclusive_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
   git commit -m "feat(sdf): guard legacy initial mail drain"
   ```
 
