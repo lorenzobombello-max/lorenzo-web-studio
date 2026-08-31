@@ -197,6 +197,31 @@ select is(
   'SDF initial-confirmation authority has no Website mail-state dependency'
 );
 
+select has_function(
+  'public',
+  'prepare_sdf_initial_confirmation_v2',
+  array['bigint', 'uuid'],
+  'SDF initial-confirmation prepare authority exists'
+);
+select has_function(
+  'public',
+  'claim_sdf_initial_confirmation_email_job_v1',
+  array['uuid'],
+  'SDF initial-confirmation claim authority exists'
+);
+select has_function(
+  'public',
+  'validate_sdf_initial_confirmation_email_delivery_v1',
+  array['uuid', 'uuid'],
+  'SDF initial-confirmation lease-validation authority exists'
+);
+select has_function(
+  'public',
+  'complete_sdf_initial_confirmation_email_job_v1',
+  array['uuid', 'uuid', 'boolean', 'boolean', 'text', 'text'],
+  'SDF initial-confirmation completion authority exists'
+);
+
 create temporary table website_created as
 select * from public.create_quote_request_idempotent(
   p_idempotency_key => 'fa200000-0000-4000-8000-000000000001',
@@ -473,6 +498,571 @@ insert into public.quote_requests (
   'sdf-isolation@example.test', 'SDF isolation-only fixture.', true,
   'pending', repeat('c', 64), clock_timestamp() + interval '1 day'
 );
+
+insert into lws_internal.application_intake_automation_work (
+  quote_request_id,
+  phase,
+  approval_due_at,
+  next_attempt_at
+)
+select
+  'fa250000-0000-4000-8000-000000000001',
+  'SDF_CONFIRMATION',
+  fixture_clock.created_at,
+  fixture_clock.created_at
+from (select clock_timestamp() as created_at) as fixture_clock
+on conflict (quote_request_id) do update
+set phase = excluded.phase,
+    approval_due_at = excluded.approval_due_at,
+    next_attempt_at = excluded.next_attempt_at;
+
+create temporary table sdf_work_claim as
+with claim_clock as (
+  select clock_timestamp() as claimed_at
+), claimed_work as (
+  update lws_internal.application_intake_automation_work as work
+  set next_attempt_at = claim_clock.claimed_at,
+      claim_token = 'fa260000-0000-4000-8000-000000000001',
+      claimed_by = 'fa260000-0000-4000-8000-000000000002',
+      claimed_at = claim_clock.claimed_at,
+      claim_expires_at = claim_clock.claimed_at + interval '10 minutes'
+  from claim_clock
+  where work.quote_request_id = 'fa250000-0000-4000-8000-000000000001'
+    and work.phase = 'SDF_CONFIRMATION'
+  returning work.work_id, work.claim_token
+)
+select * from claimed_work;
+
+select is(
+  (select count(*)::integer from sdf_work_claim),
+  1,
+  'SDF prepare fixture owns one valid SDF_CONFIRMATION work lease'
+);
+
+do $test_stub$
+begin
+  if to_regprocedure('public.prepare_sdf_initial_confirmation_v2(bigint,uuid)') is null then
+    execute $create_stub$
+      create function public.prepare_sdf_initial_confirmation_v2(bigint, uuid)
+      returns table (
+        outcome text,
+        authority_source text,
+        job_id uuid,
+        job_status text,
+        next_attempt_at timestamptz,
+        request_name text,
+        request_email text,
+        application_reference text,
+        created_at timestamptz,
+        request_kind text,
+        template_version text
+      )
+      language sql
+      as $stub_body$
+        select null::text, null::text, null::uuid, null::text,
+          null::timestamptz, null::text, null::text, null::text,
+          null::timestamptz, null::text, null::text
+        where false
+      $stub_body$
+    $create_stub$;
+  end if;
+
+  if to_regprocedure('public.claim_sdf_initial_confirmation_email_job_v1(uuid)') is null then
+    execute $create_stub$
+      create function public.claim_sdf_initial_confirmation_email_job_v1(uuid)
+      returns table (
+        job_id uuid,
+        quote_request_id uuid,
+        request_name text,
+        request_email text,
+        application_reference text,
+        template_version text,
+        attempt_count integer,
+        provider_idempotency_key text,
+        delivery_lease_token uuid,
+        delivery_lease_expires_at timestamptz
+      )
+      language sql
+      as $stub_body$
+        select null::uuid, null::uuid, null::text, null::text, null::text,
+          null::text, null::integer, null::text, null::uuid, null::timestamptz
+        where false
+      $stub_body$
+    $create_stub$;
+  end if;
+
+  if to_regprocedure('public.validate_sdf_initial_confirmation_email_delivery_v1(uuid,uuid)') is null then
+    execute $create_stub$
+      create function public.validate_sdf_initial_confirmation_email_delivery_v1(uuid, uuid)
+      returns boolean
+      language sql
+      stable
+      as $stub_body$
+        select false
+      $stub_body$
+    $create_stub$;
+  end if;
+
+  if to_regprocedure('public.complete_sdf_initial_confirmation_email_job_v1(uuid,uuid,boolean,boolean,text,text)') is null then
+    execute $create_stub$
+      create function public.complete_sdf_initial_confirmation_email_job_v1(
+        uuid, uuid, boolean, boolean, text, text
+      )
+      returns jsonb
+      language sql
+      as $stub_body$
+        select null::jsonb
+      $stub_body$
+    $create_stub$;
+  end if;
+end;
+$test_stub$;
+
+create temporary table sdf_prepared as
+select *
+from public.prepare_sdf_initial_confirmation_v2(
+  (select work_id from sdf_work_claim),
+  (select claim_token from sdf_work_claim)
+);
+
+select is((select count(*)::integer from sdf_prepared), 1, 'Valid SDF work lease prepares one authority');
+select is((select outcome from sdf_prepared), 'due', 'New SDF initial confirmation is immediately due');
+select is((select authority_source from sdf_prepared), 'sdf_initial', 'Prepare selects isolated SDF authority');
+select is((select job_status from sdf_prepared), 'pending', 'Prepared SDF initial confirmation starts pending');
+select is((select request_kind from sdf_prepared), 'slimme_documentenflow', 'Prepare returns only SDF request identity');
+select is((select template_version from sdf_prepared), 'SDF_REQUEST_RECEIVED_NL_BE_v1', 'Prepare returns canonical SDF template authority');
+select is(
+  (select count(*)::integer from public.sdf_initial_confirmation_email_jobs
+   where quote_request_id = 'fa250000-0000-4000-8000-000000000001'),
+  1,
+  'Prepare creates exactly one semantic SDF initial-confirmation job'
+);
+select is(
+  'sdf-initial-confirmation/' || (select job_id::text from sdf_prepared),
+  'sdf-initial-confirmation/' || (
+    select job_id::text
+    from public.sdf_initial_confirmation_email_jobs
+    where quote_request_id = 'fa250000-0000-4000-8000-000000000001'
+  ),
+  'Prepared job has the stable SDF provider-idempotency identity'
+);
+
+create temporary table sdf_prepared_replay as
+select *
+from public.prepare_sdf_initial_confirmation_v2(
+  (select work_id from sdf_work_claim),
+  (select claim_token from sdf_work_claim)
+);
+
+select is((select job_id from sdf_prepared_replay), (select job_id from sdf_prepared), 'Prepare replay preserves immutable job_id');
+select is(
+  (select count(*)::integer from public.sdf_initial_confirmation_email_jobs
+   where quote_request_id = 'fa250000-0000-4000-8000-000000000001'),
+  1,
+  'Prepare replay preserves one semantic row'
+);
+select is(
+  (select count(*)::integer from public.quote_request_email_jobs
+   where quote_request_id = 'fa250000-0000-4000-8000-000000000001'),
+  0,
+  'SDF prepare creates no Website mail-authority row'
+);
+
+create temporary table sdf_claimed as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from sdf_prepared)
+);
+
+select is((select count(*)::integer from sdf_claimed), 1, 'Due SDF initial confirmation can be claimed once');
+select is((select attempt_count from sdf_claimed), 1, 'SDF claim increments attempt_count exactly once');
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_prepared)),
+  'processing',
+  'SDF claim moves its isolated job to processing'
+);
+select isnt((select delivery_lease_token from sdf_claimed), null::uuid, 'SDF claim issues a unique mail lease token');
+select ok(
+  (select delivery_lease_expires_at > clock_timestamp() + interval '9 minutes 50 seconds'
+   from sdf_claimed),
+  'SDF claim issues the designed ten-minute mail lease'
+);
+select is(
+  (select provider_idempotency_key from sdf_claimed),
+  'sdf-initial-confirmation/' || (select job_id::text from sdf_prepared),
+  'SDF claim returns the stable provider-idempotency key'
+);
+
+create temporary table sdf_second_claim as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from sdf_prepared)
+);
+
+select is((select count(*)::integer from sdf_second_claim), 0, 'Active SDF processing lease cannot be claimed twice');
+
+select ok(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select job_id from sdf_claimed),
+    (select delivery_lease_token from sdf_claimed)
+  ),
+  'Current SDF mail lease validates immediately before provider I/O'
+);
+select is(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select job_id from sdf_claimed),
+    'fa270000-0000-4000-8000-000000000099'
+  ),
+  false,
+  'Wrong SDF mail lease token fails closed'
+);
+select is(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    'fa270000-0000-4000-8000-000000000098',
+    (select delivery_lease_token from sdf_claimed)
+  ),
+  false,
+  'Unknown SDF mail job fails lease validation closed'
+);
+
+update public.sdf_initial_confirmation_email_jobs
+set delivery_lease_expires_at = clock_timestamp() - interval '1 second'
+where job_id = (select job_id from sdf_claimed);
+
+select is(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select job_id from sdf_claimed),
+    (select delivery_lease_token from sdf_claimed)
+  ),
+  false,
+  'Expired SDF mail lease fails validation closed'
+);
+
+create temporary table sdf_reclaimed as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from sdf_claimed)
+);
+
+select is((select count(*)::integer from sdf_reclaimed), 1, 'Expired SDF processing lease is reclaimed once');
+select is((select attempt_count from sdf_reclaimed), 2, 'Stale reclaim increments attempt_count exactly once');
+select isnt(
+  (select delivery_lease_token from sdf_reclaimed),
+  (select delivery_lease_token from sdf_claimed),
+  'Stale reclaim replaces the expired lease token'
+);
+select is(
+  (select provider_idempotency_key from sdf_reclaimed),
+  (select provider_idempotency_key from sdf_claimed),
+  'Stale reclaim preserves the provider-idempotency key'
+);
+select ok(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select job_id from sdf_reclaimed),
+    (select delivery_lease_token from sdf_reclaimed)
+  ),
+  'Replacement SDF mail lease validates'
+);
+
+create temporary table wrong_lease_completion as
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from sdf_reclaimed),
+  'fa270000-0000-4000-8000-000000000097',
+  true,
+  false,
+  null,
+  'must-not-persist'
+) as result;
+
+select is((select result from wrong_lease_completion), null::jsonb, 'Wrong SDF mail lease cannot complete');
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  'processing',
+  'Wrong completion lease leaves SDF job processing'
+);
+
+create temporary table successful_sdf_completion as
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from sdf_reclaimed),
+  (select delivery_lease_token from sdf_reclaimed),
+  true,
+  false,
+  null,
+  'sdf-provider-message-id'
+) as result;
+
+select is((select result->>'status' from successful_sdf_completion), 'sent', 'Valid SDF mail lease completes successfully');
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  'sent',
+  'Successful SDF completion persists terminal sent state'
+);
+select isnt(
+  (select sent_at from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  null::timestamptz,
+  'Successful SDF completion records sent_at'
+);
+select is(
+  (select provider_message_id from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  'sdf-provider-message-id',
+  'Successful SDF completion records provider evidence'
+);
+select is(
+  (select delivery_lease_token from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  null::uuid,
+  'Successful SDF completion clears its mail lease'
+);
+select is(
+  public.validate_sdf_initial_confirmation_email_delivery_v1(
+    (select job_id from sdf_reclaimed),
+    (select delivery_lease_token from sdf_reclaimed)
+  ),
+  false,
+  'Sent SDF job no longer validates for provider delivery'
+);
+select is(
+  public.complete_sdf_initial_confirmation_email_job_v1(
+    (select job_id from sdf_reclaimed),
+    (select delivery_lease_token from sdf_reclaimed),
+    true,
+    false,
+    null,
+    'second-provider-message-id'
+  ),
+  null::jsonb,
+  'SDF completion replay after sent is an idempotent no-op'
+);
+select is(
+  (select provider_message_id from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  'sdf-provider-message-id',
+  'SDF completion replay preserves original provider evidence'
+);
+select is(
+  (select count(*)::integer
+   from public.claim_sdf_initial_confirmation_email_job_v1(
+     (select job_id from sdf_reclaimed))),
+  0,
+  'Sent SDF job cannot be claimed again'
+);
+
+insert into public.quote_requests (
+  id, record_classification, request_kind, sdf_package, name, email,
+  description, privacy_consent, status, approval_token_hash,
+  approval_token_expires_at
+) values
+  ('fa251000-0000-4000-8000-000000000002', 'production', 'slimme_documentenflow', 'start', 'SDF sent fixture', 'sdf-sent@example.test', 'Sent claim fixture.', true, 'pending', repeat('d', 64), clock_timestamp() + interval '1 day'),
+  ('fa252000-0000-4000-8000-000000000003', 'production', 'slimme_documentenflow', 'start', 'SDF failed fixture', 'sdf-failed@example.test', 'Failed claim fixture.', true, 'pending', repeat('e', 64), clock_timestamp() + interval '1 day'),
+  ('fa253000-0000-4000-8000-000000000004', 'production', 'slimme_documentenflow', 'start', 'SDF non-due fixture', 'sdf-nondue@example.test', 'Non-due claim fixture.', true, 'pending', repeat('f', 64), clock_timestamp() + interval '1 day'),
+  ('fa254000-0000-4000-8000-000000000005', 'production', 'slimme_documentenflow', 'start', 'SDF terminal fixture', 'sdf-terminal@example.test', 'Terminal claim fixture.', true, 'pending', repeat('9', 64), clock_timestamp() + interval '1 day');
+
+insert into public.sdf_initial_confirmation_email_jobs (
+  quote_request_id,
+  status,
+  attempt_count,
+  next_attempt_at,
+  sent_at,
+  last_error_code
+) values
+  ('fa251000-0000-4000-8000-000000000002', 'sent', 1, clock_timestamp(), clock_timestamp(), null),
+  ('fa252000-0000-4000-8000-000000000003', 'failed', 5, clock_timestamp(), null, 'TERMINAL_TEST'),
+  ('fa253000-0000-4000-8000-000000000004', 'retry_wait', 0, clock_timestamp() + interval '1 hour', null, 'RETRY_TEST'),
+  ('fa254000-0000-4000-8000-000000000005', 'retry_wait', 4, clock_timestamp(), null, 'RETRY_TEST');
+
+select is(
+  (select count(*)::integer
+   from public.claim_sdf_initial_confirmation_email_job_v1(
+     (select job_id from public.sdf_initial_confirmation_email_jobs
+      where quote_request_id = 'fa251000-0000-4000-8000-000000000002'))),
+  0,
+  'Sent SDF initial confirmation is not claimable'
+);
+select is(
+  (select count(*)::integer
+   from public.claim_sdf_initial_confirmation_email_job_v1(
+     (select job_id from public.sdf_initial_confirmation_email_jobs
+      where quote_request_id = 'fa252000-0000-4000-8000-000000000003'))),
+  0,
+  'Failed SDF initial confirmation is not claimable'
+);
+select is(
+  (select count(*)::integer
+   from public.claim_sdf_initial_confirmation_email_job_v1(
+     (select job_id from public.sdf_initial_confirmation_email_jobs
+      where quote_request_id = 'fa253000-0000-4000-8000-000000000004'))),
+  0,
+  'Non-due retry_wait SDF initial confirmation is not claimable'
+);
+
+insert into lws_internal.application_intake_automation_work (
+  quote_request_id,
+  phase,
+  approval_due_at,
+  next_attempt_at
+)
+select request_id, 'SDF_CONFIRMATION', fixture_clock.created_at, fixture_clock.created_at
+from (
+  values
+    ('fa253000-0000-4000-8000-000000000004'::uuid),
+    ('fa254000-0000-4000-8000-000000000005'::uuid)
+) as fixture(request_id)
+cross join (select clock_timestamp() as created_at) as fixture_clock
+on conflict (quote_request_id) do update
+set phase = excluded.phase,
+    approval_due_at = excluded.approval_due_at,
+    next_attempt_at = excluded.next_attempt_at;
+
+update public.sdf_initial_confirmation_email_jobs
+set next_attempt_at = clock_timestamp()
+where quote_request_id = 'fa253000-0000-4000-8000-000000000004';
+
+create temporary table retry_claim as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from public.sdf_initial_confirmation_email_jobs
+   where quote_request_id = 'fa253000-0000-4000-8000-000000000004')
+);
+
+select is((select attempt_count from retry_claim), 1, 'Retry fixture starts provider attempt one');
+
+create temporary table retry_completion_clock as
+select clock_timestamp() as completed_at;
+
+create temporary table retry_completion as
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from retry_claim),
+  (select delivery_lease_token from retry_claim),
+  false,
+  true,
+  'RESEND_HTTP_503',
+  null
+) as result;
+
+select is((select result->>'status' from retry_completion), 'retry_wait', 'Transient SDF failure schedules retry_wait');
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from retry_claim)),
+  'retry_wait',
+  'Transient SDF failure persists retry_wait in isolated authority'
+);
+select is(
+  (select delivery_lease_token from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from retry_claim)),
+  null::uuid,
+  'Transient SDF failure clears its mail lease'
+);
+select is(
+  (select last_error_code from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from retry_claim)),
+  'RESEND_HTTP_503',
+  'Transient SDF failure records bounded error authority'
+);
+select ok(
+  (select job.next_attempt_at between retry_clock.completed_at + interval '29 seconds'
+                                  and retry_clock.completed_at + interval '31 seconds'
+   from public.sdf_initial_confirmation_email_jobs as job
+   cross join retry_completion_clock as retry_clock
+   where job.job_id = (select job_id from retry_claim)),
+  'Attempt-one SDF retry uses 30-second exponential backoff'
+);
+
+update public.sdf_initial_confirmation_email_jobs
+set next_attempt_at = clock_timestamp()
+where job_id = (select job_id from retry_claim);
+
+create temporary table retry_reclaim as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from retry_claim)
+);
+
+select is((select job_id from retry_reclaim), (select job_id from retry_claim), 'Retry reclaim preserves stable job_id');
+select is((select attempt_count from retry_reclaim), 2, 'Retry reclaim increments to provider attempt two');
+select is(
+  (select provider_idempotency_key from retry_reclaim),
+  (select provider_idempotency_key from retry_claim),
+  'Retry reclaim preserves stable provider-idempotency key'
+);
+
+create temporary table terminal_claim as
+select *
+from public.claim_sdf_initial_confirmation_email_job_v1(
+  (select job_id from public.sdf_initial_confirmation_email_jobs
+   where quote_request_id = 'fa254000-0000-4000-8000-000000000005')
+);
+
+select is((select attempt_count from terminal_claim), 5, 'Terminal fixture claims provider attempt five');
+
+create temporary table terminal_completion as
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from terminal_claim),
+  (select delivery_lease_token from terminal_claim),
+  false,
+  true,
+  'RESEND_HTTP_503',
+  null
+) as result;
+
+select is((select result->>'status' from terminal_completion), 'failed', 'Attempt-five SDF failure becomes terminal failed');
+select is(
+  (select status from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from terminal_claim)),
+  'failed',
+  'Terminal SDF failure persists failed state'
+);
+select is(
+  (select delivery_lease_token from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from terminal_claim)),
+  null::uuid,
+  'Terminal SDF failure clears its mail lease'
+);
+select is(
+  (select phase from lws_internal.application_intake_automation_work
+   where quote_request_id = 'fa254000-0000-4000-8000-000000000005'),
+  'MANUAL_REVIEW',
+  'Terminal SDF failure moves only matching SDF work to MANUAL_REVIEW'
+);
+
+create temporary table invalid_prepare as
+select *
+from public.prepare_sdf_initial_confirmation_v2(
+  (select work_id from sdf_work_claim),
+  'fa260000-0000-4000-8000-000000000099'
+);
+
+select is((select count(*)::integer from invalid_prepare), 0, 'Wrong work lease fails SDF prepare closed');
+
+create temporary table website_work_claim as
+with claim_clock as (
+  select clock_timestamp() as claimed_at
+), claimed_work as (
+  update lws_internal.application_intake_automation_work as work
+  set phase = 'SDF_CONFIRMATION',
+      next_attempt_at = claim_clock.claimed_at,
+      claim_token = 'fa260000-0000-4000-8000-000000000011',
+      claimed_by = 'fa260000-0000-4000-8000-000000000012',
+      claimed_at = claim_clock.claimed_at,
+      claim_expires_at = claim_clock.claimed_at + interval '10 minutes'
+  from claim_clock
+  where work.quote_request_id = (select request_id from website_created)
+  returning work.work_id, work.claim_token
+)
+select * from claimed_work;
+
+create temporary table website_prepare_rejected as
+select *
+from public.prepare_sdf_initial_confirmation_v2(
+  (select work_id from website_work_claim),
+  (select claim_token from website_work_claim)
+);
+
+select is((select count(*)::integer from website_prepare_rejected), 0, 'Website request is not valid for SDF prepare authority');
 
 select is(
   (select jsonb_agg(to_jsonb(job) order by job.id)

@@ -32,7 +32,8 @@
 
 ### Files created during local implementation
 
-- `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`: additive table, integrity guards, SDF RPCs, projection and temporary legacy-safe producer guard.
+- `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`: committed Task-2 additive table and integrity boundary; immutable after checkpoint `f2fc45895936ee7bbeb4b7dc55c2fa7e7de8bbfb`.
+- `supabase/migrations/20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql`: forward-only Task-3 prepare, claim, lease-validation, completion and retry/failure authorities plus their grants and revokes; consumes but does not redefine the Task-2 table.
 - `supabase/functions/_shared/resend-transport.ts`: stateless Resend HTTP transport.
 - `supabase/functions/_shared/resend-transport.test.ts`: transport-only Deno tests.
 - `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`: pgTAP authority, isolation and cutover-contract tests.
@@ -46,7 +47,7 @@
 
 ### Deferred file created only after production drain proof
 
-- `supabase/migrations/20260901050000_finalize_sdf_initial_confirmation_email_cutover_v1.sql`: remove temporary legacy selection from the SDF producer without deleting historical rows.
+- `supabase/migrations/20260901060000_finalize_sdf_initial_confirmation_email_cutover_v1.sql`: remove temporary legacy selection from the SDF producer without deleting historical rows.
 
 ### Explicitly untouched files
 
@@ -207,8 +208,9 @@
 ### Task 3: Add SDF prepare, claim, lease and completion authorities
 
 **Files:**
-- Create: none
-- Modify: `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`
+- Create: `supabase/migrations/20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql`
+- Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`
+- Do not modify: `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`
 - Test: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`
 
 **Interfaces:**
@@ -228,7 +230,7 @@
 
   The completion parameters are `job_id`, `delivery_lease_token`, `succeeded`, `retryable`, `error_code`, `provider_message_id`. Mail completion is authorized exclusively by the mail lease; it does not consume or own a work claim.
 
-- [ ] Assert the initial failure is missing functions, then add all four functions to the same unreleased migration.
+- [ ] Assert the initial failure is missing functions, then add all four functions to the new forward-only `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql` migration. Consume the table created by committed Task-2 migration `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`; do not redefine or modify that migration.
 
 - [ ] Implement `prepare_sdf_initial_confirmation_v2` with this transaction order:
 
@@ -280,12 +282,12 @@
 
 - [ ] Add tests for wrong request kind, internal fixture rejection, invalid/expired work lease, idempotent prepare, due claim, non-due refusal, wrong lease validation, expired lease recovery, retry progression and terminal attempt 5.
 
-- [ ] Apply the migration from a clean local reset and require the focused pgTAP test to PASS.
+- [ ] Apply the full migration chain, including the new forward-only Task-3 migration, from a clean local reset and require the focused pgTAP test to PASS.
 
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql
+  git add supabase/migrations/20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql
   git commit -m "feat(sdf): add initial mail delivery authority"
   ```
 
@@ -336,8 +338,10 @@
 
 **Files:**
 - Create: none
-- Modify: `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_qualification_automation_bridge_v1.sql`
+- Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_qualification_automation_bridge_v1.sql`
 - Test: both pgTAP files
+
+**Forward-only prerequisite:** Hard-stop before Task 5 implementation until a separate forward-only migration path after `20260901050000` and before `20260901060000` is explicitly approved. Do not modify committed migration `20260901040000` or the Task-3-only migration `20260901050000`.
 
 **Interfaces:**
 - Consumes: durable `sent_at` from the new SDF job
@@ -371,7 +375,7 @@
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_qualification_automation_bridge_v1.sql
+  git add supabase/tests/sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_qualification_automation_bridge_v1.sql
   git commit -m "feat(sdf): project isolated confirmation completion"
   ```
 
@@ -492,8 +496,10 @@
 
 **Files:**
 - Create: none
-- Modify: `supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `scripts/sdf-initial-confirmation-email-concurrency.integration.cjs`
+- Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `scripts/sdf-initial-confirmation-email-concurrency.integration.cjs`
 - Test: both test files
+
+**Forward-only prerequisite:** Hard-stop before Task 8 implementation until its compatibility SQL receives a separate forward-only migration path after `20260901050000` and before `20260901060000`. Do not modify committed migration `20260901040000` or the Task-3-only migration `20260901050000`.
 
 **Interfaces:**
 - Consumes: existing SDF `customer_confirmation` rows in `public.quote_request_email_jobs`
@@ -530,7 +536,7 @@
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/migrations/20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
+  git add supabase/tests/sdf_initial_confirmation_email_authority_v1.sql scripts/sdf-initial-confirmation-email-concurrency.integration.cjs
   git commit -m "feat(sdf): guard legacy initial mail drain"
   ```
 
@@ -649,13 +655,13 @@ Every task below requires a new, explicit user authorization. Do not execute any
 - Test: production read-only preflight and migration verification
 
 **Interfaces:**
-- Consumes: approved local checkpoint and migration `20260901040000`
+- Consumes: approved local checkpoint and forward-only migrations `20260901040000` and `20260901050000`; hard-stop unless later SQL tasks have separately approved forward-only migrations
 - Produces: additive production schema with no active producer switch
 
 - [ ] Re-run the exact preservation gate against the then-current approved production SHA.
 - [ ] Query production read-only counts of legacy SDF `customer_confirmation` rows grouped by `status`; list each active job-id, attempt count, next-attempt time and lock age.
 - [ ] Hard-stop if a legacy `sent` row has null `quote_requests.confirmation_sent_at`, if one request has more than one semantic confirmation, or if an active row cannot be tied to a production SDF request.
-- [ ] Apply only `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql` through the repository's approved Supabase release procedure. Do not deploy Edge in this task.
+- [ ] Apply `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql` followed by `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql` through the repository's approved Supabase release procedure, together with any separately approved forward-only migrations required by later SQL tasks. Do not deploy Edge in this task.
 - [ ] Verify read-only that the new table/RPCs exist, contain zero rows, all legacy rows are unchanged, and a Website smoke transaction rolls back successfully.
 - [ ] Record schema release evidence separately from code deployment evidence.
 
@@ -715,7 +721,7 @@ Every task below requires a new, explicit user authorization. Do not execute any
 ### Task 15: Finalize legacy removal after separate approval
 
 **Files:**
-- Create: `supabase/migrations/20260901050000_finalize_sdf_initial_confirmation_email_cutover_v1.sql`
+- Create: `supabase/migrations/20260901060000_finalize_sdf_initial_confirmation_email_cutover_v1.sql`
 - Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `supabase/functions/application-intake-automation/index.ts`, `supabase/functions/application-intake-automation/handler.test.ts`
 - Test: focused isolation suite and full migration chain
 
