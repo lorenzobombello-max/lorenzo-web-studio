@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(32);
+select plan(37);
 
 select has_function(
   'public', 'can_purge_sdf_dossier_v1', array['uuid'],
@@ -25,8 +25,10 @@ select ok(
 );
 select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
-    like '%sdf_quotation_preparation_authorities%',
-  'quotation preparation authority remains a hard blocker'
+    not like '%from public.sdf_quotations%'
+  and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
+    not like '%from public.sdf_quotation_preparation_authorities%',
+  'quotation identity and preparation authority are not purge blockers'
 );
 select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
@@ -39,10 +41,8 @@ select ok(
 );
 select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
-    like '%sdf_m1_invoice_candidates%'
-  and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
     like '%sdf_m1_invoice_issuances%',
-  'invoice candidate and issuance remain hard blockers'
+  'issued invoices remain hard blockers'
 );
 select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
@@ -55,12 +55,14 @@ select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
     like '%commercial_projects%'
   and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
+    not like '%from public.sdf_projects%'
+  and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
     like '%payment_expectations%'
   and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
     like '%payment_evidence%'
   and pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
     like '%payment_reconciliations%',
-  'generic projects and all payment layers remain hard blockers'
+  'commercial projects and all payment layers remain hard blockers while project identity is not'
 );
 select ok(
   pg_get_functiondef('lws_internal.sdf_dossier_purge_block_reason_v1(uuid)'::regprocedure)
@@ -89,7 +91,8 @@ insert into public.quote_requests (
   ('fc100003-0000-4000-8000-000000000003', 'production', 'website', null, 'Website control', 'website@example.test', 'business', 'Meer dan EUR 6.000', 'flexible', 'Website isolation fixture.', true, 'approved'),
   ('fc100004-0000-4000-8000-000000000004', 'production', 'slimme_documentenflow', 'start', 'Active control', 'active@example.test', null, null, null, 'Active state fixture.', true, 'approved'),
   ('fc100005-0000-4000-8000-000000000005', 'production', 'slimme_documentenflow', 'start', 'Project blocked', 'project@example.test', null, null, null, 'Project blocker fixture.', true, 'approved'),
-  ('fc100006-0000-4000-8000-000000000006', 'production', 'slimme_documentenflow', 'start', 'Customer blocked', 'customer@example.test', null, null, null, 'Customer blocker fixture.', true, 'approved');
+  ('fc100006-0000-4000-8000-000000000006', 'production', 'slimme_documentenflow', 'start', 'Customer blocked', 'customer@example.test', null, null, null, 'Customer blocker fixture.', true, 'approved'),
+  ('fc100007-0000-4000-8000-000000000007', 'production', 'slimme_documentenflow', 'start', 'Acceptance blocked', 'acceptance@example.test', null, null, null, 'Accepted quotation blocker fixture.', true, 'approved');
 
 insert into public.sdf_qualification_intakes (
   intake_id, quote_request_id, customer_capability_digest,
@@ -133,14 +136,42 @@ insert into public.sdf_initial_confirmation_email_jobs (
   'fc100001-0000-4000-8000-000000000001', 'pending', 0, clock_timestamp()
 );
 
-insert into public.sdf_quotations (quotation_id, quote_request_id) values (
+insert into public.sdf_quotations (quotation_id, quote_request_id) values
+  ('fc300000-0000-4000-8000-000000000001', 'fc100001-0000-4000-8000-000000000001'),
+  ('fc300000-0000-4000-8000-000000000002', 'fc100002-0000-4000-8000-000000000002'),
+  ('fc300000-0000-4000-8000-000000000007', 'fc100007-0000-4000-8000-000000000007');
+insert into public.sdf_quotation_preparation_authorities (
+  authority_id, quote_request_id, quotation_id, qualification_intake_id,
+  taxonomy_version, submission_sequence, submission_sha256, completion_event_id,
+  sdf_package, pricing_authority_version, pricing_authority_sha256,
+  actor_operator_id, actor_role, idempotency_key, request_fingerprint
+) values (
+  'fc305000-0000-4000-8000-000000000001',
+  'fc100001-0000-4000-8000-000000000001',
   'fc300000-0000-4000-8000-000000000001',
-  'fc100002-0000-4000-8000-000000000002'
+  'fc200000-0000-4000-8000-000000000001',
+  'sdf_qualification_intake/1.0.0', 1, repeat('2', 64),
+  'fc220000-0000-4000-8000-000000000001', 'start', 1, repeat('5', 64),
+  'fc010000-0000-4000-8000-000000000001', 'owner',
+  'fc305000-0000-4000-8000-000000000002', repeat('6', 64)
 );
-insert into public.sdf_projects (project_id, quote_request_id) values (
-  'fc310000-0000-4000-8000-000000000001',
-  'fc100005-0000-4000-8000-000000000005'
+insert into public.sdf_quotation_documents (
+  quotation_id, quotation_date, valid_until, prepared_at,
+  document_reference, document_sha256
+) values
+  ('fc300000-0000-4000-8000-000000000001', current_date, current_date + 30,
+   clock_timestamp(), 'fixtures/sdf-draft.docx', repeat('7', 64)),
+  ('fc300000-0000-4000-8000-000000000007', current_date, current_date + 30,
+   clock_timestamp(), 'fixtures/sdf-accepted.docx', repeat('8', 64));
+insert into public.sdf_quotation_acceptances (
+  quotation_id, accepted_at, document_reference, document_sha256
+) values (
+  'fc300000-0000-4000-8000-000000000007', clock_timestamp(),
+  'fixtures/sdf-accepted.docx', repeat('8', 64)
 );
+insert into public.sdf_projects (project_id, quote_request_id) values
+  ('fc310000-0000-4000-8000-000000000001', 'fc100001-0000-4000-8000-000000000001'),
+  ('fc310000-0000-4000-8000-000000000005', 'fc100005-0000-4000-8000-000000000005');
 set local session_replication_role = replica;
 insert into public.customer_requests (
   request_id, request_reference, quote_request_id, source, request_type,
@@ -175,18 +206,23 @@ select pg_temp.trash_sdf_dossier('fc100002-0000-4000-8000-000000000002', 'fc4000
 select pg_temp.trash_sdf_dossier('fc100003-0000-4000-8000-000000000003', 'fc400003-0000-4000-8000-000000000003');
 select pg_temp.trash_sdf_dossier('fc100005-0000-4000-8000-000000000005', 'fc400005-0000-4000-8000-000000000005');
 select pg_temp.trash_sdf_dossier('fc100006-0000-4000-8000-000000000006', 'fc400006-0000-4000-8000-000000000006');
+select pg_temp.trash_sdf_dossier('fc100007-0000-4000-8000-000000000007', 'fc400007-0000-4000-8000-000000000007');
 
 select is(
   public.can_purge_sdf_dossier_v1('fc100001-0000-4000-8000-000000000001')->>'can_purge',
-  'true', 'trashed technical-only SDF dossier is eligible'
+  'true', 'preparation, generated draft, and identity project do not block purge'
 );
 select is(
-  public.can_purge_sdf_dossier_v1('fc100002-0000-4000-8000-000000000002')->>'reason',
-  'SDF_QUOTATION_EXISTS', 'SDF quotation blocks purge with exact reason'
+  public.can_purge_sdf_dossier_v1('fc100002-0000-4000-8000-000000000002')->>'can_purge',
+  'true', 'quotation identity foundation alone does not block purge'
 );
 select is(
-  public.can_purge_sdf_dossier_v1('fc100005-0000-4000-8000-000000000005')->>'reason',
-  'PROJECT_EXISTS', 'SDF project blocks purge'
+  public.can_purge_sdf_dossier_v1('fc100005-0000-4000-8000-000000000005')->>'can_purge',
+  'true', 'SDF project identity foundation alone does not block purge'
+);
+select is(
+  public.can_purge_sdf_dossier_v1('fc100007-0000-4000-8000-000000000007')->>'reason',
+  'QUOTATION_ACCEPTANCE_EXISTS', 'accepted SDF quotation blocks purge'
 );
 select is(
   public.can_purge_sdf_dossier_v1('fc100006-0000-4000-8000-000000000006')->>'reason',
@@ -217,10 +253,10 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000001', true);
 select throws_ok(
   $$select public.purge_sdf_dossier_v1(
-    'fc100002-0000-4000-8000-000000000002', 'Cleanup',
-    'fc500000-0000-4000-8000-000000000002'
+    'fc100007-0000-4000-8000-000000000007', 'Cleanup',
+    'fc500000-0000-4000-8000-000000000007'
   )$$,
-  '55000', 'SDF_QUOTATION_EXISTS', 'quotation-blocked dossier cannot purge'
+  '55000', 'QUOTATION_ACCEPTANCE_EXISTS', 'accepted quotation dossier cannot purge'
 );
 select is(
   public.purge_sdf_dossier_v1(
@@ -258,6 +294,26 @@ select is(
   (select count(*)::integer from public.sdf_initial_confirmation_email_jobs
    where quote_request_id = 'fc100001-0000-4000-8000-000000000001'),
   0, 'initial confirmation jobs are deleted'
+);
+select is(
+  (select count(*)::integer from public.sdf_quotation_preparation_authorities
+   where quote_request_id = 'fc100001-0000-4000-8000-000000000001'),
+  0, 'quotation preparation authority is deleted child-first'
+);
+select is(
+  (select count(*)::integer from public.sdf_quotation_documents
+   where quotation_id = 'fc300000-0000-4000-8000-000000000001'),
+  0, 'unaccepted generated quotation document is deleted'
+);
+select is(
+  (select count(*)::integer from public.sdf_quotations
+   where quote_request_id = 'fc100001-0000-4000-8000-000000000001'),
+  0, 'quotation identity foundation is deleted'
+);
+select is(
+  (select count(*)::integer from public.sdf_projects
+   where quote_request_id = 'fc100001-0000-4000-8000-000000000001'),
+  0, 'project identity foundation is deleted'
 );
 select is(
   (select count(*)::integer from lws_internal.application_intake_automation_work

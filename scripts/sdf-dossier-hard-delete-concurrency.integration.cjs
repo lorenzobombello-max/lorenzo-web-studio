@@ -183,15 +183,15 @@ async function main() {
     await proveBlocked("lws_sdf_purge_after_quotation", "lws_sdf_quotation_winner");
     const quotationWinner = await holdingSession.release();
     holdingSession = null;
-    const purgeLoser = await purgeWaiter;
+    const purgeAfterQuotation = await purgeWaiter;
     if (quotationWinner.code !== 0) throw new Error(`QUOTATION_WINNER_FAILED:${JSON.stringify(quotationWinner)}`);
-    if (purgeLoser.code === 0 || !purgeLoser.stderr.includes("SDF_QUOTATION_EXISTS")) {
-      throw new Error(`PURGE_DID_NOT_FAIL_CLOSED:${JSON.stringify(purgeLoser)}`);
+    if (purgeAfterQuotation.code !== 0) {
+      throw new Error(`PURGE_AFTER_QUOTATION_FAILED:${JSON.stringify(purgeAfterQuotation)}`);
     }
-    if (query(`select count(*)=1 from public.quote_requests where id='${quotationWinsRequestId}'`) !== "t"
-        || query(`select count(*)=1 from public.sdf_quotations where quotation_id='${quotationWinsId}'`) !== "t"
-        || query(`select count(*)=0 from lws_internal.dossier_purge_tombstones where quote_request_id='${quotationWinsRequestId}'`) !== "t") {
-      throw new Error("QUOTATION_WINNER_LEFT_SPLIT_STATE");
+    if (query(`select count(*)=0 from public.quote_requests where id='${quotationWinsRequestId}'`) !== "t"
+        || query(`select count(*)=0 from public.sdf_quotations where quotation_id='${quotationWinsId}'`) !== "t"
+        || query(`select count(*)=1 from lws_internal.dossier_purge_tombstones where quote_request_id='${quotationWinsRequestId}'`) !== "t") {
+      throw new Error("PURGE_AFTER_QUOTATION_LEFT_SPLIT_STATE");
     }
 
     holdingSession = startHoldingSession(`
@@ -229,7 +229,7 @@ async function main() {
     process.stdout.write(JSON.stringify({
       test_context: "LOCAL_TEST_ONLY",
       quotation_winner_lock_wait_proven: true,
-      quotation_winner_result: "SDF_QUOTATION_EXISTS",
+      quotation_winner_result: "PURGED_WITH_FOUNDATION_CLEANUP",
       purge_winner_lock_wait_proven: true,
       purge_winner_result: "SDF_QUOTATION_APPLICATION_NOT_FOUND",
       split_state_observed: false,
