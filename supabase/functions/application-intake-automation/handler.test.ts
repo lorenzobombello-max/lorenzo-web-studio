@@ -746,3 +746,44 @@ Deno.test("already-sent SDF invitation reconciliation never reaches provider del
   assertEquals(decryptCalls, 0);
   assertEquals(providerCalls, 0);
 });
+
+Deno.test("SDF invitation delivery preserves the exact provider payload contract", async () => {
+  const createExecutor = await sdfInvitationExecutorFactory();
+  const providerRequests: Array<{ url: string; init: RequestInit }> = [];
+  const execute = createExecutor({
+    siteUrl: "https://lorenzowebsolutions.be",
+    resendApiKey: "resend-test-key",
+    fromEmail: "Lorenzo Web Solutions <offertes@mail.lorenzobombello.be>",
+    createCapabilityMaterial: async () => ({ digest: "a".repeat(64), encrypted: "encrypted-capability" }),
+    decryptCapability: async () => "TEST_TOKEN",
+    fetchProvider: async (input, init = {}) => {
+      providerRequests.push({ url: String(input), init });
+      return new Response('{"id":"provider-message-1"}', { status: 200, headers: { "content-type": "application/json" } });
+    },
+    rpc: async (name) => {
+      if (name === "execute_application_intake_automation_sdf_intake_v1") return { data: {
+        outcome: "invitation_pending", job_id: sdfJobId, intake_id: "77777777-7777-4777-8777-777777777777",
+        request_id: sdfClaim.quote_request_id, request_name: "SDF klant", request_email: "customer@example.test",
+        template_version: "SDF_QUALIFICATION_INTAKE_INVITATION_NL_BE_v1", encrypted_capability: "encrypted-capability",
+        customer_capability_digest: "a".repeat(64), expires_at: "2099-01-01T00:00:00Z",
+      }, error: null };
+      if (name === "claim_sdf_qualification_email_job_v1") return { data: { delivery_lease_token: sdfLeaseToken }, error: null };
+      if (name === "validate_sdf_qualification_email_delivery_v1") return { data: true, error: null };
+      if (name === "resolve_sdf_support_reference_v1") return { data: "#A1B2C3D4", error: null };
+      if (name === "complete_sdf_qualification_email_job_v1") return { data: { status: "sent", attempt_count: 1 }, error: null };
+      throw new Error(`unexpected RPC: ${name}`);
+    },
+  });
+
+  assertEquals(await execute({ ...sdfClaim, phase: "SDF_INTAKE" }), { status: "sent", attempted: true, attemptCount: 1 });
+  assertEquals(providerRequests.length, 1);
+  const providerRequest = providerRequests[0];
+  assertEquals(providerRequest.url, "https://api.resend.com/emails");
+  assertEquals(new Headers(providerRequest.init.headers).get("Idempotency-Key"), `sdf-qualification-email/${sdfJobId}`);
+  const payload = JSON.parse(String(providerRequest.init.body));
+  assertEquals(payload.from, "Lorenzo Web Solutions <offertes@mail.lorenzobombello.be>");
+  assertEquals(payload.to, ["customer@example.test"]);
+  assertEquals(payload.subject, "Uw SDF-intake staat klaar — #A1B2C3D4");
+  assertEquals(typeof payload.html, "string");
+  assertEquals(typeof payload.text, "string");
+});

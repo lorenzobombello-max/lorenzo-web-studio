@@ -92,13 +92,16 @@ export type QuotationEmailTemplate =
 
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
 
-function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string) {
+function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string, preheader = "") {
+  const hiddenPreheader = preheader
+    ? `<div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${escapeHtml(preheader)}</div>`
+    : "";
   return {
     subject,
     html: `<!doctype html>
 <html lang="nl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
-<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+<body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">${hiddenPreheader}
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f5f7" style="width:100%;background-color:#f3f5f7;">
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;">
@@ -158,18 +161,18 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
           <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
             <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">OPEN UW SDF-INTAKE</a></td></tr>
           </table>
-          <p style="margin:0 0 20px;color:#5a6475;font-size:13px;overflow-wrap:anywhere;word-break:break-word;">Werkt de knop niet? Kopieer dan deze link in uw browser:<br><a href="${safeUrl}" style="color:#12346b;text-decoration:underline;">${safeUrl}</a></p>
+          <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Werkt de knop niet? Neem contact met ons op en vermeld dossier ${safeReference}.</p>
           <p style="margin:0 0 16px;color:#5a6475;font-size:14px;">De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.</p>
           <p style="margin:0 0 16px;">Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.</p>
           <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
     `Beste ${customerName},`, "",
     "Uw SDF-intake staat klaar.", "",
     `Dossierreferentie: ${data.supportReference}`, "",
-    "Open uw intake:", data.intakeUrl, "",
+    "Open uw beveiligde SDF-intake:", data.intakeUrl, "",
     "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.", "",
     "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
-  ].join("\n"));
+  ].join("\n"), `Uw persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`);
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {

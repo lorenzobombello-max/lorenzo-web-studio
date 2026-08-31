@@ -1,6 +1,7 @@
 import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   buildAdminNotificationEmail,
+  buildIntakeInvitationEmail,
   buildQuotationEmail,
   buildSdfQualificationInvitationEmail,
   buildSdfQualificationMoreInformationEmail,
@@ -126,24 +127,40 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
   assertStringIncludes(confirmation.html, "#E07F8F06");
   assertStringIncludes(confirmation.text, "Referentie: #E07F8F06");
   assertStringIncludes(confirmation.html, "Klant &lt;script&gt;");
+  assertFalse(confirmation.html.includes("Uw persoonlijke SDF-intake voor dossier"));
 
+  const intakeUrl = "https://example.test/pages/sdf-qualification-intake.html#token=TEST_TOKEN";
   const invitation = buildSdfQualificationInvitationEmail({
     customerName: "Testklant <script>\r\nBCC: ongewenst@example.test",
     supportReference: "#E07F8F06",
-    intakeUrl: "https://example.test/pages/sdf-qualification-intake.html?next=&quot;unsafe#token=secret&amp;value",
+    intakeUrl,
   });
   assertEquals(invitation.subject, "Uw SDF-intake staat klaar — #E07F8F06");
+  assertEquals(invitation.subject.includes("TEST_TOKEN"), false);
+  assertEquals(invitation.html.split(intakeUrl).length - 1, 1);
+  assertEquals(invitation.text.split(intakeUrl).length - 1, 1);
   assertStringIncludes(invitation.html, "Dossierreferentie");
   assertStringIncludes(invitation.html, "#E07F8F06");
   assertStringIncludes(invitation.html, "OPEN UW SDF-INTAKE");
+  assertStringIncludes(invitation.html, `href="${intakeUrl}"`);
+  assertStringIncludes(invitation.html, "Uw persoonlijke SDF-intake voor dossier #E07F8F06 staat klaar.");
   assertStringIncludes(invitation.html, "Werkt de knop niet?");
   assertStringIncludes(invitation.html, "Testklant &lt;script&gt;");
   assertFalse(invitation.text.includes("\nBCC:"));
-  assertStringIncludes(invitation.html, "&amp;quot;unsafe");
+  assertFalse(invitation.html.includes(`>${intakeUrl}<`));
   assertStringIncludes(invitation.text, "Dossierreferentie: #E07F8F06");
-  assertStringIncludes(invitation.text, "Open uw intake:\nhttps://example.test/pages/sdf-qualification-intake.html?next=&quot;unsafe#token=secret&amp;value");
+  assertStringIncludes(invitation.text, `Open uw beveiligde SDF-intake:\n${intakeUrl}`);
   assertStringIncludes(invitation.text, "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.");
   assertStringIncludes(invitation.text, "leidt niet automatisch tot een offerte of prijsbevestiging");
+
+  const websiteInvitation = buildIntakeInvitationEmail({
+    clientName: "Websiteklant",
+    company: "Website BV",
+    requestId: "a1800000-0000-4000-8000-000000000091",
+    intakeUrl: "https://example.test/pages/intake.html?token=WEBSITE_TOKEN",
+  });
+  assertStringIncludes(websiteInvitation.html, "De volgende stap voor je website is klaar.");
+  assertStringIncludes(websiteInvitation.html, "Werkt de knop niet? Open dan:");
 
   const otherReference = buildSdfQualificationInvitationEmail({
     customerName: "Andere klant",
