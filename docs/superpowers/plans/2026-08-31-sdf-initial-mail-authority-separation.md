@@ -349,19 +349,21 @@
 ### Task 5: Project successful SDF completion without mail ownership duplication
 
 **Files:**
-- Create: none
+- Create: `supabase/migrations/20260901055000_project_sdf_initial_confirmation_completion_v1.sql`
 - Modify: `supabase/tests/sdf_initial_confirmation_email_authority_v1.sql`, `supabase/tests/sdf_qualification_automation_bridge_v1.sql`
 - Test: both pgTAP files
 
-**Forward-only prerequisite:** Hard-stop before Task 5 implementation until a separate forward-only migration path after `20260901050000` and before `20260901060000` is explicitly approved. Do not modify committed migration `20260901040000` or the Task-3-only migration `20260901050000`.
+**Forward-only migration order:** Consume committed Task-2 schema `20260901040000_add_sdf_initial_confirmation_email_authority_v1.sql` and committed Task-3 authorities `20260901050000_add_sdf_initial_confirmation_mail_authorities_v1.sql` without modifying either file. Add only `20260901055000_project_sdf_initial_confirmation_completion_v1.sql` for this projection. Keep `20260901060000_finalize_sdf_initial_confirmation_email_cutover_v1.sql` reserved for future post-drain finalization. The required order is `01040000` -> `01050000` -> `01055000` -> later transport/Edge/cutover tasks -> future `01060000`.
 
 **Interfaces:**
 - Consumes: durable `sent_at` from the new SDF job
 - Produces: one-way `quote_requests.confirmation_sent_at` projection and existing `SDF_INTAKE` scheduling
 
-- [ ] First add failing tests proving that successful SDF completion sets `quote_requests.confirmation_sent_at` to the new job's `sent_at`, changes the matching work phase once to `SDF_INTAKE`, and sets qualification invitation due time to `sent_at + interval '120 seconds'`.
+- [ ] First add failing tests proving that successful SDF completion sets `quote_requests.confirmation_sent_at` exactly once to the durable isolated job's `sent_at`, changes the matching work phase once to `SDF_INTAKE`, and sets qualification invitation due time to the projected confirmation time plus `interval '120 seconds'`. Verify RED because the `01055000` projection function and trigger do not yet exist; do not manufacture a failure in inherited Task-1 through Task-4 behavior.
 
-- [ ] Add `lws_internal.advance_sdf_automation_from_initial_confirmation_v1` and a trigger only on `public.sdf_initial_confirmation_email_jobs`. Guard all work with a join that requires production SDF. Use:
+- [ ] Add negative and replay tests proving `processing`, `retry_wait` and `failed` never project; completion replay or an update with unchanged `sent_at` never advances twice or creates a second invitation; a Website request never receives this SDF projection; and `public.quote_request_email_jobs` remains byte-identical.
+
+- [ ] Create only `20260901055000_project_sdf_initial_confirmation_completion_v1.sql` for GREEN. Add `lws_internal.advance_sdf_automation_from_initial_confirmation_v1` and one trigger only on `public.sdf_initial_confirmation_email_jobs`. The trigger must react only to a relevant transition into durable `sent` with non-null `sent_at`; require `new.status = 'sent'`, `new.sent_at is not null`, and an `OLD`/`NEW` distinct-transition guard so replay and unchanged updates do nothing. Guard the projection with a matching `public.quote_requests` row whose `request_kind = 'slimme_documentenflow'` and `record_classification = 'production'`. Do not fire projection behavior for `processing`, `retry_wait` or `failed`, and do not add recursive projection or any trigger to a Website mail table. Use:
 
   ```sql
   update public.quote_requests
@@ -371,23 +373,30 @@
      and record_classification='production';
   ```
 
-- [ ] Reuse the existing downstream `advance_sdf_automation_after_confirmation_v1` projection from `quote_requests.confirmation_sent_at`; do not duplicate Website mail completion logic and do not add a trigger to `public.quote_request_email_jobs`.
+- [ ] Treat `public.quote_requests.confirmation_sent_at` as the approved neutral one-way correlation/readmodel projection, not Website mail ownership. Set it once with `coalesce`; never read Website mail status as authority, create/claim/complete/retry a Website mailjob, or fall back to Website mail authority.
 
-- [ ] Prove that replaying completion or an update with unchanged `sent_at` does not advance twice, create a qualification job, or alter a Website request.
+- [ ] Reuse the existing `lws_internal.advance_sdf_automation_after_confirmation_v1` trigger path from `quote_requests.confirmation_sent_at`. It remains the sole downstream authority that transitions the matching workrow to `SDF_INTAKE` and releases the existing qualification invitation at confirmation time plus 120 seconds. Do not duplicate the work transition, invitation scheduling, workqueue or lifecycle state machine inside the new projection function, and do not add or modify a trigger on `public.quote_request_email_jobs`.
+
+- [ ] Define the new projection function with a fixed `search_path` containing only required trusted schemas and `pg_catalog`. Use `SECURITY DEFINER` only because the trigger requires trusted server-side projection across protected tables, and require ownership by the repository's trusted database migration role. Revoke execute from `PUBLIC`, `anon`, `authenticated` and `service_role`; because the function is trigger-only, grant no client or direct service-role execute privilege. Expose no user-controlled SQL execution surface and include no secrets or provider configuration.
 
 - [ ] Update only the old bridge assertions that locate SDF initial confirmation in the shared table. Keep all qualification invitation, submission, reissue and quotation-preparation assertions intact.
 
-- [ ] Run both focused suites and require PASS:
+- [ ] After creating `01055000`, apply the full local migration chain first, then require the same Task-5 tests, both focused suites and the Website preservation regressions to pass. Task 5 has no production database operation. Require PASS:
 
   ```powershell
+  npx supabase db reset
   npx supabase test db supabase/tests/sdf_initial_confirmation_email_authority_v1.sql
   npx supabase test db supabase/tests/sdf_qualification_automation_bridge_v1.sql
+  npx supabase test db supabase/tests/quote_request_review_partial_conflict_target.sql
+  npx supabase test db supabase/tests/request_kind_contract.sql
   ```
+
+- [ ] Keep stateless Resend transport, provider delivery, Edge delivery, producer cutover, legacy drain and finalization outside Task 5. Do not modify Website approval, confirmation, intake, reminder, quotation, acceptance, project-lifecycle, index or constraint behavior.
 
 - [ ] Proposed checkpoint commit:
 
   ```powershell
-  git add supabase/tests/sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_qualification_automation_bridge_v1.sql
+  git add supabase/migrations/20260901055000_project_sdf_initial_confirmation_completion_v1.sql supabase/tests/sdf_initial_confirmation_email_authority_v1.sql supabase/tests/sdf_qualification_automation_bridge_v1.sql
   git commit -m "feat(sdf): project isolated confirmation completion"
   ```
 

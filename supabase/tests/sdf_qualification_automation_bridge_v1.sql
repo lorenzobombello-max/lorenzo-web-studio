@@ -114,19 +114,23 @@ select * from public.claim_application_intake_automation_work_v1('bd300000-0000-
 select is((select count(*)::integer from sdf_claim),1,'due SDF confirmation is claimed once');
 
 create temporary table sdf_confirmation as
-select * from public.execute_application_intake_automation_sdf_confirmation_v1(
+select * from public.prepare_sdf_initial_confirmation_v2(
   (select work_id from sdf_claim),(select claim_token from sdf_claim)
 );
 select is((select request_kind from sdf_confirmation),'slimme_documentenflow','confirmation authority is request-kind aware');
 select is(
-  (select status::text from public.quote_request_email_jobs where id=(select confirmation_job_id from sdf_confirmation)),
+  (select status::text from public.sdf_initial_confirmation_email_jobs where job_id=(select job_id from sdf_confirmation)),
   'pending',
-  'confirmation execution creates one pending mail job'
+  'confirmation execution creates one pending isolated SDF mail job'
 );
-select is((select template_key from public.quote_request_email_jobs where id=(select confirmation_job_id from sdf_confirmation)),'SDF_REQUEST_RECEIVED_NL_BE_v1','confirmation job persists exact template key');
-select is((select template_version from public.quote_request_email_jobs where id=(select confirmation_job_id from sdf_confirmation)),'v1','confirmation job persists exact template version');
-update public.quote_request_email_jobs set status='retry_wait' where id=(select confirmation_job_id from sdf_confirmation);
-select is((select template_key||':'||template_version from public.quote_request_email_jobs where id=(select confirmation_job_id from sdf_confirmation)),'SDF_REQUEST_RECEIVED_NL_BE_v1:v1','confirmation retry preserves exact template authority');
+select is((select template_version from public.sdf_initial_confirmation_email_jobs where job_id=(select job_id from sdf_confirmation)),'SDF_REQUEST_RECEIVED_NL_BE_v1','confirmation job persists exact template authority');
+update public.sdf_initial_confirmation_email_jobs set status='retry_wait' where job_id=(select job_id from sdf_confirmation);
+select is((select template_version from public.sdf_initial_confirmation_email_jobs where job_id=(select job_id from sdf_confirmation)),'SDF_REQUEST_RECEIVED_NL_BE_v1','confirmation retry preserves exact template authority');
+select is(
+  (select count(*)::integer from public.quote_request_email_jobs where quote_request_id='bd200000-0000-4000-8000-000000000001'),
+  0,
+  'isolated SDF confirmation creates no Website mail-authority row'
+);
 select is(
   (select phase from lws_internal.application_intake_automation_work where quote_request_id='bd200000-0000-4000-8000-000000000001'),
   'SDF_CONFIRMATION',
@@ -189,13 +193,18 @@ select is(
   'unsent confirmation blocks intake invitation claims'
 );
 
-update public.quote_request_email_jobs
+update public.sdf_initial_confirmation_email_jobs
 set next_attempt_at=now()-interval '1 second'
-where id=(select confirmation_job_id from sdf_confirmation);
-select * from public.claim_quote_request_email_job((select confirmation_job_id from sdf_confirmation));
-select * from public.complete_quote_request_email_job((select confirmation_job_id from sdf_confirmation),true,false,null,'test-message');
+where job_id=(select job_id from sdf_confirmation);
+create temporary table claimed_sdf_confirmation as
+select * from public.claim_sdf_initial_confirmation_email_job_v1((select job_id from sdf_confirmation));
+select public.complete_sdf_initial_confirmation_email_job_v1(
+  (select job_id from claimed_sdf_confirmation),
+  (select delivery_lease_token from claimed_sdf_confirmation),
+  true,false,null,'test-message'
+);
 select is(
-  (select status::text from public.quote_request_email_jobs where id=(select confirmation_job_id from sdf_confirmation)),
+  (select status::text from public.sdf_initial_confirmation_email_jobs where job_id=(select job_id from sdf_confirmation)),
   'sent',
   'confirmation job is durably sent'
 );
@@ -205,9 +214,9 @@ select isnt(
   'sent confirmation is projected onto the SDF request'
 );
 select is(
-  (select phase from lws_internal.application_intake_automation_work where quote_request_id='bd200000-0000-4000-8000-000000000001'),
-  'SDF_INTAKE',
-  'durably sent confirmation opens SDF intake phase'
+  (select count(*)::integer from lws_internal.application_intake_automation_work where quote_request_id='bd200000-0000-4000-8000-000000000001' and phase='SDF_INTAKE'),
+  1,
+  'durably sent confirmation opens exactly one SDF intake phase'
 );
 select is(
   (select intake_due_at-approved_at from lws_internal.application_intake_automation_work where quote_request_id='bd200000-0000-4000-8000-000000000001'),
@@ -216,11 +225,11 @@ select is(
 );
 select isnt((select next_attempt_at from public.sdf_qualification_intake_email_jobs where kind='invitation'),'infinity'::timestamptz,'early Owner allow becomes finite after durable confirmation delivery');
 select is(
-  (select invitation.next_attempt_at-confirmation.sent_at from public.sdf_qualification_intake_email_jobs invitation cross join public.quote_request_email_jobs confirmation where invitation.kind='invitation' and confirmation.id=(select confirmation_job_id from sdf_confirmation)),
+  (select invitation.next_attempt_at-confirmation.sent_at from public.sdf_qualification_intake_email_jobs invitation cross join public.sdf_initial_confirmation_email_jobs confirmation where invitation.kind='invitation' and confirmation.job_id=(select job_id from sdf_confirmation)),
   interval '120 seconds',
   'early invitation uses canonical confirmation sent plus 120 seconds due'
 );
-update public.quote_request_email_jobs set status='sent',sent_at=sent_at where id=(select confirmation_job_id from sdf_confirmation);
+update public.sdf_initial_confirmation_email_jobs set status='sent',sent_at=sent_at where job_id=(select job_id from sdf_confirmation);
 select is((select count(*)::integer from public.sdf_qualification_intake_email_jobs where kind='invitation'),1,'duplicate confirmation trigger remains single-invitation safe');
 
 select ok(lws_internal.sdf_payload_valid_v1(

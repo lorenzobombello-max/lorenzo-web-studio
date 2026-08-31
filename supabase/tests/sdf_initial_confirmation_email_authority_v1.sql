@@ -221,6 +221,50 @@ select has_function(
   array['uuid', 'uuid', 'boolean', 'boolean', 'text', 'text'],
   'SDF initial-confirmation completion authority exists'
 );
+select has_function(
+  'lws_internal',
+  'advance_sdf_automation_from_initial_confirmation_v1',
+  array[]::text[],
+  'SDF initial-confirmation completion projection trigger exists'
+);
+select ok(
+  coalesce((
+    select procedure.prosecdef
+      and procedure.proowner = 'postgres'::regrole
+      and procedure.proconfig = array['search_path=pg_catalog']::text[]
+    from pg_proc as procedure
+    join pg_namespace as namespace on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'lws_internal'
+      and procedure.proname = 'advance_sdf_automation_from_initial_confirmation_v1'
+      and procedure.pronargs = 0
+  ), false),
+  'Projection trigger is SECURITY DEFINER with trusted owner and fixed search_path'
+);
+select ok(
+  coalesce((
+    select not has_function_privilege('anon', procedure.oid, 'EXECUTE')
+      and not has_function_privilege('authenticated', procedure.oid, 'EXECUTE')
+      and not has_function_privilege('service_role', procedure.oid, 'EXECUTE')
+    from pg_proc as procedure
+    join pg_namespace as namespace on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'lws_internal'
+      and procedure.proname = 'advance_sdf_automation_from_initial_confirmation_v1'
+      and procedure.pronargs = 0
+  ), false),
+  'Projection trigger grants no PUBLIC-derived or direct client execution authority'
+);
+select ok(
+  coalesce((
+    select pg_get_triggerdef(trigger.oid) like '%AFTER UPDATE OF status, sent_at%'
+      and pg_get_triggerdef(trigger.oid) like '%old.status IS DISTINCT FROM new.status%'
+      and pg_get_triggerdef(trigger.oid) like '%old.sent_at IS DISTINCT FROM new.sent_at%'
+    from pg_trigger as trigger
+    where trigger.tgrelid = 'public.sdf_initial_confirmation_email_jobs'::regclass
+      and trigger.tgname = 'sdf_initial_confirmation_email_jobs_project_completion'
+      and not trigger.tgisinternal
+  ), false),
+  'Projection trigger is update-only and carries the explicit OLD/NEW transition guard'
+);
 
 create temporary table website_created as
 select * from public.create_quote_request_idempotent(
@@ -488,6 +532,11 @@ select jsonb_agg(to_jsonb(job) order by job.id) as rows
 from public.quote_request_email_jobs as job
 where job.quote_request_id = (select request_id from website_created);
 
+create temporary table website_projection_snapshot as
+select confirmation_sent_at
+from public.quote_requests
+where id = (select request_id from website_created);
+
 insert into public.quote_requests (
   id, record_classification, request_kind, sdf_package, name, email,
   description, privacy_consent, status, approval_token_hash,
@@ -682,6 +731,12 @@ select is(
   'processing',
   'SDF claim moves its isolated job to processing'
 );
+select is(
+  (select confirmation_sent_at from public.quote_requests
+   where id = 'fa250000-0000-4000-8000-000000000001'),
+  null::timestamptz,
+  'Processing SDF initial confirmation does not project completion'
+);
 select isnt((select delivery_lease_token from sdf_claimed), null::uuid, 'SDF claim issues a unique mail lease token');
 select ok(
   (select delivery_lease_expires_at > clock_timestamp() + interval '9 minutes 50 seconds'
@@ -819,6 +874,29 @@ select is(
   'Successful SDF completion clears its mail lease'
 );
 select is(
+  (select confirmation_sent_at from public.quote_requests
+   where id = 'fa250000-0000-4000-8000-000000000001'),
+  (select sent_at from public.sdf_initial_confirmation_email_jobs
+   where job_id = (select job_id from sdf_reclaimed)),
+  'Successful isolated SDF completion projects its durable sent_at exactly'
+);
+select is(
+  (select count(*)::integer
+   from lws_internal.application_intake_automation_work
+   where quote_request_id = 'fa250000-0000-4000-8000-000000000001'
+     and phase = 'SDF_INTAKE'),
+  1,
+  'Successful isolated SDF completion advances exactly one work row to SDF_INTAKE'
+);
+select is(
+  (select intake_due_at - confirmation_sent_at
+   from lws_internal.application_intake_automation_work as work
+   join public.quote_requests as request on request.id = work.quote_request_id
+   where work.quote_request_id = 'fa250000-0000-4000-8000-000000000001'),
+  interval '120 seconds',
+  'Existing downstream authority schedules SDF intake 120 seconds after projection'
+);
+select is(
   public.validate_sdf_initial_confirmation_email_delivery_v1(
     (select job_id from sdf_reclaimed),
     (select delivery_lease_token from sdf_reclaimed)
@@ -837,6 +915,38 @@ select is(
   ),
   null::jsonb,
   'SDF completion replay after sent is an idempotent no-op'
+);
+
+create temporary table sdf_projection_snapshot as
+select request.confirmation_sent_at, work.phase, work.approved_at, work.intake_due_at
+from public.quote_requests as request
+join lws_internal.application_intake_automation_work as work
+  on work.quote_request_id = request.id
+where request.id = 'fa250000-0000-4000-8000-000000000001';
+
+update public.sdf_initial_confirmation_email_jobs
+set status = status,
+    sent_at = sent_at
+where job_id = (select job_id from sdf_reclaimed);
+
+select is(
+  (select jsonb_build_object(
+      'confirmation_sent_at', request.confirmation_sent_at,
+      'phase', work.phase,
+      'approved_at', work.approved_at,
+      'intake_due_at', work.intake_due_at
+    )
+   from public.quote_requests as request
+   join lws_internal.application_intake_automation_work as work
+     on work.quote_request_id = request.id
+   where request.id = 'fa250000-0000-4000-8000-000000000001'),
+  (select jsonb_build_object(
+      'confirmation_sent_at', confirmation_sent_at,
+      'phase', phase,
+      'approved_at', approved_at,
+      'intake_due_at', intake_due_at
+    ) from sdf_projection_snapshot),
+  'Unchanged sent-row replay preserves the projection and downstream lifecycle exactly'
 );
 select is(
   (select provider_message_id from public.sdf_initial_confirmation_email_jobs
@@ -958,6 +1068,12 @@ select is(
   'Transient SDF failure clears its mail lease'
 );
 select is(
+  (select confirmation_sent_at from public.quote_requests
+   where id = 'fa253000-0000-4000-8000-000000000004'),
+  null::timestamptz,
+  'retry_wait SDF initial confirmation does not project completion'
+);
+select is(
   (select last_error_code from public.sdf_initial_confirmation_email_jobs
    where job_id = (select job_id from retry_claim)),
   'RESEND_HTTP_503',
@@ -1028,6 +1144,12 @@ select is(
   'MANUAL_REVIEW',
   'Terminal SDF failure moves only matching SDF work to MANUAL_REVIEW'
 );
+select is(
+  (select confirmation_sent_at from public.quote_requests
+   where id = 'fa254000-0000-4000-8000-000000000005'),
+  null::timestamptz,
+  'Failed SDF initial confirmation does not project completion'
+);
 
 create temporary table invalid_prepare as
 select *
@@ -1070,6 +1192,12 @@ select is(
    where job.quote_request_id = (select request_id from website_created)),
   (select rows from website_mail_snapshot),
   'SDF fixture creation leaves Website mail authority byte-identical'
+);
+select is(
+  (select confirmation_sent_at from public.quote_requests
+   where id = (select request_id from website_created)),
+  (select confirmation_sent_at from website_projection_snapshot),
+  'Isolated SDF completion does not project onto the Website request'
 );
 select is(
   (select count(*)::integer from public.quote_request_email_jobs
