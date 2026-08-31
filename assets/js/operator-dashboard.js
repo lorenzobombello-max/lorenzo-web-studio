@@ -1600,6 +1600,21 @@ export function canOfferDossierPurge(detail, identity, eligibility) {
     && eligibility.reason === null);
 }
 
+export function presentWebsiteDossierPurge(nodes, detail, identity, eligibility) {
+  const eligibleContext = detail?.request_kind === "website"
+    && identity?.status === "ACTIVE"
+    && identity.role === "owner"
+    && detail?.dossier_lifecycle?.state === "TRASHED";
+  nodes.section.hidden = !eligibleContext;
+  nodes.action.hidden = !eligibleContext || !canOfferDossierPurge(detail, identity, eligibility);
+  nodes.message.textContent = !eligibleContext ? ""
+    : eligibility?.can_purge === true && eligibility.reason === null
+    ? "Dit dossier bevat geen beschermde afhankelijkheden en kan definitief worden verwijderd."
+    : eligibility
+    ? "Definitief verwijderen is door de server geblokkeerd omdat beschermde afhankelijkheden bestaan."
+    : "De verwijderstatus kon niet veilig worden vastgesteld. Vernieuw het dossier.";
+}
+
 export function dossierPurgeRequest(detail, reason, idempotencyKey) {
   const quoteRequestId = String(detail?.quote_request_id || "");
   const normalizedReason = typeof reason === "string" ? reason.trim() : "";
@@ -2892,6 +2907,8 @@ export async function startOperatorDashboard({
   const dossierLifecycleConfirm = document.getElementById("dossierLifecycleConfirm");
   const dossierLifecycleCancel = document.getElementById("dossierLifecycleCancel");
   const dossierPurge = document.getElementById("dossierPurge");
+  const websiteDossierDangerZone = document.getElementById("websiteDossierDangerZone");
+  const websiteDossierPurgeMessage = document.getElementById("websiteDossierPurgeMessage");
   const dossierPurgeDialog = document.getElementById("dossierPurgeDialog");
   const dossierPurgeForm = document.getElementById("dossierPurgeForm");
   const dossierPurgeReason = document.getElementById("dossierPurgeReason");
@@ -4385,6 +4402,7 @@ export async function startOperatorDashboard({
     detailMessage.textContent = "";
     dossierLifecycleMessage.textContent = "";
     dossierPurge.hidden = true;
+    websiteDossierDangerZone.hidden = true;
     sdfDossierPurge.hidden = true;
     sdfDossierPurgeMessage.textContent = "";
     lifecycleMessage.textContent = "";
@@ -4659,6 +4677,12 @@ export async function startOperatorDashboard({
     const presentation = dossierLifecyclePresentation(detailApplication?.dossier_lifecycle);
     dossierLifecycleDossier.hidden = false;
     dossierPurge.hidden = true;
+    presentWebsiteDossierPurge(
+      { section: websiteDossierDangerZone, message: websiteDossierPurgeMessage, action: dossierPurge },
+      detailApplication,
+      currentIdentity,
+      null,
+    );
     if (!presentation) {
       setBadge("dossierLifecycleStateBadge", "NIET BESCHIKBAAR", "amber");
       for (const button of dossierLifecycleButtons) button.hidden = true;
@@ -4687,7 +4711,12 @@ export async function startOperatorDashboard({
       p_quote_request_id: detailApplication.quote_request_id,
     });
     if (requestId !== detailRequestId || selectedDetail !== detailApplication) return;
-    dossierPurge.hidden = Boolean(error) || !canOfferDossierPurge(detailApplication, currentIdentity, data);
+    presentWebsiteDossierPurge(
+      { section: websiteDossierDangerZone, message: websiteDossierPurgeMessage, action: dossierPurge },
+      detailApplication,
+      currentIdentity,
+      error ? null : data,
+    );
     dossierPurge.disabled = false;
   }
 

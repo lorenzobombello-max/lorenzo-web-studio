@@ -80,6 +80,7 @@ $requiredFiles = @(
   "assets/js/application-dossier-copy.js",
   "assets/js/cookie-consent.js",
   "assets/js/homepage-studio.js",
+  "assets/js/intake-customer-context.js",
   "assets/js/intake.js",
   "assets/js/sdf-qualification-intake.js",
   "assets/js/sdf-qualification-customer.mjs",

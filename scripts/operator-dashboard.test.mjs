@@ -8,7 +8,7 @@ import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pe
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
-import { presentSdfDossierPurge, sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
+import { presentSdfDossierPurge, presentWebsiteDossierPurge, sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
 import { createVisibilityRefreshController } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
@@ -1274,7 +1274,9 @@ test("dossier lifecycle UI keeps reversible Edge actions separate from owner-onl
   assert.match(html, /data-dossier-lifecycle-action="trash_dossier"[^>]*hidden>Naar prullenbak</);
   assert.match(html, /data-dossier-lifecycle-action="restore_dossier"[^>]*hidden>Herstellen uit prullenbak</);
   assert.match(html, /id="dossierLifecycleReason"[^>]*maxlength="500"[^>]*required/);
-  assert.match(html, /id="dossierPurge"[^>]*hidden>Permanent verwijderen</);
+  assert.match(html, /id="websiteDossierDangerZone"[^>]*hidden/);
+  assert.match(html, /id="websiteDossierDangerTitle">Definitief verwijderen</);
+  assert.match(html, /id="dossierPurge"[^>]*hidden>Definitief verwijderen</);
   assert.match(html, /id="dossierPurgeDialog"/);
   assert.match(html, /id="dossierPurgeReason"[^>]*maxlength="500"[^>]*required/);
   assert.match(html, /Dit kan niet ongedaan worden gemaakt/);
@@ -1289,6 +1291,7 @@ test("dossier lifecycle UI keeps reversible Edge actions separate from owner-onl
   assert.match(script, /if \(outcome\.refresh\) await refreshMutationDetail\(command\.locator, command\.selectionRequestId\)/);
   assert.match(script, /currentIdentity\?\.status !== "ACTIVE"[\s\S]{0,160}currentIdentity\.role !== "owner"/);
   assert.match(script, /client\.rpc\("can_purge_dossier_v1", \{[\s\S]{0,100}p_quote_request_id: detailApplication\.quote_request_id/);
+  assert.match(script, /presentWebsiteDossierPurge\([\s\S]{0,220}detailApplication,[\s\S]{0,80}currentIdentity/);
   assert.match(script, /command\.selectionRequestId !== detailRequestId \|\| selectedDetail !== command\.detail/);
   assert.match(script, /dossierPurgeRequest\(command\.detail, dossierPurgeReason\.value, crypto\.randomUUID\(\)\)/);
   assert.match(script, /client\.rpc\("purge_dossier_v1", input\)/);
@@ -1313,6 +1316,20 @@ test("permanent dossier deletion is trashed, owner, server eligibility, reason, 
   });
   assert.throws(()=>dossierPurgeRequest(detail, "   ", "a1800000-0000-4000-8000-000000000031"), /INVALID_DOSSIER_PURGE_REQUEST/);
   assert.throws(()=>dossierPurgeRequest(detail, "Reden", "geen-uuid"), /INVALID_DOSSIER_PURGE_REQUEST/);
+});
+
+test("Website danger-zone action follows existing server eligibility", () => {
+  const nodes = { section: { hidden: true }, message: { textContent: "" }, action: { hidden: true } };
+  const detail = { request_kind: "website", quote_request_id: "a1100000-0000-4000-8000-000000000003", dossier_lifecycle: { state: "TRASHED" } };
+  const owner = { role: "owner", status: "ACTIVE" };
+  presentWebsiteDossierPurge(nodes, detail, owner, { can_purge: true, reason: null });
+  assert.equal(nodes.section.hidden, false);
+  assert.equal(nodes.action.hidden, false);
+  assert.match(nodes.message.textContent, /kan definitief worden verwijderd/);
+  presentWebsiteDossierPurge(nodes, detail, owner, { can_purge: false, reason: "OFFICIAL_QUOTATION_EXISTS" });
+  assert.equal(nodes.section.hidden, false);
+  assert.equal(nodes.action.hidden, true);
+  assert.match(nodes.message.textContent, /door de server geblokkeerd/);
 });
 
 test("legacy trash detail keeps lifecycle and purge eligibility reachable without output controls", async () => {
