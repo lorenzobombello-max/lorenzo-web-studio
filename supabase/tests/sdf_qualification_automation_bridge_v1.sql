@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(115);
+select plan(120);
 
 select has_table('public','sdf_qualification_intakes','dedicated SDF qualification intake exists');
 select has_table('public','sdf_qualification_intake_submissions','immutable SDF submissions exist');
@@ -363,12 +363,37 @@ select lives_ok(
 );
 select is((select count(*)::integer from lws_internal.operator_pending_sdf_intakes_v1),0,'qualification-complete SDF remains outside pending');
 select is((select count(*)::integer from lws_internal.operator_application_readmodel_v2 where request_kind='slimme_documentenflow'),1,'qualification-complete SDF remains active');
+select is(
+  (public.inspect_sdf_qualification_intake_for_operator_v1('bd200000-0000-4000-8000-000000000001')->>'quotation_preparation_authorized')::boolean,
+  false,
+  'qualification inspect reports quotation preparation as not authorized before authority exists'
+);
+select is(
+  jsonb_typeof(public.inspect_sdf_qualification_intake_for_operator_v1('bd200000-0000-4000-8000-000000000001')->'quotation_preparation_authorized'),
+  'boolean',
+  'quotation preparation authorization is an explicit JSON boolean'
+);
+select is(
+  public.inspect_sdf_qualification_intake_for_operator_v1('bd200000-0000-4000-8000-000000000001')->>'status',
+  'qualification_complete',
+  'qualification inspect payload retains its canonical status'
+);
+select is(
+  (select count(*)::integer from public.sdf_quotation_preparation_authorities),
+  0,
+  'qualification inspect performs no quotation preparation mutation'
+);
 select lives_ok(
   $$select public.authorize_sdf_quotation_preparation_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000009')$$,
   'Owner authorizes quotation preparation'
 );
 select is((select count(*)::integer from public.sdf_quotations),1,'bridge atomically creates one quotation identity');
 select is((select count(*)::integer from public.sdf_quotation_preparation_authorities),1,'bridge atomically creates one preparation authority');
+select is(
+  (public.inspect_sdf_qualification_intake_for_operator_v1('bd200000-0000-4000-8000-000000000001')->>'quotation_preparation_authorized')::boolean,
+  true,
+  'qualification inspect reports quotation preparation as authorized after authority exists'
+);
 select is(
   (public.authorize_sdf_quotation_preparation_v1('bd200000-0000-4000-8000-000000000001','bd400000-0000-4000-8000-000000000009')->>'replayed')::boolean,
   true,

@@ -1335,6 +1335,27 @@ Deno.test("service role JWT cannot enter application actions", async () => {
   }
 });
 
+Deno.test("qualification inspect forwards quotation preparation authorization", async () => {
+  const inspectResult = {
+    quote_request_id: userId,
+    status: "qualification_complete",
+    quotation_preparation_authorized: true,
+  };
+  const harness = dependencies({
+    executeApplicationAction: async () => inspectResult,
+  });
+  const response = await handleCommercialOperator(
+    request({
+      action: "inspect_sdf_qualification_intake",
+      quote_request_id: userId,
+    }),
+    harness.deps,
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).result, inspectResult);
+});
+
 Deno.test("intake lifecycle actions require the fixed revisioned command shape", async () => {
   for (
     const [action, eventType] of [
