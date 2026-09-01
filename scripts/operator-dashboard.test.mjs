@@ -4,7 +4,7 @@ import test from "node:test";
 import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createRecruitmentPublicationController, createRecruitmentVacancyController, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, recruitmentPublicationRequest, recruitmentPublicationResponse, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
-import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakeIdentityPresentation, pendingIntakePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems } from "../assets/js/operator-dashboard.js";
+import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakeIdentityPresentation, pendingIntakePresentation, pendingIntakePurgePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems, pendingSdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
 import { dossierDocumentAccessRequest, dossierDocumentManifestRequest, dossierDocumentPresentation } from "../assets/js/operator-dashboard.js";
 import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDocumentIdempotencyKey } from "../assets/js/operator-dashboard.js";
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
@@ -13,7 +13,7 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260901-direct-active-purge";
+const OPERATOR_ASSET_RELEASE = "20260901-pending-sdf-purge";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
@@ -932,7 +932,7 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /return currentIdentity;\s*\}\s*personalQueueWorkspace\.hidden = true;\s*managerWorkspace\.hidden = false/);
   assert.match(script, /De dossiers konden niet worden geladen\. Probeer het later opnieuw\./);
   assert.match(script, /callOperator\(client, functionsBaseUrl, input\)/);
-  assert.equal((script.match(/client\.rpc\(/g) || []).length, 17);
+  assert.equal((script.match(/client\.rpc\(/g) || []).length, 19);
   assert.match(script, /client\.rpc\("get_document_inbox_v1", \{ p_lifecycle_status: null, p_record_classification: "production" \}\)/);
   assert.match(script, /client\.rpc\("get_website_finance_portfolio_v1"\)/);
   assert.match(script, /client\.rpc\("get_sdf_finance_portfolio_v1"\)/);
@@ -941,6 +941,8 @@ test("personal queue routing is server-result-driven and fails closed", async ()
   assert.match(script, /client\.rpc\("transition_customer_request_v1"/);
   assert.match(script, /client\.rpc\("can_purge_dossier_v1"/);
   assert.match(script, /client\.rpc\("purge_dossier_v1"/);
+  assert.match(script, /client\.rpc\("can_purge_sdf_dossier_v1"/);
+  assert.match(script, /client\.rpc\("purge_sdf_dossier_v1"/);
   assert.doesNotMatch(script, /localStorage/);
 });
 
@@ -1471,9 +1473,9 @@ test("SDF pending intake danger zone exposes server blockers without changing We
   const [html, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/js/operator-dashboard.js")]);
   assert.match(html, /id="pendingIntakeDangerStatus"/);
   assert.match(html, /id="pendingIntakeDelete"[^>]*hidden>Definitief verwijderen</);
-  assert.match(script, /pendingIntakeDangerZone\.hidden = !isSdf && item\.can_permanently_delete !== true/);
-  assert.match(script, /pendingIntakeDelete\.hidden = item\.can_permanently_delete !== true/);
-  assert.match(script, /door de server geblokkeerd omdat beschermde commerciële of dossierafhankelijkheden bestaan/);
+  assert.match(script, /client\.rpc\("can_purge_sdf_dossier_v1"/);
+  assert.match(script, /pendingIntakePurgePresentation\(item, isSdf \? pendingSdfPurgeEligibility : null\)/);
+  assert.match(script, /pendingIntakeDelete\.hidden = !purgePresentation\.canPurge/);
   assert.match(script, /buildPendingIntakeDeleteCommand\(command\.item/);
 });
 
@@ -3989,6 +3991,26 @@ test("pending retention and delete commands remain authority-minimal", () => {
   assert.equal(buildPendingIntakeRetentionCommand("restore_pending_intake", archived, "Restore follow-up", idempotencyKey).action, "restore_pending_intake");
   assert.equal(buildPendingIntakeDeleteCommand(active, "Confirmed disposable record", idempotencyKey).action, "permanently_delete_pending_intake");
   assert.throws(()=>buildPendingIntakeDeleteCommand({ ...active, can_permanently_delete: false }, "No", idempotencyKey), /INVALID_PENDING_DELETE_COMMAND/);
+});
+
+test("pending SDF hard delete follows live dossier eligibility", () => {
+  const item = pendingIntake({ request_kind: "slimme_documentenflow", can_permanently_delete: false });
+  const idempotencyKey = "a1800000-0000-4000-8000-000000000095";
+  assert.deepEqual(pendingIntakePurgePresentation(item, { can_purge: true, reason: null }), {
+    canPurge: true,
+    message: "Dit SDF-dossier bevat geen beschermde commerciële gegevens en kan definitief worden verwijderd.",
+  });
+  assert.equal(pendingIntakePurgePresentation(item, { can_purge: false, reason: "PROJECT_EXISTS" }).canPurge, false);
+  assert.match(pendingIntakePurgePresentation(item, { can_purge: false, reason: "PROJECT_EXISTS" }).message, /project/);
+  assert.deepEqual(pendingSdfDossierPurgeRequest(item, { can_purge: true, reason: null }, "Opschonen", idempotencyKey), {
+    p_quote_request_id: item.quote_request_id,
+    p_reason: "Opschonen",
+    p_idempotency_key: idempotencyKey,
+  });
+  assert.throws(
+    ()=>pendingSdfDossierPurgeRequest(item, { can_purge: false, reason: "PROJECT_EXISTS" }, "Opschonen", idempotencyKey),
+    /INVALID_PENDING_SDF_PURGE_REQUEST/,
+  );
 });
 
 test("Intake opvolging is a lazy dedicated workspace with guarded cleanup", async () => {

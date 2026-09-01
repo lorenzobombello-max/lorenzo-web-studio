@@ -1665,6 +1665,41 @@ export function sdfDossierPurgePresentation(detail, identity, eligibility) {
   };
 }
 
+export function pendingIntakePurgePresentation(item, eligibility = null) {
+  if (item?.request_kind !== "slimme_documentenflow") {
+    return item?.can_permanently_delete === true
+      ? { canPurge: true, message: "Deze nog niet ingediende intake heeft geen beschermde afhankelijkheden en kan definitief worden verwijderd." }
+      : { canPurge: false, message: "Definitief verwijderen is door de server geblokkeerd omdat beschermde dossierafhankelijkheden bestaan." };
+  }
+  if (!eligibility || typeof eligibility !== "object") {
+    return { canPurge: false, message: "De verwijderstatus wordt veilig gecontroleerd." };
+  }
+  if (eligibility.can_purge === true && eligibility.reason === null) {
+    return { canPurge: true, message: "Dit SDF-dossier bevat geen beschermde commerciële gegevens en kan definitief worden verwijderd." };
+  }
+  return {
+    canPurge: false,
+    message: SDF_PURGE_BLOCKER_MESSAGES[eligibility.reason]
+      || "Dit SDF-dossier kan niet definitief worden verwijderd omdat er beschermde gegevens aan gekoppeld zijn.",
+  };
+}
+
+export function pendingSdfDossierPurgeRequest(item, eligibility, reason, idempotencyKey) {
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+  if (item?.request_kind !== "slimme_documentenflow"
+      || eligibility?.can_purge !== true
+      || eligibility.reason !== null
+      || !UUID.test(String(item?.quote_request_id || ""))
+      || !UUID.test(String(idempotencyKey || ""))
+      || normalizedReason.length < 1
+      || normalizedReason.length > 500) throw new Error("INVALID_PENDING_SDF_PURGE_REQUEST");
+  return {
+    p_quote_request_id: item.quote_request_id,
+    p_reason: normalizedReason,
+    p_idempotency_key: idempotencyKey,
+  };
+}
+
 export function presentSdfDossierPurge(nodes, detail, identity, eligibility) {
   const presentation = sdfDossierPurgePresentation(detail, identity, eligibility);
   nodes.section.hidden = !presentation;
@@ -2959,6 +2994,7 @@ export async function startOperatorDashboard({
   let pendingDossierPurge = null;
   let sdfDossierPurgeBusy = false;
   let pendingSdfDossierPurge = null;
+  let pendingSdfPurgeEligibility = null;
   let lifecycleBusy = false;
   let pendingLifecycleAction = null;
   let pendingIntakeItems = [];
@@ -3859,6 +3895,7 @@ export async function startOperatorDashboard({
   if (activeModule === "intake") {
     const clearPendingWorkspaceDetail = ()=>{
       selectedPendingIntake = null;
+      pendingSdfPurgeEligibility = null;
       setText("pendingIntakeName", "Intakedetail");
       pendingIntakeDetail.hidden = true;
       pendingIntakeDetailEmpty.hidden = false;
@@ -3869,6 +3906,7 @@ export async function startOperatorDashboard({
       const presentation = pendingIntakePresentation(item);
       if (!presentation) return clearPendingWorkspaceDetail();
       const identity = pendingIntakeIdentityPresentation(item);
+      if (selectedPendingIntake?.quote_request_id !== item.quote_request_id) pendingSdfPurgeEligibility = null;
       selectedPendingIntake = item;
       pendingIntakeDetail.hidden = false;
       pendingIntakeDetailEmpty.hidden = true;
@@ -3897,12 +3935,25 @@ export async function startOperatorDashboard({
       pendingIntakeRetentionAction.dataset.action = archived ? "restore" : "archive";
       pendingIntakeRetentionAction.disabled = pendingWorkspaceBusy;
       const isSdf = item.request_kind === "slimme_documentenflow";
-      pendingIntakeDangerZone.hidden = !isSdf && item.can_permanently_delete !== true;
-      pendingIntakeDelete.hidden = item.can_permanently_delete !== true;
-      pendingIntakeDangerStatus.textContent = item.can_permanently_delete === true
-        ? "Deze nog niet ingediende intake heeft geen beschermde afhankelijkheden en kan definitief worden verwijderd."
-        : "Definitief verwijderen is door de server geblokkeerd omdat beschermde commerciële of dossierafhankelijkheden bestaan.";
-      pendingIntakeDeleteUnavailable.textContent = item.can_permanently_delete === true
+      const purgePresentation = pendingIntakePurgePresentation(item, isSdf ? pendingSdfPurgeEligibility : null);
+      pendingIntakeDangerZone.hidden = !isSdf && !purgePresentation.canPurge;
+      pendingIntakeDelete.hidden = !purgePresentation.canPurge;
+      pendingIntakeDangerStatus.textContent = purgePresentation.message;
+      pendingIntakeDeleteUnavailable.textContent = purgePresentation.canPurge
+        ? "Definitief verwijderen is voor dit dependency-vrije historie-item toegestaan."
+        : "Definitief verwijderen is beschermd zolang commerciële of dossierafhankelijkheden bestaan.";
+      if (isSdf && pendingSdfPurgeEligibility === null) void refreshPendingSdfPurgeEligibility(item);
+    };
+    const refreshPendingSdfPurgeEligibility = async (item)=>{
+      const { data, error } = await client.rpc("can_purge_sdf_dossier_v1", {
+        p_quote_request_id: item.quote_request_id,
+      });
+      if (selectedPendingIntake !== item) return;
+      pendingSdfPurgeEligibility = error ? {} : data;
+      const presentation = pendingIntakePurgePresentation(item, pendingSdfPurgeEligibility);
+      pendingIntakeDelete.hidden = !presentation.canPurge;
+      pendingIntakeDangerStatus.textContent = presentation.message;
+      pendingIntakeDeleteUnavailable.textContent = presentation.canPurge
         ? "Definitief verwijderen is voor dit dependency-vrije historie-item toegestaan."
         : "Definitief verwijderen is beschermd zolang commerciële of dossierafhankelijkheden bestaan.";
     };
@@ -4007,8 +4058,10 @@ export async function startOperatorDashboard({
     });
     pendingIntakeDelete.addEventListener("click", ()=>{
       const item = selectedPendingIntake;
-      if (!item?.can_permanently_delete || pendingWorkspaceBusy) return;
-      pendingWorkspaceCommand = { type: "delete", item };
+      const isSdf = item?.request_kind === "slimme_documentenflow";
+      if (pendingWorkspaceBusy
+          || (isSdf ? pendingSdfPurgeEligibility?.can_purge !== true : !item?.can_permanently_delete)) return;
+      pendingWorkspaceCommand = { type: isSdf ? "delete_sdf" : "delete", item, eligibility: pendingSdfPurgeEligibility };
       setText("pendingIntakeCommandEyebrow", "Onomkeerbare actie");
       setText("pendingIntakeCommandTitle", "Intake definitief verwijderen");
       setText("pendingIntakeCommandDescription", `${item.name} en de bijbehorende nog niet ingediende intake worden definitief verwijderd. Dit kan niet ongedaan worden gemaakt.`);
@@ -4033,16 +4086,23 @@ export async function startOperatorDashboard({
       if (pendingIntakeCommandDialog.returnValue !== "confirm" || !command || pendingWorkspaceBusy) return;
       setPendingWorkspaceBusy(true);
       try {
-        if (command.type === "delete") {
+        if (command.type === "delete_sdf") {
+          const input = pendingSdfDossierPurgeRequest(command.item, command.eligibility, pendingIntakeCommandReason.value, crypto.randomUUID());
+          const { data, error } = await client.rpc("purge_sdf_dossier_v1", input);
+          if (error || data?.quote_request_id !== command.item.quote_request_id
+              || data?.deleted !== true || typeof data?.replayed !== "boolean") {
+            throw new Error(error?.message || "SDF_DOSSIER_PURGE_FAILED");
+          }
+        } else if (command.type === "delete") {
           await invoke(buildPendingIntakeDeleteCommand(command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
         } else {
           await invoke(buildPendingIntakeRetentionCommand(command.type === "archive" ? "archive_pending_intake" : "restore_pending_intake", command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
         }
-        const successMessage = command.type === "delete" ? "Intake is definitief verwijderd."
+        const successMessage = ["delete", "delete_sdf"].includes(command.type) ? "Intake is definitief verwijderd."
           : command.type === "archive" ? "Intake is gearchiveerd." : "Intake is teruggezet naar actief.";
         await Promise.all([loadPendingWorkspace(successMessage), loadPendingIntakeCount()]);
       } catch {
-        const errorMessage = command.type === "delete"
+        const errorMessage = ["delete", "delete_sdf"].includes(command.type)
           ? "Definitief verwijderen is niet uitgevoerd. De serverbescherming blijft van kracht."
           : "De werkruimtestatus kon niet worden gewijzigd. De actuele status is opnieuw geladen.";
         await loadPendingWorkspace(errorMessage);
