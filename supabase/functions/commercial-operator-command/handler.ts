@@ -33,6 +33,7 @@ const APPLICATION_ACTIONS = new Set([
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
+  "issue_sdf_approved_quotation",
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
@@ -282,6 +283,15 @@ export type InternalE2EAcceptedFileCleanupActionInput = Readonly<{
 export type QuotationIssuanceActionInput = Readonly<{
   action: "issue_and_deliver_approved_quotation";
   quote_request_id: string;
+}>;
+export type SdfQuotationIssuanceActionInput = Readonly<{
+  action: "issue_sdf_approved_quotation";
+  quote_request_id: string;
+  business_draft_id: string;
+  approval_id: string;
+  approval_version: number;
+  approval_sha256: string;
+  generation_contract_version: number;
 }>;
 export type DossierDocumentActionInput =
   | Readonly<{
@@ -795,6 +805,16 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "intake_id", "expected_revision", "idempotency_key"])
     : action === "issue_and_deliver_approved_quotation"
     ? new Set(["action", "quote_request_id"])
+    : action === "issue_sdf_approved_quotation"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "business_draft_id",
+      "approval_id",
+      "approval_version",
+      "approval_sha256",
+      "generation_contract_version",
+    ])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "create_customer_request_smoke_fixture"
@@ -983,6 +1003,29 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return { action, quote_request_id: quoteRequestId };
+  }
+  if (action === "issue_sdf_approved_quotation") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const businessDraftId = String(value.business_draft_id || "");
+    const approvalId = String(value.approval_id || "");
+    const approvalVersion = value.approval_version;
+    const approvalSha256 = String(value.approval_sha256 || "");
+    const generationContractVersion = value.generation_contract_version;
+    if (!UUID.test(quoteRequestId) || !UUID.test(businessDraftId)
+      || !UUID.test(approvalId) || !Number.isSafeInteger(approvalVersion)
+      || Number(approvalVersion) < 1 || !/^[0-9a-f]{64}$/.test(approvalSha256)
+      || generationContractVersion !== 1) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      business_draft_id: businessDraftId,
+      approval_id: approvalId,
+      approval_version: approvalVersion as number,
+      approval_sha256: approvalSha256,
+      generation_contract_version: generationContractVersion,
+    };
   }
   if (action === "list_pending_sdf_qualification_intakes") return { action };
   if (action === "inspect_sdf_qualification_intake") {

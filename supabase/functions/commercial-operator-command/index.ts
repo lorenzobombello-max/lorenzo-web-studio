@@ -20,6 +20,7 @@ import {
   type QuotationBusinessApprovalPromotionActionInput,
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
+  type SdfQuotationIssuanceActionInput,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
@@ -173,6 +174,11 @@ type ValidatedApplicationActionInput =
     idempotency_key: string;
     reason: string | null;
     quote_request_id: string | null;
+    business_draft_id: string;
+    approval_id: string;
+    approval_version: number;
+    approval_sha256: string;
+    generation_contract_version: number;
     project_id: string;
     operation: string;
     canonical_domain: string;
@@ -350,6 +356,33 @@ export async function executeApprovedQuotationIssuanceAction(
   return await orchestrateApprovedQuotation(
     { actorAuthUserId, quoteRequestId: input.quote_request_id },
     createQuotationRuntimeDependencies({ actorAuthUserId, ...options }),
+  );
+}
+
+type SdfQuotationIssuanceRuntimeOptions = Pick<
+  QuotationRuntimeOptions,
+  "serviceClient" | "templateBytes" | "renderDocx"
+>;
+
+export async function executeSdfApprovedQuotationIssuanceAction(
+  actorAuthUserId: string,
+  input: SdfQuotationIssuanceActionInput,
+  options: SdfQuotationIssuanceRuntimeOptions,
+): Promise<unknown> {
+  return await orchestrateApprovedQuotation(
+    { actorAuthUserId, quoteRequestId: input.quote_request_id },
+    createQuotationRuntimeDependencies({
+      actorAuthUserId,
+      ...options,
+      route: "SDF",
+      sdfAuthority: {
+        businessDraftId: input.business_draft_id,
+        approvalId: input.approval_id,
+        approvalVersion: input.approval_version,
+        approvalSha256: input.approval_sha256,
+        generationContractVersion: input.generation_contract_version,
+      },
+    }),
   );
 }
 
@@ -1148,6 +1181,24 @@ if (import.meta.main) {
                     ...deliveryInput,
                   }),
                 email: { from, resendApiKey },
+              },
+            );
+          }
+          if (input.action === "issue_sdf_approved_quotation") {
+            const quotationClient = serviceClient();
+            const templateBytes = await Deno.readFile(
+              new URL(
+                "./assets/LWS_QUOTATION_NL_BE_TECHNICAL_v1.docx",
+                import.meta.url,
+              ),
+            );
+            return await executeSdfApprovedQuotationIssuanceAction(
+              actorAuthUserId,
+              input as SdfQuotationIssuanceActionInput,
+              {
+                serviceClient: quotationClient,
+                templateBytes,
+                renderDocx: renderQuotationDocxBytes,
               },
             );
           }

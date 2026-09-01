@@ -321,6 +321,15 @@ const quotationIssuanceRequest = {
   action: "issue_and_deliver_approved_quotation" as const,
   quote_request_id: "a1800000-0000-4000-8000-000000000090",
 };
+const sdfQuotationIssuanceRequest = {
+  action: "issue_sdf_approved_quotation" as const,
+  quote_request_id: "a1800000-0000-4000-8000-000000000090",
+  business_draft_id: "a1800000-0000-4000-8000-000000000091",
+  approval_id: "a1800000-0000-4000-8000-000000000092",
+  approval_version: 3,
+  approval_sha256: "a".repeat(64),
+  generation_contract_version: 1,
+};
 
 Deno.test("allowed production preflight returns the complete CORS contract without side effects", async () => {
   let nextCalls = 0;
@@ -3165,6 +3174,30 @@ Deno.test("approved quotation issuance accepts only the dossier locator", async 
         .status,
       400,
     );
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("SDF quotation issuance accepts only frozen authority locators", async () => {
+  const harness = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(request(sdfQuotationIssuanceRequest), harness.deps)).status,
+    200,
+  );
+  assertEquals(harness.calls, [{ jwt, input: sdfQuotationIssuanceRequest }]);
+
+  for (const invalid of [
+    { ...sdfQuotationIssuanceRequest, approval_version: 0 },
+    { ...sdfQuotationIssuanceRequest, approval_sha256: "bad" },
+    { ...sdfQuotationIssuanceRequest, generation_contract_version: 2 },
+    { ...sdfQuotationIssuanceRequest, admin_access_token: "injected" },
+    { ...sdfQuotationIssuanceRequest, template_id: "injected" },
+    { ...sdfQuotationIssuanceRequest, total_gross_minor: 1 },
+    { ...sdfQuotationIssuanceRequest, recipient_email: "injected@example.test" },
+    { ...sdfQuotationIssuanceRequest, delivery_status: "SENT" },
+  ]) {
+    const invalidHarness = dependencies();
+    assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
     assertEquals(invalidHarness.calls.length, 0);
   }
 });

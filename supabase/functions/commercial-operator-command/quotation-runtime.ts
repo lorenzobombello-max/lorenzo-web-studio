@@ -56,8 +56,16 @@ export type QuotationRuntimeOptions = Readonly<{
   serviceClient: QuotationRuntimeServiceClient;
   templateBytes: Uint8Array;
   renderDocx: RenderDocx;
-  deliver: Delivery;
-  email: Readonly<{ from: string; resendApiKey: string }>;
+  route?: "LEGACY" | "SDF";
+  sdfAuthority?: Readonly<{
+    businessDraftId: string;
+    approvalId: string;
+    approvalVersion: number;
+    approvalSha256: string;
+    generationContractVersion: number;
+  }>;
+  deliver?: Delivery;
+  email?: Readonly<{ from: string; resendApiKey: string }>;
 }>;
 
 function object(value: unknown, code: string): Record<string, unknown> {
@@ -102,28 +110,35 @@ export function createQuotationRuntimeDependencies(
 ): QuotationOrchestrationDependencies {
   const actor = `operator:${options.actorAuthUserId}`;
   const client = options.serviceClient;
+  const route = options.route ?? "LEGACY";
   let approvedTemplateSha256: string | null = null;
 
   return {
     resolveContext: async (actorAuthUserId, quoteRequestId)=>{
       if (actorAuthUserId !== options.actorAuthUserId) throw new Error("QUOTATION_ORCHESTRATION_ACTOR_MISMATCH");
+      if (route === "SDF") {
+        if (!options.sdfAuthority) throw new Error("QUOTATION_ORCHESTRATION_CONTEXT_INVALID");
+        return { route, ...options.sdfAuthority };
+      }
       const data = object(await call(client, "resolve_first_customer_quotation_orchestration_v1", {
         p_actor_auth_user_id: actorAuthUserId,
         p_quote_request_id: quoteRequestId,
       }, "QUOTATION_ORCHESTRATION_CONTEXT_INVALID"), "QUOTATION_ORCHESTRATION_CONTEXT_INVALID");
       const templateData = object(data.template, "QUOTATION_ORCHESTRATION_CONTEXT_INVALID");
-      const template: QuotationOrchestrationContext["template"] = {
+      const template = {
         template_id: String(templateData.template_id || ""),
         template_version: String(templateData.template_version || ""),
         template_sha256: String(templateData.template_sha256 || ""),
         authority_status: String(templateData.authority_status || "") as "APPROVED",
       };
-      approvedTemplateSha256 = template.template_sha256;
-      if (!SHA256.test(approvedTemplateSha256)
-        || await hashBytes(options.templateBytes) !== approvedTemplateSha256) {
+      const templateSha256 = template.template_sha256;
+      approvedTemplateSha256 = templateSha256;
+      if (!SHA256.test(templateSha256)
+        || await hashBytes(options.templateBytes) !== templateSha256) {
         throw new Error("QUOTATION_TEMPLATE_HASH_INVALID");
       }
       return {
+        route,
         approvalId: String(data.approval_id || ""),
         adminAccessTokenHash: String(data.admin_access_token_hash || ""),
         issueYear: Number(data.issue_year),
@@ -133,6 +148,21 @@ export function createQuotationRuntimeDependencies(
       };
     },
     prepareIssuance: async (context, idempotencyKey)=>{
+      if (context.route === "SDF") {
+        const data = row(await call(client, "prepare_sdf_quotation_issuance_v1", {
+          p_business_draft_id: context.businessDraftId,
+          p_approval_id: context.approvalId,
+          p_expected_approval_version: context.approvalVersion,
+          p_expected_approval_sha256: context.approvalSha256,
+          p_generation_contract_version: context.generationContractVersion,
+          p_idempotency_key: idempotencyKey,
+        }, "QUOTATION_ISSUANCE_PREPARATION_INVALID"), "QUOTATION_ISSUANCE_PREPARATION_INVALID");
+        return {
+          issuanceId: String(data.issuance_id || ""),
+          quotationNumber: String(data.quotation_number || ""),
+          quotationVersion: Number(data.quotation_version),
+        };
+      }
       const data = row(await call(client, "prepare_quotation_issuance_v2", {
         p_approval_id: context.approvalId,
         p_issue_year: context.issueYear,
@@ -149,6 +179,19 @@ export function createQuotationRuntimeDependencies(
       };
     },
     buildIssuePayload: async (context, issuance)=>{
+      if (context.route === "SDF") {
+        const data = row(await call(client, "build_sdf_quotation_issue_payload_v1", {
+          p_business_draft_id: context.businessDraftId,
+          p_approval_id: context.approvalId,
+          p_expected_approval_version: context.approvalVersion,
+          p_expected_approval_sha256: context.approvalSha256,
+          p_issuance_id: issuance.issuanceId,
+        }, "QUOTATION_ISSUE_PAYLOAD_INVALID"), "QUOTATION_ISSUE_PAYLOAD_INVALID");
+        return {
+          payload: object(data.payload, "QUOTATION_ISSUE_PAYLOAD_INVALID"),
+          payloadSha256: String(data.payload_sha256 || ""),
+        };
+      }
       const data = row(await call(client, "build_quotation_issue_payload_v1", {
         p_issuance_id: issuance.issuanceId,
         p_template: context.template,
@@ -161,8 +204,13 @@ export function createQuotationRuntimeDependencies(
       };
     },
     renderDocx: async (issuePayload)=>{
+      const payloadTemplate = issuePayload.payload.template;
+      const expectedTemplateHash = route === "SDF"
+        ? String(object(payloadTemplate, "QUOTATION_TEMPLATE_HASH_INVALID").template_sha256 || "")
+        : approvedTemplateSha256;
       const observedTemplateHash = await hashBytes(options.templateBytes);
-      if (!SHA256.test(observedTemplateHash) || observedTemplateHash !== approvedTemplateSha256) {
+      if (!expectedTemplateHash || !SHA256.test(expectedTemplateHash)
+        || !SHA256.test(observedTemplateHash) || observedTemplateHash !== expectedTemplateHash) {
         throw new Error("QUOTATION_TEMPLATE_HASH_INVALID");
       }
       const result = await options.renderDocx({
@@ -176,6 +224,27 @@ export function createQuotationRuntimeDependencies(
     },
     sha256: hashBytes,
     commitIssuance: async (context, issuance, payload, artifact, idempotencyKey)=>{
+      if (context.route === "SDF") {
+        const template = object(payload.payload.template, "QUOTATION_TEMPLATE_HASH_INVALID");
+        const data = row(await call(client, "commit_sdf_quotation_issuance_v1", {
+          p_business_draft_id: context.businessDraftId,
+          p_approval_id: context.approvalId,
+          p_expected_approval_version: context.approvalVersion,
+          p_expected_approval_sha256: context.approvalSha256,
+          p_issuance_id: issuance.issuanceId,
+          p_commit_idempotency_key: idempotencyKey,
+          p_generation_payload_sha256: payload.payloadSha256,
+          p_template_id: String(template.template_id || ""),
+          p_template_version: String(template.template_version || ""),
+          p_template_sha256: String(template.template_sha256 || ""),
+          p_generation_contract_version: context.generationContractVersion,
+          p_docx_sha256: artifact.sha256,
+          p_docx_bytes: artifact.bytes,
+          p_pdf_sha256: null,
+          p_pdf_bytes: null,
+        }, "QUOTATION_ARTIFACT_COMMIT_INVALID"), "QUOTATION_ARTIFACT_COMMIT_INVALID");
+        return { status: String(data.status) as "ISSUED", issuedAt: String(data.issued_at || "") };
+      }
       const data = row(await call(client, "commit_quotation_issuance_v2", {
         p_issuance_id: issuance.issuanceId,
         p_commit_idempotency_key: idempotencyKey,
@@ -221,7 +290,10 @@ export function createQuotationRuntimeDependencies(
       if (data.storage_object_path !== path) throw new Error("QUOTATION_ARTIFACT_ARCHIVE_INVALID");
       return { status: "ARCHIVED" };
     },
-    deliverIssuance: async (context, issuance, idempotencyKeys)=>{
+    deliverIssuance: route === "LEGACY" ? async (context, issuance, idempotencyKeys)=>{
+      if (context.route === "SDF" || !options.deliver || !options.email) {
+        throw new Error("QUOTATION_DELIVERY_DEPENDENCY_MISSING");
+      }
       try {
         return await options.deliver({
           issuanceId: issuance.issuanceId,
@@ -236,6 +308,6 @@ export function createQuotationRuntimeDependencies(
       } catch {
         throw new Error("QUOTATION_DELIVERY_FAILED");
       }
-    },
+    } : undefined,
   };
 }

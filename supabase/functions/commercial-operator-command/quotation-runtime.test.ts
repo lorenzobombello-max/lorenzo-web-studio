@@ -198,3 +198,85 @@ Deno.test("template mismatch fails before issuance preparation", async ()=>{
   );
   assertEquals(rpcNames, ["resolve_first_customer_quotation_orchestration_v1"]);
 });
+
+Deno.test("SDF runtime uses frozen authority RPCs then shared render and archive without delivery", async ()=>{
+  const templateBytes = new Uint8Array([9, 8, 7]);
+  const templateSha256 = await sha256(templateBytes);
+  const renderedBytes = new Uint8Array([6, 5, 4]);
+  const renderedSha256 = await sha256(renderedBytes);
+  const businessDraftId = "a1800000-0000-4000-8000-000000000005";
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const events: string[] = [];
+  const serviceClient = {
+    rpc: async (name: string, args: Record<string, unknown>)=>{
+      events.push(name);
+      rpcCalls.push({ name, args });
+      if (name === "prepare_sdf_quotation_issuance_v1") return { data: [{
+        issuance_id: issuanceId,
+        quotation_number: "LWS-OFF-2099-0002",
+        quotation_version: 1,
+      }], error: null };
+      if (name === "build_sdf_quotation_issue_payload_v1") return { data: [{
+        payload: {
+          mode: "ISSUE",
+          template: {
+            template_id: "LWS_QUOTATION_NL_BE",
+            template_version: "1.0.0-technical",
+            template_sha256: templateSha256,
+          },
+        },
+        payload_sha256: generationPayloadSha256,
+      }], error: null };
+      if (name === "commit_sdf_quotation_issuance_v1") return { data: [{
+        status: "ISSUED",
+        issued_at: "2099-01-01T00:00:00Z",
+      }], error: null };
+      if (name === "register_quotation_artifact_v1") return { data: [{
+        storage_object_path: `issuances/${issuanceId}/docx/${renderedSha256}.docx`,
+      }], error: null };
+      throw new Error(`UNEXPECTED_RPC:${name}`);
+    },
+    storage: { from: (_bucket: string)=>({
+      upload: async (_path: string, _bytes: Uint8Array, _options: Record<string, unknown>)=>{
+        events.push("storage.upload");
+        return { data: {}, error: null };
+      },
+      download: async (_path: string)=>({ data: null, error: null }),
+    }) },
+  };
+  const dependencies = createQuotationRuntimeDependencies({
+    actorAuthUserId,
+    serviceClient,
+    route: "SDF",
+    sdfAuthority: {
+      businessDraftId,
+      approvalId,
+      approvalVersion: 3,
+      approvalSha256: "d".repeat(64),
+      generationContractVersion: 1,
+    },
+    templateBytes,
+    renderDocx: ({ templateBytes: observedTemplate, rendererPackage })=>{
+      events.push("render");
+      assertEquals(observedTemplate, templateBytes);
+      assertEquals(rendererPackage.generation_payload.mode, "ISSUE");
+      return { buffer: renderedBytes, sha256: renderedSha256 };
+    },
+  });
+
+  const result = await orchestrateApprovedQuotation({ actorAuthUserId, quoteRequestId }, dependencies);
+  assertEquals(events, [
+    "prepare_sdf_quotation_issuance_v1",
+    "build_sdf_quotation_issue_payload_v1",
+    "render",
+    "commit_sdf_quotation_issuance_v1",
+    "storage.upload",
+    "register_quotation_artifact_v1",
+  ]);
+  assertEquals(rpcCalls[0].args.p_business_draft_id, businessDraftId);
+  assertEquals(rpcCalls[1].args.p_issuance_id, issuanceId);
+  assertEquals(rpcCalls[2].args.p_docx_sha256, renderedSha256);
+  assertEquals(rpcCalls.some(({ args })=>"p_admin_access_token" in args), false);
+  assertEquals(result.delivery_status, "NOT_STARTED");
+  assertEquals(result.delivery_attempted, false);
+});

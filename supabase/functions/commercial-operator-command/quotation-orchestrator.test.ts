@@ -261,3 +261,41 @@ Deno.test("mail provider failure is returned without false SENT state", async ()
   assertEquals(result.delivery_status, "retry_wait");
   assertEquals(result.delivery_attempted, true);
 });
+
+Deno.test("SDF quotation archives with stable frozen-authority keys and never enters delivery", async ()=>{
+  const events: string[] = [];
+  const keys = { prepare: new Set<string>(), commit: new Set<string>(), artifact: new Set<string>() };
+  const sdfContext = {
+    route: "SDF" as const,
+    businessDraftId: "a5000000-0000-4000-8000-000000000001",
+    approvalId,
+    approvalVersion: 3,
+    approvalSha256: "5".repeat(64),
+    generationContractVersion: 1,
+  };
+  const deps = dependencies(events, {
+    resolveContext: async ()=>sdfContext,
+    prepareIssuance: async (_context, key)=>{
+      keys.prepare.add(key);
+      return { issuanceId, quotationNumber: "LWS-OFF-2099-0001", quotationVersion: 1 };
+    },
+    commitIssuance: async (_context, _issuance, _payload, _artifact, key)=>{
+      keys.commit.add(key);
+      return { status: "ISSUED", issuedAt: "2099-01-01T00:00:00Z" };
+    },
+    archiveArtifact: async (_issuance, _artifact, key)=>{
+      keys.artifact.add(key);
+      return { status: "ARCHIVED" };
+    },
+    deliverIssuance: undefined,
+  });
+
+  const first = await orchestrateApprovedQuotation({ actorAuthUserId, quoteRequestId }, deps);
+  const replay = await orchestrateApprovedQuotation({ actorAuthUserId, quoteRequestId }, deps);
+  assertEquals(first, replay);
+  assertEquals(first.delivery_status, "NOT_STARTED");
+  assertEquals(first.delivery_attempted, false);
+  assertEquals(keys.prepare.size, 1);
+  assertEquals(keys.commit.size, 1);
+  assertEquals(keys.artifact.size, 1);
+});

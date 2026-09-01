@@ -8,7 +8,8 @@ export type QuotationOrchestrationInput = Readonly<{
   quoteRequestId: string;
 }>;
 
-export type QuotationOrchestrationContext = Readonly<{
+type LegacyQuotationOrchestrationContext = Readonly<{
+  route?: "LEGACY";
   approvalId: string;
   adminAccessTokenHash: string;
   issueYear: number;
@@ -21,6 +22,19 @@ export type QuotationOrchestrationContext = Readonly<{
   }>;
   seller: Record<string, unknown>;
 }>;
+
+type SdfQuotationOrchestrationContext = Readonly<{
+  route: "SDF";
+  businessDraftId: string;
+  approvalId: string;
+  approvalVersion: number;
+  approvalSha256: string;
+  generationContractVersion: number;
+}>;
+
+export type QuotationOrchestrationContext =
+  | LegacyQuotationOrchestrationContext
+  | SdfQuotationOrchestrationContext;
 
 type PreparedIssuance = Readonly<{
   issuanceId: string;
@@ -61,7 +75,7 @@ export type QuotationOrchestrationDependencies = Readonly<{
     artifact: RenderedDocx,
     idempotencyKey: string,
   ): PromiseLike<Readonly<{ status: "ARCHIVED" }>>;
-  deliverIssuance(
+  deliverIssuance?(
     context: QuotationOrchestrationContext,
     issuance: PreparedIssuance,
     idempotencyKeys: Readonly<{ capability: string; delivery: string }>,
@@ -80,7 +94,19 @@ async function deterministicUuid(namespace: string, label: string): Promise<stri
 }
 
 function validateContext(context: QuotationOrchestrationContext): void {
-  if (!UUID.test(context.approvalId) || !SHA256.test(context.adminAccessTokenHash)
+  if (!UUID.test(context.approvalId)) {
+    throw new Error("QUOTATION_ORCHESTRATION_CONTEXT_INVALID");
+  }
+  if (context.route === "SDF") {
+    if (!UUID.test(context.businessDraftId)
+      || !Number.isSafeInteger(context.approvalVersion) || context.approvalVersion < 1
+      || !SHA256.test(context.approvalSha256)
+      || context.generationContractVersion !== 1) {
+      throw new Error("QUOTATION_ORCHESTRATION_CONTEXT_INVALID");
+    }
+    return;
+  }
+  if (!SHA256.test(context.adminAccessTokenHash)
     || !Number.isSafeInteger(context.issueYear) || context.issueYear < 2000 || context.issueYear > 9999
     || !SHA256.test(context.issuanceInputSha256)
     || context.template.authority_status !== "APPROVED"
@@ -100,11 +126,13 @@ export async function orchestrateApprovedQuotation(
   }
   const context = await dependencies.resolveContext(input.actorAuthUserId, input.quoteRequestId);
   validateContext(context);
-  const prepareKey = await deterministicUuid(context.approvalId, "quotation-prepare-v1");
-  const commitKey = await deterministicUuid(context.approvalId, "quotation-commit-v1");
-  const artifactKey = await deterministicUuid(context.approvalId, "quotation-artifact-v1");
-  const capabilityKey = await deterministicUuid(context.approvalId, "quotation-capability-v1");
-  const deliveryKey = await deterministicUuid(context.approvalId, "quotation-delivery-v1");
+  const operationAuthority = context.route === "SDF"
+    ? [context.businessDraftId, context.approvalId, context.approvalVersion,
+      context.approvalSha256, context.generationContractVersion].join(":")
+    : context.approvalId;
+  const prepareKey = await deterministicUuid(operationAuthority, "quotation-prepare-v1");
+  const commitKey = await deterministicUuid(operationAuthority, "quotation-commit-v1");
+  const artifactKey = await deterministicUuid(operationAuthority, "quotation-artifact-v1");
 
   const issuance = await dependencies.prepareIssuance(context, prepareKey);
   if (!UUID.test(issuance.issuanceId)
@@ -137,6 +165,21 @@ export async function orchestrateApprovedQuotation(
   }
   const archived = await dependencies.archiveArtifact(issuance, rendered, artifactKey);
   if (archived.status !== "ARCHIVED") throw new Error("QUOTATION_ARTIFACT_ARCHIVE_INVALID");
+  if (context.route === "SDF") {
+    return {
+      issuance_id: issuance.issuanceId,
+      quotation_number: issuance.quotationNumber,
+      quotation_version: issuance.quotationVersion,
+      issuance_status: committed.status,
+      issued_at: committed.issuedAt,
+      artifact_status: archived.status,
+      delivery_status: "NOT_STARTED",
+      delivery_attempted: false,
+    };
+  }
+  if (!dependencies.deliverIssuance) throw new Error("QUOTATION_DELIVERY_DEPENDENCY_MISSING");
+  const capabilityKey = await deterministicUuid(context.approvalId, "quotation-capability-v1");
+  const deliveryKey = await deterministicUuid(context.approvalId, "quotation-delivery-v1");
   const delivery = await dependencies.deliverIssuance(context, issuance, {
     capability: capabilityKey,
     delivery: deliveryKey,
