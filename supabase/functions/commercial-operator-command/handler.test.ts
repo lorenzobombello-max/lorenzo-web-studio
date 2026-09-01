@@ -341,6 +341,10 @@ const sdfQuotationDeliveryPreparationRequest = {
   artifact_sha256: "b".repeat(64),
   artifact_bytes: 4096,
 };
+const sdfQuotationDeliverySendRequest = {
+  ...sdfQuotationDeliveryPreparationRequest,
+  action: "send_sdf_quotation_delivery" as const,
+};
 
 Deno.test("allowed production preflight returns the complete CORS contract without side effects", async () => {
   let nextCalls = 0;
@@ -3294,6 +3298,46 @@ Deno.test("SDF delivery preparation maps owner denial without masking internal f
   );
   assertEquals(internalFailure.status, 500);
   assertEquals((await internalFailure.json()).code, "INTERNAL_ERROR");
+});
+
+Deno.test("SDF delivery send accepts only frozen authority identity", async () => {
+  const harness = dependencies();
+  const accepted = await handleCommercialOperator(
+    request(sdfQuotationDeliverySendRequest),
+    harness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(harness.calls, [{ jwt, input: sdfQuotationDeliverySendRequest }]);
+
+  for (const forbidden of [
+    { recipient_email: "injected@example.test" },
+    { template: "INJECTED" },
+    { token: "injected" },
+    { encrypted_token: "injected" },
+    { acceptance_url: "https://example.test/injected" },
+    { idempotency_key: "a1800000-0000-4000-8000-000000000099" },
+    { admin_access_token: "injected" },
+    { attachment: "injected" },
+  ]) {
+    const invalidHarness = dependencies();
+    const response = await handleCommercialOperator(
+      request({ ...sdfQuotationDeliverySendRequest, ...forbidden }),
+      invalidHarness.deps,
+    );
+    assertEquals(response.status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+
+  const ownerDenied = await handleCommercialOperator(
+    request(sdfQuotationDeliverySendRequest),
+    dependencies({
+      executeApplicationAction: async () => {
+        throw new Error("OWNER_REQUIRED");
+      },
+    }).deps,
+  );
+  assertEquals(ownerDenied.status, 403);
+  assertEquals((await ownerDenied.json()).code, "OPERATOR_NOT_AUTHORIZED");
 });
 
 Deno.test("approved quotation issuance exposes stable stage errors", async () => {

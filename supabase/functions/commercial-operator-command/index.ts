@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
   type CustomerRequestActionInput,
   type CustomerRequestUploadInboxPromotionActionInput,
@@ -21,12 +21,16 @@ import {
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
   type SdfQuotationDeliveryPreparationActionInput,
+  type SdfQuotationDeliverySendActionInput,
   type SdfQuotationIssuanceActionInput,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
 } from "./handler.ts";
-import { deliverIssuedQuotation } from "../_shared/quotation-email-orchestration.ts";
+import {
+  deliverIssuedQuotation,
+  sendPreparedSdfQuotationDelivery,
+} from "../_shared/quotation-email-orchestration.ts";
 import { orchestrateApprovedQuotation } from "./quotation-orchestrator.ts";
 import {
   createQuotationRuntimeDependencies,
@@ -406,6 +410,29 @@ export async function executeSdfQuotationDeliveryPreparationAction(
     artifactSha256: input.artifact_sha256,
     artifactBytes: input.artifact_bytes,
   }, { client });
+}
+
+export async function executeSdfQuotationDeliverySendAction(
+  input: SdfQuotationDeliverySendActionInput,
+  authorityClient: SupabaseClient,
+  transportClient: SupabaseClient,
+  email: Readonly<{ from: string; resendApiKey: string }>,
+): Promise<unknown> {
+  return await sendPreparedSdfQuotationDelivery({
+    authorityClient,
+    transportClient,
+    authority: {
+      businessDraftId: input.business_draft_id,
+      approvalId: input.approval_id,
+      approvalVersion: input.approval_version,
+      approvalSha256: input.approval_sha256,
+      issuanceId: input.issuance_id,
+      artifactId: input.artifact_id,
+      artifactSha256: input.artifact_sha256,
+      artifactBytes: input.artifact_bytes,
+    },
+    ...email,
+  });
 }
 
 export async function executeQuotationBusinessDraftAction(
@@ -1228,6 +1255,19 @@ if (import.meta.main) {
             return await executeSdfQuotationDeliveryPreparationAction(
               input as SdfQuotationDeliveryPreparationActionInput,
               clientFor(jwt),
+            );
+          }
+          if (input.action === "send_sdf_quotation_delivery") {
+            const from = Deno.env.get("FROM_EMAIL") || "";
+            const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
+            if (!from || !resendApiKey) {
+              throw new Error("SERVER_CONFIGURATION_ERROR");
+            }
+            return await executeSdfQuotationDeliverySendAction(
+              input as SdfQuotationDeliverySendActionInput,
+              clientFor(jwt),
+              serviceClient(),
+              { from, resendApiKey },
             );
           }
           if (input.action === "get_my_assigned_dossiers") {

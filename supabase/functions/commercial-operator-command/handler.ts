@@ -35,6 +35,7 @@ const APPLICATION_ACTIONS = new Set([
   "issue_and_deliver_approved_quotation",
   "issue_sdf_approved_quotation",
   "prepare_sdf_quotation_delivery",
+  "send_sdf_quotation_delivery",
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
@@ -296,6 +297,17 @@ export type SdfQuotationIssuanceActionInput = Readonly<{
 }>;
 export type SdfQuotationDeliveryPreparationActionInput = Readonly<{
   action: "prepare_sdf_quotation_delivery";
+  business_draft_id: string;
+  approval_id: string;
+  approval_version: number;
+  approval_sha256: string;
+  issuance_id: string;
+  artifact_id: string;
+  artifact_sha256: string;
+  artifact_bytes: number;
+}>;
+export type SdfQuotationDeliverySendActionInput = Readonly<{
+  action: "send_sdf_quotation_delivery";
   business_draft_id: string;
   approval_id: string;
   approval_version: number;
@@ -827,7 +839,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "approval_sha256",
       "generation_contract_version",
     ])
-    : action === "prepare_sdf_quotation_delivery"
+    : action === "prepare_sdf_quotation_delivery" ||
+      action === "send_sdf_quotation_delivery"
     ? new Set([
       "action",
       "business_draft_id",
@@ -1051,7 +1064,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
       generation_contract_version: generationContractVersion,
     };
   }
-  if (action === "prepare_sdf_quotation_delivery") {
+  if (
+    action === "prepare_sdf_quotation_delivery" ||
+    action === "send_sdf_quotation_delivery"
+  ) {
     const businessDraftId = String(value.business_draft_id || "");
     const approvalId = String(value.approval_id || "");
     const approvalVersion = value.approval_version;
