@@ -299,7 +299,8 @@ Deno.test("SDF delivery preparation calls only the owner-authorized bridge and r
   const emailJobId = "a1800000-0000-4000-8000-000000000008";
   const capabilityId = "a1800000-0000-4000-8000-000000000009";
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
-  let replay = false;
+  let capabilityWasCreated = true;
+  let deliveryWasCreated = true;
   const dependencies = {
     client: {
       rpc: async (name: string, args: Record<string, unknown>)=>{
@@ -315,11 +316,12 @@ Deno.test("SDF delivery preparation calls only the owner-authorized bridge and r
           artifact_id: authority.artifactId,
           artifact_sha256: authority.artifactSha256,
           artifact_bytes: authority.artifactBytes,
-          capability_was_created: !replay,
-          delivery_was_created: !replay,
+          capability_was_created: capabilityWasCreated,
+          delivery_was_created: deliveryWasCreated,
           stored_token_digest: "server-secret-digest",
           encrypted_token: "server-secret-token",
           recipient_email: "customer@example.test",
+          acceptance_url: "https://example.test/quotation/accept",
         }], error: null };
       },
     },
@@ -373,14 +375,27 @@ Deno.test("SDF delivery preparation calls only the owner-authorized bridge and r
     mail_delivery_status: "NOT_STARTED",
     delivery_attempted: false,
   });
-  assertEquals(JSON.stringify(prepared).includes("secret"), false);
+  const sensitiveValues = [
+    "runtime-raw-token",
+    "runtime-encrypted-token",
+    "server-secret-digest",
+    "server-secret-token",
+    "customer@example.test",
+    "https://example.test/quotation/accept",
+  ];
+  assertEquals(
+    sensitiveValues.some((value) => JSON.stringify(prepared).includes(value)),
+    false,
+  );
 
-  replay = true;
+  capabilityWasCreated = false;
+  deliveryWasCreated = false;
   const replayed = await prepareSdfQuotationDelivery(authority, dependencies);
   assertEquals(calls.length, 2);
   assertEquals(calls.every(({ name })=>
     name === "prepare_sdf_issued_quotation_delivery_v1"
   ), true);
+  assertEquals(replayed.delivery_preparation_status, "REUSED");
   assertEquals(replayed.acceptance_capability, {
     capability_id: capabilityId,
     preparation_status: "REUSED",
@@ -392,4 +407,22 @@ Deno.test("SDF delivery preparation calls only the owner-authorized bridge and r
   });
   assertEquals(replayed.mail_delivery_status, "NOT_STARTED");
   assertEquals(replayed.delivery_attempted, false);
+  assertEquals(
+    sensitiveValues.some((value) => JSON.stringify(replayed).includes(value)),
+    false,
+  );
+
+  deliveryWasCreated = true;
+  await assertRejects(
+    () => prepareSdfQuotationDelivery(authority, dependencies),
+    Error,
+    "SDF_DELIVERY_PREPARATION_INVALID",
+  );
+  capabilityWasCreated = true;
+  deliveryWasCreated = false;
+  await assertRejects(
+    () => prepareSdfQuotationDelivery(authority, dependencies),
+    Error,
+    "SDF_DELIVERY_PREPARATION_INVALID",
+  );
 });

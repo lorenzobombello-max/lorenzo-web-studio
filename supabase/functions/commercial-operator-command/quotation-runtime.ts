@@ -153,18 +153,22 @@ export async function prepareSdfQuotationDelivery(
   const artifactId = String(data.artifact_id || "");
   const artifactSha256 = String(data.artifact_sha256 || "");
   const artifactBytes = Number(data.artifact_bytes);
+  const capabilityWasCreated = data.capability_was_created;
+  const deliveryWasCreated = data.delivery_was_created;
   if (
     !UUID.test(orchestrationId) || !UUID.test(emailJobId) ||
     !UUID.test(capabilityId) || artifactId !== authority.artifactId ||
     artifactSha256 !== authority.artifactSha256 ||
     artifactBytes !== authority.artifactBytes || data.job_status !== "pending" ||
-    typeof data.capability_was_created !== "boolean" ||
-    typeof data.delivery_was_created !== "boolean"
+    typeof capabilityWasCreated !== "boolean" ||
+    typeof deliveryWasCreated !== "boolean" ||
+    capabilityWasCreated !== deliveryWasCreated
   ) {
     throw new Error("SDF_DELIVERY_PREPARATION_INVALID");
   }
+  const deliveryPreparationStatus = capabilityWasCreated ? "PREPARED" : "REUSED";
   return {
-    delivery_preparation_status: "PREPARED",
+    delivery_preparation_status: deliveryPreparationStatus,
     issuance_id: authority.issuanceId,
     artifact: {
       artifact_id: artifactId,
@@ -174,12 +178,12 @@ export async function prepareSdfQuotationDelivery(
     },
     acceptance_capability: {
       capability_id: capabilityId,
-      preparation_status: data.capability_was_created ? "PREPARED" : "REUSED",
+      preparation_status: deliveryPreparationStatus,
     },
     delivery_job: {
       orchestration_id: orchestrationId,
       email_job_id: emailJobId,
-      preparation_status: data.delivery_was_created ? "PREPARED" : "REUSED",
+      preparation_status: deliveryPreparationStatus,
     },
     mail_delivery_status: "NOT_STARTED",
     delivery_attempted: false,
