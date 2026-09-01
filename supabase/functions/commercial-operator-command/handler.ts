@@ -36,6 +36,7 @@ const APPLICATION_ACTIONS = new Set([
   "issue_sdf_approved_quotation",
   "prepare_sdf_quotation_delivery",
   "send_sdf_quotation_delivery",
+  "prepare_sdf_m1_invoice",
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
@@ -316,6 +317,12 @@ export type SdfQuotationDeliverySendActionInput = Readonly<{
   artifact_id: string;
   artifact_sha256: string;
   artifact_bytes: number;
+}>;
+export type SdfM1InvoicePreparationActionInput = Readonly<{
+  action: "prepare_sdf_m1_invoice";
+  obligation_id: string;
+  template_authority_id: string;
+  idempotency_key: string;
 }>;
 export type DossierDocumentActionInput =
   | Readonly<{
@@ -852,6 +859,13 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "artifact_sha256",
       "artifact_bytes",
     ])
+    : action === "prepare_sdf_m1_invoice"
+    ? new Set([
+      "action",
+      "obligation_id",
+      "template_authority_id",
+      "idempotency_key",
+    ])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "create_customer_request_smoke_fixture"
@@ -1095,6 +1109,23 @@ function validateApplicationAction(value: UnvalidatedInput) {
       artifact_id: artifactId,
       artifact_sha256: artifactSha256,
       artifact_bytes: artifactBytes as number,
+    };
+  }
+  if (action === "prepare_sdf_m1_invoice") {
+    const obligationId = String(value.obligation_id || "");
+    const templateAuthorityId = String(value.template_authority_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (
+      !UUID.test(obligationId) || !UUID.test(templateAuthorityId) ||
+      !UUID.test(idempotencyKey)
+    ) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      obligation_id: obligationId,
+      template_authority_id: templateAuthorityId,
+      idempotency_key: idempotencyKey,
     };
   }
   if (action === "list_pending_sdf_qualification_intakes") return { action };
@@ -1693,6 +1724,7 @@ function mapDatabaseError(error: unknown) {
       "OWNER_REQUIRED",
       "RECRUITMENT_OWNER_REQUIRED",
       "PROJECT_SITE_OWNER_ADMIN_REQUIRED",
+      "SDF_INVOICE_AUTHORITY_DENIED",
       "INTERNAL_E2E_OWNER_REQUIRED",
       "INTERNAL_E2E_CLEANUP_BINDING_REQUIRED",
       "INTERNAL_E2E_CLEANUP_AUTHORIZATION_REQUIRED",
@@ -1719,6 +1751,19 @@ function mapDatabaseError(error: unknown) {
   }
   if (code === "AMBIGUOUS_SUPPORT_REFERENCE") return response(409, code);
   if (code === "INTAKE_NOT_FOUND") return response(404, code);
+  if (code === "SDF_M1_OBLIGATION_REQUIRED") {
+    return response(404, "NOT_FOUND");
+  }
+  if (code === "SDF_INVOICE_TEMPLATE_AUTHORITY_REQUIRED") {
+    return response(404, "NOT_FOUND");
+  }
+  if (code === "SDF_M1_INVOICE_CANDIDATE_CONFLICT") {
+    return response(409, "CONFLICT");
+  }
+  if (
+    code === "SDF_APPLICATION_REFERENCE_REQUIRED" ||
+    code === "SDF_M1_INVOICE_CANDIDATE_LINKAGE_MISMATCH"
+  ) return response(409, "VALIDATION_FAILED");
   if (code === "PENDING_INTAKE_NOT_FOUND") return response(404, code);
   if (code === "STALE_PENDING_INTAKE_RETENTION_REVISION") {
     return response(409, "CONCURRENT_MODIFICATION");
@@ -1872,6 +1917,37 @@ function mapDatabaseError(error: unknown) {
     return response(409, "COMMAND_REJECTED");
   }
   return response(500, "INTERNAL_ERROR");
+}
+
+export async function executeSdfM1InvoicePreparationTransport(
+  client: DossierAssignmentRpcClient,
+  input: SdfM1InvoicePreparationActionInput,
+): Promise<Readonly<Record<string, unknown>>> {
+  const { data, error } = await client.rpc(
+    "prepare_sdf_m1_invoice_candidate_v1",
+    {
+      p_obligation_id: input.obligation_id,
+      p_template_authority_id: input.template_authority_id,
+      p_idempotency_key: input.idempotency_key,
+    },
+  );
+  if (error) throw new Error(error.message);
+  if (
+    !isRecord(data) ||
+    !hasExactKeys(data, [
+      "candidate_id",
+      "candidate_state",
+      "invoice_number",
+      "was_created",
+    ]) ||
+    !UUID.test(String(data.candidate_id || "")) ||
+    data.candidate_state !== "PREPARED" ||
+    data.invoice_number !== null ||
+    typeof data.was_created !== "boolean"
+  ) {
+    throw new Error("INVALID_SDF_M1_INVOICE_PREPARATION_RESPONSE");
+  }
+  return { obligation_id: input.obligation_id, ...data };
 }
 
 export async function executeDossierAssignmentReadTransport(

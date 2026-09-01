@@ -23,6 +23,8 @@ import {
   type SdfQuotationDeliveryPreparationActionInput,
   type SdfQuotationDeliverySendActionInput,
   type SdfQuotationIssuanceActionInput,
+  type SdfM1InvoicePreparationActionInput,
+  executeSdfM1InvoicePreparationTransport,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
@@ -185,6 +187,8 @@ type ValidatedApplicationActionInput =
     approval_version: number;
     approval_sha256: string;
     generation_contract_version: number;
+    obligation_id: string;
+    template_authority_id: string;
     issuance_id: string;
     artifact_id: string;
     artifact_sha256: string;
@@ -296,6 +300,14 @@ export async function executeCallerJwtRecruitmentVacancyAction(
   clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeRecruitmentVacancyTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtSdfM1InvoicePreparationAction(
+  jwt: string,
+  input: SdfM1InvoicePreparationActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeSdfM1InvoicePreparationTransport(clientFor(jwt), input);
 }
 
 export async function executeServiceRoleWorkforceCalendarAction(
@@ -1163,6 +1175,13 @@ if (import.meta.main) {
             const { data, error } = await clientFor(jwt).rpc("authorize_sdf_quotation_preparation_v1", { p_quote_request_id: input.quote_request_id, p_idempotency_key: input.idempotency_key });
             if (error) throw new Error(error.message);
             return data;
+          }
+          if (input.action === "prepare_sdf_m1_invoice") {
+            return await executeCallerJwtSdfM1InvoicePreparationAction(
+              jwt,
+              input as SdfM1InvoicePreparationActionInput,
+              clientFor,
+            );
           }
           if (input.action === "get_assignment_operator_roster") {
             return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);

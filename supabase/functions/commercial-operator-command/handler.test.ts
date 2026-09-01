@@ -11,6 +11,7 @@ import {
   executeDossierLifecycleTransport,
   executeOperatorPersonalQueueTransport,
   executeRecruitmentVacancyTransport,
+  executeSdfM1InvoicePreparationTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   withCommercialOperatorCors,
@@ -30,6 +31,7 @@ import {
   executeCallerJwtInternalE2EAcceptedFileCleanupAction,
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
+  executeCallerJwtSdfM1InvoicePreparationAction,
   executeCustomerRequestUploadInboxPromotionAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
@@ -303,6 +305,167 @@ Deno.test("removed SDF active-work acceptance action fails closed", async () => 
   const rejected = await handleCommercialOperator(request(input), harness.deps);
   assertEquals(rejected.status, 400);
   assertEquals(harness.calls.length, 0);
+});
+
+const sdfM1InvoicePreparationRequest = {
+  action: "prepare_sdf_m1_invoice",
+  obligation_id: "a1800000-0000-4000-8000-000000000096",
+  template_authority_id: "a1800000-0000-4000-8000-000000000097",
+  idempotency_key: "a1800000-0000-4000-8000-000000000098",
+} as const;
+
+Deno.test("SDF M1 invoice preparation accepts only exact authority inputs", async () => {
+  const harness = dependencies();
+  const accepted = await handleCommercialOperator(
+    request(sdfM1InvoicePreparationRequest),
+    harness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(harness.calls[0], {
+    jwt,
+    input: sdfM1InvoicePreparationRequest,
+  });
+
+  for (const override of [
+    { amount_minor: 1 },
+    { currency: "EUR" },
+    { percentage_basis_points: 4000 },
+    { vat_treatment: "EXEMPT" },
+    { quotation_number: "LWS-2099-0001" },
+    { customer_snapshot: {} },
+    { sdf_package: "start" },
+  ]) {
+    const rejected = await handleCommercialOperator(
+      request({ ...sdfM1InvoicePreparationRequest, ...override }),
+      dependencies().deps,
+    );
+    assertEquals(rejected.status, 400);
+    assertEquals((await rejected.json()).code, "INVALID_REQUEST");
+  }
+});
+
+Deno.test("SDF M1 invoice preparation transport reuses the caller RPC and canonical response", async () => {
+  const calls: unknown[] = [];
+  const candidateId = "a1800000-0000-4000-8000-000000000099";
+  const client = {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+      return {
+        data: {
+          candidate_id: candidateId,
+          candidate_state: "PREPARED",
+          invoice_number: null,
+          was_created: true,
+        },
+        error: null,
+      };
+    },
+  };
+  assertEquals(
+    await executeSdfM1InvoicePreparationTransport(
+      client,
+      sdfM1InvoicePreparationRequest,
+    ),
+    {
+      obligation_id: sdfM1InvoicePreparationRequest.obligation_id,
+      candidate_id: candidateId,
+      candidate_state: "PREPARED",
+      invoice_number: null,
+      was_created: true,
+    },
+  );
+  assertEquals(calls, [{
+    name: "prepare_sdf_m1_invoice_candidate_v1",
+    args: {
+      p_obligation_id: sdfM1InvoicePreparationRequest.obligation_id,
+      p_template_authority_id:
+        sdfM1InvoicePreparationRequest.template_authority_id,
+      p_idempotency_key: sdfM1InvoicePreparationRequest.idempotency_key,
+    },
+  }]);
+
+  const reused = await executeSdfM1InvoicePreparationTransport({
+    rpc: async () => ({
+      data: {
+        candidate_id: candidateId,
+        candidate_state: "PREPARED",
+        invoice_number: null,
+        was_created: false,
+      },
+      error: null,
+    }),
+  }, sdfM1InvoicePreparationRequest);
+  assertEquals(reused.candidate_id, candidateId);
+  assertEquals(reused.was_created, false);
+});
+
+Deno.test("SDF M1 invoice preparation index dispatch constructs only a caller JWT client", async () => {
+  const seenJwts: string[] = [];
+  const candidateId = "a1800000-0000-4000-8000-000000000099";
+  const result = await executeCallerJwtSdfM1InvoicePreparationAction(
+    jwt,
+    sdfM1InvoicePreparationRequest,
+    (seenJwt) => {
+      seenJwts.push(seenJwt);
+      return {
+        rpc: async () => ({
+          data: {
+            candidate_id: candidateId,
+            candidate_state: "PREPARED",
+            invoice_number: null,
+            was_created: true,
+          },
+          error: null,
+        }),
+      };
+    },
+  );
+  assertEquals(seenJwts, [jwt]);
+  assertEquals(result, {
+    obligation_id: sdfM1InvoicePreparationRequest.obligation_id,
+    candidate_id: candidateId,
+    candidate_state: "PREPARED",
+    invoice_number: null,
+    was_created: true,
+  });
+});
+
+Deno.test("SDF M1 invoice preparation fails closed on response drift and maps RPC errors", async () => {
+  await assertRejects(
+    () => executeSdfM1InvoicePreparationTransport({
+      rpc: async () => ({
+        data: {
+          candidate_id: crypto.randomUUID(),
+          candidate_state: "ISSUED",
+          invoice_number: "LWS-2099-0001",
+          was_created: true,
+        },
+        error: null,
+      }),
+    }, sdfM1InvoicePreparationRequest),
+    Error,
+    "INVALID_SDF_M1_INVOICE_PREPARATION_RESPONSE",
+  );
+
+  for (const [message, status, code] of [
+    ["SDF_INVOICE_AUTHORITY_DENIED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["SDF_M1_OBLIGATION_REQUIRED", 404, "NOT_FOUND"],
+    ["SDF_INVOICE_TEMPLATE_AUTHORITY_REQUIRED", 404, "NOT_FOUND"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["SDF_M1_INVOICE_CANDIDATE_CONFLICT", 409, "CONFLICT"],
+    ["SDF_APPLICATION_REFERENCE_REQUIRED", 409, "VALIDATION_FAILED"],
+  ] as const) {
+    const response = await handleCommercialOperator(
+      request(sdfM1InvoicePreparationRequest),
+      dependencies({
+        executeApplicationAction: async () => {
+          throw new Error(message);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status);
+    assertEquals((await response.json()).code, code);
+  }
 });
 const quotationBusinessRequest = {
   action: "upsert_quotation_business_draft" as const,
