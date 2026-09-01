@@ -102,7 +102,7 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     read("assets/js/sdf-qualification-intake.js"),
   ]);
 
-  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-2/);
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-3/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
@@ -144,7 +144,7 @@ test("SDF qualification intake personalizes only the capability-bound customer d
   assert.doesNotMatch(customerModule, /quote_request_id|application_id|application_reference|automation|provider|token|capability/i);
 });
 
-test("SDF commercial qualification V2 captures package direction and per-type volumes without pricing authority", async () => {
+test("SDF commercial qualification V3 captures capacities without pricing authority", async () => {
   const [html, script] = await Promise.all([
     read("pages/sdf-qualification-intake.html"),
     read("assets/js/sdf-qualification-intake.js"),
@@ -158,12 +158,16 @@ test("SDF commercial qualification V2 captures package direction and per-type vo
     "customComplexity",
     "documentVolumeSection",
     "documentVolumes",
+    "flowCount",
+    "userCount",
     "qualificationSummary",
   ]) {
     assert.match(html, new RegExp(`id="${id}"`), `Missing V2 control #${id}`);
   }
 
   assert.match(script, /commercialQualification:\{packageDirection:/);
+  assert.match(script, /flowCount:flowCount===""\?null:Number\(flowCount\)/);
+  assert.match(script, /userCount:userCount===""\?null:Number\(userCount\)/);
   assert.match(script, /documentType:category,documentCount:/);
   assert.match(script, /averagePagesPerDocument:/);
   assert.match(script, /min="1" max="1000000"/);

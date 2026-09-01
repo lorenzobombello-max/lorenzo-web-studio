@@ -17,6 +17,8 @@ const fixture = (direction = "pro") => ({
   commercialQualification: {
     packageDirection: direction,
     customComplexity: direction === "maatwerk" ? "Koppeling met twee ERP-systemen" : "",
+    flowCount: 6,
+    userCount: 25,
     documentVolumes: [
       { documentType: "invoice", documentCount: 120, period: "monthly", averagePagesPerDocument: 2 },
       { documentType: "quotation", documentCount: 30, period: "quarterly", averagePagesPerDocument: 5 },
@@ -33,6 +35,7 @@ test("PRO review contains all canonical customer-facing qualification data and d
     "PRO", "€7.500 implementatie · €449/maand · excl. btw", "Factuur", "120 documenten per maand",
     "Gemiddeld 2 pagina's per document", "Geschat volume: 240 pagina's per maand", "Offerte",
     "30 documenten per kwartaal", "Geschat volume: 150 pagina's per kwartaal", "Ontvangen, Controleren, Goedkeuren",
+    "Afzonderlijke document- of businessflows", "6", "Gebruikersaccounts of personen", "25",
     "Inkomende documenten worden handmatig verdeeld.", "Documenten automatisch herkennen en laten goedkeuren.",
     "1 tot 9".replace("1 tot 9", "50 tot 249"), "Maandelijks", "Facturen, Offertes", "Boekhouding, Zaakvoerder",
   ]) assert.match(output, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

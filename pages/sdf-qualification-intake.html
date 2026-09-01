@@ -10,7 +10,7 @@
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
   <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260901-2" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260901-2"></script>
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260901-3"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -83,6 +83,8 @@
               <label><input type="radio" name="packageDirection" value="advice_requested" /><span><strong>ADVIES GEWENST</strong><small>We bepalen samen welke richting passend is.</small></span></label>
             </div>
             <div id="customComplexityField" class="sdf-field" hidden><label for="customComplexity">Wat maakt uw documentenflow afwijkend of complex?</label><textarea id="customComplexity" rows="4" maxlength="2000"></textarea></div>
+            <div class="sdf-field"><label for="flowCount">Aantal afzonderlijke document- of businessflows</label><input id="flowCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
+            <div class="sdf-field"><label for="userCount">Aantal gebruikersaccounts of personen</label><input id="userCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
           </section>
 
           <section class="sdf-form-section" aria-labelledby="documentTypesLabel">

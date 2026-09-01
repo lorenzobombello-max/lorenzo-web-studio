@@ -10,6 +10,8 @@ const completeStepOne = () => ({
   commercialQualification: {
     packageDirection: "start",
     customComplexity: "",
+    flowCount: 1,
+    userCount: 3,
     documentVolumes: [{ documentType: "invoice", documentCount: 100, period: "monthly", averagePagesPerDocument: 2 }],
   },
 });
@@ -85,4 +87,13 @@ test("volume validity requires an exact selected-type bijection", () => {
   const data = completeStepOne();
   data.commercialQualification.documentVolumes.push({ documentType: "quotation", documentCount: 1, period: "weekly", averagePagesPerDocument: 1 });
   assert.equal(deriveSdfStepState(data).valid[0], false);
+});
+
+test("step 1 requires positive integer flow and user capacities", () => {
+  const missingFlow = completeStepOne();
+  missingFlow.commercialQualification.flowCount = null;
+  const fractionalUsers = completeStepOne();
+  fractionalUsers.commercialQualification.userCount = 2.5;
+  assert.equal(deriveSdfStepState(missingFlow).valid[0], false);
+  assert.equal(deriveSdfStepState(fractionalUsers).valid[0], false);
 });

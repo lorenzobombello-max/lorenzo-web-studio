@@ -56,6 +56,8 @@ export function buildSdfQualificationPresentation(data, context = {}) {
   ];
   const packageRows = [
     ["Richting", packageInfo.label], ["Commerciële referentie", packageInfo.reference], ["Inbegrepen maximum", packageInfo.scope],
+    ["Afzonderlijke document- of businessflows", commercial.flowCount ?? "Niet opgegeven"],
+    ["Gebruikersaccounts of personen", commercial.userCount ?? "Niet opgegeven"],
     commercial.packageDirection === "maatwerk" ? ["Maatwerkcontext", text(commercial.customComplexity)] : null,
   ];
   return {

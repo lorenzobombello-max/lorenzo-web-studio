@@ -17,6 +17,8 @@ export function deriveSdfStepState(data = {}, confirmationAccepted = false) {
       boundedInteger(volume?.averagePagesPerDocument, 1, 1000));
   const stepOneValid = packageDirections.has(commercial?.packageDirection) &&
     (commercial.packageDirection !== "maatwerk" || nonEmptyString(commercial.customComplexity)) &&
+    boundedInteger(commercial.flowCount, 1, Number.MAX_SAFE_INTEGER) &&
+    boundedInteger(commercial.userCount, 1, Number.MAX_SAFE_INTEGER) &&
     selectedTypes.size > 0 &&
     (!selectedTypes.has("other_custom") || nonEmptyString(data.documentPurpose?.otherDescription)) &&
     volumesValid;
