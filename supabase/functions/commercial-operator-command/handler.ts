@@ -34,6 +34,7 @@ const APPLICATION_ACTIONS = new Set([
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
   "issue_sdf_approved_quotation",
+  "prepare_sdf_quotation_delivery",
   "list_applications",
   "list_applications_v2",
   "list_pending_intakes",
@@ -292,6 +293,17 @@ export type SdfQuotationIssuanceActionInput = Readonly<{
   approval_version: number;
   approval_sha256: string;
   generation_contract_version: number;
+}>;
+export type SdfQuotationDeliveryPreparationActionInput = Readonly<{
+  action: "prepare_sdf_quotation_delivery";
+  business_draft_id: string;
+  approval_id: string;
+  approval_version: number;
+  approval_sha256: string;
+  issuance_id: string;
+  artifact_id: string;
+  artifact_sha256: string;
+  artifact_bytes: number;
 }>;
 export type DossierDocumentActionInput =
   | Readonly<{
@@ -815,6 +827,18 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "approval_sha256",
       "generation_contract_version",
     ])
+    : action === "prepare_sdf_quotation_delivery"
+    ? new Set([
+      "action",
+      "business_draft_id",
+      "approval_id",
+      "approval_version",
+      "approval_sha256",
+      "issuance_id",
+      "artifact_id",
+      "artifact_sha256",
+      "artifact_bytes",
+    ])
     : action === "create_internal_e2e_run"
     ? new Set(["action", "idempotency_key", "run_label", "ttl_minutes"])
     : action === "create_customer_request_smoke_fixture"
@@ -1025,6 +1049,36 @@ function validateApplicationAction(value: UnvalidatedInput) {
       approval_version: approvalVersion as number,
       approval_sha256: approvalSha256,
       generation_contract_version: generationContractVersion,
+    };
+  }
+  if (action === "prepare_sdf_quotation_delivery") {
+    const businessDraftId = String(value.business_draft_id || "");
+    const approvalId = String(value.approval_id || "");
+    const approvalVersion = value.approval_version;
+    const approvalSha256 = String(value.approval_sha256 || "");
+    const issuanceId = String(value.issuance_id || "");
+    const artifactId = String(value.artifact_id || "");
+    const artifactSha256 = String(value.artifact_sha256 || "");
+    const artifactBytes = value.artifact_bytes;
+    if (
+      !UUID.test(businessDraftId) || !UUID.test(approvalId) ||
+      !Number.isSafeInteger(approvalVersion) || Number(approvalVersion) < 1 ||
+      !/^[0-9a-f]{64}$/.test(approvalSha256) || !UUID.test(issuanceId) ||
+      !UUID.test(artifactId) || !/^[0-9a-f]{64}$/.test(artifactSha256) ||
+      !Number.isSafeInteger(artifactBytes) || Number(artifactBytes) < 1
+    ) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      business_draft_id: businessDraftId,
+      approval_id: approvalId,
+      approval_version: approvalVersion as number,
+      approval_sha256: approvalSha256,
+      issuance_id: issuanceId,
+      artifact_id: artifactId,
+      artifact_sha256: artifactSha256,
+      artifact_bytes: artifactBytes as number,
     };
   }
   if (action === "list_pending_sdf_qualification_intakes") return { action };

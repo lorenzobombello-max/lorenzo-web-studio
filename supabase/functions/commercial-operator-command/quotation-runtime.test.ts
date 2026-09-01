@@ -1,6 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { orchestrateApprovedQuotation } from "./quotation-orchestrator.ts";
-import { createQuotationRuntimeDependencies } from "./quotation-runtime.ts";
+import {
+  createQuotationRuntimeDependencies,
+  prepareSdfQuotationDelivery,
+} from "./quotation-runtime.ts";
 
 const actorAuthUserId = "a1800000-0000-4000-8000-000000000001";
 const quoteRequestId = "a1800000-0000-4000-8000-000000000002";
@@ -279,4 +282,114 @@ Deno.test("SDF runtime uses frozen authority RPCs then shared render and archive
   assertEquals(rpcCalls.some(({ args })=>"p_admin_access_token" in args), false);
   assertEquals(result.delivery_status, "NOT_STARTED");
   assertEquals(result.delivery_attempted, false);
+});
+
+Deno.test("SDF delivery preparation calls only the owner-authorized bridge and returns a hard stop", async ()=>{
+  const authority = {
+    businessDraftId: "a1800000-0000-4000-8000-000000000005",
+    approvalId,
+    approvalVersion: 3,
+    approvalSha256: "d".repeat(64),
+    issuanceId,
+    artifactId: "a1800000-0000-4000-8000-000000000006",
+    artifactSha256: "e".repeat(64),
+    artifactBytes: 4096,
+  };
+  const orchestrationId = "a1800000-0000-4000-8000-000000000007";
+  const emailJobId = "a1800000-0000-4000-8000-000000000008";
+  const capabilityId = "a1800000-0000-4000-8000-000000000009";
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  let replay = false;
+  const dependencies = {
+    client: {
+      rpc: async (name: string, args: Record<string, unknown>)=>{
+        calls.push({ name, args });
+        if (name !== "prepare_sdf_issued_quotation_delivery_v1") {
+          throw new Error(`UNEXPECTED_RPC:${name}`);
+        }
+        return { data: [{
+          orchestration_id: orchestrationId,
+          email_job_id: emailJobId,
+          capability_id: capabilityId,
+          job_status: "pending",
+          artifact_id: authority.artifactId,
+          artifact_sha256: authority.artifactSha256,
+          artifact_bytes: authority.artifactBytes,
+          capability_was_created: !replay,
+          delivery_was_created: !replay,
+          stored_token_digest: "server-secret-digest",
+          encrypted_token: "server-secret-token",
+          recipient_email: "customer@example.test",
+        }], error: null };
+      },
+    },
+    createToken: ()=>"runtime-raw-token",
+    hashToken: async (token: string)=>{
+      assertEquals(token, "runtime-raw-token");
+      return "f".repeat(64);
+    },
+    encryptToken: async (token: string, digest: string)=>{
+      assertEquals(token, "runtime-raw-token");
+      assertEquals(digest, "f".repeat(64));
+      return "runtime-encrypted-token";
+    },
+  };
+
+  const prepared = await prepareSdfQuotationDelivery(authority, dependencies);
+  assertEquals(calls, [{
+    name: "prepare_sdf_issued_quotation_delivery_v1",
+    args: {
+      p_business_draft_id: authority.businessDraftId,
+      p_approval_id: authority.approvalId,
+      p_expected_approval_version: authority.approvalVersion,
+      p_expected_approval_sha256: authority.approvalSha256,
+      p_issuance_id: authority.issuanceId,
+      p_artifact_id: authority.artifactId,
+      p_expected_artifact_sha256: authority.artifactSha256,
+      p_expected_artifact_bytes: authority.artifactBytes,
+      p_token_digest: "f".repeat(64),
+      p_encrypted_token: "runtime-encrypted-token",
+      p_requested_expires_at: null,
+    },
+  }]);
+  assertEquals(prepared, {
+    delivery_preparation_status: "PREPARED",
+    issuance_id: authority.issuanceId,
+    artifact: {
+      artifact_id: authority.artifactId,
+      artifact_sha256: authority.artifactSha256,
+      artifact_bytes: authority.artifactBytes,
+      reuse_status: "REUSED",
+    },
+    acceptance_capability: {
+      capability_id: capabilityId,
+      preparation_status: "PREPARED",
+    },
+    delivery_job: {
+      orchestration_id: orchestrationId,
+      email_job_id: emailJobId,
+      preparation_status: "PREPARED",
+    },
+    mail_delivery_status: "NOT_STARTED",
+    delivery_attempted: false,
+  });
+  assertEquals(JSON.stringify(prepared).includes("secret"), false);
+
+  replay = true;
+  const replayed = await prepareSdfQuotationDelivery(authority, dependencies);
+  assertEquals(calls.length, 2);
+  assertEquals(calls.every(({ name })=>
+    name === "prepare_sdf_issued_quotation_delivery_v1"
+  ), true);
+  assertEquals(replayed.acceptance_capability, {
+    capability_id: capabilityId,
+    preparation_status: "REUSED",
+  });
+  assertEquals(replayed.delivery_job, {
+    orchestration_id: orchestrationId,
+    email_job_id: emailJobId,
+    preparation_status: "REUSED",
+  });
+  assertEquals(replayed.mail_delivery_status, "NOT_STARTED");
+  assertEquals(replayed.delivery_attempted, false);
 });

@@ -330,6 +330,17 @@ const sdfQuotationIssuanceRequest = {
   approval_sha256: "a".repeat(64),
   generation_contract_version: 1,
 };
+const sdfQuotationDeliveryPreparationRequest = {
+  action: "prepare_sdf_quotation_delivery" as const,
+  business_draft_id: "a1800000-0000-4000-8000-000000000091",
+  approval_id: "a1800000-0000-4000-8000-000000000092",
+  approval_version: 3,
+  approval_sha256: "a".repeat(64),
+  issuance_id: "a1800000-0000-4000-8000-000000000093",
+  artifact_id: "a1800000-0000-4000-8000-000000000094",
+  artifact_sha256: "b".repeat(64),
+  artifact_bytes: 4096,
+};
 
 Deno.test("allowed production preflight returns the complete CORS contract without side effects", async () => {
   let nextCalls = 0;
@@ -3198,6 +3209,65 @@ Deno.test("SDF quotation issuance accepts only frozen authority locators", async
   ]) {
     const invalidHarness = dependencies();
     assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+});
+
+Deno.test("SDF delivery preparation accepts only frozen authority and artifact identity", async () => {
+  const harness = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(
+      request(sdfQuotationDeliveryPreparationRequest),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(harness.calls, [{
+    jwt,
+    input: sdfQuotationDeliveryPreparationRequest,
+  }]);
+
+  for (const requiredField of [
+    "business_draft_id",
+    "approval_id",
+    "approval_version",
+    "approval_sha256",
+    "issuance_id",
+    "artifact_id",
+    "artifact_sha256",
+    "artifact_bytes",
+  ] as const) {
+    const { [requiredField]: _omitted, ...invalid } =
+      sdfQuotationDeliveryPreparationRequest;
+    const invalidHarness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(invalid), invalidHarness.deps))
+        .status,
+      400,
+    );
+    assertEquals(invalidHarness.calls.length, 0);
+  }
+
+  for (const invalid of [
+    { ...sdfQuotationDeliveryPreparationRequest, issuance_id: "bad" },
+    { ...sdfQuotationDeliveryPreparationRequest, artifact_id: "bad" },
+    { ...sdfQuotationDeliveryPreparationRequest, approval_sha256: "bad" },
+    { ...sdfQuotationDeliveryPreparationRequest, artifact_sha256: "bad" },
+    { ...sdfQuotationDeliveryPreparationRequest, artifact_bytes: 0 },
+    { ...sdfQuotationDeliveryPreparationRequest, admin_access_token: "injected" },
+    { ...sdfQuotationDeliveryPreparationRequest, token_digest: "c".repeat(64) },
+    { ...sdfQuotationDeliveryPreparationRequest, encrypted_token: "injected" },
+    { ...sdfQuotationDeliveryPreparationRequest, recipient_email: "injected@example.test" },
+    { ...sdfQuotationDeliveryPreparationRequest, template_id: "injected" },
+    { ...sdfQuotationDeliveryPreparationRequest, delivery_status: "SENT" },
+    { ...sdfQuotationDeliveryPreparationRequest, requested_expires_at: "2099-01-01T00:00:00Z" },
+  ]) {
+    const invalidHarness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(invalid), invalidHarness.deps))
+        .status,
+      400,
+    );
     assertEquals(invalidHarness.calls.length, 0);
   }
 });

@@ -20,6 +20,7 @@ import {
   type QuotationBusinessApprovalPromotionActionInput,
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
+  type SdfQuotationDeliveryPreparationActionInput,
   type SdfQuotationIssuanceActionInput,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
@@ -29,6 +30,7 @@ import { deliverIssuedQuotation } from "../_shared/quotation-email-orchestration
 import { orchestrateApprovedQuotation } from "./quotation-orchestrator.ts";
 import {
   createQuotationRuntimeDependencies,
+  prepareSdfQuotationDelivery,
   type QuotationRuntimeOptions,
 } from "./quotation-runtime.ts";
 import { renderQuotationDocxBytes } from "./quotation-renderer-edge.ts";
@@ -179,6 +181,10 @@ type ValidatedApplicationActionInput =
     approval_version: number;
     approval_sha256: string;
     generation_contract_version: number;
+    issuance_id: string;
+    artifact_id: string;
+    artifact_sha256: string;
+    artifact_bytes: number;
     project_id: string;
     operation: string;
     canonical_domain: string;
@@ -384,6 +390,22 @@ export async function executeSdfApprovedQuotationIssuanceAction(
       },
     }),
   );
+}
+
+export async function executeSdfQuotationDeliveryPreparationAction(
+  input: SdfQuotationDeliveryPreparationActionInput,
+  client: QuotationBusinessDraftRpcClient,
+): Promise<unknown> {
+  return await prepareSdfQuotationDelivery({
+    businessDraftId: input.business_draft_id,
+    approvalId: input.approval_id,
+    approvalVersion: input.approval_version,
+    approvalSha256: input.approval_sha256,
+    issuanceId: input.issuance_id,
+    artifactId: input.artifact_id,
+    artifactSha256: input.artifact_sha256,
+    artifactBytes: input.artifact_bytes,
+  }, { client });
 }
 
 export async function executeQuotationBusinessDraftAction(
@@ -1200,6 +1222,12 @@ if (import.meta.main) {
                 templateBytes,
                 renderDocx: renderQuotationDocxBytes,
               },
+            );
+          }
+          if (input.action === "prepare_sdf_quotation_delivery") {
+            return await executeSdfQuotationDeliveryPreparationAction(
+              input as SdfQuotationDeliveryPreparationActionInput,
+              clientFor(jwt),
             );
           }
           if (input.action === "get_my_assigned_dossiers") {

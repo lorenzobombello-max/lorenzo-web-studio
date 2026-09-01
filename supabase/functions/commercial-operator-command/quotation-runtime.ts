@@ -1,4 +1,9 @@
 import type { EmailDeliveryResult } from "../_shared/email-delivery.ts";
+import {
+  createQuotationAcceptanceCapabilityToken,
+  hashQuotationAcceptanceCapabilityToken,
+} from "../_shared/quotation-acceptance-capability.ts";
+import { encryptQuotationDeliveryToken } from "../_shared/security.ts";
 import type {
   QuotationOrchestrationContext,
   QuotationOrchestrationDependencies,
@@ -6,6 +11,8 @@ import type {
 
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const SHA256 = /^[0-9a-f]{64}$/;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RpcResult = Readonly<{
   data: unknown;
@@ -15,6 +22,28 @@ type RpcResult = Readonly<{
 type StorageResult = Readonly<{
   data: unknown;
   error: Readonly<{ message: string }> | null;
+}>;
+
+type RpcClient = Readonly<{
+  rpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult>;
+}>;
+
+export type SdfQuotationDeliveryPreparationAuthority = Readonly<{
+  businessDraftId: string;
+  approvalId: string;
+  approvalVersion: number;
+  approvalSha256: string;
+  issuanceId: string;
+  artifactId: string;
+  artifactSha256: string;
+  artifactBytes: number;
+}>;
+
+export type SdfQuotationDeliveryPreparationDependencies = Readonly<{
+  client: RpcClient;
+  createToken?: () => string;
+  hashToken?: (token: string) => PromiseLike<string>;
+  encryptToken?: (token: string, digest: string) => PromiseLike<string>;
 }>;
 
 export type QuotationRuntimeServiceClient = Readonly<{
@@ -79,7 +108,7 @@ function row(value: unknown, code: string): Record<string, unknown> {
 }
 
 async function call(
-  client: QuotationRuntimeServiceClient,
+  client: RpcClient,
   name: string,
   args: Record<string, unknown>,
   code: string,
@@ -88,6 +117,73 @@ async function call(
   if (result.error) throw new Error(result.error.message);
   if (result.data === null || result.data === undefined) throw new Error(code);
   return result.data;
+}
+
+export async function prepareSdfQuotationDelivery(
+  authority: SdfQuotationDeliveryPreparationAuthority,
+  dependencies: SdfQuotationDeliveryPreparationDependencies,
+): Promise<Readonly<Record<string, unknown>>> {
+  const token = (dependencies.createToken ??
+    createQuotationAcceptanceCapabilityToken)();
+  const tokenDigest = await (dependencies.hashToken ??
+    hashQuotationAcceptanceCapabilityToken)(token);
+  const encryptedToken = await (dependencies.encryptToken ??
+    encryptQuotationDeliveryToken)(token, tokenDigest);
+  const data = row(await call(
+    dependencies.client,
+    "prepare_sdf_issued_quotation_delivery_v1",
+    {
+      p_business_draft_id: authority.businessDraftId,
+      p_approval_id: authority.approvalId,
+      p_expected_approval_version: authority.approvalVersion,
+      p_expected_approval_sha256: authority.approvalSha256,
+      p_issuance_id: authority.issuanceId,
+      p_artifact_id: authority.artifactId,
+      p_expected_artifact_sha256: authority.artifactSha256,
+      p_expected_artifact_bytes: authority.artifactBytes,
+      p_token_digest: tokenDigest,
+      p_encrypted_token: encryptedToken,
+      p_requested_expires_at: null,
+    },
+    "SDF_DELIVERY_PREPARATION_INVALID",
+  ), "SDF_DELIVERY_PREPARATION_INVALID");
+  const orchestrationId = String(data.orchestration_id || "");
+  const emailJobId = String(data.email_job_id || "");
+  const capabilityId = String(data.capability_id || "");
+  const artifactId = String(data.artifact_id || "");
+  const artifactSha256 = String(data.artifact_sha256 || "");
+  const artifactBytes = Number(data.artifact_bytes);
+  if (
+    !UUID.test(orchestrationId) || !UUID.test(emailJobId) ||
+    !UUID.test(capabilityId) || artifactId !== authority.artifactId ||
+    artifactSha256 !== authority.artifactSha256 ||
+    artifactBytes !== authority.artifactBytes || data.job_status !== "pending" ||
+    typeof data.capability_was_created !== "boolean" ||
+    typeof data.delivery_was_created !== "boolean"
+  ) {
+    throw new Error("SDF_DELIVERY_PREPARATION_INVALID");
+  }
+  return {
+    delivery_preparation_status: "PREPARED",
+    issuance_id: authority.issuanceId,
+    artifact: {
+      artifact_id: artifactId,
+      artifact_sha256: artifactSha256,
+      artifact_bytes: artifactBytes,
+      reuse_status: "REUSED",
+    },
+    acceptance_capability: {
+      capability_id: capabilityId,
+      preparation_status: data.capability_was_created ? "PREPARED" : "REUSED",
+    },
+    delivery_job: {
+      orchestration_id: orchestrationId,
+      email_job_id: emailJobId,
+      preparation_status: data.delivery_was_created ? "PREPARED" : "REUSED",
+    },
+    mail_delivery_status: "NOT_STARTED",
+    delivery_attempted: false,
+  };
 }
 
 async function hashBytes(bytes: Uint8Array): Promise<string> {
