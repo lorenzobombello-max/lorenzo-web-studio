@@ -243,7 +243,8 @@ select case fixture when 'CREATE' then 'ca170000-0000-4000-8000-000000000001'::u
   (select seller_authority_id from public.quotation_seller_authorities where status='APPROVED'),
   (select terms_authority_id from public.quotation_terms_authorities where status='APPROVED'),
   'b1030000-0000-4000-8000-000000000001',
-  (select id from public.quotation_template_authorities where status='APPROVED'),
+  (select id from public.quotation_template_authorities
+   where request_kind='website' and status='APPROVED'),
   (select policy_authority_id from public.quotation_business_policy_authorities where status='APPROVED'),
   payload, public.quotation_approval_payload_sha256_v1(payload), repeat('c',64),
   case fixture when 'CREATE' then 'ca171000-0000-4000-8000-000000000001'::uuid else 'ca171000-0000-4000-8000-000000000002'::uuid end,

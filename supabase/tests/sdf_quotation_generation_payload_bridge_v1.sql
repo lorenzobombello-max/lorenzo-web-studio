@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(29);
+select plan(37);
 
 select has_function(
   'public','build_sdf_quotation_issue_payload_v1',
@@ -38,11 +38,17 @@ select ok(
   ) like '%assert_sdf_approval_issuance_authority_v1%'
   and pg_get_functiondef(
     'public.build_sdf_quotation_issue_payload_v1(uuid,uuid,integer,text,uuid)'::regprocedure
-  ) like '%project_quotation_generation_payload_v1%'
+  ) like '%project_sdf_quotation_generation_payload_v1%'
   and pg_get_functiondef(
     'public.build_sdf_quotation_issue_payload_v1(uuid,uuid,integer,text,uuid)'::regprocedure
-  ) like '%quotation_generation_payload_sha256_v1%',
-  'QF-4B reuses QF-3B authority plus existing projector and hash contract'
+  ) like '%is_approved_sdf_quotation_template_identity_v1%'
+  and pg_get_functiondef(
+    'public.build_sdf_quotation_issue_payload_v1(uuid,uuid,integer,text,uuid)'::regprocedure
+  ) like '%is_valid_sdf_quotation_generation_payload_v1%'
+  and pg_get_functiondef(
+    'public.build_sdf_quotation_issue_payload_v1(uuid,uuid,integer,text,uuid)'::regprocedure
+  ) like '%sdf_quotation_generation_payload_sha256_v1%',
+  'QF-4B binds SDF projector template validator and existing hash contract'
 );
 
 create function pg_temp.qf4b_uuid(p_value text)
@@ -88,10 +94,45 @@ $$;
 
 create function pg_temp.qf4b_schedule()
 returns jsonb language sql immutable set search_path=pg_catalog as $$
-  select jsonb_build_object('milestones',jsonb_build_array(jsonb_build_object(
-    'sequence',1,'label','Synthetic implementation payment','percentage',100,
-    'amount_minor',null,'trigger','invoice','due_terms_days',30,'recurring_cycle',null
-  )))
+  select jsonb_build_object('milestones',jsonb_build_array(
+    jsonb_build_object(
+      'sequence',1,'label','Synthetic opdrachtbevestiging','percentage',40,
+      'amount_minor',null,'trigger','accepted','due_terms_days',30,
+      'recurring_cycle',null
+    ),
+    jsonb_build_object(
+      'sequence',2,'label','Synthetic functionele oplevering','percentage',40,
+      'amount_minor',null,'trigger','functional_delivery','due_terms_days',30,
+      'recurring_cycle',null
+    ),
+    jsonb_build_object(
+      'sequence',3,'label','Synthetic definitieve oplevering','percentage',20,
+      'amount_minor',null,'trigger','final_delivery','due_terms_days',30,
+      'recurring_cycle',null
+    )
+  ))
+$$;
+
+do $$
+declare
+  v_template_id uuid;
+begin
+  perform public.retire_quotation_template_v1(
+    (select id from public.quotation_template_authorities
+     where request_kind = 'slimme_documentenflow' and status = 'APPROVED'),
+    'TEST_ONLY','Synthetic bridge fixture','QF4B_OFFICIAL_TEMPLATE_RETIRE'
+  );
+  v_template_id := public.register_quotation_template_candidate_for_product_v1(
+    'slimme_documentenflow','SYNTHETIC_QF4B_SDF_QUOTATION','test-v1',
+    'QUOTATION','nl-BE','EUR',repeat('A',64),
+    'synthetic/qf4b-sdf-quotation.docx',1::smallint,
+    'synthetic-sdf-renderer-v1',1::smallint,1::smallint,
+    'QF4B_TEST','QF4B_SDF_TEMPLATE_REGISTER',null
+  );
+  perform public.approve_quotation_template_v1(
+    v_template_id,'QF4B_TEST','QF4B_SDF_TEMPLATE_APPROVE'
+  );
+end;
 $$;
 
 create temporary table qf4b_fixtures(
@@ -407,8 +448,15 @@ select * from public.build_sdf_quotation_issue_payload_v1(
   (select approval_sha256 from qf4b_fixtures where label='start'),
   (select issuance_id from qf4b_fixtures where label='start')
 );
-select ok(public.is_valid_quotation_generation_payload_v1(payload),
-  'QF-4B produces a valid existing generation payload') from qf4b_result;
+create temporary table qf4b_cross_result as
+select * from public.build_sdf_quotation_issue_payload_v1(
+  (select business_draft_id from qf4b_fixtures where label='cross'),
+  (select approval_id from qf4b_fixtures where label='cross'),1,
+  (select approval_sha256 from qf4b_fixtures where label='cross'),
+  (select issuance_id from qf4b_fixtures where label='cross')
+);
+select ok(public.is_valid_sdf_quotation_generation_payload_v1(payload),
+  'QF-4B produces a valid product-aware SDF generation payload') from qf4b_result;
 select is((select payload->>'mode' from qf4b_result),'ISSUE','payload mode is ISSUE');
 select is((select payload->>'contract_version' from qf4b_result),'1',
   'generation contract remains version 1');
@@ -418,8 +466,8 @@ select is((select payload#>>'{quotation,issuance_id}' from qf4b_result),
 select ok((select payload_sha256 ~ '^[0-9a-f]{64}$' from qf4b_result),
   'payload SHA-256 has the existing canonical shape');
 select is((select payload_sha256 from qf4b_result),
-  (select public.quotation_generation_payload_sha256_v1(payload) from qf4b_result),
-  'payload SHA-256 is calculated by the existing hash contract');
+  (select public.sdf_quotation_generation_payload_sha256_v1(payload) from qf4b_result),
+  'payload SHA-256 uses the SDF validator over the existing canonical bytes');
 select is((select payload#>>'{template,authority_status}' from qf4b_result),'APPROVED',
   'payload uses the frozen approved template authority');
 select is((select payload#>>'{seller,legal_name}' from qf4b_result),
@@ -431,6 +479,24 @@ select is((select payload#>>'{seller,legal_name}' from qf4b_result),
      on seller.seller_authority_id=business.seller_authority_id
    where fixture.label='start'),
   'payload uses the frozen seller authority');
+select is((select payload->>'product_family' from qf4b_result),
+  'slimme_documentenflow','generation payload has explicit product family');
+select is((select payload#>>'{sdf_scope,package_key}' from qf4b_result),
+  'start','START package key is explicit');
+select is((select payload#>>'{sdf_scope,package_key}' from qf4b_cross_result),
+  'groei','server capacities select GROEI despite frontend START direction');
+select is((select payload#>>'{sdf_scope,implementation_amount_minor}' from qf4b_result),
+  '285000','implementation amount comes from frozen pricing authority');
+select is((select payload#>>'{sdf_scope,recurring_amount_minor}' from qf4b_result),
+  '17500','recurring amount remains separate in generation payload');
+select is((select payload#>'{sdf_scope,payment_milestones}' from qf4b_result),
+  (select payload#>'{payment_schedule,milestones}' from qf4b_result),
+  'generation payload preserves approved 40 40 20 milestones exactly');
+select is((select payload#>>'{sdf_scope,normalized_monthly_pages}' from qf4b_result),
+  '500','generation payload contains normalized monthly pages');
+select ok((select public.is_valid_sdf_quotation_scope_snapshot_v1(
+  payload->'sdf_scope') from qf4b_result),
+  'generation payload contains a valid immutable SDF scope snapshot');
 
 create temporary table qf4b_d_plus_1_vat_context as
 select public.resolve_quotation_vat_authority_v1(

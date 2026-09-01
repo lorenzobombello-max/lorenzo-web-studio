@@ -33,7 +33,13 @@ select throws_ok($$select * from public.resolve_approved_quotation_template_v1('
 select throws_ok($$update public.quotation_template_authorities set template_sha256=repeat('0',64)$$,'55000','QUOTATION_TEMPLATE_AUTHORITY_IMMUTABLE','approved hash cannot be mutated');
 select throws_ok($$delete from public.quotation_template_authorities$$,'55000','QUOTATION_TEMPLATE_AUTHORITY_IMMUTABLE','authority cannot be deleted');
 select throws_ok($$update public.quotation_template_authority_events set event_reference='changed'$$,'55000','QUOTATION_TEMPLATE_AUTHORITY_EVENT_IMMUTABLE','event history cannot be changed');
-select is((select count(*)::integer from public.quotation_template_authority_events),2,'registration and approval events are retained');
+select is((
+	select count(*)::integer
+	from public.quotation_template_authority_events event
+	join public.quotation_template_authorities authority
+		on authority.id = event.template_authority_id
+	where authority.request_kind = 'website'
+),2,'Website registration and approval events are retained');
 select is((select count(*)::integer from public.quotation_template_authority_events where evidence ?| array['capability_token','service_role_key','hmac_secret']),0,'event evidence contains no secrets');
 
 select lives_ok($$select public.retire_quotation_template_v1((select id from public.quotation_template_authorities where template_id='LWS_QUOTATION_NL_BE'),'admin:test','Superseded in local test','D3E7_RETIRE_TEST')$$,'approved template can be retired through trusted RPC');

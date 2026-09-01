@@ -4,6 +4,26 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, storage, extensions;
 select plan(41);
 
+do $$
+declare v_template_id uuid;
+begin
+  perform public.retire_quotation_template_v1(
+    (select id from public.quotation_template_authorities
+     where request_kind = 'slimme_documentenflow' and status = 'APPROVED'),
+    'TEST_ONLY','Synthetic bridge fixture','SDF_BRIDGE_OFFICIAL_TEMPLATE_RETIRE'
+  );
+  v_template_id := public.register_quotation_template_candidate_for_product_v1(
+    'slimme_documentenflow','SYNTHETIC_SDF_QUOTATION','test-v1','QUOTATION',
+    'nl-BE','EUR',repeat('A',64),'synthetic/sdf-quotation.docx',1::smallint,
+    'synthetic-sdf-renderer-v1',1::smallint,1::smallint,
+    'TEST_ONLY','SDF_BRIDGE_TEMPLATE_REGISTER',null
+  );
+  perform public.approve_quotation_template_v1(
+    v_template_id,'TEST_ONLY','SDF_BRIDGE_TEMPLATE_APPROVE'
+  );
+end;
+$$;
+
 select has_function(
   'public', 'prepare_sdf_issued_quotation_delivery_v1',
   array['uuid','uuid','integer','text','uuid','uuid','text','bigint','text','text',
