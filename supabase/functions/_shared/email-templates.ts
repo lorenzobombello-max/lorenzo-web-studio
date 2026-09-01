@@ -148,25 +148,35 @@ export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) 
   const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
   const safeName = escapeHtml(customerName);
   const safeReference = escapeHtml(data.supportReference);
-  return buildCustomerEmailFrame(subject, "Je aanvraag voor Slimme Documentenflow is ontvangen", `
-          <p style="margin:0 0 16px;">Beste ${safeName},</p>
-          <p style="margin:0 0 20px;">We hebben uw aanvraag goed ontvangen.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
-            <tr><td style="padding:18px 20px;color:#5a6475;font-size:13px;">Dossier<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
-          </table>
-          <p style="margin:0 0 16px;">We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.</p>
-          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
-    `Beste ${customerName},`,
-    "",
-    "We hebben uw aanvraag goed ontvangen.",
-    "",
-    `Referentie: ${data.supportReference}`,
-    "",
-    "We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.",
-    "",
-    "Met vriendelijke groet,",
-    "Lorenzo Web Solutions",
-  ].join("\n"), `We hebben je SDF-aanvraag voor dossier ${data.supportReference} goed ontvangen.`);
+  // SDF Mail 1 intentionally uses simple HTML based on live Telenet deliverability evidence.
+  return {
+    subject,
+    html: `<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="margin:0;padding:24px;background:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <main style="max-width:600px;margin:0 auto;padding:32px;background:#ffffff;border-top:4px solid #12346b;">
+    <p style="margin:0 0 16px;">Beste ${safeName},</p>
+    <p style="margin:0 0 16px;">We hebben uw aanvraag goed ontvangen.</p>
+    <p style="margin:0 0 16px;">Referentie: ${safeReference}</p>
+    <p style="margin:0 0 16px;">We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.</p>
+    <p style="margin:0;">Met vriendelijke groet,<br>Lorenzo Web Solutions</p>
+  </main>
+</body>
+</html>`,
+    text: [
+      `Beste ${customerName},`,
+      "",
+      "We hebben uw aanvraag goed ontvangen.",
+      "",
+      `Referentie: ${data.supportReference}`,
+      "",
+      "We verwerken uw aanvraag automatisch. Als volgende stap ontvangt u uw persoonlijke SDF-intake.",
+      "",
+      "Met vriendelijke groet,",
+      "Lorenzo Web Solutions",
+    ].join("\n"),
+  };
 }
 
 export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvitationEmailData) {
