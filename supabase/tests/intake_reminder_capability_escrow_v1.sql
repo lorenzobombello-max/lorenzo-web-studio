@@ -245,20 +245,20 @@ select ok(
 create temp table reactivated_claim as
 select * from public.claim_intake_reminder_v1(
   (select intake_id from invitation_created), 'REMINDER_1',
-  clock_timestamp() + interval '3 days 1 minute'
+  clock_timestamp() + interval '10 days 1 minute'
 );
 create temp table reactivated_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   (select intake_id from invitation_created), 1, 'REMINDER_1',
   (select claim_token from reactivated_claim),
-  clock_timestamp() + interval '3 days 1 minute'
+  clock_timestamp() + interval '10 days 1 minute'
 );
 select is((select outcome from reactivated_job), 'prepared', 'reactivated cycle prepares from escrow without caller ciphertext');
 select is(
   (select email_job_id from public.prepare_intake_reminder_email_job_v1(
     (select intake_id from invitation_created), 1, 'REMINDER_1',
     (select claim_token from reactivated_claim),
-    clock_timestamp() + interval '3 days 1 minute'
+    clock_timestamp() + interval '10 days 1 minute'
   )),
   (select email_job_id from reactivated_job),
   'escrow-backed reminder preparation remains idempotent'

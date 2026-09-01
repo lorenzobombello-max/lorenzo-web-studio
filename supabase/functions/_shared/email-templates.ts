@@ -63,9 +63,10 @@ export interface IntakeReminderEmailData {
   clientName: string;
   company: string | null;
   requestId: string;
-  intakeUrl: string;
+  intakeUrl: string | null;
+  requestKind: "website" | "slimme_documentenflow";
   progressStatus: "invited" | "in_progress";
-  reminderPhase: "REMINDER_1" | "REMINDER_2";
+  reminderPhase: "REMINDER_1" | "REMINDER_2" | "FINAL_WARNING" | "EXPIRY";
   expiresAt: string;
 }
 
@@ -91,26 +92,33 @@ export type QuotationEmailTemplate =
   | "ACCEPTANCE_CONFIRMATION_INTERNAL_NL_BE_v1";
 
 const CUSTOMER_EMAIL_LOGO_URL = "https://lorenzowebsolutions.be/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png";
+const CUSTOMER_EMAIL_CONTAINER_STYLE = "width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;";
+const CUSTOMER_EMAIL_HEADER_STYLE = "padding:24px 32px 12px;border-top:4px solid #12346b;";
+const CUSTOMER_EMAIL_LOGO_STYLE = "display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;";
+const CUSTOMER_EMAIL_CONTENT_STYLE = "padding:8px 32px 32px;font-size:16px;line-height:1.65;";
+const CUSTOMER_EMAIL_HEADING_STYLE = "margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;";
+const CUSTOMER_EMAIL_CTA_STYLE = "display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;";
+const CUSTOMER_EMAIL_FOOTER_STYLE = "padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;";
 
-function buildSdfCustomerEmail(subject: string, heading: string, content: string, text: string, preheader = "", websiteQuality = false) {
+function buildCustomerEmailFrame(subject: string, heading: string, content: string, text: string, preheader = "", compact = false) {
   const hiddenPreheader = preheader
     ? `<div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${escapeHtml(preheader)}</div>`
     : "";
-  const containerStyle = websiteQuality
-    ? "width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;"
-    : "width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;";
-  const header = websiteQuality
-    ? `<tr><td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;"><img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;"></td></tr>`
-    : '<tr><td style="padding:24px 32px 18px;border-bottom:1px solid #e8edf1;color:#172033;font-size:16px;font-weight:bold;">Lorenzo Web Solutions</td></tr>';
-  const contentStyle = websiteQuality
-    ? "padding:8px 32px 32px;color:#172033;font-size:16px;line-height:1.65;"
-    : "padding:32px;color:#172033;font-size:16px;line-height:1.65;";
-  const headingStyle = websiteQuality
-    ? "margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;"
-    : "margin:0 0 24px;color:#12346b;font-size:26px;line-height:1.25;";
-  const footer = websiteQuality
-    ? '<tr><td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;"><strong style="color:#172033;">Lorenzo Web Solutions</strong><br>Professionele websites voor zelfstandigen en kleine ondernemingen<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a></td></tr>'
-    : '<tr><td style="padding:18px 32px;background:#f8fafb;color:#5a6475;font-size:12px;line-height:1.5;">Lorenzo Web Solutions<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;">lorenzowebsolutions.be</a></td></tr>';
+  const containerStyle = compact
+    ? "width:100%;max-width:620px;background:#ffffff;border:1px solid #dfe4ea;border-top:4px solid #0ed8e6;"
+    : CUSTOMER_EMAIL_CONTAINER_STYLE;
+  const header = compact
+    ? '<tr><td style="padding:24px 32px 18px;border-bottom:1px solid #e8edf1;color:#172033;font-size:16px;font-weight:bold;">Lorenzo Web Solutions</td></tr>'
+    : `<tr><td align="center" style="${CUSTOMER_EMAIL_HEADER_STYLE}"><img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="${CUSTOMER_EMAIL_LOGO_STYLE}"></td></tr>`;
+  const contentStyle = compact
+    ? "padding:32px;color:#172033;font-size:16px;line-height:1.65;"
+    : CUSTOMER_EMAIL_CONTENT_STYLE;
+  const headingStyle = compact
+    ? "margin:0 0 24px;color:#12346b;font-size:26px;line-height:1.25;"
+    : CUSTOMER_EMAIL_HEADING_STYLE;
+  const footer = compact
+    ? '<tr><td style="padding:18px 32px;background:#f8fafb;color:#5a6475;font-size:12px;line-height:1.5;">Lorenzo Web Solutions<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;">lorenzowebsolutions.be</a></td></tr>'
+    : `<tr><td align="center" style="${CUSTOMER_EMAIL_FOOTER_STYLE}"><strong style="color:#172033;">Lorenzo Web Solutions</strong><br>Professionele websites voor zelfstandigen en kleine ondernemingen<br><a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a></td></tr>`;
   return {
     subject,
     html: `<!doctype html>
@@ -136,11 +144,11 @@ function buildSdfCustomerEmail(subject: string, heading: string, content: string
 }
 
 export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) {
-  const subject = `We hebben uw Slimme Documentenflow-aanvraag ontvangen — ${data.supportReference}`;
+  const subject = "We hebben je Slimme Documentenflow-aanvraag ontvangen";
   const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
   const safeName = escapeHtml(customerName);
   const safeReference = escapeHtml(data.supportReference);
-  return buildSdfCustomerEmail(subject, "Uw aanvraag voor Slimme Documentenflow is ontvangen", `
+  return buildCustomerEmailFrame(subject, "Je aanvraag voor Slimme Documentenflow is ontvangen", `
           <p style="margin:0 0 16px;">Beste ${safeName},</p>
           <p style="margin:0 0 20px;">We hebben uw aanvraag goed ontvangen.</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
@@ -158,36 +166,36 @@ export function buildSdfRequestReceivedEmail(data: SdfRequestReceivedEmailData) 
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",
-  ].join("\n"), `We hebben uw SDF-aanvraag voor dossier ${data.supportReference} goed ontvangen.`, true);
+  ].join("\n"), `We hebben je SDF-aanvraag voor dossier ${data.supportReference} goed ontvangen.`);
 }
 
 export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvitationEmailData) {
-  const subject = `Uw SDF-intake staat klaar — ${data.supportReference}`;
+  const subject = "Jouw persoonlijke SDF-intake";
   const customerName = replaceAsciiControlRunsWithSpace(data.customerName).trim();
   const safeName = escapeHtml(customerName);
   const safeReference = escapeHtml(data.supportReference);
   const safeUrl = escapeHtml(data.intakeUrl);
-  return buildSdfCustomerEmail(subject, "Uw SDF-intake staat klaar", `
+  return buildCustomerEmailFrame(subject, "Vertel ons wat je documentenflow nodig heeft", `
           <p style="margin:0 0 16px;">Beste ${safeName},</p>
           <p style="margin:0 0 20px;">Om uw aanvraag voor Slimme Documentenflow inhoudelijk te beoordelen, vragen we u de persoonlijke SDF-intake in te vullen.</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
             <tr><td style="padding:18px 20px;color:#5a6475;font-size:13px;">Dossier<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
           </table>
           <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
-            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">Mijn SDF-intake invullen</a></td></tr>
+            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="${CUSTOMER_EMAIL_CTA_STYLE}">Mijn SDF-intake invullen</a></td></tr>
           </table>
           <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Werkt de knop niet? Neem contact met ons op en vermeld dossier ${safeReference}.</p>
-          <p style="margin:0 0 16px;color:#5a6475;font-size:14px;">De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.</p>
+          <p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> de link is 14 dagen geldig. Stuur deze persoonlijke link niet door.</p>
           <p style="margin:0 0 16px;">Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.</p>
           <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
     `Beste ${customerName},`, "",
     "Uw SDF-intake staat klaar.", "",
     `Dossierreferentie: ${data.supportReference}`, "",
     "Open uw beveiligde SDF-intake:", data.intakeUrl, "",
-    "De link is 14 dagen geldig en is uitsluitend voor u bestemd. Stuur hem niet door.", "",
+    "De link is 14 dagen geldig. Stuur deze persoonlijke link niet door.", "",
     "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
-  ].join("\n"), `Uw persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`, true);
+  ].join("\n"), `Je persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`);
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {
@@ -197,7 +205,7 @@ export function buildSdfQualificationMoreInformationEmail(data: SdfQualification
   const safeReference = escapeHtml(data.supportReference);
   const safeReason = escapeHtml(data.moreInformationReason).replace(/\n/g, "<br>");
   const safeUrl = escapeHtml(data.intakeUrl);
-  return buildSdfCustomerEmail(subject, "Aanvullende informatie nodig", `
+  return buildCustomerEmailFrame(subject, "Aanvullende informatie nodig", `
           <p style="margin:0 0 16px;">Beste ${safeName},</p>
           <p style="margin:0 0 16px;">We hebben uw SDF-intake beoordeeld. Om uw gewenste documentenflow verder te kunnen beoordelen, hebben we aanvullende informatie nodig:</p>
           <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Dossierreferentie<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></p>
@@ -212,7 +220,7 @@ export function buildSdfQualificationMoreInformationEmail(data: SdfQualification
     "Vul de informatie aan via uw persoonlijke intake-link:", data.intakeUrl, "",
     "Een offerte kan pas worden voorbereid nadat de intake opnieuw is ingediend en beoordeeld.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
-  ].join("\n"));
+  ].join("\n"), "", true);
 }
 
 export function buildAdminNotificationEmail(data: AdminEmailData) {
@@ -443,15 +451,15 @@ export function buildApprovedConfirmationEmail(data: ApprovedConfirmationEmailDa
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${CUSTOMER_EMAIL_CONTAINER_STYLE}">
           <tr>
-            <td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;">
-              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;">
+            <td align="center" style="${CUSTOMER_EMAIL_HEADER_STYLE}">
+              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="${CUSTOMER_EMAIL_LOGO_STYLE}">
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 32px 32px;font-size:16px;line-height:1.65;">
-              <h1 style="margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;">Je aanvraag is goedgekeurd</h1>
+            <td style="${CUSTOMER_EMAIL_CONTENT_STYLE}">
+              <h1 style="${CUSTOMER_EMAIL_HEADING_STYLE}">Je aanvraag is goedgekeurd</h1>
               <p style="margin:0 0 16px;">Beste ${safeName},</p>
               <p style="margin:0 0 16px;">Bedankt voor je aanvraag bij <strong>Lorenzo Web Solutions</strong>.</p>
               <p style="margin:0 0 24px;">Je aanvraag werd nagekeken en is goedgekeurd voor verdere bespreking. Lorenzo neemt persoonlijk contact met je op om je wensen, planning en volgende stappen samen door te nemen.</p>
@@ -481,7 +489,7 @@ export function buildApprovedConfirmationEmail(data: ApprovedConfirmationEmailDa
             </td>
           </tr>
           <tr>
-            <td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;">
+            <td align="center" style="${CUSTOMER_EMAIL_FOOTER_STYLE}">
               <strong style="color:#172033;">Lorenzo Web Solutions</strong><br>
               Professionele websites voor zelfstandigen en kleine ondernemingen<br>
               <a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a>
@@ -548,15 +556,15 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${CUSTOMER_EMAIL_CONTAINER_STYLE}">
           <tr>
-            <td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;">
-              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;">
+            <td align="center" style="${CUSTOMER_EMAIL_HEADER_STYLE}">
+              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="${CUSTOMER_EMAIL_LOGO_STYLE}">
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 32px 32px;font-size:16px;line-height:1.65;">
-              <h1 style="margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;">Vertel ons wat je website nodig heeft</h1>
+            <td style="${CUSTOMER_EMAIL_CONTENT_STYLE}">
+              <h1 style="${CUSTOMER_EMAIL_HEADING_STYLE}">Vertel ons wat je website nodig heeft</h1>
               <p style="margin:0 0 16px;">Beste ${safeName},</p>
               <p style="margin:0 0 16px;">Je aanvraag${safeCompany ? ` voor <strong>${safeCompany}</strong>` : ""} werd bekeken en is klaar voor verdere uitwerking.</p>
               <p style="margin:0 0 24px;">De volgende stap is een korte maar grondige websitebriefing. Daarmee brengen we je doelen, gewenste inhoud, stijl en praktische verwachtingen helder in kaart.</p>
@@ -565,7 +573,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
                 <tr>
                   <td style="padding:18px 20px;">
                     <strong style="color:#172033;">Aanvraag ${safeReference}</strong><br>
-                    Je persoonlijke link blijft 7 dagen geldig. Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.
+                    Je persoonlijke link blijft 14 dagen geldig. Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.
                   </td>
                 </tr>
               </table>
@@ -573,7 +581,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
               <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
                 <tr>
                   <td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;">
-                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">Mijn websitebriefing invullen</a>
+                    <a href="${safeIntakeUrl}" style="${CUSTOMER_EMAIL_CTA_STYLE}">Mijn websitebriefing invullen</a>
                   </td>
                 </tr>
               </table>
@@ -584,7 +592,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
             </td>
           </tr>
           <tr>
-            <td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;">
+            <td align="center" style="${CUSTOMER_EMAIL_FOOTER_STYLE}">
               <strong style="color:#172033;">Lorenzo Web Solutions</strong><br>
               Professionele websites voor zelfstandigen en kleine ondernemingen<br>
               <a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a>
@@ -607,7 +615,7 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
     "De volgende stap is een korte maar grondige websitebriefing. Daarmee brengen we je doelen, gewenste inhoud, stijl en praktische verwachtingen helder in kaart.",
     "",
     `Aanvraag ${requestReference}`,
-    "Je persoonlijke link blijft 7 dagen geldig.",
+    "Je persoonlijke link blijft 14 dagen geldig.",
     "Je kunt je concept tussentijds opslaan en later via dezelfde link verdergaan.",
     "",
     "Mijn websitebriefing invullen:",
@@ -627,10 +635,17 @@ export function buildIntakeInvitationEmail(data: IntakeInvitationEmailData) {
 
 export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
   const isInProgress = data.progressStatus === "in_progress";
-  const isFinalReminder = data.reminderPhase === "REMINDER_2";
-  const subject = isFinalReminder
+  const isSdf = data.requestKind === "slimme_documentenflow";
+  const isFinalWarning = data.reminderPhase === "FINAL_WARNING";
+  const isExpiry = data.reminderPhase === "EXPIRY";
+  const productName = isSdf ? "SDF-kwalificatie-intake" : "website-intake";
+  const subject = isExpiry
+    ? `Uw ${productName} is vervallen`
+    : isFinalWarning
+    ? "Laatste waarschuwing: uw persoonlijke intakelink verloopt morgen"
+    : data.reminderPhase === "REMINDER_2" && !isSdf
     ? "Uw persoonlijke websitebriefing vervalt binnenkort"
-    : "Uw persoonlijke websitebriefing staat nog klaar";
+    : `Uw ${isSdf ? "SDF-kwalificatie-intake" : "persoonlijke website-intake"} staat nog klaar`;
   const requestReference = `#${data.requestId.slice(0, 8).toUpperCase()}`;
   const expiresAt = new Date(data.expiresAt).toLocaleString("nl-BE", {
     dateStyle: "long",
@@ -640,15 +655,26 @@ export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
   const safeName = escapeHtml(data.clientName);
   const safeCompany = data.company ? escapeHtml(data.company) : null;
   const safeReference = escapeHtml(requestReference);
-  const safeIntakeUrl = escapeHtml(data.intakeUrl);
+  const safeIntakeUrl = data.intakeUrl ? escapeHtml(data.intakeUrl) : null;
   const safeExpiresAt = escapeHtml(expiresAt);
   const statusMessage = isInProgress
     ? "U bent al begonnen. U kunt verdergaan waar u stopte."
     : "Uw intake staat nog voor u klaar.";
   const ctaLabel = isInProgress ? "Intake verder invullen" : "Intake invullen";
-  const expiryMessage = isFinalReminder
-    ? `Uw persoonlijke intake blijft beschikbaar tot ${safeExpiresAt}.`
+  const expiryMessage = isExpiry
+    ? `Uw persoonlijke ${productName} is vervallen. De persoonlijke link is niet langer bruikbaar.`
+    : isFinalWarning
+    ? `Uw persoonlijke intakelink verloopt morgen om ${safeExpiresAt}.`
     : `Uw persoonlijke intake blijft beschikbaar tot ${safeExpiresAt}.`;
+  const heading = isExpiry
+    ? `Uw ${productName} is vervallen`
+    : isFinalWarning
+    ? "Uw persoonlijke intakelink verloopt morgen"
+    : isSdf
+    ? "Uw Slimme Documentenflow-intake staat nog klaar"
+    : data.reminderPhase === "REMINDER_2"
+    ? "Uw websitebriefing vervalt binnenkort"
+    : "Uw websitebriefing staat nog klaar";
 
   const html = `<!doctype html>
 <html lang="nl">
@@ -658,19 +684,19 @@ export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
   <title>${subject}</title>
 </head>
 <body bgcolor="#f3f5f7" style="margin:0!important;padding:0!important;background-color:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
-  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${isFinalReminder ? "Uw persoonlijke intake vervalt binnenkort." : "Uw persoonlijke intake staat nog klaar."}</div>
+  <div aria-hidden="true" style="display:none!important;visibility:hidden;mso-hide:all;font-size:1px;line-height:1px;max-height:0;max-width:0;overflow:hidden;opacity:0;color:#f3f5f7;">${isExpiry ? "Uw persoonlijke intake is vervallen." : isFinalWarning ? "Uw persoonlijke intakelink verloopt morgen." : "Uw persoonlijke intake staat nog klaar."}</div>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#f3f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${CUSTOMER_EMAIL_CONTAINER_STYLE}">
           <tr>
-            <td align="center" style="padding:24px 32px 12px;border-top:4px solid #12346b;">
-              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="display:block;width:200px;max-width:100%;height:auto;border:0;color:#12346b;font-size:18px;font-weight:bold;line-height:24px;">
+            <td align="center" style="${CUSTOMER_EMAIL_HEADER_STYLE}">
+              <img src="${CUSTOMER_EMAIL_LOGO_URL}" width="200" alt="Lorenzo Web Solutions" style="${CUSTOMER_EMAIL_LOGO_STYLE}">
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 32px 32px;font-size:16px;line-height:1.65;">
-              <h1 style="margin:0 0 24px;color:#12346b;font-size:28px;line-height:1.25;font-weight:700;">${isFinalReminder ? "Uw websitebriefing vervalt binnenkort" : "Uw websitebriefing staat nog klaar"}</h1>
+            <td style="${CUSTOMER_EMAIL_CONTENT_STYLE}">
+              <h1 style="${CUSTOMER_EMAIL_HEADING_STYLE}">${heading}</h1>
               <p style="margin:0 0 16px;">Beste ${safeName},</p>
               <p style="margin:0 0 16px;">${statusMessage}</p>
               ${safeCompany ? `<p style="margin:0 0 16px;">Deze briefing hoort bij <strong>${safeCompany}</strong>.</p>` : ""}
@@ -680,26 +706,25 @@ export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
                 <tr>
                   <td style="padding:18px 20px;">
                     <strong style="color:#172033;">Aanvraag ${safeReference}</strong><br>
-                    Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan.
+                    ${isExpiry ? "Uw intakehistoriek blijft bewaard. Neem contact met ons op wanneer u een nieuwe uitnodiging nodig hebt." : "Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan."}
                   </td>
                 </tr>
               </table>
 
-              <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
+              ${safeIntakeUrl ? `<table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
                 <tr>
                   <td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;">
-                    <a href="${safeIntakeUrl}" style="display:inline-block;padding:14px 22px;color:#0b1118;text-decoration:none;font-weight:bold;">${ctaLabel}</a>
+                    <a href="${safeIntakeUrl}" style="${CUSTOMER_EMAIL_CTA_STYLE}">${ctaLabel}</a>
                   </td>
                 </tr>
-              </table>
+              </table>` : ""}
 
-              <p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> stuur deze e-mail of link niet door. Wie de link bezit, kan uw briefing openen.</p>
-              <p style="margin:0 0 24px;color:#5a6475;font-size:13px;word-break:break-all;">Werkt de knop niet? Open dan:<br><a href="${safeIntakeUrl}" style="color:#12346b;text-decoration:underline;">${safeIntakeUrl}</a></p>
+              ${safeIntakeUrl ? '<p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> stuur deze e-mail of link niet door. Wie de link bezit, kan uw intake openen.</p>' : ""}
               <p style="margin:0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>
             </td>
           </tr>
           <tr>
-            <td align="center" style="padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea;color:#5a6475;font-size:13px;line-height:1.6;">
+            <td align="center" style="${CUSTOMER_EMAIL_FOOTER_STYLE}">
               <strong style="color:#172033;">Lorenzo Web Solutions</strong><br>
               Professionele websites voor zelfstandigen en kleine ondernemingen<br>
               <a href="https://lorenzowebsolutions.be" style="color:#12346b;text-decoration:underline;">https://lorenzowebsolutions.be</a>
@@ -722,12 +747,8 @@ export function buildIntakeReminderEmail(data: IntakeReminderEmailData) {
     expiryMessage.replaceAll("&amp;", "&"),
     "",
     `Aanvraag ${requestReference}`,
-    "Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan.",
-    "",
-    `${ctaLabel}:`,
-    data.intakeUrl,
-    "",
-    "Stuur deze persoonlijke link niet door. Wie de link bezit, kan uw briefing openen.",
+    isExpiry ? "Uw intakehistoriek blijft bewaard. Neem contact met ons op wanneer u een nieuwe uitnodiging nodig hebt." : "Uw opgeslagen antwoorden blijven behouden. Gebruik dezelfde persoonlijke link om verder te gaan.",
+    ...(data.intakeUrl ? ["", `${ctaLabel}:`, data.intakeUrl, "", "Stuur deze persoonlijke link niet door. Wie de link bezit, kan uw intake openen."] : []),
     "",
     "Met vriendelijke groet,",
     "Lorenzo Web Solutions",

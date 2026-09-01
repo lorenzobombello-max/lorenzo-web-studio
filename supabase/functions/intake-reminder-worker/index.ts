@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { buildIntakeReminderEmail } from "../_shared/email-templates.ts";
+import { deliverIntakeLifecycleEmail } from "../_shared/intake-lifecycle-email-delivery.ts";
 import { decryptIntakeInvitationToken } from "../_shared/security.ts";
 import {
   automationSecretMatches,
@@ -22,9 +22,11 @@ function first<T>(data: T[] | T | null): T | null {
   return Array.isArray(data) ? data[0] ?? null : data;
 }
 
-function intakeUrl(rawToken: string): string {
+function intakeUrl(rawToken: string, requestKind: "website" | "slimme_documentenflow"): string {
   const url = new URL(
-    "/pages/intake.html",
+    requestKind === "slimme_documentenflow"
+      ? "/pages/sdf-qualification-intake.html"
+      : "/pages/intake.html",
     Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be",
   );
   url.searchParams.set("token", rawToken);
@@ -72,7 +74,7 @@ export async function handleRequest(request: Request): Promise<Response> {
   const database: WorkerDatabase = {
     async listCandidates(phase, limit) {
       const { data, error } = await supabase.rpc(
-        "list_intake_reminder_candidates_v1",
+        "list_intake_lifecycle_candidates_v2",
         {
           p_reminder_phase: phase,
           p_limit: limit,
@@ -82,8 +84,10 @@ export async function handleRequest(request: Request): Promise<Response> {
       return (data || []) as ReminderCandidate[];
     },
     async claim(candidate) {
-      const { data, error } = await supabase.rpc("claim_intake_reminder_v1", {
+      const { data, error } = await supabase.rpc("claim_intake_lifecycle_reminder_v2", {
+        p_request_kind: candidate.request_kind,
         p_intake_id: candidate.intake_id,
+        p_access_cycle: candidate.access_cycle,
         p_reminder_phase: candidate.reminder_phase,
       });
       if (error) throw new Error("REMINDER_CLAIM_FAILED");
@@ -91,8 +95,9 @@ export async function handleRequest(request: Request): Promise<Response> {
     },
     async prepare(candidate, claim) {
       const { data, error } = await supabase.rpc(
-        "prepare_intake_reminder_email_job_v1",
+        "prepare_intake_lifecycle_email_job_v2",
         {
+          p_request_kind: candidate.request_kind,
           p_intake_id: candidate.intake_id,
           p_access_cycle: candidate.access_cycle,
           p_reminder_phase: candidate.reminder_phase,
@@ -104,16 +109,17 @@ export async function handleRequest(request: Request): Promise<Response> {
     },
     async getDelivery(jobId) {
       const { data, error } = await supabase.rpc(
-        "get_intake_reminder_email_delivery_v1",
+        "get_intake_lifecycle_email_delivery_v2",
         { p_job_id: jobId },
       );
       if (error) throw new Error("REMINDER_RECHECK_FAILED");
       return first(data);
     },
-    async getCapability(intakeId, accessCycle) {
+    async getCapability(intakeId, accessCycle, requestKind) {
       const { data, error } = await supabase.rpc(
-        "get_intake_reminder_capability_v1",
+        "get_intake_lifecycle_capability_v2",
         {
+          p_request_kind: requestKind,
           p_intake_id: intakeId,
           p_access_cycle: accessCycle,
         },
@@ -132,7 +138,7 @@ export async function handleRequest(request: Request): Promise<Response> {
         buildIntakeUrl: intakeUrl,
         buildEmail: buildIntakeReminderEmail,
         deliver: async ({ jobId, recipientEmail, email }) =>
-          await deliverEmailJob({
+          await deliverIntakeLifecycleEmail({
             supabase,
             jobId,
             resendApiKey: Deno.env.get("RESEND_API_KEY") || "",

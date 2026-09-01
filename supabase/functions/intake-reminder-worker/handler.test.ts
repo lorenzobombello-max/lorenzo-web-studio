@@ -18,6 +18,7 @@ function candidate(
   return {
     quote_request_id: "request-1",
     intake_id: "intake-1",
+    request_kind: "website",
     access_cycle: 0,
     reminder_phase: "REMINDER_1",
     progress_status: "invited",
@@ -123,6 +124,42 @@ function harness(values: ReminderCandidate[], options: {
   };
   return { calls, claimed, delivered, dependencies };
 }
+
+Deno.test("worker discovers all four lifecycle phases for Website and SDF", async () => {
+  const fixture = harness([
+    candidate({ reminder_phase: "REMINDER_1" }),
+    candidate({ reminder_phase: "REMINDER_2" }),
+    candidate({ reminder_phase: "FINAL_WARNING", request_kind: "slimme_documentenflow" }),
+    candidate({ reminder_phase: "EXPIRY", request_kind: "slimme_documentenflow" }),
+  ]);
+  const result = await runReminderWorker({ dryRun: true }, fixture.dependencies);
+  assertEquals(result.candidates.map((item) => item.reminder_phase), [
+    "REMINDER_1",
+    "REMINDER_2",
+    "FINAL_WARNING",
+    "EXPIRY",
+  ]);
+  assertEquals(result.candidates.map((item) => item.request_kind), [
+    "website",
+    "website",
+    "slimme_documentenflow",
+    "slimme_documentenflow",
+  ]);
+});
+
+Deno.test("expiry sends without decrypting or rebuilding an active capability link", async () => {
+  const value = candidate({ reminder_phase: "EXPIRY", request_kind: "slimme_documentenflow" });
+  const fixture = harness([value]);
+  fixture.dependencies.database.getCapability = () => Promise.resolve(null);
+  fixture.dependencies.database.getDelivery = () => Promise.resolve({
+    ...context(value),
+    encrypted_token: null,
+  });
+  const result = await runReminderWorker({ dryRun: false, phase: "EXPIRY" }, fixture.dependencies);
+  assertEquals(result.sent_mocked, 1);
+  assertEquals(fixture.calls.decrypt, 0);
+  assertEquals(fixture.calls.capability, 0);
+});
 
 Deno.test("auth rejects a missing automation secret", async () => {
   assertEquals(await automationSecretMatches(null, secret), false);
@@ -248,7 +285,7 @@ Deno.test("dry-run selects R2", async () => {
   assertEquals(result.candidates[0].reminder_phase, "REMINDER_2");
 });
 
-for (const reminder_phase of ["REMINDER_1", "REMINDER_2"] as const) {
+for (const reminder_phase of ["REMINDER_1", "REMINDER_2", "FINAL_WARNING"] as const) {
   for (const progress_status of ["invited", "in_progress"] as const) {
     Deno.test(`${reminder_phase} ${progress_status} claims, prepares, rechecks and sends mocked`, async () => {
       const fixture = harness([candidate({ reminder_phase, progress_status })]);

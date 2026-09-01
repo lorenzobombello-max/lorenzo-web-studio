@@ -1,9 +1,11 @@
-export type ReminderPhase = "REMINDER_1" | "REMINDER_2";
+export type ReminderPhase = "REMINDER_1" | "REMINDER_2" | "FINAL_WARNING" | "EXPIRY";
 export type ProgressStatus = "invited" | "in_progress";
+export type ReminderRequestKind = "website" | "slimme_documentenflow";
 
 export interface ReminderCandidate {
   quote_request_id: string;
   intake_id: string;
+  request_kind: ReminderRequestKind;
   access_cycle: number;
   reminder_phase: ReminderPhase;
   progress_status: ProgressStatus;
@@ -31,7 +33,7 @@ export interface ReminderDeliveryContext {
   company: string | null;
   progress_status: ProgressStatus;
   expires_at: string;
-  encrypted_token: string;
+  encrypted_token: string | null;
 }
 
 export interface ReminderCapability {
@@ -53,6 +55,7 @@ export interface WorkerDatabase {
   getCapability(
     intakeId: string,
     accessCycle: number,
+    requestKind: ReminderRequestKind,
   ): Promise<ReminderCapability | null>;
 }
 
@@ -68,12 +71,13 @@ export interface WorkerDependencies {
     encryptedToken: string,
     accessTokenHash: string,
   ): Promise<string>;
-  buildIntakeUrl(rawToken: string): string;
+  buildIntakeUrl(rawToken: string, requestKind: ReminderRequestKind): string;
   buildEmail(input: {
     clientName: string;
     company: string | null;
     requestId: string;
-    intakeUrl: string;
+    intakeUrl: string | null;
+    requestKind: ReminderRequestKind;
     progressStatus: ProgressStatus;
     reminderPhase: ReminderPhase;
     expiresAt: string;
@@ -123,7 +127,8 @@ function counters(): WorkerCounters {
 }
 
 export function isReminderPhase(value: unknown): value is ReminderPhase {
-  return value === "REMINDER_1" || value === "REMINDER_2";
+  return value === "REMINDER_1" || value === "REMINDER_2" ||
+    value === "FINAL_WARNING" || value === "EXPIRY";
 }
 
 export async function automationSecretMatches(
@@ -173,7 +178,7 @@ async function discoverCandidates(
 ): Promise<ReminderCandidate[]> {
   const phases: ReminderPhase[] = requestedPhase
     ? [requestedPhase]
-    : ["REMINDER_1", "REMINDER_2"];
+    : ["REMINDER_1", "REMINDER_2", "FINAL_WARNING", "EXPIRY"];
   const candidates: ReminderCandidate[] = [];
   for (const phase of phases) {
     const remaining = WORKER_BATCH_LIMIT - candidates.length;
@@ -203,6 +208,7 @@ export async function runReminderWorker(
     result.candidates = candidates.map((candidate) => ({
       quote_request_id: candidate.quote_request_id,
       intake_id: candidate.intake_id,
+      request_kind: candidate.request_kind,
       access_cycle: candidate.access_cycle,
       reminder_phase: candidate.reminder_phase,
       progress_status: candidate.progress_status,
@@ -242,27 +248,33 @@ export async function runReminderWorker(
         result.skipped_not_eligible++;
         continue;
       }
-      const capability = await dependencies.database.getCapability(
-        candidate.intake_id,
-        candidate.access_cycle,
-      );
-      if (
-        capability?.outcome !== "CAPABILITY_AVAILABLE" ||
-        !capability.access_token_hash
-      ) {
-        result.skipped_capability_unavailable++;
-        continue;
+      let intakeUrl: string | null = null;
+      if (candidate.reminder_phase !== "EXPIRY") {
+        const capability = await dependencies.database.getCapability(
+          candidate.intake_id,
+          candidate.access_cycle,
+          candidate.request_kind,
+        );
+        if (
+          capability?.outcome !== "CAPABILITY_AVAILABLE" ||
+          !capability.access_token_hash ||
+          !delivery.encrypted_token
+        ) {
+          result.skipped_capability_unavailable++;
+          continue;
+        }
+        const rawToken = await dependencies.decryptToken(
+          delivery.encrypted_token,
+          capability.access_token_hash,
+        );
+        intakeUrl = dependencies.buildIntakeUrl(rawToken, candidate.request_kind);
       }
-
-      const rawToken = await dependencies.decryptToken(
-        delivery.encrypted_token,
-        capability.access_token_hash,
-      );
       const email = dependencies.buildEmail({
         clientName: delivery.client_name,
         company: delivery.company,
         requestId: candidate.quote_request_id,
-        intakeUrl: dependencies.buildIntakeUrl(rawToken),
+        intakeUrl,
+        requestKind: candidate.request_kind,
         progressStatus: delivery.progress_status,
         reminderPhase: delivery.reminder_phase,
         expiresAt: delivery.expires_at,

@@ -312,25 +312,25 @@ select is(
 create temp table cycle_b_r1_claim as
 select * from public.claim_intake_reminder_v1(
   'fb200009-0000-4000-8000-000000000009', 'REMINDER_1',
-  (select value + interval '3 days 1 minute' from reminder_test_clock)
+  (select value + interval '10 days 1 minute' from reminder_test_clock)
 );
 create temp table cycle_b_r1_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200009-0000-4000-8000-000000000009', 1, 'REMINDER_1',
   (select claim_token from cycle_b_r1_claim),
-  (select value + interval '3 days 1 minute' from reminder_test_clock)
+  (select value + interval '10 days 1 minute' from reminder_test_clock)
 );
 select is((select email_job_status from cycle_b_r1_job), 'pending', 'cycle B can prepare REMINDER_1 after cycle A sent both phases');
 create temp table cycle_b_r2_claim as
 select * from public.claim_intake_reminder_v1(
   'fb200009-0000-4000-8000-000000000009', 'REMINDER_2',
-  (select value + interval '6 days 1 minute' from reminder_test_clock)
+  (select value + interval '13 days 1 minute' from reminder_test_clock)
 );
 create temp table cycle_b_r2_job as
 select * from public.prepare_intake_reminder_email_job_v1(
   'fb200009-0000-4000-8000-000000000009', 1, 'REMINDER_2',
   (select claim_token from cycle_b_r2_claim),
-  (select value + interval '6 days 1 minute' from reminder_test_clock)
+  (select value + interval '13 days 1 minute' from reminder_test_clock)
 );
 select is((select email_job_status from cycle_b_r2_job), 'pending', 'cycle B can also prepare REMINDER_2 after cycle A sent both phases');
 select is(

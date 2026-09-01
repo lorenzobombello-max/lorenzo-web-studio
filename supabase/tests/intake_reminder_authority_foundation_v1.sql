@@ -240,13 +240,13 @@ select is(
   'reactivation creates the next reminder cycle'
 );
 select ok(
-  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_1', clock_timestamp() + interval '3 days 1 minute')
+  exists(select 1 from public.list_intake_reminder_candidates_v1('REMINDER_1', clock_timestamp() + interval '10 days 1 minute')
          where intake_id = 'fa200000-0000-4000-8000-000000000008' and access_cycle = 1),
   'old-cycle sent evidence does not block the reactivated cycle'
 );
 create temp table reactivated_claim as
 select * from public.claim_intake_reminder_v1(
-  'fa200000-0000-4000-8000-000000000008', 'REMINDER_1', clock_timestamp() + interval '3 days 1 minute'
+  'fa200000-0000-4000-8000-000000000008', 'REMINDER_1', clock_timestamp() + interval '10 days 1 minute'
 );
 select is((select access_cycle from reactivated_claim), 1::bigint, 'reactivated reminder is claimed in cycle one');
 select is(
