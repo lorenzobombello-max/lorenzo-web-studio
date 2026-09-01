@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, storage, extensions;
-select plan(64);
+select plan(81);
 
 select has_function(
   'public', 'get_sdf_quotation_delivery_transport_context_v1',
@@ -860,6 +860,170 @@ select ok(
     where id=(select email_job_id from qf5b_delivery)),
   'bridge never claims, completes, or delivers the prepared job'
 );
+
+select has_table(
+  'lws_internal','sdf_generic_acceptance_bridges',
+  'QF-5L immutable generic-to-SDF acceptance binding exists'
+);
+select has_function(
+  'lws_internal','project_generic_acceptance_to_sdf_v1',array['uuid'],
+  'QF-5L bounded SDF acceptance projector exists'
+);
+select ok(
+  not has_function_privilege(
+    'anon','lws_internal.project_generic_acceptance_to_sdf_v1(uuid)','execute'
+  ) and not has_function_privilege(
+    'authenticated','lws_internal.project_generic_acceptance_to_sdf_v1(uuid)','execute'
+  ) and not has_function_privilege(
+    'service_role','lws_internal.project_generic_acceptance_to_sdf_v1(uuid)','execute'
+  ),
+  'no runtime role can invoke the private projector directly'
+);
+
+update public.quote_request_intakes intake
+set admin_access_token_hash=repeat('7',64),
+    admin_access_token_expires_at=clock_timestamp()+interval '1 day'
+from qf5b_fixture fixture
+where intake.id=fixture.generic_intake_id;
+
+create temporary table qf5l_first as
+select public.submit_quotation_acceptance_capability_v1(
+  repeat('a',64),'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT',
+  '1.0.0-technical','QF-5L Customer','qf5b@example.test',
+  'Synthetic QF-5B BV','Authorized signatory',true,
+  pg_temp.qf5b_uuid('qf5l-acceptance-key')
+) result;
+
+select is((select result->>'state' from qf5l_first),'ACCEPTED',
+  'first generic SDF acceptance succeeds');
+select is((select (result->>'was_created')::boolean from qf5l_first),true,
+  'first generic SDF acceptance reports was_created true');
+select is((select count(*)::integer from public.quote_request_quotation_acceptances
+  where issuance_id=(select issuance_id from qf5b_fixture)),1,
+  'first acceptance creates exactly one generic acceptance');
+select ok((
+  select bridge.acceptance_id=acceptance.id
+    and bridge.quotation_id=preparation.quotation_id
+    and bridge.issuance_id=fixture.issuance_id
+    and bridge.approval_id=fixture.approval_id
+    and bridge.business_draft_id=fixture.business_draft_id
+    and bridge.artifact_id=fixture.artifact_id
+  from qf5b_fixture fixture
+  join public.quote_request_quotation_acceptances acceptance
+    on acceptance.issuance_id=fixture.issuance_id
+  join public.sdf_quotation_business_draft_adapters adapter
+    on adapter.business_draft_id=fixture.business_draft_id
+  join public.sdf_quotation_preparation_authorities preparation
+    on preparation.authority_id=adapter.preparation_authority_id
+  join lws_internal.sdf_generic_acceptance_bridges bridge
+    on bridge.acceptance_id=acceptance.id
+), 'bridge binds the exact acceptance, SDF quotation, issuance, approval, business draft, and artifact');
+select ok((
+  select document.quotation_date=(approval.approved_payload->'validity'->>'valid_from')::date
+    and document.valid_until=(approval.approved_payload->'validity'->>'valid_until')::date
+    and document.prepared_at=issuance.issued_at
+    and document.document_reference=artifact.storage_object_path
+    and rtrim(document.document_sha256)=rtrim(artifact.sha256)
+  from qf5b_fixture fixture
+  join public.quote_request_quotation_approvals approval on approval.id=fixture.approval_id
+  join public.quote_request_quotation_issuances issuance on issuance.id=fixture.issuance_id
+  join public.quote_request_quotation_artifacts artifact on artifact.artifact_id=fixture.artifact_id
+  join public.sdf_quotation_business_draft_adapters adapter on adapter.business_draft_id=fixture.business_draft_id
+  join public.sdf_quotation_preparation_authorities preparation on preparation.authority_id=adapter.preparation_authority_id
+  join public.sdf_quotation_documents document on document.quotation_id=preparation.quotation_id
+), 'SDF document evidence reuses the exact frozen issuance artifact');
+select ok((
+  select sdf_acceptance.accepted_at=acceptance.accepted_at
+    and sdf_acceptance.document_reference=artifact.storage_object_path
+    and rtrim(sdf_acceptance.document_sha256)=rtrim(acceptance.docx_sha256)
+  from qf5b_fixture fixture
+  join public.quote_request_quotation_acceptances acceptance on acceptance.issuance_id=fixture.issuance_id
+  join public.quote_request_quotation_artifacts artifact on artifact.artifact_id=fixture.artifact_id
+  join lws_internal.sdf_generic_acceptance_bridges bridge on bridge.acceptance_id=acceptance.id
+  join public.sdf_quotation_acceptances sdf_acceptance on sdf_acceptance.quotation_id=bridge.quotation_id
+), 'SDF acceptance evidence reuses the generic acceptance timestamp and exact document identity');
+select is((
+  select jsonb_build_array(terms.sdf_package,terms.accepted_implementation_amount_minor,
+    terms.currency,terms.vat_basis,terms.pricing_authority_version,
+    terms.created_by_operator_id)
+  from public.sdf_accepted_commercial_terms terms
+  join lws_internal.sdf_generic_acceptance_bridges bridge
+    on bridge.quotation_id=terms.quotation_id
+), jsonb_build_array('start',285000,'EUR','exclusive',1,
+    pg_temp.qf5b_uuid('qf5b-owner-operator')),
+  'existing SDF accepted-commercial authority stores the frozen amount and approval actor');
+select is((
+  select jsonb_build_array(obligation.milestone_identity,
+    obligation.percentage_basis_points,obligation.amount_minor,
+    obligation.obligation_state,obligation.obligation_origin)
+  from public.sdf_milestone_one_obligations obligation
+  join lws_internal.sdf_generic_acceptance_bridges bridge
+    on bridge.quotation_id=obligation.quotation_id
+), '["M1",4000,114000,"EXPECTED","QUOTATION_ACCEPTANCE"]'::jsonb,
+  'existing SDF milestone authority creates exactly one EXPECTED M1 obligation');
+select is((select operational_status
+  from lws_internal.operator_application_readmodel_v2
+  where quote_request_id=(select quote_request_id from qf5b_fixture)),
+  'QUOTE_ACCEPTED','operator readmodel projects accepted SDF quotation');
+
+create temporary table qf5l_replay as
+select public.submit_quotation_acceptance_capability_v1(
+  repeat('a',64),'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT',
+  '1.0.0-technical','QF-5L Customer','qf5b@example.test',
+  'Synthetic QF-5B BV','Authorized signatory',true,
+  pg_temp.qf5b_uuid('qf5l-acceptance-key')
+) result;
+select ok((
+  select replay.result->>'state'='ACCEPTED'
+    and (replay.result->>'acceptance_id')=(first.result->>'acceptance_id')
+    and (replay.result->>'was_created')::boolean=false
+  from qf5l_replay replay cross join qf5l_first first
+), 'consumed replay returns the same acceptance with was_created false');
+select ok(
+  (select count(*)=1 from public.quote_request_quotation_acceptances)
+  and (select count(*)=1 from lws_internal.sdf_generic_acceptance_bridges)
+  and (select count(*)=1 from public.sdf_quotation_documents)
+  and (select count(*)=1 from public.sdf_quotation_acceptances)
+  and (select count(*)=1 from public.sdf_accepted_commercial_terms)
+  and (select count(*)=1 from public.sdf_milestone_one_obligations),
+  'replay creates no duplicate generic acceptance, bridge, evidence, terms, or obligation'
+);
+
+update public.quote_request_intakes intake
+set admin_access_token_hash=repeat('6',64),
+    admin_access_token_expires_at=clock_timestamp()+interval '1 day'
+from qf5b_cross_fixture fixture
+where intake.id=fixture.intake_id;
+insert into public.quote_request_quotation_acceptance_capabilities(
+  id,issuance_id,token_digest,capability_version,status,expires_at,created_by
+) values (
+  pg_temp.qf5b_uuid('qf5l-wrong-capability'),
+  pg_temp.qf5b_uuid('qf5b-cross-issuance'),repeat('c',64),1,'ACTIVE',
+  clock_timestamp()+interval '1 day','QF5L_TEST'
+);
+create temporary table qf5l_wrong_lineage as
+select public.submit_quotation_acceptance_capability_v1(
+  repeat('c',64),'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT',
+  '1.0.0-technical','QF-5L Wrong','qf5b-cross@example.test',null,null,true,
+  pg_temp.qf5b_uuid('qf5l-wrong-acceptance-key')
+) result;
+select is((select result->>'state' from qf5l_wrong_lineage),'VALIDATION_FAILED',
+  'SDF issuance without frozen adapter lineage fails closed');
+select ok(
+  not exists(select 1 from public.quote_request_quotation_acceptances
+    where issuance_id=pg_temp.qf5b_uuid('qf5b-cross-issuance'))
+  and (select count(*)=1 from lws_internal.sdf_generic_acceptance_bridges)
+  and (select count(*)=1 from public.sdf_quotation_acceptances)
+  and (select count(*)=1 from public.sdf_accepted_commercial_terms)
+  and (select count(*)=1 from public.sdf_milestone_one_obligations),
+  'wrong lineage rolls back generic acceptance and creates no partial SDF projection'
+);
+select ok((
+  select status='pending' and attempt_count=0 and locked_at is null
+    and provider_message_id is null
+  from public.quote_request_email_jobs
+  where id=(select email_job_id from qf5b_delivery)
+), 'acceptance bridge changes no mail delivery state');
 
 select * from finish();
 rollback;

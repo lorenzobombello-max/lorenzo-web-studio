@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(46);
 
 select has_column('public', 'quote_request_quotation_issuances', 'issuance_input_sha256', 'preparation input hash has a distinct column');
 select has_column('public', 'quote_request_quotation_issuances', 'generation_payload_sha256', 'final generation hash remains explicit');
@@ -117,6 +117,33 @@ select is((select count(*)::integer from public.quote_request_quotation_acceptan
 create temporary table d3e10_acceptance as select public.submit_quotation_acceptance_capability_v1(
   repeat('9',64),'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT','1.0.0-technical','D3E10 Acceptant','acceptant@example.test','D3E10 BV','Bestuurder',true,'d3e10000-0000-4000-8000-000000000003') as result;
 select is((select result->>'state' from d3e10_acceptance),'ACCEPTED','capability acceptance succeeds before confirmations');
+select is((select (result->>'was_created')::boolean from d3e10_acceptance),true,
+  'first legacy acceptance reports was_created true');
+select ok(
+  (select count(*)=0 from lws_internal.sdf_generic_acceptance_bridges)
+  and (select count(*)=0 from public.sdf_quotation_acceptances)
+  and (select count(*)=0 from public.sdf_accepted_commercial_terms)
+  and (select count(*)=0 from public.sdf_milestone_one_obligations),
+  'legacy non-SDF acceptance creates no SDF evidence or downstream projection'
+);
+create temporary table d3e10_acceptance_replay as
+select public.submit_quotation_acceptance_capability_v1(
+  repeat('9',64),'LWS_QUOTATION_ACCEPTANCE_ACKNOWLEDGEMENT','1.0.0-technical',
+  'D3E10 Acceptant','acceptant@example.test','D3E10 BV','Bestuurder',true,
+  'd3e10000-0000-4000-8000-000000000003'
+) as result;
+select ok((
+  select replay.result->>'state'='ACCEPTED'
+    and replay.result->>'acceptance_id'=first.result->>'acceptance_id'
+    and (replay.result->>'was_created')::boolean=false
+  from d3e10_acceptance_replay replay cross join d3e10_acceptance first
+), 'legacy consumed replay returns the same acceptance with was_created false');
+select ok(
+  (select count(*)=1 from public.quote_request_quotation_acceptances)
+  and (select count(*)=0 from lws_internal.sdf_generic_acceptance_bridges)
+  and (select count(*)=0 from public.sdf_quotation_acceptances),
+  'legacy replay creates no duplicate acceptance and remains isolated from SDF'
+);
 select is((select recipient_email from public.prepare_quotation_acceptance_confirmation_v1(
   (select id from public.quote_request_quotation_acceptances),'ACCEPTANCE_CONFIRMATION_CUSTOMER','ACCEPTANCE_CONFIRMATION_CUSTOMER_NL_BE_v1','d3e10000-0000-4000-8000-000000000004','service:quotation-acceptance',null)),
   'd3e3a@example.test','customer confirmation recipient comes from approval snapshot');
