@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(37);
+select plan(39);
 
 select has_function(
   'public', 'can_purge_sdf_dossier_v1', array['uuid'],
@@ -97,12 +97,19 @@ insert into public.quote_requests (
 insert into public.sdf_qualification_intakes (
   intake_id, quote_request_id, customer_capability_digest,
   customer_capability_encrypted, customer_capability_expires_at
-) values (
-  'fc200000-0000-4000-8000-000000000001',
-  'fc100001-0000-4000-8000-000000000001', repeat('1', 64),
-  'v1.abcdefghijklmnop.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN',
-  clock_timestamp() + interval '1 day'
-);
+) values
+  (
+    'fc200000-0000-4000-8000-000000000001',
+    'fc100001-0000-4000-8000-000000000001', repeat('1', 64),
+    'v1.abcdefghijklmnop.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN',
+    clock_timestamp() + interval '1 day'
+  ),
+  (
+    'fc200000-0000-4000-8000-000000000004',
+    'fc100004-0000-4000-8000-000000000004', repeat('9', 64),
+    'v1.abcdefghijklmnop.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMO',
+    clock_timestamp() + interval '1 day'
+  );
 insert into public.sdf_qualification_intake_submissions (
   submission_id, intake_id, submission_sequence, answers, taxonomy_version,
   payload_sha256, confirmation_version, confirmation_sha256
@@ -201,16 +208,18 @@ end;
 $$;
 
 select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000001', true);
-select pg_temp.trash_sdf_dossier('fc100001-0000-4000-8000-000000000001', 'fc400001-0000-4000-8000-000000000001');
 select pg_temp.trash_sdf_dossier('fc100002-0000-4000-8000-000000000002', 'fc400002-0000-4000-8000-000000000002');
 select pg_temp.trash_sdf_dossier('fc100003-0000-4000-8000-000000000003', 'fc400003-0000-4000-8000-000000000003');
 select pg_temp.trash_sdf_dossier('fc100005-0000-4000-8000-000000000005', 'fc400005-0000-4000-8000-000000000005');
 select pg_temp.trash_sdf_dossier('fc100006-0000-4000-8000-000000000006', 'fc400006-0000-4000-8000-000000000006');
-select pg_temp.trash_sdf_dossier('fc100007-0000-4000-8000-000000000007', 'fc400007-0000-4000-8000-000000000007');
 
 select is(
   public.can_purge_sdf_dossier_v1('fc100001-0000-4000-8000-000000000001')->>'can_purge',
-  'true', 'preparation, generated draft, and identity project do not block purge'
+  'true', 'active submitted intake, preparation, draft, and foundation project do not block purge'
+);
+select is(
+  public.can_purge_sdf_dossier_v1('fc100004-0000-4000-8000-000000000004')->>'can_purge',
+  'true', 'active invited SDF intake without downstream obligations is purge eligible'
 );
 select is(
   public.can_purge_sdf_dossier_v1('fc100002-0000-4000-8000-000000000002')->>'can_purge',
@@ -221,8 +230,15 @@ select is(
   'true', 'SDF project identity foundation alone does not block purge'
 );
 select is(
+  public.purge_sdf_dossier_v1(
+    'fc100002-0000-4000-8000-000000000002', 'Trashed foundation cleanup',
+    'fc500000-0000-4000-8000-000000000002'
+  )->>'replayed',
+  'false', 'owner purges a trashed SDF quotation foundation dossier'
+);
+select is(
   public.can_purge_sdf_dossier_v1('fc100007-0000-4000-8000-000000000007')->>'reason',
-  'QUOTATION_ACCEPTANCE_EXISTS', 'accepted SDF quotation blocks purge'
+  'QUOTATION_ACCEPTANCE_EXISTS', 'accepted SDF quotation blocks active purge'
 );
 select is(
   public.can_purge_sdf_dossier_v1('fc100006-0000-4000-8000-000000000006')->>'reason',
@@ -231,10 +247,6 @@ select is(
 select is(
   public.can_purge_sdf_dossier_v1('fc100003-0000-4000-8000-000000000003')->>'reason',
   'WRONG_PRODUCT_KIND', 'Website dossier is rejected by SDF authority'
-);
-select is(
-  public.can_purge_sdf_dossier_v1('fc100004-0000-4000-8000-000000000004')->>'reason',
-  'DOSSIER_NOT_TRASHED', 'active SDF dossier is rejected'
 );
 select is(
   public.can_purge_sdf_dossier_v1('fc109999-0000-4000-8000-000000000999')->>'reason',
@@ -253,6 +265,13 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000001', true);
 select throws_ok(
   $$select public.purge_sdf_dossier_v1(
+    'fc100003-0000-4000-8000-000000000003', 'Must remain isolated',
+    'fc500000-0000-4000-8000-000000000003'
+  )$$,
+  '55000', 'WRONG_PRODUCT_KIND', 'SDF executor rejects a Website dossier'
+);
+select throws_ok(
+  $$select public.purge_sdf_dossier_v1(
     'fc100007-0000-4000-8000-000000000007', 'Cleanup',
     'fc500000-0000-4000-8000-000000000007'
   )$$,
@@ -263,7 +282,7 @@ select is(
     'fc100001-0000-4000-8000-000000000001', '  Technical cleanup  ',
     'fc500000-0000-4000-8000-000000000001'
   )->>'replayed',
-  'false', 'owner purges technical-only SDF dossier once'
+  'false', 'owner directly purges active technical-only SDF dossier once'
 );
 select is(
   (select count(*)::integer from public.quote_requests

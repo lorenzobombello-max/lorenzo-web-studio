@@ -13,7 +13,7 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260901-sdf-danger-zone-ui";
+const OPERATOR_ASSET_RELEASE = "20260901-direct-active-purge";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
@@ -1299,7 +1299,7 @@ test("dossier lifecycle UI keeps reversible Edge actions separate from owner-onl
   assert.doesNotMatch(script, /service_role|hard_delete|delete_dossier/i);
 });
 
-test("permanent dossier deletion is trashed, owner, server eligibility, reason, and UUID bound", () => {
+test("permanent dossier deletion is active or trashed, owner, server eligibility, reason, and UUID bound", () => {
   const detail = {
     quote_request_id: "a1100000-0000-4000-8000-000000000003",
     dossier_lifecycle: { state: "TRASHED" },
@@ -1307,12 +1307,18 @@ test("permanent dossier deletion is trashed, owner, server eligibility, reason, 
   const owner = { role: "owner", status: "ACTIVE" };
   assert.equal(canOfferDossierPurge(detail, owner, { can_purge: true, reason: null }), true);
   assert.equal(canOfferDossierPurge(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }), false);
-  assert.equal(canOfferDossierPurge({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }), false);
+  assert.equal(canOfferDossierPurge({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }), true);
+  assert.equal(canOfferDossierPurge({ ...detail, dossier_lifecycle: { state: "ARCHIVED" } }, owner, { can_purge: true, reason: null }), false);
   assert.equal(canOfferDossierPurge(detail, owner, { can_purge: false, reason: "OFFICIAL_QUOTATION_EXISTS" }), false);
   assert.deepEqual(dossierPurgeRequest(detail, "  Lokale testdata opschonen  ", "a1800000-0000-4000-8000-000000000031"), {
     p_quote_request_id: detail.quote_request_id,
     p_reason: "Lokale testdata opschonen",
     p_idempotency_key: "a1800000-0000-4000-8000-000000000031",
+  });
+  assert.deepEqual(dossierPurgeRequest({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, "Direct opschonen", "a1800000-0000-4000-8000-000000000032"), {
+    p_quote_request_id: detail.quote_request_id,
+    p_reason: "Direct opschonen",
+    p_idempotency_key: "a1800000-0000-4000-8000-000000000032",
   });
   assert.throws(()=>dossierPurgeRequest(detail, "   ", "a1800000-0000-4000-8000-000000000031"), /INVALID_DOSSIER_PURGE_REQUEST/);
   assert.throws(()=>dossierPurgeRequest(detail, "Reden", "geen-uuid"), /INVALID_DOSSIER_PURGE_REQUEST/);
@@ -1326,6 +1332,9 @@ test("Website danger-zone action follows existing server eligibility", () => {
   assert.equal(nodes.section.hidden, false);
   assert.equal(nodes.action.hidden, false);
   assert.match(nodes.message.textContent, /kan definitief worden verwijderd/);
+  presentWebsiteDossierPurge(nodes, { ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null });
+  assert.equal(nodes.section.hidden, false);
+  assert.equal(nodes.action.hidden, false);
   presentWebsiteDossierPurge(nodes, detail, owner, { can_purge: false, reason: "OFFICIAL_QUOTATION_EXISTS" });
   assert.equal(nodes.section.hidden, false);
   assert.equal(nodes.action.hidden, true);
@@ -1357,7 +1366,11 @@ test("SDF danger zone is server-authoritative and gives exact blocker feedback",
   );
   assert.equal(sdfDossierPurgePresentation({ ...detail, request_kind: "website" }, owner, { can_purge: true, reason: null }), null);
   assert.equal(sdfDossierPurgePresentation(detail, { role: "admin", status: "ACTIVE" }, { can_purge: true, reason: null }), null);
-  assert.equal(sdfDossierPurgePresentation({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }), null);
+  assert.deepEqual(
+    sdfDossierPurgePresentation({ ...detail, dossier_lifecycle: { state: "ACTIVE" } }, owner, { can_purge: true, reason: null }),
+    { canPurge: true, message: "Dit dossier bevat geen beschermde commerciële gegevens en kan definitief worden verwijderd." },
+  );
+  assert.equal(sdfDossierPurgePresentation({ ...detail, dossier_lifecycle: { state: "ARCHIVED" } }, owner, { can_purge: true, reason: null }), null);
   assert.deepEqual(
     sdfDossierPurgeRequest(detail, "  Testdata opschonen  ", "a1800000-0000-4000-8000-000000000031"),
     {

@@ -1594,7 +1594,7 @@ export function currentOperatorIdentityPresentation(identity) {
 export function canOfferDossierPurge(detail, identity, eligibility) {
   return Boolean(identity?.status === "ACTIVE"
     && identity.role === "owner"
-    && detail?.dossier_lifecycle?.state === "TRASHED"
+    && ["ACTIVE", "TRASHED"].includes(detail?.dossier_lifecycle?.state)
     && UUID.test(String(detail?.quote_request_id || ""))
     && eligibility?.can_purge === true
     && eligibility.reason === null);
@@ -1604,7 +1604,7 @@ export function presentWebsiteDossierPurge(nodes, detail, identity, eligibility)
   const eligibleContext = detail?.request_kind === "website"
     && identity?.status === "ACTIVE"
     && identity.role === "owner"
-    && detail?.dossier_lifecycle?.state === "TRASHED";
+    && ["ACTIVE", "TRASHED"].includes(detail?.dossier_lifecycle?.state);
   nodes.section.hidden = !eligibleContext;
   nodes.action.hidden = !eligibleContext || !canOfferDossierPurge(detail, identity, eligibility);
   nodes.message.textContent = !eligibleContext ? ""
@@ -1618,7 +1618,7 @@ export function presentWebsiteDossierPurge(nodes, detail, identity, eligibility)
 export function dossierPurgeRequest(detail, reason, idempotencyKey) {
   const quoteRequestId = String(detail?.quote_request_id || "");
   const normalizedReason = typeof reason === "string" ? reason.trim() : "";
-  if (detail?.dossier_lifecycle?.state !== "TRASHED"
+  if (!["ACTIVE", "TRASHED"].includes(detail?.dossier_lifecycle?.state)
       || !UUID.test(quoteRequestId)
       || !UUID.test(String(idempotencyKey || ""))
       || normalizedReason.length < 1
@@ -1634,7 +1634,7 @@ const SDF_PURGE_BLOCKER_MESSAGES = Object.freeze({
   ALREADY_PURGED: "Dit dossier is al definitief verwijderd.",
   DOSSIER_NOT_FOUND: "Dit dossier is niet meer beschikbaar.",
   WRONG_PRODUCT_KIND: "Definitief verwijderen is niet beschikbaar voor dit type dossier.",
-  DOSSIER_NOT_TRASHED: "Verplaats dit dossier eerst naar de prullenbak.",
+  DOSSIER_STATE_NOT_PURGEABLE: "Definitief verwijderen is niet beschikbaar in deze dossierstatus.",
   SDF_QUOTATION_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat er al een offerte bestaat.",
   QUOTATION_PREPARATION_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat de commerciële voorbereiding al is gestart.",
   QUOTATION_ACCEPTANCE_EXISTS: "Dit dossier kan niet definitief worden verwijderd omdat de offerte al is aanvaard.",
@@ -1651,7 +1651,7 @@ const SDF_PURGE_BLOCKER_MESSAGES = Object.freeze({
 export function sdfDossierPurgePresentation(detail, identity, eligibility) {
   if (detail?.request_kind !== "slimme_documentenflow") return null;
   if (identity?.status !== "ACTIVE" || identity.role !== "owner"
-      || detail?.dossier_lifecycle?.state !== "TRASHED") return null;
+  || !["ACTIVE", "TRASHED"].includes(detail?.dossier_lifecycle?.state)) return null;
   if (!eligibility || typeof eligibility !== "object") {
     return { canPurge: false, message: "De verwijderstatus kon niet veilig worden vastgesteld. Vernieuw het dossier." };
   }
@@ -4705,7 +4705,7 @@ export async function startOperatorDashboard({
     if (dossierPurgeBusy
         || currentIdentity?.status !== "ACTIVE"
         || currentIdentity.role !== "owner"
-        || detailApplication?.dossier_lifecycle?.state !== "TRASHED"
+        || !["ACTIVE", "TRASHED"].includes(detailApplication?.dossier_lifecycle?.state)
         || !UUID.test(String(detailApplication?.quote_request_id || ""))) return;
     const { data, error } = await client.rpc("can_purge_dossier_v1", {
       p_quote_request_id: detailApplication.quote_request_id,

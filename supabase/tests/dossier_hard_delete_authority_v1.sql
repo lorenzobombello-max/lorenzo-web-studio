@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(32);
+select plan(34);
 
 select has_function(
   'public', 'can_purge_dossier_v1', array['uuid'],
@@ -85,10 +85,11 @@ insert into public.commercial_operators (
   ('fa010000-0000-4000-8000-000000000002', 'fa000000-0000-4000-8000-000000000002', 'Purge Admin', 'admin', 'ACTIVE', null);
 
 insert into public.quote_requests (
-  id, request_kind, sdf_package, created_at, name, email, description,
-  privacy_consent, status
+  id, request_kind, website_type, budget, timing, created_at,
+  name, email, description, privacy_consent, status
 ) values (
-  'd3752349-3489-4c19-bd03-f0cc076b5607', 'slimme_documentenflow', 'groei',
+  'd3752349-3489-4c19-bd03-f0cc076b5607', 'website', 'business',
+  'EUR 3.200 t/m EUR 6.000', 'flexible',
   '2026-08-18T06:40:00.735922Z', 'Purge authority fixture',
   'purge-fixture@example.test', 'Local purge validation fixture.', true, 'approved'
 );
@@ -123,12 +124,9 @@ select throws_ok(
 );
 
 select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000001', true);
-select throws_ok(
-  $$select public.purge_dossier_v1(
-    'd3752349-3489-4c19-bd03-f0cc076b5607', 'Permanent cleanup',
-    'fa020000-0000-4000-8000-000000000001'
-  )$$,
-  'P0001', 'DOSSIER_NOT_TRASHED', 'active dossier cannot be purged'
+select is(
+  public.can_purge_dossier_v1('d3752349-3489-4c19-bd03-f0cc076b5607')->>'can_purge',
+  'true', 'active Website dossier without protected dependencies is purge eligible'
 );
 
 create function pg_temp.trash_dossier(
@@ -153,16 +151,14 @@ begin
 end;
 $$;
 
-select lives_ok(
-  $$select pg_temp.trash_dossier(
-    'd3752349-3489-4c19-bd03-f0cc076b5607',
-    'fa030000-0000-4000-8000-000000000001'
-  )$$,
-  'eligible exact-11 dossier can enter persistent trash'
+select is(
+  (select state from lws_internal.operator_dossier_states
+   where quote_request_id = 'd3752349-3489-4c19-bd03-f0cc076b5607'),
+  'ACTIVE', 'direct purge fixture remains active before execution'
 );
 select is(
   public.can_purge_dossier_v1('d3752349-3489-4c19-bd03-f0cc076b5607')->>'can_purge',
-  'true', 'trashed pre-official dossier is purge eligible'
+  'true', 'active clean Website dossier remains purge eligible'
 );
 
 select is(
@@ -201,11 +197,11 @@ select ok(
 );
 select ok(
   (select purge_reason = 'Permanent cleanup'
-      and original_dossier_state = 'TRASHED'
+      and original_dossier_state = 'ACTIVE'
       and original_state_before_trash = 'ACTIVE'
    from lws_internal.dossier_purge_tombstones
    where quote_request_id = 'd3752349-3489-4c19-bd03-f0cc076b5607'),
-  'purge retains normalized non-PII tombstone evidence'
+  'direct active purge retains normalized non-PII tombstone evidence'
 );
 select throws_ok(
   $$update lws_internal.dossier_purge_tombstones
@@ -498,15 +494,9 @@ select * from public.prepare_quotation_issuance_v2(
   'fa080000-0000-4000-8000-000000000001', repeat('f', 64),
   'test:purge-authority'
 );
-update lws_internal.operator_dossier_states
-set state = 'TRASHED', revision = revision + 1,
-    state_before_trash = 'ACTIVE', deletion_eligible_at = null,
-    updated_at = clock_timestamp()
-where quote_request_id = '620b3fa5-2e6b-4439-9d22-741b8541fbdf';
-
 select is(
   public.can_purge_dossier_v1('620b3fa5-2e6b-4439-9d22-741b8541fbdf')->>'reason',
-  'OFFICIAL_QUOTATION_EXISTS', 'numbered PREPARED quotation blocks purge eligibility'
+  'OFFICIAL_QUOTATION_EXISTS', 'numbered PREPARED quotation blocks active purge eligibility'
 );
 select throws_ok(
   $$select public.purge_dossier_v1(
@@ -529,6 +519,26 @@ select ok(
     where quote_request_id = '620b3fa5-2e6b-4439-9d22-741b8541fbdf'
   ),
   'blocked purge leaves official quotation dossier wholly intact'
+);
+
+insert into public.quote_requests (
+  id, request_kind, sdf_package, created_at, name, email, description,
+  privacy_consent, status
+) values (
+  'fa090000-0000-4000-8000-000000000001', 'slimme_documentenflow', 'start',
+  clock_timestamp(), 'SDF isolation fixture', 'sdf-isolation@example.test',
+  'Website authority isolation fixture.', true, 'approved'
+);
+select is(
+  public.can_purge_dossier_v1('fa090000-0000-4000-8000-000000000001')->>'reason',
+  'WRONG_PRODUCT_KIND', 'Website eligibility rejects an active SDF dossier'
+);
+select throws_ok(
+  $$select public.purge_dossier_v1(
+    'fa090000-0000-4000-8000-000000000001', 'Must remain isolated',
+    'fa090000-0000-4000-8000-000000000002'
+  )$$,
+  '55000', 'WRONG_PRODUCT_KIND', 'Website executor rejects an active SDF dossier'
 );
 
 select * from finish();
