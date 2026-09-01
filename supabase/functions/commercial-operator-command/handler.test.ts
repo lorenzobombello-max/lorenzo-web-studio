@@ -3272,6 +3272,30 @@ Deno.test("SDF delivery preparation accepts only frozen authority and artifact i
   }
 });
 
+Deno.test("SDF delivery preparation maps owner denial without masking internal failures", async () => {
+  const ownerDenied = await handleCommercialOperator(
+    request(sdfQuotationDeliveryPreparationRequest),
+    dependencies({
+      executeApplicationAction: async () => {
+        throw new Error("OWNER_REQUIRED");
+      },
+    }).deps,
+  );
+  assertEquals(ownerDenied.status, 403);
+  assertEquals((await ownerDenied.json()).code, "OPERATOR_NOT_AUTHORIZED");
+
+  const internalFailure = await handleCommercialOperator(
+    request(sdfQuotationDeliveryPreparationRequest),
+    dependencies({
+      executeApplicationAction: async () => {
+        throw new Error("UNEXPECTED_SDF_PREPARATION_FAILURE");
+      },
+    }).deps,
+  );
+  assertEquals(internalFailure.status, 500);
+  assertEquals((await internalFailure.json()).code, "INTERNAL_ERROR");
+});
+
 Deno.test("approved quotation issuance exposes stable stage errors", async () => {
   for (
     const [internalCode, status, publicCode] of [
