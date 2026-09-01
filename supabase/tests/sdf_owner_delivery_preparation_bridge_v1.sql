@@ -289,8 +289,8 @@ update qf5b_fixture set decision_id=(
 )::uuid;
 
 create temporary table qf5b_business_result as
-select public.create_sdf_quotation_business_draft_v1(
-  preparation_authority_id,decision_id,pg_temp.qf5b_uuid('qf5b-business-key')
+select public.create_sdf_quotation_business_draft_v2(
+  preparation_authority_id,decision_id,pg_temp.qf5b_uuid('qf5b-business-key'),6
 ) result from qf5b_fixture;
 update qf5b_fixture set
   business_draft_id=(result->>'business_draft_id')::uuid,

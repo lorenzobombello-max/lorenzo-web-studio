@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(37);
+select plan(42);
 
 select has_function(
   'public','build_sdf_quotation_issue_payload_v1',
@@ -337,9 +337,10 @@ update qf4b_fixtures fixture set decision_id=(
 
 create temporary table qf4b_business_results(label text primary key,value jsonb);
 insert into qf4b_business_results
-select label,public.create_sdf_quotation_business_draft_v1(
+select label,public.create_sdf_quotation_business_draft_v2(
   preparation_authority_id,decision_id,
-  pg_temp.qf4b_uuid('qf4b-'||label||'-business-key')
+  pg_temp.qf4b_uuid('qf4b-'||label||'-business-key'),
+  case label when 'start' then 3 else 6 end
 ) from qf4b_fixtures;
 update qf4b_fixtures fixture set
   business_draft_id=(result.value->>'business_draft_id')::uuid,
@@ -485,6 +486,38 @@ select is((select payload#>>'{sdf_scope,package_key}' from qf4b_result),
   'start','START package key is explicit');
 select is((select payload#>>'{sdf_scope,package_key}' from qf4b_cross_result),
   'groei','server capacities select GROEI despite frontend START direction');
+select is((select payload#>>'{project,indicative_timing}' from qf4b_result),
+  '3','generation payload carries the exact approved execution term');
+select is(
+  (select approved_payload#>>'{project_scope,indicative_timing}'
+   from public.quote_request_quotation_approvals
+   where id=(select approval_id from qf4b_fixtures where label='start')),
+  '3','owner-approved payload freezes the exact execution term before generation'
+);
+select is((select payload#>>'{project,indicative_timing}' from qf4b_cross_result),
+  '6','execution term remains quotation-specific');
+select isnt(
+  (select public.sdf_quotation_generation_payload_sha256_v1(payload) from qf4b_result),
+  (select public.sdf_quotation_generation_payload_sha256_v1(
+    jsonb_set(payload,'{project,indicative_timing}','11'::jsonb)
+  ) from qf4b_result),
+  'execution term participates in the immutable generation payload hash'
+);
+select throws_ok(
+  $$select lws_internal.project_sdf_quotation_generation_payload_v1(
+      'ISSUE',fixture.approval_id,
+      jsonb_set(approval.approved_payload,'{project_scope,indicative_timing}','11'::jsonb),
+      fixture.approval_sha256,result.payload->'template',result.payload->'seller',
+      fixture.issuance_id,result.payload#>>'{quotation,quotation_number}',
+      (result.payload#>>'{quotation,quotation_version}')::integer
+    )
+    from qf4b_fixtures fixture
+    join public.quote_request_quotation_approvals approval on approval.id=fixture.approval_id
+    cross join qf4b_result result
+    where fixture.label='start'$$,
+  '55000','SDF_SCOPE_AUTHORITY_STALE',
+  'a manipulated frontend candidate cannot override the frozen approved execution term'
+);
 select is((select payload#>>'{sdf_scope,implementation_amount_minor}' from qf4b_result),
   '285000','implementation amount comes from frozen pricing authority');
 select is((select payload#>>'{sdf_scope,recurring_amount_minor}' from qf4b_result),

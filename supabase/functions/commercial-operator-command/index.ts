@@ -40,6 +40,7 @@ import {
   type QuotationRuntimeOptions,
 } from "./quotation-runtime.ts";
 import { renderQuotationDocxBytes } from "./quotation-renderer-edge.ts";
+import { renderSdfQuotationDocxBytes } from "./sdf-quotation-renderer-edge.ts";
 import {
   enrichOperatorApplicationDetailWithOutput,
   loadSubmittedApplicationOutputForOperator,
@@ -1256,7 +1257,7 @@ if (import.meta.main) {
             const quotationClient = serviceClient();
             const templateBytes = await Deno.readFile(
               new URL(
-                "./assets/LWS_QUOTATION_NL_BE_TECHNICAL_v1.docx",
+                "./assets/LWS_SDF_QUOTATION_NL_BE_OFFICIAL_v1.docx",
                 import.meta.url,
               ),
             );
@@ -1266,7 +1267,7 @@ if (import.meta.main) {
               {
                 serviceClient: quotationClient,
                 templateBytes,
-                renderDocx: renderQuotationDocxBytes,
+                renderDocx: renderSdfQuotationDocxBytes,
               },
             );
           }

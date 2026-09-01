@@ -1,5 +1,6 @@
 {
   "devDependencies": {
+    "@xmldom/xmldom": "0.9.12",
     "docx": "^9.7.1",
     "docxtemplater": "^3.69.3",
     "pizzip": "^3.2.0",

@@ -26,14 +26,17 @@ $$;
 
 select has_table('public','sdf_quotation_business_draft_adapters','QF-2 immutable adapter ledger exists');
 select has_function(
-  'public','create_sdf_quotation_business_draft_v1',array['uuid','uuid','uuid'],
-  'QF-2 owner-only bridge exists'
+  'public','create_sdf_quotation_business_draft_v2',array['uuid','uuid','uuid','integer'],
+  'QF-2 owner-only bridge requires an integer indicative execution term'
 );
 select ok(
   not has_function_privilege('anon','public.create_sdf_quotation_business_draft_v1(uuid,uuid,uuid)','execute')
   and not has_function_privilege('service_role','public.create_sdf_quotation_business_draft_v1(uuid,uuid,uuid)','execute')
-  and has_function_privilege('authenticated','public.create_sdf_quotation_business_draft_v1(uuid,uuid,uuid)','execute'),
-  'only authenticated owner path can invoke the bridge'
+  and not has_function_privilege('authenticated','public.create_sdf_quotation_business_draft_v1(uuid,uuid,uuid)','execute')
+  and not has_function_privilege('anon','public.create_sdf_quotation_business_draft_v2(uuid,uuid,uuid,integer)','execute')
+  and not has_function_privilege('service_role','public.create_sdf_quotation_business_draft_v2(uuid,uuid,uuid,integer)','execute')
+  and has_function_privilege('authenticated','public.create_sdf_quotation_business_draft_v2(uuid,uuid,uuid,integer)','execute'),
+  'only authenticated owner path can invoke v2 and the nullable legacy path is closed'
 );
 
 create function pg_temp.fixture_uuid(p_value text)
@@ -240,11 +243,57 @@ update qf2_fixtures fixture set decision_id=(
 
 create temporary table qf2_results(label text primary key,result jsonb);
 insert into qf2_results
-select label,public.create_sdf_quotation_business_draft_v1(
-  preparation_authority_id,decision_id,pg_temp.fixture_uuid('qf2-'||label||'-bridge-key')
-) from qf2_fixtures where label in ('start','groei','pro');
+select label,public.create_sdf_quotation_business_draft_v2(
+  preparation_authority_id,decision_id,pg_temp.fixture_uuid('qf2-'||label||'-bridge-key'),
+  case label when 'start' then 3 when 'groei' then 6 when 'pro' then 9 else 11 end
+) from qf2_fixtures where label in ('start','groei','pro','invalid');
 
-select is((select count(*)::integer from qf2_results),3,'START, GROEI, and PRO business drafts are created');
+select is((select count(*)::integer from qf2_results),4,'business drafts require explicit quotation-specific execution terms');
+select is(
+  (select canonical_payload#>>'{project_scope,indicative_timing}'
+   from public.quote_request_quotation_business_drafts business
+   join qf2_fixtures fixture on fixture.quote_request_id=business.quote_request_id
+   where fixture.label='start'),
+  '3','START preserves the exact approved candidate in its immutable payload'
+);
+select is(
+  (select canonical_payload#>>'{project_scope,indicative_timing}'
+   from public.quote_request_quotation_business_drafts business
+   join qf2_fixtures fixture on fixture.quote_request_id=business.quote_request_id
+   where fixture.label='invalid'),
+  '11','a second START quotation may carry a different execution term'
+);
+select isnt(
+  (select canonical_payload_sha256::text
+   from public.quote_request_quotation_business_drafts business
+   join qf2_fixtures fixture on fixture.quote_request_id=business.quote_request_id
+   where fixture.label='start'),
+  (select public.quotation_approval_payload_sha256_v1(
+     jsonb_set(canonical_payload,'{project_scope,indicative_timing}','11'::jsonb)
+   )
+   from public.quote_request_quotation_business_drafts business
+   join qf2_fixtures fixture on fixture.quote_request_id=business.quote_request_id
+   where fixture.label='start'),
+  'the execution term participates in the immutable approval payload hash'
+);
+select throws_ok(format(
+  $sql$select public.create_sdf_quotation_business_draft_v2(%L,%L,%L,null)$sql$,
+  (select preparation_authority_id from qf2_fixtures where label='cross-a'),
+  (select decision_id from qf2_fixtures where label='cross-a'),
+  pg_temp.fixture_uuid('qf2-null-term-key')
+),'22023','SDF_BUSINESS_DRAFT_INPUT_INVALID','missing execution term fails closed');
+select throws_ok(format(
+  $sql$select public.create_sdf_quotation_business_draft_v2(%L,%L,%L,0)$sql$,
+  (select preparation_authority_id from qf2_fixtures where label='cross-a'),
+  (select decision_id from qf2_fixtures where label='cross-a'),
+  pg_temp.fixture_uuid('qf2-zero-term-key')
+),'22023','SDF_BUSINESS_DRAFT_INPUT_INVALID','zero execution term fails closed');
+select throws_ok(format(
+  $sql$select public.create_sdf_quotation_business_draft_v2(%L,%L,%L,-1)$sql$,
+  (select preparation_authority_id from qf2_fixtures where label='cross-a'),
+  (select decision_id from qf2_fixtures where label='cross-a'),
+  pg_temp.fixture_uuid('qf2-negative-term-key')
+),'22023','SDF_BUSINESS_DRAFT_INPUT_INVALID','negative execution term fails closed');
 select is(
   (select jsonb_build_array(
     canonical_payload#>'{line_items,0,unit_price_minor}',
@@ -355,13 +404,13 @@ select throws_ok(format(
 ),'55000','SDF_COMMERCIAL_DECISION_INTEGRITY_MISMATCH','stale decision hash is rejected');
 
 select is(
-  public.create_sdf_quotation_business_draft_v1(
+  public.create_sdf_quotation_business_draft_v2(
     (select preparation_authority_id from qf2_fixtures where label='start'),
     (select decision_id from qf2_fixtures where label='start'),
-    pg_temp.fixture_uuid('qf2-start-bridge-key')
+    pg_temp.fixture_uuid('qf2-start-bridge-key'),3
   )->>'replayed','true','exact bridge replay returns the existing business draft'
 );
-select is((select count(*)::integer from public.quote_request_quotation_business_drafts),3,'replay creates no duplicate business draft');
+select is((select count(*)::integer from public.quote_request_quotation_business_drafts),4,'replay creates no duplicate business draft');
 select throws_ok(format(
   $sql$select public.create_sdf_quotation_business_draft_v1(%L,%L,%L)$sql$,
   (select preparation_authority_id from qf2_fixtures where label='cross-a'),
@@ -369,7 +418,7 @@ select throws_ok(format(
 ),'P0001','IDEMPOTENCY_CONFLICT','same key with changed lineage conflicts');
 select is((select count(*)::integer from public.quote_request_quotation_approvals),0,'no approval is executed');
 select is((select count(*)::integer from public.quote_request_quotation_issuances),0,'no issuance is created');
-select is((select count(*)::integer from public.quote_request_quotation_approval_drafts),3,'only pre-approval draft prerequisites are created');
+select is((select count(*)::integer from public.quote_request_quotation_approval_drafts),4,'only pre-approval draft prerequisites are created');
 
 select * from finish();
 rollback;

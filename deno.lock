@@ -313,6 +313,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@xmldom/xmldom@0.9.12",
         "npm:docx@^9.7.1",
         "npm:docxtemplater@^3.69.3",
         "npm:pizzip@^3.2.0",

@@ -290,9 +290,10 @@ update qf3a_fixtures fixture set decision_id=(
 
 create temporary table qf3a_business_results(label text primary key,value jsonb);
 insert into qf3a_business_results
-select label,public.create_sdf_quotation_business_draft_v1(
+select label,public.create_sdf_quotation_business_draft_v2(
   preparation_authority_id,decision_id,
-  pg_temp.qf3a_uuid('qf3a-'||label||'-business-key')
+  pg_temp.qf3a_uuid('qf3a-'||label||'-business-key'),
+  case label when 'start' then 3 when 'cross-source' then 11 else 6 end
 ) from qf3a_fixtures where label<>'cross-target';
 update qf3a_fixtures fixture set
   business_draft_id=(result.value->>'business_draft_id')::uuid,
