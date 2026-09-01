@@ -170,26 +170,40 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
   assertFalse(/https?:\/\//i.test(confirmation.html));
   assertFalse(/capability|#token=/i.test(confirmation.html));
 
-  const intakeUrl = "https://example.test/pages/sdf-qualification-intake.html#token=TEST_TOKEN";
+  const intakeUrl = "https://lorenzowebsolutions.be/pages/sdf-qualification-intake.html#token=TEST_TOKEN";
   const invitation = buildSdfQualificationInvitationEmail({
     customerName: "Testklant <script>\r\nBCC: ongewenst@example.test",
     supportReference: "#E07F8F06",
     intakeUrl,
   });
   assertEquals(invitation.subject, "Jouw persoonlijke SDF-intake");
-  assertStringIncludes(invitation.html, `src="${customerLogoUrl}"`);
-  assertStringIncludes(invitation.html, "display:none!important;visibility:hidden;mso-hide:all");
+  assertEquals(invitation.text, [
+    "Beste Testklant <script> BCC: ongewenst@example.test,",
+    "",
+    "Uw SDF-intake staat klaar.",
+    "",
+    "Dossierreferentie: #E07F8F06",
+    "",
+    "Open uw beveiligde SDF-intake:",
+    intakeUrl,
+    "",
+    "De link is 14 dagen geldig. Stuur deze persoonlijke link niet door.",
+    "",
+    "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.",
+    "",
+    "Met vriendelijke groet,",
+    "Lorenzo Web Solutions",
+  ].join("\n"));
+  assertStringIncludes(invitation.html, "Vertel ons wat je documentenflow nodig heeft");
   assertStringIncludes(invitation.html, "Beste Testklant &lt;script&gt; BCC: ongewenst@example.test,");
-  assertStringIncludes(invitation.html, ">Dossier<");
-  assertStringIncludes(invitation.html, "max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px");
-  assertStringIncludes(invitation.html, "Professionele websites voor zelfstandigen en kleine ondernemingen");
+  assertStringIncludes(invitation.html, "Dossier<br><strong>#E07F8F06</strong>");
+  assertStringIncludes(invitation.html, "<strong>Persoonlijke link:</strong> de link is 14 dagen geldig.");
   assertEquals(invitation.subject.includes("TEST_TOKEN"), false);
   assertEquals(invitation.html.split(intakeUrl).length - 1, 1);
   assertEquals(invitation.text.split(intakeUrl).length - 1, 1);
   assertStringIncludes(invitation.html, "#E07F8F06");
   assertStringIncludes(invitation.html, "Mijn SDF-intake invullen");
   assertStringIncludes(invitation.html, `href="${intakeUrl}"`);
-  assertStringIncludes(invitation.html, "Je persoonlijke SDF-intake voor dossier #E07F8F06 staat klaar.");
   assertStringIncludes(invitation.html, "Werkt de knop niet?");
   assertStringIncludes(invitation.html, "Testklant &lt;script&gt;");
   assertFalse(invitation.text.includes("\nBCC:"));
@@ -199,6 +213,17 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
   assertStringIncludes(invitation.text, "De link is 14 dagen geldig. Stuur deze persoonlijke link niet door.");
   assertFalse(invitation.text.includes("uitsluitend voor u bestemd"));
   assertStringIncludes(invitation.text, "leidt niet automatisch tot een offerte of prijsbevestiging");
+  assertEquals((invitation.html.match(/href=/gi) || []).length, 1);
+  assertEquals((invitation.html.match(/<a\b/gi) || []).length, 1);
+  assertEquals((invitation.html.match(/<img\b/gi) || []).length, 0);
+  assertEquals((invitation.html.match(/<table\b/gi) || []).length, 0);
+  assertEquals((invitation.html.match(/<h[1-6]\b/gi) || []).length, 0);
+  assertEquals((invitation.html.match(/display\s*:\s*none|mso-hide\s*:\s*all|max-height\s*:\s*0/gi) || []).length, 0);
+  assertEquals((invitation.html.match(/\blogo\b/gi) || []).length, 0);
+  assertEquals((invitation.html.match(/https?:\/\/[^/"']+/gi) || []), ["https://lorenzowebsolutions.be"]);
+  assertFalse(invitation.html.includes('href="https://lorenzowebsolutions.be"'));
+  assertFalse(invitation.html.includes(customerLogoUrl));
+  assertFalse(invitation.html.replace(`href="${intakeUrl}"`, "").includes("TEST_TOKEN"));
 
   const websiteInvitation = buildIntakeInvitationEmail({
     clientName: "Websiteklant",
@@ -213,17 +238,14 @@ Deno.test("SDF customer templates preserve exact authority copy and escape custo
   assertStringIncludes(websiteInvitation.html, "Vertel ons wat je website nodig heeft");
   assertStringIncludes(websiteInvitation.html, "Je persoonlijke link blijft 14 dagen geldig.");
   assertStringIncludes(websiteInvitation.text, "Je persoonlijke link blijft 14 dagen geldig.");
-  for (const email of [invitation, websiteInvitation]) {
+  for (const email of [websiteInvitation]) {
     assertStringIncludes(email.html, 'max-width:600px;background-color:#ffffff;border:1px solid #dfe4ea;border-radius:8px');
     assertStringIncludes(email.html, 'padding:24px 32px 12px;border-top:4px solid #12346b');
     assertStringIncludes(email.html, 'padding:22px 32px;background-color:#eef2f6;border-top:1px solid #dfe4ea');
     assertEquals((email.html.match(/<img\b/g) || []).length, 1);
   }
-  const websiteCtaStyle = websiteInvitation.html.match(/<a href="[^"]+" style="([^"]+)">Mijn websitebriefing invullen<\/a>/)?.[1];
-  const sdfCtaStyle = invitation.html.match(/<a href="[^"]+" style="([^"]+)">Mijn SDF-intake invullen<\/a>/)?.[1];
-  assertEquals(sdfCtaStyle, websiteCtaStyle);
-  assertEquals((invitation.html.match(/https:\/\/example\.test\/pages\/sdf-qualification-intake\.html#token=TEST_TOKEN/g) || []).length, 1);
-  assertEquals((invitation.text.match(/https:\/\/example\.test\/pages\/sdf-qualification-intake\.html#token=TEST_TOKEN/g) || []).length, 1);
+  assertEquals((invitation.html.match(/https:\/\/lorenzowebsolutions\.be\/pages\/sdf-qualification-intake\.html#token=TEST_TOKEN/g) || []).length, 1);
+  assertEquals((invitation.text.match(/https:\/\/lorenzowebsolutions\.be\/pages\/sdf-qualification-intake\.html#token=TEST_TOKEN/g) || []).length, 1);
 
   const otherReference = buildSdfQualificationInvitationEmail({
     customerName: "Andere klant",

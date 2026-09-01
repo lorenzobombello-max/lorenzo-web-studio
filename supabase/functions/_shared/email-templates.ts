@@ -185,19 +185,27 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
   const safeName = escapeHtml(customerName);
   const safeReference = escapeHtml(data.supportReference);
   const safeUrl = escapeHtml(data.intakeUrl);
-  return buildCustomerEmailFrame(subject, "Vertel ons wat je documentenflow nodig heeft", `
-          <p style="margin:0 0 16px;">Beste ${safeName},</p>
-          <p style="margin:0 0 20px;">Om uw aanvraag voor Slimme Documentenflow inhoudelijk te beoordelen, vragen we u de persoonlijke SDF-intake in te vullen.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 24px;background-color:#f7f9fb;border:1px solid #dfe4ea;border-radius:6px;">
-            <tr><td style="padding:18px 20px;color:#5a6475;font-size:13px;">Dossier<br><strong style="color:#172033;font-size:18px;">${safeReference}</strong></td></tr>
-          </table>
-          <table role="presentation" align="center" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 24px;">
-            <tr><td align="center" bgcolor="#0ed8e6" style="border-radius:4px;background-color:#0ed8e6;"><a href="${safeUrl}" style="${CUSTOMER_EMAIL_CTA_STYLE}">Mijn SDF-intake invullen</a></td></tr>
-          </table>
-          <p style="margin:0 0 20px;color:#5a6475;font-size:13px;">Werkt de knop niet? Neem contact met ons op en vermeld dossier ${safeReference}.</p>
-          <p style="margin:0 0 16px;color:#5a6475;font-size:14px;"><strong>Persoonlijke link:</strong> de link is 14 dagen geldig. Stuur deze persoonlijke link niet door.</p>
-          <p style="margin:0 0 16px;">Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.</p>
-          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
+  // SDF Mail 2 intentionally uses simple HTML based on live Telenet deliverability evidence.
+  return {
+    subject,
+    html: `<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="margin:0;padding:24px;background:#f3f5f7;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+  <main style="max-width:600px;margin:0 auto;padding:32px;background:#ffffff;border-top:4px solid #12346b;">
+    <p style="margin:0 0 16px;"><strong>Vertel ons wat je documentenflow nodig heeft</strong></p>
+    <p style="margin:0 0 16px;">Beste ${safeName},</p>
+    <p style="margin:0 0 16px;">Om uw aanvraag voor Slimme Documentenflow inhoudelijk te beoordelen, vragen we u de persoonlijke SDF-intake in te vullen.</p>
+    <p style="margin:0 0 16px;">Dossier<br><strong>${safeReference}</strong></p>
+    <p style="margin:0 0 16px;"><a href="${safeUrl}">Mijn SDF-intake invullen</a></p>
+    <p style="margin:0 0 16px;">Werkt de knop niet? Neem contact met ons op en vermeld dossier ${safeReference}.</p>
+    <p style="margin:0 0 16px;"><strong>Persoonlijke link:</strong> de link is 14 dagen geldig. Stuur deze persoonlijke link niet door.</p>
+    <p style="margin:0 0 16px;">Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.</p>
+    <p style="margin:0;">Met vriendelijke groet,<br>Lorenzo Web Solutions</p>
+  </main>
+</body>
+</html>`,
+    text: [
     `Beste ${customerName},`, "",
     "Uw SDF-intake staat klaar.", "",
     `Dossierreferentie: ${data.supportReference}`, "",
@@ -205,7 +213,8 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
     "De link is 14 dagen geldig. Stuur deze persoonlijke link niet door.", "",
     "Na ontvangst beoordelen we uw informatie. Het invullen van de intake leidt niet automatisch tot een offerte of prijsbevestiging.", "",
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
-  ].join("\n"), `Je persoonlijke SDF-intake voor dossier ${data.supportReference} staat klaar.`);
+    ].join("\n"),
+  };
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {
