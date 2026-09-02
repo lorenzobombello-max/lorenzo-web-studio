@@ -9,7 +9,7 @@ const AUTHORIZATION_FAILURES = new Set([
   "DOSSIER_ASSIGNMENT_READER_REQUIRED", "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
 ]);
 const DOSSIER_GATEWAY_ACTIONS = new Set([
-  "list_applications_v2", "get_application_facets_v2", "get_application_detail",
+  "list_applications_v2", "list_pending_intakes", "get_application_facets_v2", "get_application_detail",
   "get_project_dossier", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
@@ -50,7 +50,8 @@ export function dossierLocator(value) {
 }
 
 export function dossierListRequest(query = {}, cursor = null) {
-  const zone = ["ACTIVE", "ARCHIVED", "TRASHED"].includes(query.zone) ? query.zone : "ACTIVE";
+  const zone = ["PENDING", "ACTIVE", "ARCHIVED", "TRASHED"].includes(query.zone) ? query.zone : "PENDING";
+  if (zone === "PENDING") return { action: "list_pending_intakes", retention_state: "ACTIVE" };
   const request = {
     action: "list_applications_v2",
     zone: zone === "ACTIVE" && String(query.search || "").trim() ? "ACTIVE_ARCHIVED" : zone,
@@ -285,7 +286,7 @@ export function createOperatorDossiersController({ load = async ()=>{}, onChange
 function dossierWorkspaceMarkup() {
   return `
     <header class="project-heading dossiers-heading"><div><p class="eyebrow">Operator dossiers</p><h1>Dossiers</h1><p>Server-authoritatieve aanvragen, toewijzingen en documenten.</p></div><div class="dossiers-heading__actions"><button type="button" class="secondary-action" data-operator-window-module="dossiers" data-operator-window-slot="main" hidden>Open in nieuw venster</button><button type="button" class="secondary-action" data-dossiers-action="refresh">Vernieuwen</button></div></header>
-    <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="ACTIVE">Actief</option><option value="ARCHIVED">Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Toepassen</button></form>
+    <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="PENDING">Pending / Nieuwe aanvragen</option><option value="ACTIVE">Actief</option><option value="ARCHIVED">Afgerond / Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Toepassen</button></form>
     <p class="action-message action-message--dark" data-dossiers-status role="status" aria-live="polite"></p>
     <div class="dashboard-grid dossiers-grid"><section class="panel" aria-labelledby="dossiersListTitle"><div class="panel__heading"><div><p class="eyebrow">Werkvoorraad</p><h2 id="dossiersListTitle">Dossiers</h2></div><span class="badge" data-dossiers-count>0</span></div><ul class="application-list" data-dossiers-list></ul><p class="empty-state" data-dossiers-empty hidden>Geen dossiers gevonden.</p><button type="button" class="secondary-action" data-dossiers-action="more" hidden>Meer laden</button></section>
       <aside class="context-column" aria-label="Dossierdetail"><section class="panel" data-dossiers-detail-empty><h2>Selecteer een dossier</h2><p class="empty-state">Kies een dossier uit de werkvoorraad.</p></section>
@@ -310,7 +311,30 @@ function applicationSummary(item) {
   return { raw: item, locator, reference, name: String(item.organization || item.name || reference), status: String(item.operational_status || item.status || "ONBEKEND"), zone: String(item.zone || "ACTIVE") };
 }
 
-function validatePage(page) {
+function pendingSummary(item) {
+  if (!item || typeof item !== "object" || !UUID.test(String(item.quote_request_id || ""))
+    || !UUID.test(String(item.intake_id || "")) || typeof item.name !== "string" || !item.name
+    || typeof item.support_reference !== "string" || !SUPPORT_REFERENCE.test(item.support_reference)
+    || !["website", "slimme_documentenflow"].includes(item.request_kind)
+    || !["invited", "in_progress"].includes(item.intake_status) || item.retention_state !== "ACTIVE") {
+    throw new Error("INVALID_PENDING_DOSSIER_LIST_RESPONSE");
+  }
+  return {
+    raw: item,
+    kind: "pending",
+    locator: { quote_request_id: item.quote_request_id },
+    reference: item.support_reference,
+    name: String(item.organization || item.name),
+    status: item.intake_status,
+    zone: "PENDING",
+  };
+}
+
+export function validateDossierListPage(page, action = "list_applications_v2") {
+  if (action === "list_pending_intakes") {
+    if (!page || !Array.isArray(page.items) || Object.keys(page).length !== 1) throw new Error("INVALID_PENDING_DOSSIER_LIST_RESPONSE");
+    return { items: page.items.map(pendingSummary), hasMore: false, nextCursor: null };
+  }
   if (!page || !Array.isArray(page.items) || typeof page.has_more !== "boolean"
     || (page.next_cursor !== null && typeof page.next_cursor !== "string") || (page.has_more && !page.next_cursor)) throw new Error("INVALID_DOSSIER_LIST_RESPONSE");
   return { items: page.items.map(applicationSummary), hasMore: page.has_more, nextCursor: page.next_cursor };
@@ -385,6 +409,24 @@ function renderDetail(workspace, detail, summary) {
     workspace.querySelector("[data-dossiers-lifecycle-state]").textContent = detail.dossier_lifecycle.state;
     const allowed = { ACTIVE: ["archive_dossier", "trash_dossier"], ARCHIVED: ["reactivate_dossier", "trash_dossier"], TRASHED: ["restore_dossier"] }[detail.dossier_lifecycle.state] || [];
     for (const button of lifecycle.querySelectorAll("[data-dossiers-lifecycle]")) button.hidden = !allowed.includes(button.dataset.dossiersLifecycle);
+  }
+}
+
+function renderPendingDetail(workspace, summary) {
+  const detail = summary.raw;
+  setText(workspace, "reference", detail.support_reference);
+  setText(workspace, "name", detail.name);
+  setText(workspace, "status", detail.intake_status);
+  setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
+  setText(workspace, "zone", "Pending / Nieuwe aanvraag");
+  setText(workspace, "company", detail.organization);
+  setText(workspace, "email", detail.email);
+  setText(workspace, "phone", detail.phone);
+  setText(workspace, "description", detail.website_type);
+  workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
+  workspace.querySelector("[data-dossiers-detail]").hidden = false;
+  for (const selector of ["[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
+    workspace.querySelector(selector).hidden = true;
   }
 }
 
@@ -479,7 +521,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   workspace.innerHTML = dossierWorkspaceMarkup();
   const authority = createOperatorDossierAuthority(client, options);
   const state = {
-    query: { zone: "ACTIVE", request_kind: null, search: "" },
+    query: { zone: "PENDING", request_kind: null, search: "" },
     items: [],
     nextCursor: null,
     selected: null,
@@ -500,9 +542,16 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     const request = identity.role === "owner"
       ? dossierListRequest(state.query, append ? state.nextCursor : null)
       : { action: "get_my_assigned_dossiers", limit: 25, ...(append && state.nextCursor ? { cursor: state.nextCursor } : {}) };
-    const page = validatePage(await authority.gateway(request));
+    const page = validateDossierListPage(await authority.gateway(request), request.action);
     if (!isCurrent()) return;
-    const combined = append ? [...state.items, ...page.items] : page.items;
+    const search = String(state.query.search || "").trim().toLowerCase();
+    const visibleItems = request.action === "list_pending_intakes" ? page.items.filter((item)=>{
+      const productMatches = !state.query.request_kind || item.raw.request_kind === state.query.request_kind;
+      const searchMatches = !search || [item.raw.name, item.raw.organization, item.raw.support_reference]
+        .some((value)=>String(value || "").toLowerCase().includes(search));
+      return productMatches && searchMatches;
+    }) : page.items;
+    const combined = append ? [...state.items, ...visibleItems] : visibleItems;
     state.items = [...new Map(combined.map((item)=>[item.reference, item])).values()];
     state.nextCursor = page.nextCursor;
     renderList(workspace, state.items, state.selected?.reference);
@@ -529,6 +578,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     workspace.querySelector("[data-dossiers-purge]").hidden = true;
     workspace.querySelector("[data-dossiers-purge-message]").textContent = "";
     renderList(workspace, state.items, summary.reference);
+    if (summary.kind === "pending") {
+      renderPendingDetail(workspace, summary);
+      status.textContent = "";
+      return true;
+    }
     status.textContent = "Dossier laden.";
     try {
       const detail = detailIdentity(await authority.gateway({ action: "get_application_detail", ...summary.locator }));

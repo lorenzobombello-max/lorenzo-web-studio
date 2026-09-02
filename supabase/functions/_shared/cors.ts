@@ -49,7 +49,7 @@ export function corsHeaders(origin: string | null): HeadersInit {
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "authorization,content-type,idempotency-key,x-requested-with",
+    "Access-Control-Allow-Headers": "apikey,authorization,content-type,idempotency-key,x-client-info,x-requested-with",
     "Vary": "Origin",
   };
 }

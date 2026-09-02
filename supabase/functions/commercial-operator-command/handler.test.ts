@@ -517,7 +517,7 @@ Deno.test("allowed production preflight returns the complete CORS contract witho
       headers: {
         Origin: "https://lorenzowebsolutions.be",
         "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization,content-type",
+        "Access-Control-Request-Headers": "apikey,authorization,content-type,x-client-info",
       },
     }),
     async () => {
@@ -532,7 +532,7 @@ Deno.test("allowed production preflight returns the complete CORS contract witho
   );
   assertEquals(
     response.headers.get("access-control-allow-headers"),
-    "authorization,content-type,idempotency-key,x-requested-with",
+    "apikey,authorization,content-type,idempotency-key,x-client-info,x-requested-with",
   );
   assertEquals(
     response.headers.get("access-control-allow-methods"),

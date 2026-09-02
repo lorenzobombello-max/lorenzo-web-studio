@@ -69,6 +69,7 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
     dossierDocumentRequest,
     dossierLifecycleRequest,
     dossierListRequest,
+    validateDossierListPage,
   } = await import("../assets/js/operator-dossiers.mjs");
   const calls = [];
   const locked = [];
@@ -85,19 +86,32 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
     rpc: async (name, parameters)=>({ data: { name, parameters }, error: null }),
   };
   const authority = createOperatorDossierAuthority(client, { onAuthorizationFailure: (code)=>locked.push(code) });
-  assert.deepEqual(dossierListRequest({ search: " Lorenzo " }), {
-    action: "list_applications_v2", zone: "ACTIVE_ARCHIVED", operational_status: null,
-    year: null, quarter: null, request_kind: null, search: "Lorenzo", cursor: null, limit: 50,
+  assert.deepEqual(dossierListRequest(), { action: "list_pending_intakes", retention_state: "ACTIVE" });
+  assert.deepEqual(dossierListRequest({ zone: "ACTIVE" }), {
+    action: "list_applications_v2", zone: "ACTIVE", operational_status: null,
+    year: null, quarter: null, request_kind: null, search: null, cursor: null, limit: 50,
   });
+  assert.deepEqual(dossierListRequest({ search: " Lorenzo " }), {
+    action: "list_pending_intakes", retention_state: "ACTIVE",
+  });
+  const pending = {
+    quote_request_id: "50000000-0000-4000-8000-000000000005", intake_id: "60000000-0000-4000-8000-000000000006",
+    name: "Bestaande aanvraag", organization: null, support_reference: "#5C19F9DD", email: "existing@example.test",
+    phone: null, request_kind: "website", website_type: "Website op maat", intake_status: "invited", retention_state: "ACTIVE",
+  };
+  assert.deepEqual(validateDossierListPage({ items: [] }, "list_pending_intakes"), { items: [], hasMore: false, nextCursor: null });
+  assert.equal(validateDossierListPage({ items: [pending] }, "list_pending_intakes").items[0].zone, "PENDING");
+  assert.throws(()=>validateDossierListPage({ items: [] }), /INVALID_DOSSIER_LIST_RESPONSE/);
+  assert.throws(()=>validateDossierListPage({ items: [pending], error: "hidden" }, "list_pending_intakes"), /INVALID_PENDING_DOSSIER_LIST_RESPONSE/);
   assert.deepEqual(dossierLifecycleRequest("archive_dossier", detail, " Gereed ", "20000000-0000-4000-8000-000000000002"), {
     action: "archive_dossier", quote_request_id: detail.quote_request_id, expected_revision: 4,
     idempotency_key: "20000000-0000-4000-8000-000000000002", reason: "Gereed",
   });
   assert.equal(dossierAssignmentRequest(detail, { revision: 0, assignee_operator_id: null }, "30000000-0000-4000-8000-000000000003", "", "40000000-0000-4000-8000-000000000004").action, "assign_dossier");
   assert.deepEqual(dossierDocumentRequest(detail), { action: "get_dossier_document_manifest", quote_request_id: detail.quote_request_id });
-  await authority.gateway(dossierListRequest());
+  await authority.gateway(dossierListRequest({ zone: "ACTIVE" }));
   assert.equal(calls[0].name, "commercial-operator-command");
-  await assert.rejects(()=>authority.gateway({ action: "list_pending_intakes" }), /DOSSIER_ACTION_NOT_ALLOWED/);
+  assert.deepEqual(await authority.gateway(dossierListRequest()), { items: [], has_more: false, next_cursor: null });
   await assert.rejects(()=>authority.rpc("get_document_inbox_v1"), /DOSSIER_RPC_NOT_ALLOWED/);
   client.functions.invoke = async ()=>({ data: null, error: { message: "OPERATOR_DISABLED" } });
   await assert.rejects(()=>authority.gateway(dossierListRequest()), /OPERATOR_DISABLED/);
@@ -189,4 +203,5 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
+  assert.match(await read("assets/js/operator-dossiers.mjs"), /Pending \/ Nieuwe aanvragen/);
 });
