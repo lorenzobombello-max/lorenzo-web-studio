@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(39);
+select plan(41);
 
 select has_table('public','sdf_accepted_commercial_terms','accepted SDF commercial terms table exists');
 select columns_are(
@@ -13,8 +13,10 @@ select columns_are(
     'accepted_implementation_amount_minor','currency','vat_basis',
     'pricing_authority_version','creation_idempotency_key','creation_fingerprint',
     'created_by_operator_id','created_at'
+    ,'accepted_recurring_amount_minor','pricing_mode','commercial_decision_id',
+    'commercial_decision_sha256'
   ],
-  'accepted terms contain only immutable commercial snapshot and creation authority'
+  'accepted terms contain immutable commercial values, provenance, and creation authority'
 );
 select has_table('public','sdf_milestone_one_obligations','SDF milestone-one obligation table exists');
 select columns_are(
@@ -75,6 +77,7 @@ insert into public.commercial_operators(operator_id,auth_user_id,display_name,ro
 insert into public.quote_requests(id,request_kind,sdf_package,name,email,website_type,budget,timing,description,privacy_consent,status) values
   ('e2000000-0000-4000-8000-000000000001','slimme_documentenflow','start','M1 START','m1-start@example.test',null,null,null,'M1 START fixture.',true,'approved'),
   ('e2000001-0000-4000-8000-000000000002','slimme_documentenflow','groei','M1 GROEI','m1-groei@example.test',null,null,null,'M1 GROEI fixture.',true,'approved'),
+  ('e2000005-0000-4000-8000-000000000006','slimme_documentenflow','pro','M1 PRO','m1-pro@example.test',null,null,null,'M1 PRO fixture.',true,'approved'),
   ('e2000002-0000-4000-8000-000000000003','slimme_documentenflow','maatwerk','M1 MAATWERK','m1-maatwerk@example.test',null,null,null,'M1 MAATWERK fixture.',true,'approved'),
   ('e2000003-0000-4000-8000-000000000004','slimme_documentenflow','start','M1 no acceptance','m1-none@example.test',null,null,null,'M1 no acceptance fixture.',true,'approved'),
   ('e2000004-0000-4000-8000-000000000005','website',null,'M1 Website','m1-website@example.test','business','Meer dan EUR 6.000','flexible','M1 Website isolation fixture.',true,'approved');
@@ -82,16 +85,19 @@ insert into public.quote_requests(id,request_kind,sdf_package,name,email,website
 insert into public.sdf_quotations(quotation_id,quote_request_id,created_at) values
   ('e3000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','2099-01-01T09:00:00Z'),
   ('e3000000-0000-4000-8000-000000000002','e2000001-0000-4000-8000-000000000002','2099-01-01T09:00:00Z'),
+  ('e3000000-0000-4000-8000-000000000006','e2000005-0000-4000-8000-000000000006','2099-01-01T09:00:00Z'),
   ('e3000000-0000-4000-8000-000000000003','e2000002-0000-4000-8000-000000000003','2099-01-01T09:00:00Z'),
   ('e3000000-0000-4000-8000-000000000004','e2000003-0000-4000-8000-000000000004','2099-01-01T09:00:00Z');
 
 insert into public.sdf_quotation_documents(quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256) values
   ('e3000000-0000-4000-8000-000000000001','2099-01-01','2099-02-01','2099-01-01T10:00:00Z','sdf/m1/start/quotation.docx',repeat('1',64)),
   ('e3000000-0000-4000-8000-000000000002','2099-01-01','2099-02-01','2099-01-01T10:00:00Z','sdf/m1/groei/quotation.docx',repeat('2',64)),
+  ('e3000000-0000-4000-8000-000000000006','2099-01-01','2099-02-01','2099-01-01T10:00:00Z','sdf/m1/pro/quotation.docx',repeat('6',64)),
   ('e3000000-0000-4000-8000-000000000003','2099-01-01','2099-02-01','2099-01-01T10:00:00Z','sdf/m1/maatwerk/quotation.docx',repeat('3',64));
 insert into public.sdf_quotation_acceptances(quotation_id,accepted_at,document_reference,document_sha256) values
   ('e3000000-0000-4000-8000-000000000001','2099-01-02T10:00:00Z','sdf/m1/start/accepted.docx',repeat('a',64)),
   ('e3000000-0000-4000-8000-000000000002','2099-01-02T10:00:00Z','sdf/m1/groei/accepted.docx',repeat('b',64)),
+  ('e3000000-0000-4000-8000-000000000006','2099-01-02T10:00:00Z','sdf/m1/pro/accepted.docx',repeat('f',64)),
   ('e3000000-0000-4000-8000-000000000003','2099-01-02T10:00:00Z','sdf/m1/maatwerk/accepted.docx',repeat('c',64));
 
 select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000001',true);
@@ -128,6 +134,12 @@ select lives_ok(
 );
 select is((select amount_minor from public.sdf_milestone_one_obligations where quotation_id='e3000000-0000-4000-8000-000000000002'),228000::bigint,'GROEI creates M1 of EUR 2,280 excl. VAT');
 
+select lives_ok(
+  $$select public.create_sdf_milestone_one_foundation_v1('e3000000-0000-4000-8000-000000000006',750000,'e4000000-0000-4000-8000-000000000006')$$,
+  'PRO accepted terms and M1 are created atomically'
+);
+select is((select amount_minor from public.sdf_milestone_one_obligations where quotation_id='e3000000-0000-4000-8000-000000000006'),300000::bigint,'PRO creates M1 of EUR 3,000 excl. VAT');
+
 select throws_ok(
   $$select public.create_sdf_milestone_one_foundation_v1('e3000000-0000-4000-8000-000000000003',null,'e4000000-0000-4000-8000-000000000031')$$,
   '22004','SDF_EXACT_ACCEPTED_AMOUNT_REQUIRED','MAATWERK requires an explicit exact negotiated amount'
@@ -136,12 +148,13 @@ select throws_ok(
   $$select public.create_sdf_milestone_one_foundation_v1('e3000000-0000-4000-8000-000000000003',749999,'e4000000-0000-4000-8000-000000000032')$$,
   '23514','SDF_ACCEPTED_AMOUNT_BELOW_AUTHORITY_MINIMUM','MAATWERK rejects values below the starting-at authority without using that minimum as fallback'
 );
-select lives_ok(
+select throws_ok(
   $$select public.create_sdf_milestone_one_foundation_v1('e3000000-0000-4000-8000-000000000003',812500,'e4000000-0000-4000-8000-000000000003')$$,
-  'MAATWERK stores the explicitly supplied negotiated amount'
+  '23514','SDF_MAATWERK_COMMERCIAL_PROVENANCE_REQUIRED',
+  'legacy implementation-only MAATWERK acceptance fails closed without recurring authority'
 );
-select is((select accepted_implementation_amount_minor from public.sdf_accepted_commercial_terms where quotation_id='e3000000-0000-4000-8000-000000000003'),812500::bigint,'MAATWERK never substitutes the starting-at minimum');
-select is((select amount_minor from public.sdf_milestone_one_obligations where quotation_id='e3000000-0000-4000-8000-000000000003'),325000::bigint,'MAATWERK M1 is exact integer 40 percent of negotiated amount');
+select is((select count(*)::integer from public.sdf_accepted_commercial_terms where quotation_id='e3000000-0000-4000-8000-000000000003'),0,'failed legacy MAATWERK call stores no partial accepted terms');
+select is((select count(*)::integer from public.sdf_milestone_one_obligations where quotation_id='e3000000-0000-4000-8000-000000000003'),0,'failed legacy MAATWERK call creates no M1 obligation');
 
 select is(
   (public.create_sdf_milestone_one_foundation_v1('e3000000-0000-4000-8000-000000000001',285000,'e4000000-0000-4000-8000-000000000001')->>'was_created')::boolean,

@@ -11,6 +11,28 @@ select has_function(
   'QF-2A owner command exists'
 );
 select has_function(
+  'public', 'authorize_sdf_quotation_commercial_decision_v1',
+  array['uuid','uuid','uuid','uuid','bigint','bigint','jsonb','uuid'],
+  'QF-2A MAATWERK owner command requires both explicit amounts'
+);
+select has_function(
+  'public', 'create_sdf_milestone_one_foundation_v2',
+  array['uuid','uuid','uuid'],
+  'accepted terms bind an immutable commercial decision instead of caller amounts'
+);
+select has_column(
+  'public','sdf_accepted_commercial_terms','accepted_recurring_amount_minor',
+  'accepted terms preserve the approved recurring amount'
+);
+select has_column(
+  'public','sdf_accepted_commercial_terms','commercial_decision_id',
+  'accepted terms preserve the commercial decision reference'
+);
+select has_column(
+  'public','sdf_accepted_commercial_terms','commercial_decision_sha256',
+  'accepted terms preserve the immutable commercial fingerprint'
+);
+select has_function(
   'public', 'is_sdf_vat_context_binding_valid_v1', array['uuid','jsonb'],
   'QF-2A VAT resolver equality validator exists'
 );
@@ -22,7 +44,10 @@ select ok(
 select ok(
   not has_table_privilege('anon', 'public.sdf_quotation_commercial_decisions', 'select')
   and not has_table_privilege('authenticated', 'public.sdf_quotation_commercial_decisions', 'select')
-  and not has_table_privilege('service_role', 'public.sdf_quotation_commercial_decisions', 'insert'),
+  and not has_table_privilege('service_role', 'public.sdf_quotation_commercial_decisions', 'insert')
+  and has_function_privilege('authenticated','public.authorize_sdf_quotation_commercial_decision_v1(uuid,uuid,uuid,uuid,bigint,bigint,jsonb,uuid)','execute')
+  and not has_function_privilege('anon','public.authorize_sdf_quotation_commercial_decision_v1(uuid,uuid,uuid,uuid,bigint,bigint,jsonb,uuid)','execute')
+  and not has_function_privilege('service_role','public.authorize_sdf_quotation_commercial_decision_v1(uuid,uuid,uuid,uuid,bigint,bigint,jsonb,uuid)','execute'),
   'runtime roles cannot bypass the decision command'
 );
 
@@ -120,7 +145,8 @@ insert into qf2a_fixtures values
 
 insert into auth.users(id,email) values
   (pg_temp.fixture_uuid('qf2a-owner-auth'), 'qf2a-owner@example.test'),
-  (pg_temp.fixture_uuid('qf2a-operator-auth'), 'qf2a-operator@example.test');
+  (pg_temp.fixture_uuid('qf2a-operator-auth'), 'qf2a-operator@example.test'),
+  (pg_temp.fixture_uuid('qf2a-customer-auth'), 'qf2a-customer@example.test');
 insert into public.commercial_operators(operator_id,auth_user_id,display_name,role,status) values
   (pg_temp.fixture_uuid('qf2a-owner-operator'),pg_temp.fixture_uuid('qf2a-owner-auth'),'QF-2A Synthetic Owner','owner','ACTIVE'),
   (pg_temp.fixture_uuid('qf2a-non-owner-operator'),pg_temp.fixture_uuid('qf2a-operator-auth'),'QF-2A Synthetic Operator','operator','ACTIVE');
@@ -412,14 +438,120 @@ select ok(
 );
 
 select throws_ok(
-  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,pg_temp.schedule(),%L)$sql$,
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,910000,null,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-missing-recurring-key')),
+  '22004','SDF_MAATWERK_RECURRING_AMOUNT_REQUIRED','MAATWERK fails closed without an explicit recurring amount'
+);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,910000,0,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-zero-recurring-key')),
+  '22023','SDF_MAATWERK_RECURRING_AMOUNT_INVALID','MAATWERK rejects a zero recurring amount'
+);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,-1,53700,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-negative-implementation-key')),
+  '22023','SDF_MAATWERK_IMPLEMENTATION_AMOUNT_INVALID','MAATWERK rejects a negative implementation amount'
+);
+create temporary table qf2a_maatwerk_decision(result jsonb);
+select lives_ok(
+  format($sql$insert into qf2a_maatwerk_decision
+    select public.authorize_sdf_quotation_commercial_decision_v1(
+      %L,%L,%L,%L,910000::bigint,53700::bigint,pg_temp.schedule(null,910000),%L
+    )$sql$,
     (select quote_request_id from qf2a_fixtures where label='maatwerk'),
     (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
     (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
     pg_temp.fixture_uuid('qf2a-maatwerk-decision-key')),
-  '55000','SDF_MANUAL_PRICING_REQUIRED','MAATWERK fails closed before schedule creation'
+  'owner can authorize exact positive MAATWERK implementation and recurring amounts'
 );
-select is((select count(*)::integer from public.sdf_quotation_commercial_decisions where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')),0,'MAATWERK creates no decision');
+select is(
+  (select jsonb_build_array(canonical_payload->>'implementation_amount_minor',canonical_payload->>'recurring_amount_minor',canonical_payload->>'currency')
+   from public.sdf_quotation_commercial_decisions
+   where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')),
+  '["910000", "53700", "EUR"]'::jsonb,
+  'MAATWERK preserves exactly EUR 9,100 implementation and EUR 537 monthly without PRO fallback'
+);
+select is(
+  (select rtrim(decision_sha256) from public.sdf_quotation_commercial_decisions
+   where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')),
+  (select encode(extensions.digest(convert_to(canonical_payload::text,'UTF8'),'sha256'),'hex')
+   from public.sdf_quotation_commercial_decisions
+   where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')),
+  'MAATWERK decision hash binds both approved amounts'
+);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,910000,53701,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-decision-key')),
+  'P0001','IDEMPOTENCY_CONFLICT','changed recurring amount requires a new approval authority'
+);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,285001,17501,pg_temp.schedule(null,285001),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='cross'),
+    (select preparation_authority_id from qf2a_fixtures where label='cross'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-fixed-override-key')),
+  '23514','SDF_FIXED_PRICING_OVERRIDE_DENIED','fixed packages cannot use the MAATWERK amount authority'
+);
+
+insert into public.sdf_quotation_documents(
+  quotation_id,quotation_date,valid_until,prepared_at,document_reference,document_sha256
+)
+select quotation_id,current_date,current_date+30,clock_timestamp(),
+  'synthetic/qf2a-maatwerk.docx',repeat('7',64)
+from public.sdf_quotations
+where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk');
+insert into public.sdf_quotation_acceptances(
+  quotation_id,accepted_at,document_reference,document_sha256
+)
+select quotation_id,clock_timestamp(),'synthetic/qf2a-maatwerk-accepted.docx',repeat('8',64)
+from public.sdf_quotations
+where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk');
+select lives_ok(
+  format($sql$select public.create_sdf_milestone_one_foundation_v2(%L,%L,%L)$sql$,
+    (select quotation_id from public.sdf_quotations where quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')),
+    (select (result->>'decision_id')::uuid from qf2a_maatwerk_decision),
+    pg_temp.fixture_uuid('qf2a-maatwerk-accepted-terms-key')),
+  'accepted MAATWERK terms are derived only from the approved commercial decision'
+);
+create function pg_temp.accepted_maatwerk_terms_match()
+returns boolean language plpgsql set search_path=public,pg_catalog as $$
+declare
+  v_matches boolean;
+begin
+  execute $query$
+    select terms.sdf_package='maatwerk'
+      and terms.accepted_implementation_amount_minor=910000
+      and terms.accepted_recurring_amount_minor=53700
+      and terms.currency='EUR'
+      and terms.pricing_mode='manual'
+      and terms.commercial_decision_id=decision.decision_id
+      and rtrim(terms.commercial_decision_sha256)=rtrim(decision.decision_sha256)
+    from public.sdf_accepted_commercial_terms terms
+    join public.sdf_quotation_commercial_decisions decision
+      on decision.decision_id=terms.commercial_decision_id
+    where terms.quote_request_id=(select quote_request_id from qf2a_fixtures where label='maatwerk')
+  $query$ into v_matches;
+  return coalesce(v_matches,false);
+exception
+  when undefined_column then return false;
+end;
+$$;
+select ok(
+  pg_temp.accepted_maatwerk_terms_match(),
+  'accepted terms preserve package, pricing mode, both amounts, currency, decision reference, and fingerprint'
+);
 
 select throws_ok(
   format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,pg_temp.schedule(),%L)$sql$,
@@ -510,7 +642,25 @@ select throws_ok(
   'P0001','QUOTATION_VAT_DECISION_NOT_APPROVED','retired VAT authority is rejected'
 );
 
+select set_config('request.jwt.claim.sub',pg_temp.fixture_uuid('qf2a-customer-auth')::text,true);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,910000,53700,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-customer-key')),
+  '42501','UNKNOWN_OPERATOR','authenticated customer cannot establish MAATWERK amount authority'
+);
+
 select set_config('request.jwt.claim.sub',pg_temp.fixture_uuid('qf2a-operator-auth')::text,true);
+select throws_ok(
+  format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,910000,53700,pg_temp.schedule(null,910000),%L)$sql$,
+    (select quote_request_id from qf2a_fixtures where label='maatwerk'),
+    (select preparation_authority_id from qf2a_fixtures where label='maatwerk'),
+    (select approved_id from qf2a_vat_fixture),pg_temp.fixture_uuid('qf2a-terms-approved'),
+    pg_temp.fixture_uuid('qf2a-maatwerk-operator-key')),
+  '42501','OWNER_REQUIRED','ordinary operator cannot establish MAATWERK amount authority'
+);
 select throws_ok(
   format($sql$select public.authorize_sdf_quotation_commercial_decision_v1(%L,%L,%L,%L,pg_temp.schedule(),%L)$sql$,
     (select quote_request_id from qf2a_fixtures where label='cross'),
@@ -519,7 +669,7 @@ select throws_ok(
     pg_temp.fixture_uuid('qf2a-non-owner-key')),
   '42501','OWNER_REQUIRED','non-owner operator cannot authorize commercial decision'
 );
-select is((select count(*)::integer from public.sdf_quotation_commercial_decisions),3,'rejected attempts create no extra decisions');
+select is((select count(*)::integer from public.sdf_quotation_commercial_decisions),4,'rejected attempts create no extra decisions');
 select throws_ok(
   $$update public.sdf_quotation_commercial_decisions set decided_at=clock_timestamp()$$,
   '55000','SDF_COMMERCIAL_DECISION_IMMUTABLE','decision history cannot be rewritten'

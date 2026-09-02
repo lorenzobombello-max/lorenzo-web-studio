@@ -8,6 +8,9 @@ select has_table('public','sdf_invoice_number_counters','SDF invoice year counte
 select has_table('public','sdf_invoice_template_authorities','existing Drive invoice template bindings have a private authority table');
 select has_table('public','sdf_m1_invoice_candidates','policy-neutral M1 invoice candidates have a product-specific table');
 select has_table('public','sdf_m1_invoice_issuances','future immutable issuance evidence has a dormant table');
+select has_table('public','sdf_m1_payment_receipts','SDF M1 payment receipts have an append-only authority table');
+select has_table('public','sdf_m1_project_start_authorities','SDF project start has a separate immutable authority table');
+select has_table('public','sdf_invoice_master_bindings','proven Drive invoice master has a singleton authority table');
 select has_column('public','sdf_m1_invoice_candidates','application_reference','candidate snapshots the separate human dossier reference');
 select has_function('public','allocate_sdf_invoice_number_v1',array['smallint'],'internal SDF invoice number allocator exists');
 select has_function('public','register_sdf_invoice_template_authority_v1',array['text','text','text','text','uuid'],'template binding RPC exists');
@@ -25,6 +28,18 @@ select has_function(
   'public','issue_sdf_m1_invoice_v2',array['uuid','smallint','uuid','text','bigint','text','bigint'],
   'artifact-aware guarded invoice issuance RPC exists'
 );
+select has_function(
+  'public','record_sdf_m1_payment_receipt_v1',array['uuid','bigint','text','text','uuid'],
+  'guarded cumulative SDF M1 payment receipt RPC exists'
+);
+select has_function(
+  'public','get_sdf_m1_payment_state_v1',array['uuid'],
+  'server-side SDF M1 payment state projection exists'
+);
+select has_function(
+  'public','authorize_sdf_project_start_v1',array['uuid','uuid','uuid'],
+  'full-payment-only SDF project start authority RPC exists'
+);
 select has_column('public','sdf_m1_invoice_issuances','vat_decision_authority_id','issuance freezes VAT authority ID');
 select has_column('public','sdf_m1_invoice_issuances','vat_authority_sha256','issuance freezes VAT authority hash');
 select has_column('public','sdf_m1_invoice_issuances','rate_semantics','issuance distinguishes exemption from zero-rate');
@@ -37,15 +52,31 @@ select ok(
      'public.sdf_invoice_number_counters'::regclass,
      'public.sdf_invoice_template_authorities'::regclass,
      'public.sdf_m1_invoice_candidates'::regclass,
-     'public.sdf_m1_invoice_issuances'::regclass
+     'public.sdf_m1_invoice_issuances'::regclass,
+     'public.sdf_invoice_master_bindings'::regclass,
+     'public.sdf_m1_payment_receipts'::regclass,
+     'public.sdf_m1_project_start_authorities'::regclass
    )),
   'all SDF invoice foundation tables have forced RLS'
+);
+select results_eq(
+  $$select document_reference,drive_file_id,rtrim(document_sha256)
+    from public.sdf_invoice_master_bindings$$,
+  $$values (
+    '03_Algemene_sjablonen/02_Factuursjabloon.docx'::text,
+    '1j3yiSWsWermVnPEkNBcKfAGp20E1NvEC'::text,
+    '52dc454bec5d0e09fc9f4b85a1f1877b65f7d3aea166ed195da598cb7b4536d6'::text
+  )$$,
+  'runtime binds the exact proven singleton invoice master path, Drive ID, and SHA-256'
 );
 select ok(
   not has_table_privilege('anon','public.sdf_m1_invoice_candidates','select')
   and not has_table_privilege('authenticated','public.sdf_m1_invoice_candidates','insert')
   and not has_table_privilege('service_role','public.sdf_m1_invoice_candidates','insert')
-  and not has_table_privilege('authenticated','public.sdf_m1_invoice_issuances','insert'),
+  and not has_table_privilege('authenticated','public.sdf_m1_invoice_issuances','insert')
+  and not has_table_privilege('authenticated','public.sdf_m1_payment_receipts','insert')
+  and not has_table_privilege('service_role','public.sdf_m1_payment_receipts','insert')
+  and not has_table_privilege('authenticated','public.sdf_m1_project_start_authorities','insert'),
   'runtime roles cannot read or write private candidate and issuance tables directly'
 );
 select ok(
@@ -83,6 +114,11 @@ select ok(
   and has_function_privilege('authenticated','public.issue_sdf_m1_invoice_v1(uuid,smallint,uuid)','execute')
   and not has_function_privilege('anon','public.prepare_sdf_m1_invoice_candidate_v1(uuid,uuid,uuid)','execute')
   and not has_function_privilege('service_role','public.prepare_sdf_m1_invoice_candidate_v1(uuid,uuid,uuid)','execute')
+  and has_function_privilege('authenticated','public.record_sdf_m1_payment_receipt_v1(uuid,bigint,text,text,uuid)','execute')
+  and not has_function_privilege('anon','public.record_sdf_m1_payment_receipt_v1(uuid,bigint,text,text,uuid)','execute')
+  and not has_function_privilege('service_role','public.record_sdf_m1_payment_receipt_v1(uuid,bigint,text,text,uuid)','execute')
+  and has_function_privilege('authenticated','public.authorize_sdf_project_start_v1(uuid,uuid,uuid)','execute')
+  and not has_function_privilege('anon','public.authorize_sdf_project_start_v1(uuid,uuid,uuid)','execute')
   and not has_function_privilege('authenticated','public.allocate_sdf_invoice_number_v1(smallint)','execute'),
   'only authenticated humans enter guarded RPCs and no runtime role can call the allocator'
 );
@@ -179,16 +215,16 @@ select lives_ok(
 
 select lives_ok(
   $$select public.register_sdf_invoice_template_authority_v1(
-    'LWS_INVOICE_MILESTONE_1_40','existing-drive-v1',
-    'drive/invoices/LWS_INVOICE_MILESTONE_1_40.docx',repeat('b',64),
+    'LWS_GENERIC_INVOICE_MASTER','current-2026-09-02',
+    '03_Algemene_sjablonen/02_Factuursjabloon.docx','52dc454bec5d0e09fc9f4b85a1f1877b65f7d3aea166ed195da598cb7b4536d6',
     'f5000000-0000-4000-8000-000000000001'
   )$$,
   'existing Drive document identity and hash can be registered without replacing its bytes'
 );
 select is(
   (public.register_sdf_invoice_template_authority_v1(
-    'LWS_INVOICE_MILESTONE_1_40','existing-drive-v1',
-    'drive/invoices/LWS_INVOICE_MILESTONE_1_40.docx',repeat('b',64),
+    'LWS_GENERIC_INVOICE_MASTER','current-2026-09-02',
+    '03_Algemene_sjablonen/02_Factuursjabloon.docx','52dc454bec5d0e09fc9f4b85a1f1877b65f7d3aea166ed195da598cb7b4536d6',
     'f5000000-0000-4000-8000-000000000001'
   )->>'was_created')::boolean,
   false,
@@ -196,7 +232,7 @@ select is(
 );
 select throws_ok(
   $$select public.register_sdf_invoice_template_authority_v1(
-    'LWS_INVOICE_MILESTONE_1_40','existing-drive-v1',
+    'LWS_GENERIC_INVOICE_MASTER','current-2026-09-02',
     'drive/invoices/other.docx',repeat('c',64),
     'f5000000-0000-4000-8000-000000000001'
   )$$,
@@ -206,7 +242,7 @@ select throws_ok(
 select lives_ok(
   $$select public.prepare_sdf_m1_invoice_candidate_v1(
     (select obligation_id from public.sdf_milestone_one_obligations where quotation_id='f3000000-0000-4000-8000-000000000001'),
-    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_INVOICE_MILESTONE_1_40'),
+    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_GENERIC_INVOICE_MASTER'),
     'f6000000-0000-4000-8000-000000000001'
   )$$,
   'owner prepares a policy-neutral M1 invoice candidate'
@@ -214,7 +250,7 @@ select lives_ok(
 select throws_ok(
   $$select public.prepare_sdf_m1_invoice_candidate_v1(
     (select obligation_id from public.sdf_milestone_one_obligations where quotation_id='f3000000-0000-4000-8000-000000000003'),
-    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_INVOICE_MILESTONE_1_40'),
+    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_GENERIC_INVOICE_MASTER'),
     'f6000000-0000-4000-8000-000000000003'
   )$$,
   '23514','SDF_APPLICATION_REFERENCE_REQUIRED',
@@ -281,15 +317,15 @@ select ok(
   'candidate contains no VAT treatment, rate, VAT amount, or gross fallback'
 );
 select ok(
-  (select template_snapshot->>'document_reference'='drive/invoices/LWS_INVOICE_MILESTONE_1_40.docx'
-    and template_snapshot->>'document_sha256'=repeat('b',64)
+  (select template_snapshot->>'document_reference'='03_Algemene_sjablonen/02_Factuursjabloon.docx'
+    and template_snapshot->>'document_sha256'='52dc454bec5d0e09fc9f4b85a1f1877b65f7d3aea166ed195da598cb7b4536d6'
    from public.sdf_m1_invoice_candidates),
   'candidate immutably binds the registered existing Drive document identity and hash'
 );
 select is(
   (public.prepare_sdf_m1_invoice_candidate_v1(
     (select obligation_id from public.sdf_milestone_one_obligations where quotation_id='f3000000-0000-4000-8000-000000000001'),
-    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_INVOICE_MILESTONE_1_40'),
+    (select template_authority_id from public.sdf_invoice_template_authorities where template_id='LWS_GENERIC_INVOICE_MASTER'),
     'f6000000-0000-4000-8000-000000000001'
   )->>'was_created')::boolean,
   false,
@@ -436,6 +472,177 @@ select is(
   'identical issuance replays without allocating another number'
 );
 select is((select next_sequence from public.sdf_invoice_number_counters),2,'one successful issuance allocates exactly one number');
+
+insert into public.sdf_projects(project_id,quote_request_id) values (
+  'f9000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001'
+);
+set local session_replication_role = replica;
+insert into public.sdf_projects(project_id,quote_request_id) values (
+  'f9000000-0000-4000-8000-000000000002','f2000001-0000-4000-8000-000000000002'
+);
+set local session_replication_role = origin;
+
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
+select throws_ok(
+  $$select * from public.get_sdf_m1_payment_state_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances)
+  )$$,
+  '42501','SDF_PAYMENT_AUTHORITY_DENIED',
+  'non-admin Operator cannot read private SDF M1 payment state'
+);
+select throws_ok(
+  $$select public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),1,
+    'TEST-TXN-M1-DENIED','TEST-EVIDENCE-M1-DENIED',
+    'f9100000-0000-4000-8000-000000000099'
+  )$$,
+  '42501','SDF_PAYMENT_AUTHORITY_DENIED',
+  'non-admin Operator cannot record SDF M1 receipt evidence'
+);
+select throws_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000001',
+    (select issuance_id from public.sdf_m1_invoice_issuances),
+    'f9200000-0000-4000-8000-000000000099'
+  )$$,
+  '42501','SDF_PROJECT_START_AUTHORITY_DENIED',
+  'non-admin Operator cannot authorize SDF project start'
+);
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
+
+select throws_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000001','f7000000-0000-4000-8000-000000000099',
+    'f9200000-0000-4000-8000-000000000001'
+  )$$,
+  '23503','SDF_M1_ISSUANCE_REQUIRED',
+  'accepted SDF without M1 invoice issuance cannot authorize project start'
+);
+select results_eq(
+  $$select payment_state from public.get_sdf_m1_payment_state_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances)
+  )$$,
+  array['NOT_RECEIVED'::text],
+  'M1 invoice issuance is not payment receipt evidence'
+);
+select throws_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000001',
+    (select issuance_id from public.sdf_m1_invoice_issuances),
+    'f9200000-0000-4000-8000-000000000002'
+  )$$,
+  'P0001','SDF_M1_FULL_PAYMENT_REQUIRED',
+  'issued but unpaid M1 cannot authorize project start'
+);
+select throws_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000002',
+    (select issuance_id from public.sdf_m1_invoice_issuances),
+    'f9200000-0000-4000-8000-000000000003'
+  )$$,
+  '23514','SDF_PROJECT_LINKAGE_MISMATCH',
+  'Website project linkage cannot enter SDF start authority'
+);
+
+create temporary table original_sdf_candidate_hash as
+select candidate_id,candidate_payload_sha256 from public.sdf_m1_invoice_candidates;
+set local session_replication_role = replica;
+update public.sdf_m1_invoice_candidates set candidate_payload_sha256=repeat('0',64);
+set local session_replication_role = origin;
+select throws_ok(
+  $$select public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),1,
+    'TEST-TXN-M1-STALE','TEST-EVIDENCE-M1-STALE',
+    'f9100000-0000-4000-8000-000000000001'
+  )$$,
+  '55000','SDF_M1_COMMERCIAL_SNAPSHOT_STALE',
+  'stale immutable candidate snapshot blocks payment registration'
+);
+set local session_replication_role = replica;
+update public.sdf_m1_invoice_candidates as candidate
+set candidate_payload_sha256=original.candidate_payload_sha256
+from original_sdf_candidate_hash as original
+where original.candidate_id=candidate.candidate_id;
+set local session_replication_role = origin;
+
+select lives_ok(
+  $$select public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),50000,
+    'TEST-TXN-M1-PARTIAL','TEST-EVIDENCE-M1-PARTIAL',
+    'f9100000-0000-4000-8000-000000000002'
+  )$$,
+  'partial M1 payment is recorded as receipt evidence'
+);
+select results_eq(
+  $$select payment_state,cumulative_received_minor,required_amount_minor
+    from public.get_sdf_m1_payment_state_v1(
+      (select issuance_id from public.sdf_m1_invoice_issuances)
+    )$$,
+  $$values ('PARTIAL'::text,50000::bigint,114000::bigint)$$,
+  'partial receipt remains distinct from full RECEIVED'
+);
+select throws_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000001',
+    (select issuance_id from public.sdf_m1_invoice_issuances),
+    'f9200000-0000-4000-8000-000000000004'
+  )$$,
+  'P0001','SDF_M1_FULL_PAYMENT_REQUIRED',
+  'partial M1 payment cannot authorize project start'
+);
+select throws_ok(
+  $$select public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),70000,
+    'TEST-TXN-M1-OVERPAY','TEST-EVIDENCE-M1-OVERPAY',
+    'f9100000-0000-4000-8000-000000000003'
+  )$$,
+  '23514','SDF_M1_PAYMENT_EXCEEDS_REQUIRED',
+  'payment amount exceeding required cumulative M1 fails closed'
+);
+select lives_ok(
+  $$select public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),64000,
+    'TEST-TXN-M1-FINAL','TEST-EVIDENCE-M1-FINAL',
+    'f9100000-0000-4000-8000-000000000004'
+  )$$,
+  'second receipt may complete the exact required M1 amount'
+);
+select results_eq(
+  $$select payment_state,cumulative_received_minor,required_amount_minor,reconciliation_state
+    from public.get_sdf_m1_payment_state_v1(
+      (select issuance_id from public.sdf_m1_invoice_issuances)
+    )$$,
+  $$values ('RECEIVED'::text,114000::bigint,114000::bigint,'NOT_RECONCILED'::text)$$,
+  'exact cumulative M1 becomes RECEIVED without simulating RECONCILED'
+);
+select is(
+  (public.record_sdf_m1_payment_receipt_v1(
+    (select issuance_id from public.sdf_m1_invoice_issuances),64000,
+    'TEST-TXN-M1-FINAL','TEST-EVIDENCE-M1-FINAL',
+    'f9100000-0000-4000-8000-000000000004'
+  )->>'was_created')::boolean,
+  false,
+  'duplicate payment receipt replays idempotently'
+);
+select results_eq(
+  $$select count(*)::integer from public.sdf_m1_payment_receipts$$,
+  array[2],
+  'payment replay creates no duplicate receipt event'
+);
+select lives_ok(
+  $$select public.authorize_sdf_project_start_v1(
+    'f9000000-0000-4000-8000-000000000001',
+    (select issuance_id from public.sdf_m1_invoice_issuances),
+    'f9200000-0000-4000-8000-000000000005'
+  )$$,
+  'full exact M1 RECEIVED authorizes project start'
+);
+select results_eq(
+  $$select authority_state,required_amount_minor,received_amount_minor
+    from public.sdf_m1_project_start_authorities$$,
+  $$values ('START_ALLOWED'::text,114000::bigint,114000::bigint)$$,
+  'project start authority freezes exact required and received M1'
+);
 
 insert into public.quotation_vat_turnover_snapshots (
   turnover_snapshot_id, vat_decision_authority_id, threshold_year,
