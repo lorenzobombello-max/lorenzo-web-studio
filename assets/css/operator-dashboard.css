@@ -495,6 +495,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .application-detail dt { color:var(--muted); font-size:.68rem; font-weight:900; text-transform:uppercase; }
 .application-detail dd { margin:.25rem 0 0; color:var(--navy); overflow-wrap:anywhere; font-weight:650; }
 .application-detail__wide { grid-column:1/-1; }
+.dossiers-substance-title { margin:1rem 0 0; font-size:1rem; }
+.dossiers-original-request dd { white-space:pre-wrap; }
+.dossiers-intake-meta { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.dossiers-substance-sections { display:grid; gap:1.25rem; margin-top:1.25rem; }
+.dossiers-substance-sections section { border-top:1px solid #dce5e8; padding-top:1rem; }
+.dossiers-substance-sections h3 { margin:0 0 .65rem; color:var(--navy); font-size:.95rem; }
+.dossiers-substance-sections dl { margin:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem 1rem; }
+.dossiers-substance-sections dl div { min-width:0; padding:.45rem 0; }
+.dossiers-substance-sections dt { color:var(--muted); font-size:.68rem; font-weight:900; text-transform:uppercase; }
+.dossiers-substance-sections dd { margin:.2rem 0 0; color:var(--navy); font-weight:650; overflow-wrap:anywhere; white-space:pre-wrap; }
 .sdf-operator-review { margin-top:1.25rem; display:grid; gap:1.25rem; }
 .sdf-operator-review section { min-width:0; }
 .sdf-operator-review h3 { margin:0 0 .65rem; padding-bottom:.45rem; border-bottom:1px solid var(--line); }
@@ -600,6 +610,7 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (max-width:1100px) { .topbar { padding-block:.65rem; grid-template-columns:1fr auto; } .module-navigation { grid-column:1/-1; grid-row:2; flex-wrap:wrap; } }
 @media (max-width:700px) { .workspace { width:min(100% - 24px,1420px); padding-top:1.75rem; } .topbar { min-height:68px; } .identity__mark { width:38px; height:38px; } .topbar__status > span:last-child { display:none; } .project-heading { align-items:start; flex-direction:column; gap:1rem; margin-bottom:1.5rem; } .project-heading__controls { width:100%; grid-template-columns:1fr; } .project-heading__controls .badge { grid-column:auto; justify-self:start; } .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .context-column { grid-template-columns:1fr; } .context-column > .panel:first-of-type,.context-column > .action-message,.context-column .branch-panel { grid-column:auto; } .payment-form { grid-template-columns:1fr; } .payment-form__notes { grid-column:auto; } .timeline li { grid-template-columns:1fr; gap:.25rem; } .panel__heading { align-items:flex-start; } }
 @media (max-width:700px) { .application-detail,.customer-request-detail { grid-template-columns:1fr; } .application-detail div:nth-child(odd):not(.application-detail__wide) { padding-right:0; } .application-detail__wide,.customer-request-detail__wide { grid-column:auto; } }
+@media (max-width:700px) { .dossiers-intake-meta,.dossiers-substance-sections dl { grid-template-columns:1fr; } }
 @media (max-width:700px) { .sdf-operator-review dl div { grid-template-columns:1fr; gap:.25rem; } }
 @media (max-width:700px) { .assignment-form { grid-template-columns:1fr; } .assignment-form button { justify-self:start; } }
 @media (max-width:540px) { .topbar { padding-block:.75rem; grid-template-columns:1fr; } .identity { width:100%; } .identity strong { white-space:nowrap; } .identity small { display:none; } .topbar__status { grid-row:2; width:100%; justify-content:flex-end; } .module-navigation { grid-row:3; justify-content:flex-start; } .module-navigation a { min-height:40px; padding:.65rem .45rem .5rem; font-size:.66rem; } .panel__heading { flex-direction:column; } .panel__heading > .badge { align-self:flex-start; } .zone-filters,.product-filters { flex-wrap:wrap; } .zone-filters button,.product-filters button { flex:1 1 calc(50% - .25rem); } .product-filters button:last-child { flex-basis:100%; } .operator-filters { grid-template-columns:1fr; } .application-list__button { align-items:flex-start; } }

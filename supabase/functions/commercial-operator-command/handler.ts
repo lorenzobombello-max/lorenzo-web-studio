@@ -52,6 +52,7 @@ const APPLICATION_ACTIONS = new Set([
   "permanently_delete_pending_intake",
   "get_application_facets_v2",
   "get_application_detail",
+  "get_dossier_substance",
   "get_assignment_operator_roster",
   "get_dossier_assignment",
   "get_my_assigned_dossiers",
@@ -405,6 +406,10 @@ type CommercialOperatorDependencies = Readonly<{
     retentionState: string,
   ): PromiseLike<unknown>;
   executePendingIntakeCount(actorAuthUserId: string): PromiseLike<unknown>;
+  executeDossierSubstance(
+    actorAuthUserId: string,
+    quoteRequestId: string,
+  ): PromiseLike<unknown>;
   signOperatorCursor(
     position: Record<string, string>,
     input: Record<string, unknown>,
@@ -661,6 +666,114 @@ function validatePendingIntakesResult(value: unknown) {
   }
   return value as { items: Record<string, unknown>[] };
 }
+const WEBSITE_SUBSTANCE_FIELDS = [
+  "business_description", "target_audience", "has_existing_website",
+  "existing_website_url", "elements_to_keep", "improvement_areas",
+  "website_goals", "primary_conversion_goal", "requested_pages",
+  "other_pages", "requested_features", "shop_required", "shop_details",
+  "booking_required", "booking_details", "languages", "primary_language",
+  "additional_languages", "page_scope_details", "quote_form_details",
+  "multilingual_details", "download_details", "newsletter_details",
+  "content_media_details", "hosting_maintenance_details", "deadline_details",
+  "seo_details", "design_styles", "brand_status", "logo_status",
+  "brand_colors", "inspiration_sites", "disliked_styles", "content_status",
+  "image_status", "image_support", "domain_status", "domain_name",
+  "hosting_status", "hosting_support", "maintenance_interest", "seo_priority",
+  "seo_keywords", "social_channels", "integrations", "deadline_date",
+  "deadline_reason", "budget_confirmed", "budget_update_category",
+  "budget_notes", "priorities", "additional_notes", "confirmation",
+];
+const WEBSITE_SUBSTANCE_OBJECT_FIELDS: Record<string, string[]> = {
+  shop_details: ["approx_product_count", "complex_product_count", "payment_provider_count", "shipping_scope", "categories", "online_payments", "shipping", "pickup", "pickup_scope", "existing_catalog", "customer_accounts", "catalog_import", "erp_api"],
+  booking_details: ["tier", "type", "existing_system", "existing_system_name", "calendar_integration"],
+  page_scope_details: ["portfolio", "reviews", "blog", "jobs", "gallery", "jobs_application", "search"],
+  quote_form_details: ["file_uploads", "database_workflow", "automated_processing", "review_approval", "custom_logic", "form_count", "structure_scope"],
+  multilingual_details: ["final_translations_supplied", "same_structure", "translation_required", "seo_per_language", "advanced_seo_research", "language_specific_integrations", "complex_scope"],
+  download_details: ["access"],
+  newsletter_details: ["scope", "analytics", "custom_integration"],
+  content_media_details: ["copywriting_scope", "copy_page_count", "image_work_scope", "paid_stock_handling", "branding_tier"],
+  hosting_maintenance_details: ["hosting_support", "maintenance_interest", "domain_service", "maintenance_plan"],
+  deadline_details: ["commercially_critical", "hard_deadline"],
+  seo_details: ["scope", "extra_language_seo", "advanced_language_seo"],
+};
+function isNullableJsonValue(value: unknown): boolean {
+  return value === null || typeof value === "string" ||
+    typeof value === "number" || typeof value === "boolean" ||
+    (Array.isArray(value) && value.every((item) =>
+      item === null || typeof item === "string" || typeof item === "number" ||
+      typeof item === "boolean" || isRecord(item)
+    ));
+}
+function validateDossierSubstanceResult(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["quote_request_id", "request_kind", "request", "customer", "intake", "documents"]) ||
+    !UUID.test(String(value.quote_request_id || "")) ||
+    !["website", "slimme_documentenflow"].includes(String(value.request_kind)) ||
+    !isRecord(value.request) ||
+    !hasExactKeys(value.request, ["reference", "original_text", "requested_service", "requested_at"]) ||
+    typeof value.request.reference !== "string" || !value.request.reference ||
+    (value.request.original_text !== null && typeof value.request.original_text !== "string") ||
+    typeof value.request.requested_service !== "string" || !value.request.requested_service ||
+    typeof value.request.requested_at !== "string" || !value.request.requested_at ||
+    !isRecord(value.customer) ||
+    !hasExactKeys(value.customer, ["name", "company", "email", "phone"]) ||
+    typeof value.customer.name !== "string" || !value.customer.name ||
+    (value.customer.company !== null && typeof value.customer.company !== "string") ||
+    typeof value.customer.email !== "string" || !value.customer.email ||
+    (value.customer.phone !== null && typeof value.customer.phone !== "string") ||
+    !isRecord(value.intake) ||
+    !hasExactKeys(value.intake, ["intake_id", "status", "invitation_state", "invited_at", "started_at", "submitted_at", "structured_answers"]) ||
+    !UUID.test(String(value.intake.intake_id || "")) ||
+    !["invited", "in_progress", "submitted", "reviewed", "under_review", "changes_requested", "qualification_complete", "closed"].includes(String(value.intake.status)) ||
+    !["INVITED", "ACTIVATED"].includes(String(value.intake.invitation_state)) ||
+    typeof value.intake.invited_at !== "string" || !value.intake.invited_at ||
+    (value.intake.started_at !== null && typeof value.intake.started_at !== "string") ||
+    (value.intake.submitted_at !== null && typeof value.intake.submitted_at !== "string") ||
+    !isRecord(value.intake.structured_answers) ||
+    !isRecord(value.documents) ||
+    !hasExactKeys(value.documents, ["customer_request_count", "uploaded_document_count"]) ||
+    !Number.isSafeInteger(value.documents.customer_request_count) || Number(value.documents.customer_request_count) < 0 ||
+    !Number.isSafeInteger(value.documents.uploaded_document_count) || Number(value.documents.uploaded_document_count) < 0
+  ) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+
+  const answers = value.intake.structured_answers;
+  if (value.request_kind === "website") {
+    if (!hasExactKeys(answers, WEBSITE_SUBSTANCE_FIELDS)) {
+      throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+    }
+    for (const [key, fieldValue] of Object.entries(answers)) {
+      const nestedFields = WEBSITE_SUBSTANCE_OBJECT_FIELDS[key];
+      if (!nestedFields && !isNullableJsonValue(fieldValue)) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+      if (nestedFields && fieldValue !== null &&
+        (!isRecord(fieldValue) || !hasExactKeys(fieldValue, nestedFields) || !Object.values(fieldValue).every(isNullableJsonValue))) {
+        throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+      }
+    }
+  } else {
+    if (
+      !hasExactKeys(answers, ["documentPurpose", "workflowCapabilities", "businessRequirements", "sampleDocumentMetadata", "commercialQualification"]) ||
+      !isRecord(answers.documentPurpose) || !hasExactKeys(answers.documentPurpose, ["categories", "otherDescription"]) ||
+      !Array.isArray(answers.documentPurpose.categories) || !answers.documentPurpose.categories.every((item) => typeof item === "string") ||
+      !Array.isArray(answers.workflowCapabilities) || !answers.workflowCapabilities.every((item) => typeof item === "string") ||
+      !isRecord(answers.businessRequirements) || !hasExactKeys(answers.businessRequirements, ["currentWorkflow", "desiredWorkflow", "volumeBand", "frequency", "relevantDocumentTypes", "rolesUsers"]) ||
+      !Array.isArray(answers.businessRequirements.relevantDocumentTypes) || !answers.businessRequirements.relevantDocumentTypes.every((item) => typeof item === "string") ||
+      !Array.isArray(answers.businessRequirements.rolesUsers) || !answers.businessRequirements.rolesUsers.every((item) => typeof item === "string") ||
+      !isRecord(answers.sampleDocumentMetadata) || !hasExactKeys(answers.sampleDocumentMetadata, ["available", "requestedByLws", "uploadRequiredLater"]) ||
+      !isRecord(answers.commercialQualification) || !hasExactKeys(answers.commercialQualification, ["packageDirection", "customComplexity", "documentVolumes", "flowCount", "userCount"]) ||
+      !Array.isArray(answers.commercialQualification.documentVolumes) ||
+      !answers.commercialQualification.documentVolumes.every((item) =>
+        isRecord(item) && hasExactKeys(item, ["documentType", "documentCount", "period", "averagePagesPerDocument"]) &&
+        Object.values(item).every(isNullableJsonValue)
+      ) ||
+      !Object.values(answers.documentPurpose).every(isNullableJsonValue) ||
+      !Object.values(answers.businessRequirements).every(isNullableJsonValue) ||
+      !Object.values(answers.sampleDocumentMetadata).every(isNullableJsonValue) ||
+      !Object.values(answers.commercialQualification).every(isNullableJsonValue)
+    ) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+  }
+  return value;
+}
 function validatePendingIntakeCountResult(value: unknown) {
   if (
     !isRecord(value) || !hasExactKeys(value, ["active_count"]) ||
@@ -896,6 +1009,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "application_reference",
       "support_reference",
     ])
+    : action === "get_dossier_substance"
+    ? new Set(["action", "quote_request_id"])
     : action === "get_assignment_operator_roster"
     ? new Set(["action"])
     : action === "get_current_operator_identity"
@@ -2295,6 +2410,7 @@ export async function handleCommercialOperator(
         [
           "list_applications_v2",
           "get_application_facets_v2",
+          "get_dossier_substance",
           "list_pending_intakes",
           "list_pending_sdf_qualification_intakes",
           "count_pending_intakes",
@@ -2318,6 +2434,12 @@ export async function handleCommercialOperator(
       if (input.action === "count_pending_intakes") {
         const result = validatePendingIntakeCountResult(
           await deps.executePendingIntakeCount(user.id),
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "get_dossier_substance") {
+        const result = validateDossierSubstanceResult(
+          await deps.executeDossierSubstance(user.id, String(input.quote_request_id)),
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }

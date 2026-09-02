@@ -10,7 +10,8 @@ test("dedicated Dossiers module imports independently", async () => {
   assert.equal(typeof dossiers.initializeOperatorDossiers, "function");
   assert.equal(typeof dossiers.createOperatorDossiersController, "function");
   const source = await read("assets/js/operator-dossiers.mjs");
-  assert.doesNotMatch(source, /from ["'][^"']*(?:operator-dashboard|application-dossier|sdf-qualification|website)[^"']*["']/i);
+  assert.doesNotMatch(source, /from ["'][^"']*(?:operator-dashboard|application-dossier|sdf-qualification-intake|website)[^"']*["']/i);
+  assert.match(source, /from "\.\/sdf-qualification-review\.mjs"/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|window\.name|localhost|127\.0\.0\.1/i);
 });
 
@@ -212,8 +213,8 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260902-dossiers-ux-restoration/);
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260902-dossiers-ux-restoration/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-dossier-detail-restoration/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossier-detail-restoration/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);
@@ -222,7 +223,8 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /data-dossiers-zone="ACTIVE"/);
   assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
   assert.match(source, /Originele klantaanvraag/);
-  assert.match(source, /setText\(workspace, "description", null\)/);
+  assert.match(source, /renderPendingDetail\(workspace, summary, substance\)/);
+  assert.doesNotMatch(source, /setText\(workspace, "description", null\)/);
   assert.match(source, /workspace\.setAttribute\("aria-busy", "true"\)/);
   assert.doesNotMatch(source, />Toepassen</);
   const css = await read("assets/css/operator-dashboard.css");

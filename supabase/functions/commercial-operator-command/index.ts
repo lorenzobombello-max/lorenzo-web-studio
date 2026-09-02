@@ -1108,6 +1108,20 @@ if (import.meta.main) {
           if (!Array.isArray(sdfItems) || typeof (data as { active_count?: unknown } | null)?.active_count !== "number") throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
           return { active_count: Number((data as { active_count: number }).active_count) + sdfItems.length };
         },
+        executeDossierSubstance: async (
+          actorAuthUserId: string,
+          quoteRequestId: string,
+        ) => {
+          const { data, error } = await serviceClient().rpc(
+            "get_operator_dossier_substance_v1",
+            {
+              p_actor_auth_user_id: actorAuthUserId,
+              p_quote_request_id: quoteRequestId,
+            },
+          );
+          if (error) throw new Error(error.message);
+          return data;
+        },
         executeApplicationFacetsV2: async (
           actorAuthUserId: string,
           input: OperatorApplicationFacetsV2Input,

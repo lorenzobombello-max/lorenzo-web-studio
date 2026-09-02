@@ -205,6 +205,47 @@ function dependencies(overrides: Record<string, unknown> = {}) {
         events.push("pending-count");
         return { active_count: 3 };
       },
+      executeDossierSubstance: async () => ({
+        quote_request_id: userId,
+        request_kind: "slimme_documentenflow",
+        request: {
+          reference: "#A1800000",
+          original_text: "Exact original text",
+          requested_service: "Slimme Documentenflow - groei",
+          requested_at: "2099-01-01T10:00:00Z",
+        },
+        customer: {
+          name: "Customer",
+          company: null,
+          email: "customer@example.test",
+          phone: null,
+        },
+        intake: {
+          intake_id: "a1800000-0000-4000-8000-000000000002",
+          status: "in_progress",
+          invitation_state: "ACTIVATED",
+          invited_at: "2099-01-01T10:01:00Z",
+          started_at: "2099-01-01T10:02:00Z",
+          submitted_at: null,
+          structured_answers: {
+            documentPurpose: { categories: ["invoice"], otherDescription: null },
+            workflowCapabilities: ["receive"],
+            businessRequirements: {
+              currentWorkflow: "Manual", desiredWorkflow: "Automated",
+              volumeBand: null, frequency: null,
+              relevantDocumentTypes: [], rolesUsers: [],
+            },
+            sampleDocumentMetadata: {
+              available: false, requestedByLws: false, uploadRequiredLater: true,
+            },
+            commercialQualification: {
+              packageDirection: "groei", customComplexity: null,
+              documentVolumes: [], flowCount: 1, userCount: 2,
+            },
+          },
+        },
+        documents: { customer_request_count: 0, uploaded_document_count: 0 },
+      }),
       signOperatorCursor: async (
         position: Record<string, string>,
         input: Record<string, unknown>,
@@ -787,6 +828,32 @@ Deno.test("application detail normalizes one support-reference locator", async (
     );
   }
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("dossier substance requires one quote request and validates its closed response", async () => {
+  const harness = dependencies();
+  const accepted = await handleCommercialOperator(
+    request({ action: "get_dossier_substance", quote_request_id: userId }),
+    harness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(harness.events, ["preflight"]);
+
+  for (const body of [
+    { action: "get_dossier_substance" },
+    { action: "get_dossier_substance", quote_request_id: "invalid" },
+    { action: "get_dossier_substance", quote_request_id: userId, customer: "forbidden" },
+  ]) {
+    assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 400);
+  }
+
+  const invalid = dependencies({
+    executeDossierSubstance: async () => ({ quote_request_id: userId }),
+  });
+  assertEquals((await handleCommercialOperator(
+    request({ action: "get_dossier_substance", quote_request_id: userId }),
+    invalid.deps,
+  )).status, 500);
 });
 
 Deno.test("dossier assignment read accepts only one normalized reference", async () => {

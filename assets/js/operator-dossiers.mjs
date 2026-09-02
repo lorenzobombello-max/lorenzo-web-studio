@@ -1,3 +1,5 @@
+import { buildSdfQualificationPresentation } from "./sdf-qualification-review.mjs";
+
 const DOSSIER_ROLES = new Set(["owner", "admin", "operations_manager", "operator", "reviewer", "read_only"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
@@ -9,7 +11,7 @@ const AUTHORIZATION_FAILURES = new Set([
   "DOSSIER_ASSIGNMENT_READER_REQUIRED", "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
 ]);
 const DOSSIER_GATEWAY_ACTIONS = new Set([
-  "list_applications_v2", "list_pending_intakes", "get_application_facets_v2", "get_application_detail",
+  "list_applications_v2", "list_pending_intakes", "get_application_facets_v2", "get_application_detail", "get_dossier_substance",
   "get_project_dossier", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
@@ -47,6 +49,12 @@ export function dossierLocator(value) {
   const quoteRequestId = String(value?.quote_request_id || "");
   if (UUID.test(quoteRequestId)) return { quote_request_id: quoteRequestId };
   throw new Error("INVALID_DOSSIER_LOCATOR");
+}
+
+export function dossierSubstanceRequest(value) {
+  const quoteRequestId = String(value?.quote_request_id || value?.raw?.quote_request_id || "");
+  if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_SUBSTANCE_REQUEST");
+  return { action: "get_dossier_substance", quote_request_id: quoteRequestId };
 }
 
 export function dossierListRequest(query = {}, cursor = null) {
@@ -291,7 +299,10 @@ function dossierWorkspaceMarkup() {
     <p class="action-message action-message--dark" data-dossiers-status role="status" aria-live="polite"></p>
     <div class="dashboard-grid dossiers-grid"><section class="panel" aria-labelledby="dossiersListTitle"><div class="panel__heading"><div><p class="eyebrow">Werkvoorraad</p><h2 id="dossiersListTitle">Dossiers</h2></div><span class="badge" data-dossiers-count>0</span></div><ul class="application-list dossiers-list" data-dossiers-list></ul><p class="empty-state" data-dossiers-empty hidden>Geen dossiers gevonden.</p><button type="button" class="secondary-action" data-dossiers-action="more" hidden>Meer laden</button></section>
       <aside class="context-column" aria-label="Dossierdetail"><section class="panel" data-dossiers-detail-empty><h2>Selecteer een dossier</h2><p class="empty-state">Kies een dossier uit de werkvoorraad.</p></section>
-        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow" data-dossiers-field="reference"></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
+        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow" data-dossiers-field="reference"></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
+        <section class="panel dossiers-customer" data-dossiers-customer hidden><div class="panel__heading"><div><p class="eyebrow">Relatie</p><h2>Klant</h2></div></div><dl class="application-detail"><div><dt>Naam</dt><dd data-dossiers-field="customer_name"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div></dl></section>
+        <section class="panel dossiers-intake" data-dossiers-intake hidden><div class="panel__heading"><div><p class="eyebrow">Klantinput</p><h2>Intake</h2></div><span class="badge" data-dossiers-intake-status></span></div><dl class="application-detail dossiers-intake-meta"><div><dt>Uitnodiging</dt><dd data-dossiers-field="invited_at"></dd></div><div><dt>Gestart</dt><dd data-dossiers-field="started_at"></dd></div><div><dt>Ingediend</dt><dd data-dossiers-field="submitted_at"></dd></div></dl><div class="dossiers-substance-sections" data-dossiers-intake-sections></div></section>
+        <section class="panel dossiers-document-overview" data-dossiers-document-overview hidden><div class="panel__heading"><div><p class="eyebrow">Gekoppeld aan aanvraag</p><h2>Documenten</h2></div></div><dl class="application-detail"><div><dt>Klantverzoeken</dt><dd data-dossiers-field="customer_request_count"></dd></div><div><dt>Ontvangen documenten</dt><dd data-dossiers-field="uploaded_document_count"></dd></div></dl></section>
         <section class="panel dossiers-lifecycle" data-dossiers-lifecycle-panel hidden><div class="panel__heading"><div><p class="eyebrow">Dossierbeheer</p><h2>Status</h2></div><span class="badge" data-dossiers-lifecycle-state></span></div><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-lifecycle="archive_dossier">Archiveren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="reactivate_dossier">Activeren</button><button type="button" class="danger-action" data-dossiers-lifecycle="trash_dossier">Naar prullenbak</button><button type="button" class="secondary-action" data-dossiers-lifecycle="restore_dossier">Herstellen</button><button type="button" class="danger-action" data-dossiers-purge hidden>Permanent verwijderen</button></div><p class="action-message" data-dossiers-purge-message></p></section>
         <section class="panel dossiers-assignment" data-dossiers-assignment hidden><div class="panel__heading"><div><p class="eyebrow">Toewijzing</p><h2>Operator</h2></div><strong data-dossiers-assignee></strong></div><form data-dossiers-assignment-form><label>Toewijzen aan<select name="assignee_operator_id" required><option value="">Kies een operator</option></select></label><label>Reden bij hertoewijzing<textarea name="reason" rows="3" maxlength="500"></textarea></label><button type="submit" class="primary-action primary-action--compact">Opslaan</button></form></section>
         <section class="panel" data-dossiers-documents hidden><div class="panel__heading"><div><p class="eyebrow">Documenten</p><h2>Dossierdocumenten</h2></div></div><ul class="document-list" data-dossiers-document-list></ul><p class="empty-state" data-dossiers-document-empty></p></section>
@@ -349,6 +360,114 @@ function detailIdentity(detail) {
 
 function customerValue(detail, key) {
   return detail?.customer?.[key] ?? detail?.application?.customer?.[key] ?? detail?.[key] ?? null;
+}
+
+const WEBSITE_INTAKE_SECTIONS = [
+  ["Bedrijf & doelgroep", [["business_description", "Bedrijfsomschrijving"], ["target_audience", "Doelgroep"], ["has_existing_website", "Bestaande website"], ["existing_website_url", "Website URL"], ["elements_to_keep", "Te behouden"], ["improvement_areas", "Verbeterpunten"]]],
+  ["Doelen", [["website_goals", "Websitedoelen"], ["primary_conversion_goal", "Belangrijkste conversieactie"]]],
+  ["Pagina's & functies", [["requested_pages", "Gewenste pagina's"], ["other_pages", "Andere pagina's"], ["requested_features", "Functies"], ["shop_required", "Webshop"], ["booking_required", "Reservaties of afspraken"], ["languages", "Talen"], ["primary_language", "Primaire taal"], ["additional_languages", "Extra talen"]]],
+  ["Design & branding", [["design_styles", "Stijlen"], ["brand_status", "Huisstijlstatus"], ["logo_status", "Logostatus"], ["brand_colors", "Kleuren"], ["inspiration_sites", "Inspiratie"], ["disliked_styles", "Wat niet aanspreekt"]]],
+  ["Content & media", [["content_status", "Tekststatus"], ["image_status", "Beeldstatus"], ["image_support", "Gewenste beeldondersteuning"]]],
+  ["Domein & hosting", [["domain_status", "Domeinstatus"], ["domain_name", "Domeinnaam"], ["hosting_status", "Hostingstatus"], ["hosting_support", "Gewenste hostinghulp"], ["maintenance_interest", "Onderhoud"]]],
+  ["SEO & integraties", [["seo_priority", "SEO-prioriteit"], ["seo_keywords", "Zoekwoorden"], ["social_channels", "Sociale kanalen"], ["integrations", "Integraties"]]],
+  ["Planning & budget", [["deadline_date", "Deadline"], ["deadline_reason", "Reden deadline"], ["budget_confirmed", "Budget bevestigd"], ["budget_update_category", "Bijgewerkte budgetcategorie"], ["budget_notes", "Budgetnotities"]]],
+  ["Prioriteiten & opmerkingen", [["priorities", "Prioriteiten"], ["additional_notes", "Aanvullende opmerkingen"], ["confirmation", "Bevestigd door klant"]]],
+];
+const WEBSITE_OBJECT_SECTIONS = [
+  ["Webshopdetails", "shop_details", [["approx_product_count", "Aantal producten"], ["complex_product_count", "Complexe producten of varianten"], ["payment_provider_count", "Aantal betaalproviders"], ["categories", "Categorieën"], ["online_payments", "Online betalingen"], ["shipping_scope", "Verzending"], ["pickup_scope", "Afhalen"], ["existing_catalog", "Bestaande catalogus"], ["customer_accounts", "Klantaccounts"], ["catalog_import", "Catalogus importeren"], ["erp_api", "Voorraad-, ERP- of API-koppeling"]]],
+  ["Reservatiedetails", "booking_details", [["tier", "Reservatieoplossing"], ["type", "Type reservatie"], ["existing_system", "Bestaand systeem"], ["existing_system_name", "Naam bestaand systeem"], ["calendar_integration", "Kalenderkoppeling"]]],
+  ["Pagina- en zoekscope", "page_scope_details", [["portfolio", "Portfolio"], ["reviews", "Reviews"], ["blog", "Blog"], ["jobs", "Vacatures"], ["gallery", "Galerij"], ["jobs_application", "Sollicitatieflow"], ["search", "Zoekfunctie"]]],
+  ["Offerteformulier", "quote_form_details", [["file_uploads", "Bestandsuploads"], ["database_workflow", "Databaseworkflow"], ["automated_processing", "Automatische verwerking"], ["review_approval", "Controle en goedkeuring"], ["custom_logic", "Maatwerklogica"], ["form_count", "Aantal formulieren"], ["structure_scope", "Structuurscope"]]],
+  ["Meertaligheid", "multilingual_details", [["final_translations_supplied", "Definitieve vertalingen aangeleverd"], ["same_structure", "Dezelfde structuur"], ["translation_required", "Vertaling nodig"], ["seo_per_language", "SEO per taal"], ["advanced_seo_research", "Uitgebreid SEO-onderzoek"], ["language_specific_integrations", "Taalspecifieke integraties"], ["complex_scope", "Complexe scope"]]],
+  ["Downloads", "download_details", [["access", "Toegang"]]],
+  ["Nieuwsbrief & analytics", "newsletter_details", [["scope", "Nieuwsbriefscope"], ["analytics", "Analytics"], ["custom_integration", "Maatwerkintegratie"]]],
+  ["Content & media scope", "content_media_details", [["copywriting_scope", "Copywritingscope"], ["copy_page_count", "Aantal tekstpagina's"], ["image_work_scope", "Beeldbewerking"], ["paid_stock_handling", "Betaalde stockbeelden"], ["branding_tier", "Brandingscope"]]],
+  ["Hosting & onderhoud scope", "hosting_maintenance_details", [["hosting_support", "Hostinghulp"], ["maintenance_interest", "Onderhoudsinteresse"], ["domain_service", "Domeinservice"], ["maintenance_plan", "Onderhoudsplan"]]],
+  ["Deadlinescope", "deadline_details", [["commercially_critical", "Commercieel kritisch"], ["hard_deadline", "Harde deadline"]]],
+  ["SEO-scope", "seo_details", [["scope", "Scope"], ["extra_language_seo", "SEO voor extra talen"], ["advanced_language_seo", "Uitgebreide meertalige SEO"]]],
+];
+
+function substanceValue(value) {
+  if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return null;
+  if (value === true) return "Ja";
+  if (value === false) return "Nee";
+  if (Array.isArray(value)) return value.map((item)=>String(item)).join(", ");
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return null;
+}
+
+export function websiteSubstanceSections(answers) {
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw new Error("INVALID_DOSSIER_SUBSTANCE");
+  const sections = WEBSITE_INTAKE_SECTIONS.map(([title, fields])=>({
+    title,
+    rows: fields.map(([key, label])=>({ label, value: substanceValue(answers[key]) })).filter((row)=>row.value !== null),
+  }));
+  for (const [title, key, fields] of WEBSITE_OBJECT_SECTIONS) {
+    const object = answers[key];
+    if (!object || typeof object !== "object" || Array.isArray(object)) continue;
+    sections.push({ title, rows: fields.map(([field, label])=>({ label, value: substanceValue(object[field]) })).filter((row)=>row.value !== null) });
+  }
+  return sections.filter((section)=>section.rows.length > 0);
+}
+
+export function validateDossierSubstance(value, expectedQuoteRequestId) {
+  const keys = value && typeof value === "object" ? Object.keys(value) : [];
+  if (keys.length !== 6 || !["quote_request_id", "request_kind", "request", "customer", "intake", "documents"].every((key)=>Object.hasOwn(value, key))
+    || value.quote_request_id !== expectedQuoteRequestId || !["website", "slimme_documentenflow"].includes(value.request_kind)
+    || typeof value.request?.reference !== "string" || typeof value.customer?.name !== "string"
+    || !UUID.test(String(value.intake?.intake_id || "")) || !value.intake?.structured_answers
+    || !Number.isSafeInteger(value.documents?.customer_request_count) || !Number.isSafeInteger(value.documents?.uploaded_document_count)) {
+    throw new Error("INVALID_DOSSIER_SUBSTANCE");
+  }
+  return value;
+}
+
+function renderSubstanceSections(workspace, sections) {
+  const container = workspace.querySelector("[data-dossiers-intake-sections]");
+  container.replaceChildren();
+  for (const section of sections) {
+    const sectionNode = container.ownerDocument.createElement("section");
+    const heading = container.ownerDocument.createElement("h3");
+    const rows = container.ownerDocument.createElement("dl");
+    heading.textContent = section.title;
+    for (const row of section.rows) {
+      const item = container.ownerDocument.createElement("div");
+      const label = container.ownerDocument.createElement("dt");
+      const value = container.ownerDocument.createElement("dd");
+      label.textContent = row.label;
+      value.textContent = String(row.value);
+      item.append(label, value);
+      rows.append(item);
+    }
+    sectionNode.append(heading, rows);
+    container.append(sectionNode);
+  }
+}
+
+function renderSubstance(workspace, substance) {
+  setText(workspace, "requested_at", substance.request.requested_at);
+  setText(workspace, "description", substance.request.original_text);
+  setText(workspace, "customer_name", substance.customer.name);
+  setText(workspace, "company", substance.customer.company);
+  setText(workspace, "email", substance.customer.email);
+  setText(workspace, "phone", substance.customer.phone);
+  setText(workspace, "invited_at", substance.intake.invited_at);
+  setText(workspace, "started_at", substance.intake.started_at);
+  setText(workspace, "submitted_at", substance.intake.submitted_at);
+  setText(workspace, "customer_request_count", substance.documents.customer_request_count);
+  setText(workspace, "uploaded_document_count", substance.documents.uploaded_document_count);
+  workspace.querySelector("[data-dossiers-intake-status]").textContent = dossierStatus(substance.intake.status).label;
+  const sections = substance.request_kind === "website"
+    ? websiteSubstanceSections(substance.intake.structured_answers)
+    : buildSdfQualificationPresentation(substance.intake.structured_answers, {
+      reference: substance.request.reference,
+      preparedAt: substance.request.requested_at,
+      status: substance.intake.status,
+    }).sections.slice(1);
+  renderSubstanceSections(workspace, sections);
+  for (const selector of ["[data-dossiers-customer]", "[data-dossiers-intake]", "[data-dossiers-document-overview]"]) {
+    workspace.querySelector(selector).hidden = false;
+  }
 }
 
 function dossierStatus(status) {
@@ -419,7 +538,7 @@ function renderStatusOverview(workspace, state) {
   }
 }
 
-function renderDetail(workspace, detail, summary) {
+function renderDetail(workspace, detail, summary, substance) {
   setText(workspace, "reference", dossierReference(detail));
   setText(workspace, "name", detail.name);
   const presentedStatus = dossierStatus(detail.operational_status || summary?.status);
@@ -427,10 +546,7 @@ function renderDetail(workspace, detail, summary) {
   workspace.querySelector('[data-dossiers-field="status"]').className = `badge ${presentedStatus.className}`.trim();
   setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
   setText(workspace, "zone", detail.dossier_lifecycle?.state || summary?.zone);
-  setText(workspace, "company", customerValue(detail, "company") || detail.organization);
-  setText(workspace, "email", customerValue(detail, "email"));
-  setText(workspace, "phone", customerValue(detail, "phone"));
-  setText(workspace, "description", detail.description);
+  renderSubstance(workspace, substance);
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
   const lifecycle = workspace.querySelector("[data-dossiers-lifecycle-panel]");
@@ -442,7 +558,7 @@ function renderDetail(workspace, detail, summary) {
   }
 }
 
-function renderPendingDetail(workspace, summary) {
+function renderPendingDetail(workspace, summary, substance) {
   const detail = summary.raw;
   setText(workspace, "reference", detail.support_reference);
   setText(workspace, "name", detail.name);
@@ -451,10 +567,7 @@ function renderPendingDetail(workspace, summary) {
   workspace.querySelector('[data-dossiers-field="status"]').className = `badge ${presentedStatus.className}`.trim();
   setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
   setText(workspace, "zone", "Pending / Nieuwe aanvraag");
-  setText(workspace, "company", detail.organization);
-  setText(workspace, "email", detail.email);
-  setText(workspace, "phone", detail.phone);
-  setText(workspace, "description", null);
+  renderSubstance(workspace, substance);
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
   for (const selector of ["[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
@@ -566,6 +679,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     request: null,
     uploadUrl: null,
     requestBusy: false,
+    substance: null,
   };
   const status = workspace.querySelector("[data-dossiers-status]");
 
@@ -617,6 +731,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     const selection = ++selectDossier.generation;
     state.selected = summary;
     state.detail = null;
+    state.substance = null;
     state.requests = [];
     state.request = null;
     state.uploadUrl = null;
@@ -627,16 +742,34 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     workspace.querySelector("[data-dossiers-purge-message]").textContent = "";
     renderList(workspace, state.items, summary.reference);
     if (summary.kind === "pending") {
-      renderPendingDetail(workspace, summary);
-      status.textContent = "";
-      return true;
+      status.textContent = "Dossier laden.";
+      try {
+        const substance = validateDossierSubstance(
+          await authority.gateway(dossierSubstanceRequest(summary)),
+          summary.raw.quote_request_id,
+        );
+        if (controller.disposed || selection !== selectDossier.generation) return false;
+        state.substance = substance;
+        renderPendingDetail(workspace, summary, substance);
+        status.textContent = "";
+        return true;
+      } catch (error) {
+        if (selection === selectDossier.generation) status.textContent = errorCode(error) === "DOSSIER_DISPOSED" ? "" : "Dossier kon niet veilig worden geladen.";
+        return false;
+      }
     }
     status.textContent = "Dossier laden.";
     try {
-      const detail = detailIdentity(await authority.gateway({ action: "get_application_detail", ...summary.locator }));
+      const [detailResponse, substanceResponse] = await Promise.all([
+        authority.gateway({ action: "get_application_detail", ...summary.locator }),
+        authority.gateway(dossierSubstanceRequest(summary.raw)),
+      ]);
+      const detail = detailIdentity(detailResponse);
+      const substance = validateDossierSubstance(substanceResponse, detail.quote_request_id);
       if (controller.disposed || selection !== selectDossier.generation) return false;
       state.detail = detail;
-      renderDetail(workspace, detail, summary);
+      state.substance = substance;
+      renderDetail(workspace, detail, summary, substance);
       const reference = dossierReference(detail);
       const tasks = [
         authority.gateway(dossierDocumentRequest(detail)).then((documents)=>{
