@@ -18,7 +18,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260902-login-stability";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260902-phase2h1";
-const DOSSIERS_ASSET_RELEASE = "20260902-lifecycle-round2";
+const DOSSIERS_ASSET_RELEASE = "20260902-lifecycle-round2-hotfix1";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {

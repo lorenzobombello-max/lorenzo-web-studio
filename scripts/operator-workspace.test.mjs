@@ -352,6 +352,15 @@ test("master fails closed when Web Locks cannot enforce singleton ownership", as
   });
   assert.equal(master.active, false);
   assert.equal(master.reason, "LOCAL_MASTER_EXISTS");
+  assert.doesNotThrow(()=>{
+    master.bindModuleButton();
+    master.dispose();
+    master.invalidate("dossiers");
+    master.lockWorkspace("AUTH_SIGNED_OUT");
+    master.unbindModuleButton();
+  });
+  assert.equal(master.openOperatorModuleWindow("dossiers"), false);
+  assert.equal(await master.shutdownWorkspace(), false);
 });
 
 test("a denied Web Lock prevents duplicate server acquisition", async ()=>{

@@ -5,7 +5,7 @@ import {
   shouldLockForLease,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2";
+} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 
 function leaseTime(value) {
   const timestamp = Date.parse(value);

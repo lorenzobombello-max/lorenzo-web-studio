@@ -9,7 +9,7 @@ import {
   validUuid,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2";
+} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260902-login-stability";
 
 async function requestLocalMasterLock(navigatorObject) {
@@ -34,6 +34,21 @@ function authorityFailure(error) {
   return error?.code === "42501" || /OPERATOR|WORKSPACE|JWT|AUTH/i.test(String(error?.message || ""));
 }
 
+function inactiveWorkspaceMaster(reason) {
+  return Object.freeze({
+    active: false,
+    reason,
+    resumeHint: null,
+    bindModuleButton() {},
+    dispose() {},
+    invalidate() {},
+    lockWorkspace() {},
+    openOperatorModuleWindow() { return false; },
+    shutdownWorkspace() { return Promise.resolve(false); },
+    unbindModuleButton() { return false; },
+  });
+}
+
 export async function createOperatorWorkspaceMaster({
   client,
   windowObject = window,
@@ -47,7 +62,7 @@ export async function createOperatorWorkspaceMaster({
   resumeHint = null,
 } = {}) {
   const localLock = await requestLocalMasterLock(navigatorObject);
-  if (!localLock.acquired) return Object.freeze({ active: false, reason: "LOCAL_MASTER_EXISTS" });
+  if (!localLock.acquired) return inactiveWorkspaceMaster("LOCAL_MASTER_EXISTS");
 
   const masterWindowId = createWindowId(windowObject.crypto);
   const requestedResume = operatorWorkspaceResumeHint(resumeHint);
@@ -63,7 +78,7 @@ export async function createOperatorWorkspaceMaster({
     }));
     if (error && authorityFailure(error)) {
       localLock.release();
-      return Object.freeze({ active: false, reason: "WORKSPACE_RESUME_FAILED" });
+      return inactiveWorkspaceMaster("WORKSPACE_RESUME_FAILED");
     }
     resumed = !error && data?.resumed === true;
   }
@@ -81,7 +96,7 @@ export async function createOperatorWorkspaceMaster({
   if (error || (resumed ? data?.resumed !== true : data?.acquired !== true)
     || !validUuid(data.workspace_id) || !validUuid(data.renewal_token)) {
     localLock.release();
-    return Object.freeze({ active: false, reason: data?.acquired === false ? "SERVER_MASTER_EXISTS" : "WORKSPACE_ACQUIRE_FAILED" });
+    return inactiveWorkspaceMaster(data?.acquired === false ? "SERVER_MASTER_EXISTS" : "WORKSPACE_ACQUIRE_FAILED");
   }
   const memory = {
     workspaceId: data.workspace_id,
