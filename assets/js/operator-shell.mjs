@@ -1,5 +1,5 @@
-import { OPERATOR_ROUTES, requireAuthorizedOperator, safeAuthMessage, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
-import { getOperatorClient } from "./operator-auth-client.mjs";
+import { OPERATOR_ROUTES, requireAuthorizedOperator, safeAuthMessage, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
+import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 
 const loading = document.querySelector("#operatorLoading");
 const shell = document.querySelector("#operatorShell");

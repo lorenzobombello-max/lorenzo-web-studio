@@ -89,6 +89,20 @@ select
   'Personal queue fixture.', true, 'approved'
 from generate_series(1, 30) as series;
 
+insert into public.sdf_qualification_intakes(
+  quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+)
+select
+  request.id,
+  'submitted',
+  encode(extensions.digest(convert_to(request.id::text, 'UTF8'), 'sha256'), 'hex'),
+  'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '2100-01-01T00:00:00Z'::timestamptz,
+  request.created_at
+from public.quote_requests request
+where request.id::text like 'c2%';
+
 select set_config('lws.operator_dossier_assignment_command', 'on', true);
 update lws_internal.operator_dossier_assignments
 set assignee_operator_id = case

@@ -47,12 +47,14 @@ select ok(
     where namespace.nspname = 'public'
       and procedure.proname like '%customer_request%'
   ) = array[
+    'authorize_customer_request_upload_inbox_promotion_v1(uuid)',
     'cleanup_expired_customer_request_uploads_v1(integer,uuid)',
     'complete_customer_request_upload_request_v1(text,uuid)',
     'create_customer_request_smoke_fixture_v1(uuid,uuid)',
     'create_customer_request_smoke_fixture_v1(uuid)',
     'create_customer_request_upload_request_v1(uuid,text,timestamp with time zone,uuid)',
     'create_sdf_customer_request_v1(uuid,uuid,text,text,text,text)',
+    'finalize_customer_request_upload_inbox_promotion_v1(uuid)',
     'finalize_customer_request_uploaded_file_v1(text,uuid,text,bigint,text,boolean,uuid)',
     'get_customer_request_v1(uuid)',
     'get_customer_requests_for_dossier_v1(text,text,integer)',

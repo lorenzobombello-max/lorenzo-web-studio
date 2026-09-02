@@ -5,13 +5,13 @@ set local search_path = public, extensions;
 select no_plan();
 
 select has_function(
-  'public', 'list_operator_pending_intakes_v1', array['uuid'],
+  'public', 'list_operator_pending_intakes_v1', array['uuid', 'text'],
   'pending-intake list RPC exists'
 );
 select ok(
-  has_function_privilege('service_role', 'public.list_operator_pending_intakes_v1(uuid)', 'execute')
-  and not has_function_privilege('authenticated', 'public.list_operator_pending_intakes_v1(uuid)', 'execute')
-  and not has_function_privilege('anon', 'public.list_operator_pending_intakes_v1(uuid)', 'execute'),
+  has_function_privilege('service_role', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
+  and not has_function_privilege('anon', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute'),
   'only service_role can enter the pending-intake transport'
 );
 select ok(
@@ -58,27 +58,27 @@ insert into public.quote_request_intakes (
   ('f7300000-0000-4000-8000-000000000005', 'f7200005-0000-4000-8000-000000000005', 'invited', repeat('5',64), '2020-01-01T00:00:00Z', 'ACTIVE', 0, null, null, null, false, '2019-12-25T00:00:00Z');
 
 select is(
-  jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001')->'items'),
+  jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'),
   3,
   'owner sees invited and in-progress intakes only'
 );
 select is(
-  jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000002')->'items'),
+  jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000002', 'ACTIVE')->'items'),
   3,
   'ACTIVE admin can read pending intakes'
 );
 select ok(
-  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001')->'items'
+  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'
     @> '[{"quote_request_id":"f7200001-0000-4000-8000-000000000001","intake_status":"invited"}]'::jsonb,
   'invited intake appears in pending list'
 );
 select ok(
-  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001')->'items'
+  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'
     @> '[{"quote_request_id":"f7200002-0000-4000-8000-000000000002","intake_status":"in_progress","effective_access":"INTERRUPTED"}]'::jsonb,
   'in-progress intake appears with authoritative effective access'
 );
 select ok(
-  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001')->'items'
+  public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'
     @> '[{"quote_request_id":"f7200005-0000-4000-8000-000000000005","effective_access":"EXPIRED"}]'::jsonb,
   'expired access is derived by the authoritative resolver'
 );
@@ -113,22 +113,22 @@ select is(
   'pending and dossier readmodels are mutually exclusive'
 );
 select throws_ok(
-  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000003')$$,
+  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000003', 'ACTIVE')$$,
   '42501', 'APPLICATION_SCOPE_DENIED', 'non-owner/admin operator is rejected'
 );
 select throws_ok(
-  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000004')$$,
+  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000004', 'ACTIVE')$$,
   '42501', 'OPERATOR_DISABLED', 'disabled admin is rejected'
 );
 select throws_ok(
-  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000005')$$,
+  $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000005', 'ACTIVE')$$,
   '42501', 'UNKNOWN_OPERATOR', 'unknown identity is rejected'
 );
 select ok(
   not exists (
     select 1
     from jsonb_array_elements(
-      public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001')->'items'
+      public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'
     ) as item,
     lateral jsonb_object_keys(item) as field(key)
     where field.key in (

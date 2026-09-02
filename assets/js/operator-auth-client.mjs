@@ -1,4 +1,4 @@
-import { OPERATOR_ROUTES, validatePublicConfig } from "./operator-auth-core.mjs";
+import { OPERATOR_ROUTES, validatePublicConfig } from "./operator-auth-core.mjs?v=20260902-login-stability";
 
 let clientPromise;
 

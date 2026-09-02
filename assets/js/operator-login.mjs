@@ -4,10 +4,11 @@ import {
   classifyAuthError,
   isUsableSession,
   OPERATOR_ROUTES,
-  requireOperatorSession,
+  requireAuthorizedOperator,
   safeAuthMessage,
-} from "./operator-auth-core.mjs";
-import { getOperatorClient } from "./operator-auth-client.mjs";
+  signOutOperator,
+} from "./operator-auth-core.mjs?v=20260902-login-stability";
+import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 
 export const LOCAL_RESEND_COOLDOWN_SECONDS = 60;
 
@@ -136,6 +137,13 @@ export function createOperatorLoginController({
         show(safeAuthMessage("SESSION_ESTABLISHMENT_FAILED"), "error");
         return false;
       }
+      const access = await requireAuthorizedOperator(client);
+      if (access.status !== "authorized") {
+        await signOutOperator(client);
+        showEmailStep();
+        show(safeAuthMessage("ACCOUNT_NOT_ALLOWED"), "error");
+        return false;
+      }
       elements.codeInput.value = "";
       retainedEmail = "";
       if (cooldownTimer !== null) clearTimer(cooldownTimer);
@@ -179,46 +187,76 @@ export function createOperatorLoginController({
   };
 }
 
-async function boot() {
-  const elements = {
-    emailForm: document.querySelector("[data-operator-email-step]"),
-    codeForm: document.querySelector("[data-operator-code-step]"),
-    emailInput: document.querySelector("#operatorEmail"),
-    codeInput: document.querySelector("#operatorCode"),
-    emailSubmit: document.querySelector("[data-send-code]"),
-    verifySubmit: document.querySelector("[data-verify-code]"),
-    resendButton: document.querySelector("[data-resend-code]"),
-    resendStatus: document.querySelector("[data-resend-status]"),
-    differentEmailButton: document.querySelector("[data-different-email]"),
-    message: document.querySelector("#operatorLoginMessage"),
+function loginElements(documentObject) {
+  return {
+    emailForm: documentObject.querySelector("[data-operator-email-step]"),
+    codeForm: documentObject.querySelector("[data-operator-code-step]"),
+    emailInput: documentObject.querySelector("#operatorEmail"),
+    codeInput: documentObject.querySelector("#operatorCode"),
+    emailSubmit: documentObject.querySelector("[data-send-code]"),
+    verifySubmit: documentObject.querySelector("[data-verify-code]"),
+    resendButton: documentObject.querySelector("[data-resend-code]"),
+    resendStatus: documentObject.querySelector("[data-resend-status]"),
+    differentEmailButton: documentObject.querySelector("[data-different-email]"),
+    message: documentObject.querySelector("#operatorLoginMessage"),
   };
-
-  try {
-    const { client } = await getOperatorClient();
-    if (await requireOperatorSession(client)) {
-      window.location.replace(OPERATOR_ROUTES.home);
-      return;
-    }
-    const controller = createOperatorLoginController({
-      client,
-      elements,
-      navigate: (path) => window.location.replace(path),
-    });
-    elements.emailForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void controller.requestCode();
-    });
-    elements.codeForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void controller.verifyCode();
-    });
-    elements.resendButton.addEventListener("click", () => void controller.resendCode());
-    elements.differentEmailButton.addEventListener("click", controller.useDifferentEmail);
-  } catch (error) {
-    elements.message.textContent = safeAuthMessage(error.message);
-    elements.message.dataset.state = "error";
-    elements.emailSubmit.disabled = true;
-  }
 }
 
-if (typeof document !== "undefined") void boot();
+function mountOperatorLoginController(client, elements) {
+  const controller = createOperatorLoginController({
+    client,
+    elements,
+    navigate: (path) => window.location.replace(path),
+  });
+  elements.emailForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void controller.requestCode();
+  });
+  elements.codeForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void controller.verifyCode();
+  });
+  elements.resendButton.addEventListener("click", () => void controller.resendCode());
+  elements.differentEmailButton.addEventListener("click", controller.useDifferentEmail);
+  return controller;
+}
+
+export function createOperatorLoginBootstrap({
+  getClient = getOperatorClient,
+  requireAccess = requireAuthorizedOperator,
+  mountController,
+  navigate = (path) => window.location.replace(path),
+  showError,
+} = {}) {
+  let bootstrapPromise = null;
+  return function bootstrap() {
+    if (bootstrapPromise) return bootstrapPromise;
+    bootstrapPromise = (async () => {
+      const { client } = await getClient();
+      const access = await requireAccess(client);
+      if (access.status === "authorized") {
+        navigate(OPERATOR_ROUTES.home);
+        return null;
+      }
+      return mountController(client, access);
+    })().catch((error) => {
+      showError(error);
+      return null;
+    });
+    return bootstrapPromise;
+  };
+}
+
+function boot() {
+  const elements = loginElements(document);
+  return createOperatorLoginBootstrap({
+    mountController: (client) => mountOperatorLoginController(client, elements),
+    showError: (error) => {
+      elements.message.textContent = safeAuthMessage(error.message);
+      elements.message.dataset.state = "error";
+      elements.emailSubmit.disabled = true;
+    },
+  });
+}
+
+if (typeof document !== "undefined") void boot()();

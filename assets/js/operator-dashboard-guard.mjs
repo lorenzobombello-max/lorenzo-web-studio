@@ -1,6 +1,7 @@
-import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs";
-import { getOperatorClient } from "./operator-auth-client.mjs";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260901-pending-sdf-purge";
+import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
+import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260902-phase2h1";
+import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260902-login-stability";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -10,10 +11,19 @@ const activeLogout = document.querySelector("#operatorDashboardLogoutActive");
 const dashboard = document.querySelector("#operatorDashboard");
 let moduleNavigation = null;
 let financeNavigation = null;
+let workspaceMaster = null;
+
+function disposeDossiers() {
+  const workspace = document.querySelector("[data-dossiers-workspace]");
+  workspace?.operatorDossiersController?.dispose();
+  if (workspace) workspace.operatorDossiersController = null;
+}
 
 function redirectToLogin() {
+  disposeDossiers();
   moduleNavigation?.invalidateIdentity();
   financeNavigation?.invalidateIdentity();
+  workspaceMaster?.lockWorkspace("AUTH_SIGNED_OUT");
   window.location.replace(OPERATOR_ROUTES.login);
 }
 
@@ -45,6 +55,7 @@ try {
 
   async function logoutOperator(event) {
     event.currentTarget.disabled = true;
+    await workspaceMaster?.shutdownWorkspace();
     await signOutOperator(client);
     redirectToLogin();
   }
@@ -76,6 +87,20 @@ try {
       },
       onAuthorizationFailure: redirectToLogin,
     });
+    if (identity.role === "owner") {
+      workspaceMaster = await createOperatorWorkspaceMaster({
+        client,
+        onInvalidate: (moduleKey)=>{
+          if (moduleKey === "messages") document.getElementById("messagesWorkspace")?.operatorMessagesController?.refresh();
+        },
+      });
+      if (workspaceMaster.active) {
+        for (const button of document.querySelectorAll("[data-operator-window-module]")) {
+          workspaceMaster.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
+        }
+        document.getElementById("messagesWorkspace")?.operatorMessagesController?.setInvalidationPublisher((moduleKey)=>workspaceMaster.invalidate(moduleKey));
+      }
+    }
     gate.hidden = true;
     dashboard.hidden = false;
     const moduleLinks = Array.from(document.querySelectorAll("[data-operator-module]"));
@@ -101,6 +126,7 @@ try {
       activateModule,
       pushUrl: (url)=>window.history.pushState(null, "", url),
       loadModule: async (_module, context)=>{
+        disposeDossiers();
         await startOperatorDashboard({
           client,
           functionsBaseUrl,
@@ -115,6 +141,7 @@ try {
             ]));
           },
         });
+        document.getElementById("messagesWorkspace")?.operatorMessagesController?.setInvalidationPublisher((moduleKey)=>workspaceMaster?.invalidate(moduleKey));
         return true;
       },
     });
@@ -137,6 +164,8 @@ try {
     window.addEventListener("popstate", ()=>void navigateModule(window.location.href, { push: false }));
   }
   window.addEventListener("pagehide", stopWatching, { once: true });
+  window.addEventListener("pagehide", disposeDossiers, { once: true });
+  window.addEventListener("pagehide", ()=>workspaceMaster?.dispose(), { once: true });
 } catch {
   redirectToLogin();
 }

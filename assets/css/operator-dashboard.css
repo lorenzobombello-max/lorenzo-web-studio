@@ -55,6 +55,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .module-shell--calendar .module-shell__title::after { background:linear-gradient(90deg,#147c76,#b6fff5 58%,transparent); }
 .module-shell--calendar { width:100%; max-width:none; padding-top:1.5rem; }
 .calendar-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.calendar-heading__actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.65rem; }
+.calendar-heading__actions .secondary-action { margin:0; }
 .calendar-heading p:last-child { margin:.75rem 0 0; color:var(--muted); }
 .calendar-toolbar { margin:1.75rem 0 1rem; padding:1rem; display:grid; grid-template-columns:auto minmax(12rem,1fr) auto; align-items:center; gap:1rem; border:1px solid var(--line); border-radius:var(--radius); background:rgba(255,255,255,.9); box-shadow:0 10px 28px rgba(27,42,74,.06); }
 .calendar-toolbar h2 { margin:0; color:var(--navy); font-size:1.15rem; text-align:center; text-transform:capitalize; }
@@ -91,6 +93,24 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .calendar-availability dd { margin:.15rem 0 0; color:var(--navy); font-weight:800; }
 @media (max-width:900px) { .calendar-toolbar { grid-template-columns:1fr auto; } .calendar-toolbar h2 { grid-column:1/-1; grid-row:1; } .calendar-period-actions { grid-column:1; grid-row:2; } .calendar-view-switcher { grid-column:2; grid-row:2; } }
 @media (max-width:540px) { .calendar-heading { flex-direction:column; } .calendar-toolbar { padding:.75rem; grid-template-columns:1fr; } .calendar-toolbar h2,.calendar-period-actions,.calendar-view-switcher { grid-column:1; } .calendar-toolbar h2 { grid-row:1; font-size:1rem; } .calendar-period-actions { grid-row:2; justify-content:center; } .calendar-view-switcher { grid-row:3; justify-content:stretch; overflow-x:auto; } .calendar-view-switcher button { flex:1 0 auto; } .calendar-legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .calendar-availability { grid-template-columns:1fr; } .calendar-viewport { max-width:100%; } }
+.workforce-workspace { width:100%; max-width:none; padding-top:1.5rem; }
+.workforce-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; }
+.workforce-heading p:last-child { margin:.75rem 0 0; color:var(--muted); }
+.workforce-heading__actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.55rem; }
+.workforce-heading__actions .secondary-action { margin:0; }
+.workforce-employee-list { margin:1.25rem 0 0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; list-style:none; }
+.workforce-employee-item { min-width:0; padding:1.15rem; border:1px solid var(--line); border-top:3px solid #147c76; border-radius:var(--radius); background:var(--white); box-shadow:0 12px 30px rgba(17,29,54,.06); }
+.workforce-employee-item__heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.workforce-employee-item h2 { margin:0; color:var(--navy); font-size:1.08rem; overflow-wrap:anywhere; }
+.workforce-employee-item dl { margin:1rem 0 0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+.workforce-employee-item dt { color:var(--muted); font-size:.7rem; font-weight:850; text-transform:uppercase; }
+.workforce-employee-item dd { margin:.2rem 0 0; color:var(--navy); font-weight:750; overflow-wrap:anywhere; }
+[data-employment-status="ACTIVE"] { color:var(--green); background:#e8f6ef; }
+[data-employment-status="INACTIVE"] { color:var(--muted); background:var(--navy-soft); }
+.workforce-empty { margin-top:1rem; }
+.workforce-empty p { margin:.25rem 0 0; }
+@media (max-width:800px) { .workforce-heading { flex-direction:column; } .workforce-heading__actions { justify-content:flex-start; } .workforce-employee-list { grid-template-columns:1fr; } }
+@media (max-width:540px) { .workforce-heading__actions { width:100%; } .workforce-heading__actions .secondary-action { flex:1 1 auto; } .workforce-employee-item dl { grid-template-columns:1fr; } }
 .recruitment-workspace { width:100%; max-width:none; padding-top:1.5rem; }
 .recruitment-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; }
 .recruitment-heading p:last-child { margin:.75rem 0 0; color:var(--muted); }

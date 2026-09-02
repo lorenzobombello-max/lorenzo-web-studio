@@ -103,6 +103,17 @@ insert into public.document_inbox_customer_request_upload_sources(
 
 select set_config('request.jwt.claim.sub','dc100000-0000-4000-8000-000000000001',true);
 
+select public.confirm_sdf_scope_classification_v1(
+  'dc200000-0000-4000-8000-000000000001',
+  (select submission_id from public.sdf_qualification_intake_submissions where intake_id='dc300000-0000-4000-8000-000000000001'),
+  'standard',false,'start','dc900000-0000-4000-8000-000000000001'
+);
+select public.confirm_sdf_scope_classification_v1(
+  'dd200000-0000-4000-8000-000000000001',
+  (select submission_id from public.sdf_qualification_intake_submissions where intake_id='dd300000-0000-4000-8000-000000000001'),
+  'standard',false,'start','dd900000-0000-4000-8000-000000000001'
+);
+
 create temporary table zero_state as
 select lws_internal.evaluate_sdf_document_completeness_v1('dd200000-0000-4000-8000-000000000001') result;
 select is((select result->>'required_count' from zero_state),'0','zero requirements reports zero required items');

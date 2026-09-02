@@ -8,6 +8,12 @@ import {
   printSdfQualificationReview,
   renderSdfQualificationReview,
 } from "./sdf-qualification-review.mjs?v=20260831-operator-parity";
+import { initializeOperatorMessages } from "./operator-messages.mjs?v=20260902-phase1";
+import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260902-phase2e";
+import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260902-phase2f";
+import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260902-login-stability";
+import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260902-phase2h1";
+import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260902-phase2i";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
@@ -26,633 +32,10 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
 });
 const OPERATOR_MODULES = new Set(["dossiers", "intake", "finance", "workforce", "recruitment", "messages", "calendar"]);
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
-const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
-const CALENDAR_STATUSES = Object.freeze({
-  full_day: { label: "Volledige werkdag", icon: "A" },
-  half_day_am: { label: "Halve dag voormiddag", icon: "1/2" },
-  half_day_pm: { label: "Halve dag namiddag", icon: "1/2" },
-  leave: { label: "Verlof", icon: "V" },
-  sick: { label: "Ziek", icon: "Z" },
-  other_absence: { label: "Andere afwezigheid", icon: "A" },
-  no_data: { label: "Geen planning / geen data", icon: "-" },
-});
-const WORKFORCE_CALENDAR_STATUS_MAP = Object.freeze({
-  WORKED_FULL_DAY: "full_day",
-  WORKED_HALF_DAY_AM: "half_day_am",
-  WORKED_HALF_DAY_PM: "half_day_pm",
-  LEAVE: "leave",
-  SICK: "sick",
-  OTHER_ABSENCE: "other_absence",
-});
-
-function calendarDate(value) {
-  const date = value instanceof Date ? new Date(value) : new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(date.getTime())) throw new TypeError("INVALID_CALENDAR_DATE");
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12));
-}
-
-function calendarDateKey(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addCalendarDays(date, days) {
-  const result = calendarDate(date);
-  result.setUTCDate(result.getUTCDate() + days);
-  return result;
-}
-
-function calendarPeriodDates(view, anchor) {
-  if (view === "day") return [anchor];
-  if (view === "week") {
-    const mondayOffset = (anchor.getUTCDay() + 6) % 7;
-    return Array.from({ length: 7 }, (_, index)=>addCalendarDays(anchor, index - mondayOffset));
-  }
-  if (view === "month") {
-    const count = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0)).getUTCDate();
-    return Array.from({ length: count }, (_, index)=>new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), index + 1, 12)));
-  }
-  return Array.from({ length: 12 }, (_, month)=>new Date(Date.UTC(anchor.getUTCFullYear(), month, 1, 12)));
-}
-
-function calendarPeriodLabel(view, dates, anchor) {
-  const day = new Intl.DateTimeFormat("nl-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-  const short = new Intl.DateTimeFormat("nl-BE", { day: "numeric", month: "short", timeZone: "UTC" });
-  const month = new Intl.DateTimeFormat("nl-BE", { month: "long", year: "numeric", timeZone: "UTC" });
-  if (view === "day") return day.format(anchor);
-  if (view === "week") return `${short.format(dates[0])} - ${short.format(dates.at(-1))} ${dates.at(-1).getUTCFullYear()}`;
-  if (view === "month") return month.format(anchor);
-  return String(anchor.getUTCFullYear());
-}
-
-export function calendarStatusPresentation(status) {
-  const key = Object.hasOwn(CALENDAR_STATUSES, status) ? status : "no_data";
-  return { key, ...CALENDAR_STATUSES[key] };
-}
 
 function exactObjectKeys(value, keys) {
   return value && typeof value === "object" && !Array.isArray(value)
     && Object.keys(value).length === keys.length && keys.every((key)=>Object.hasOwn(value, key));
-}
-
-function validCalendarDateKey(value) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T12:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && calendarDateKey(parsed) === value;
-}
-
-export function workforceCalendarResponse(value, expectedRange) {
-  if (!exactObjectKeys(value, ["start_date", "end_date", "employees"])
-    || value.start_date !== expectedRange.start_date || value.end_date !== expectedRange.end_date
-    || !Array.isArray(value.employees)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
-  for (const employee of value.employees) {
-    if (!exactObjectKeys(employee, ["employee_id", "display_name", "role_title", "team_name", "employment_status", "entries"])
-      || !UUID.test(employee.employee_id) || typeof employee.display_name !== "string" || !employee.display_name
-      || (employee.role_title !== null && typeof employee.role_title !== "string")
-      || (employee.team_name !== null && typeof employee.team_name !== "string")
-      || !["ACTIVE", "INACTIVE"].includes(employee.employment_status) || !Array.isArray(employee.entries)) {
-      throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
-    }
-    for (const entry of employee.entries) {
-      if (!exactObjectKeys(entry, ["date", "status"])
-        || !validCalendarDateKey(entry.date) || entry.date < expectedRange.start_date || entry.date > expectedRange.end_date
-        || !Object.hasOwn(WORKFORCE_CALENDAR_STATUS_MAP, entry.status)) throw new Error("INVALID_WORKFORCE_CALENDAR_RESPONSE");
-    }
-  }
-  return value;
-}
-
-export function workforceCalendarRequest(state) {
-  return { action: "list_workforce_calendar", ...state.range };
-}
-
-export function createWorkforceCalendarModel({ today = ()=>new Date(), employees = [], initialView = "week" } = {}) {
-  let view = CALENDAR_VIEWS.has(initialView) ? initialView : "week";
-  let anchor = calendarDate(today());
-  let workforceEmployees = employees;
-
-  function snapshot() {
-    const dates = calendarPeriodDates(view, anchor);
-    const range = view === "year"
-      ? { start_date: `${anchor.getUTCFullYear()}-01-01`, end_date: `${anchor.getUTCFullYear()}-12-31` }
-      : { start_date: calendarDateKey(dates[0]), end_date: calendarDateKey(dates.at(-1)) };
-    return {
-      view,
-      anchor: calendarDateKey(anchor),
-      label: calendarPeriodLabel(view, dates, anchor),
-      dates: dates.map(calendarDateKey),
-      range,
-      employees: workforceEmployees.map((employee)=>{
-        const entries = new Map(employee.entries.map((entry)=>[
-          entry.date,
-          calendarStatusPresentation(WORKFORCE_CALENDAR_STATUS_MAP[entry.status]),
-        ]));
-        return {
-          id: employee.employee_id,
-          name: employee.display_name,
-          role: employee.role_title || "",
-          team: employee.team_name || "",
-          employmentStatus: employee.employment_status,
-          statuses: dates.map((date)=>entries.get(calendarDateKey(date)) || calendarStatusPresentation("no_data")),
-        };
-      }),
-    };
-  }
-
-  return {
-    snapshot,
-    setView(nextView) {
-      if (CALENDAR_VIEWS.has(nextView)) view = nextView;
-      return snapshot();
-    },
-    navigate(direction) {
-      const amount = Number(direction) < 0 ? -1 : 1;
-      if (view === "day") anchor = addCalendarDays(anchor, amount);
-      else if (view === "week") anchor = addCalendarDays(anchor, amount * 7);
-      else if (view === "month") anchor = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + amount, 1, 12));
-      else anchor = new Date(Date.UTC(anchor.getUTCFullYear() + amount, anchor.getUTCMonth(), 1, 12));
-      return snapshot();
-    },
-    goToday() {
-      anchor = calendarDate(today());
-      return snapshot();
-    },
-    replaceEmployees(nextEmployees) {
-      workforceEmployees = nextEmployees;
-      return snapshot();
-    },
-  };
-}
-
-export function createWorkforceCalendarController({ model, load, onChange = ()=>{} }) {
-  let loading = false;
-  let error = null;
-  let generation = 0;
-  let pendingKey = null;
-  let pendingPromise = null;
-  const state = ()=>({ ...model.snapshot(), loading, error });
-  const notify = ()=>onChange(state());
-
-  async function reload() {
-    const request = workforceCalendarRequest(model.snapshot());
-    const key = `${request.start_date}:${request.end_date}`;
-    if (pendingKey === key && pendingPromise) return await pendingPromise;
-    const requestGeneration = ++generation;
-    loading = true;
-    error = null;
-    notify();
-    const task = (async ()=>{
-      try {
-        const result = workforceCalendarResponse(await load(request), request);
-        if (requestGeneration !== generation) return false;
-        model.replaceEmployees(result.employees);
-        loading = false;
-        notify();
-        return true;
-      } catch {
-        if (requestGeneration !== generation) return false;
-        loading = false;
-        error = "Kalendergegevens konden niet worden geladen.";
-        notify();
-        return false;
-      } finally {
-        if (requestGeneration === generation) {
-          pendingKey = null;
-          pendingPromise = null;
-        }
-      }
-    })();
-    pendingKey = key;
-    pendingPromise = task;
-    return await task;
-  }
-
-  return {
-    get state() { return state(); },
-    reload,
-    setView(view) { model.setView(view); return reload(); },
-    navigate(direction) { model.navigate(direction); return reload(); },
-    goToday() { model.goToday(); return reload(); },
-  };
-}
-
-export function initializeWorkforceCalendar(root, load) {
-  const viewport = root.getElementById("calendarViewport");
-  if (!viewport || viewport.dataset.initialized === "true") return;
-  if (typeof load !== "function") throw new TypeError("WORKFORCE_CALENDAR_LOADER_REQUIRED");
-  viewport.dataset.initialized = "true";
-  const model = createWorkforceCalendarModel();
-  const periodLabel = root.getElementById("calendarPeriodLabel");
-  const employeeCount = root.getElementById("calendarEmployeeCount");
-  const empty = root.getElementById("calendarEmpty");
-  const viewButtons = Array.from(root.querySelectorAll("[data-calendar-view]"));
-  const emptyContent = Array.from(empty.childNodes);
-  let controller;
-
-  function render(state = controller.state) {
-    periodLabel.textContent = state.label;
-    employeeCount.textContent = `${state.employees.length} ${state.employees.length === 1 ? "werknemer" : "werknemers"}`;
-    empty.hidden = state.employees.length > 0 && !state.error;
-    if (state.error || state.loading) empty.textContent = state.error || "Kalendergegevens laden...";
-    else empty.replaceChildren(...emptyContent);
-    viewport.setAttribute("aria-busy", String(state.loading));
-    for (const button of viewButtons) button.setAttribute("aria-pressed", String(button.dataset.calendarView === state.view));
-    viewport.replaceChildren();
-    const table = root.createElement("table");
-    const head = root.createElement("thead");
-    const headerRow = root.createElement("tr");
-    const employeeHeader = root.createElement("th");
-    employeeHeader.scope = "col";
-    employeeHeader.textContent = "Werknemer";
-    headerRow.append(employeeHeader);
-    for (const date of state.dates) {
-      const header = root.createElement("th");
-      header.scope = "col";
-      header.textContent = state.view === "year" ? new Intl.DateTimeFormat("nl-BE", { month: "short", timeZone: "UTC" }).format(calendarDate(date)) : new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(calendarDate(date));
-      headerRow.append(header);
-    }
-    head.append(headerRow);
-    table.append(head);
-    const body = root.createElement("tbody");
-    for (const employee of state.employees) {
-      const row = root.createElement("tr");
-      const identity = root.createElement("th");
-      identity.scope = "row";
-      const name = root.createElement("strong");
-      const detail = root.createElement("span");
-      name.textContent = employee.name;
-      detail.textContent = [employee.role, employee.team].filter(Boolean).join(" / ");
-      identity.append(name, detail);
-      row.append(identity);
-      for (const status of employee.statuses) {
-        const cell = root.createElement("td");
-        const marker = root.createElement("span");
-        marker.className = "calendar-status";
-        marker.dataset.calendarStatus = status.key;
-        marker.title = status.label;
-        marker.setAttribute("aria-label", status.label);
-        marker.textContent = status.icon;
-        cell.append(marker);
-        row.append(cell);
-      }
-      body.append(row);
-    }
-    table.append(body);
-    viewport.append(table);
-  }
-
-  controller = createWorkforceCalendarController({ model, load, onChange: render });
-  for (const button of viewButtons) button.addEventListener("click", ()=>{ void controller.setView(button.dataset.calendarView); });
-  root.getElementById("calendarPrevious").addEventListener("click", ()=>{ void controller.navigate(-1); });
-  root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); });
-  root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); });
-  render();
-  void controller.reload();
-  return controller;
-}
-
-const RECRUITMENT_VACANCY_FIELDS = ["title", "department", "location", "employment_type", "summary", "description", "requirements"];
-const RECRUITMENT_VACANCY_KEYS = [
-  "id", ...RECRUITMENT_VACANCY_FIELDS, "slug", "status", "published_at", "closed_at", "created_at", "updated_at",
-];
-
-function validRecruitmentTimestamp(value, nullable = false) {
-  return (nullable && value === null) || (typeof value === "string" && Number.isFinite(Date.parse(value)));
-}
-
-export function recruitmentVacanciesResponse(value) {
-  if (!Array.isArray(value)) throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
-  for (const vacancy of value) {
-    if (!exactObjectKeys(vacancy, RECRUITMENT_VACANCY_KEYS)
-      || !UUID.test(vacancy.id) || !["DRAFT", "PUBLISHED", "CLOSED"].includes(vacancy.status)
-      || !RECRUITMENT_VACANCY_FIELDS.every((field)=>typeof vacancy[field] === "string" && vacancy[field].length > 0)
-      || typeof vacancy.slug !== "string" || !vacancy.slug
-      || !validRecruitmentTimestamp(vacancy.created_at) || !validRecruitmentTimestamp(vacancy.updated_at)
-      || !validRecruitmentTimestamp(vacancy.published_at, true) || !validRecruitmentTimestamp(vacancy.closed_at, true)) {
-      throw new Error("INVALID_RECRUITMENT_VACANCY_RESPONSE");
-    }
-  }
-  return value;
-}
-
-function recruitmentVacancyContent(input) {
-  const content = {};
-  for (const field of RECRUITMENT_VACANCY_FIELDS) {
-    const value = typeof input[field] === "string" ? input[field].trim() : "";
-    if (!value) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
-    content[field] = value;
-  }
-  return content;
-}
-
-export function recruitmentVacancyCreateRequest(input) {
-  const slug = typeof input.slug === "string" ? input.slug.trim() : "";
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
-  return { action: "create_recruitment_vacancy", slug, ...recruitmentVacancyContent(input) };
-}
-
-export function recruitmentVacancyUpdateRequest(vacancyId, input) {
-  if (!UUID.test(vacancyId)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
-  return { action: "update_recruitment_vacancy", vacancy_id: vacancyId, ...recruitmentVacancyContent(input) };
-}
-
-export function recruitmentVacancyStatusRequest(vacancyId, status) {
-  if (!UUID.test(vacancyId) || !["PUBLISHED", "CLOSED"].includes(status)) throw new TypeError("INVALID_RECRUITMENT_VACANCY_INPUT");
-  return { action: "set_recruitment_vacancy_status", vacancy_id: vacancyId, status };
-}
-
-export function recruitmentPublicationResponse(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).length !== 1 || typeof value.enabled !== "boolean") {
-    throw new TypeError("INVALID_RECRUITMENT_PUBLICATION_RESPONSE");
-  }
-  return { enabled: value.enabled };
-}
-
-export function recruitmentPublicationRequest(enabled) {
-  if (typeof enabled !== "boolean") throw new TypeError("INVALID_RECRUITMENT_PUBLICATION_INPUT");
-  return { action: "set_recruitment_publication_enabled", enabled };
-}
-
-export function createRecruitmentPublicationController({ load, execute, onChange = ()=>{} }) {
-  let enabled = null;
-  let loading = false;
-  let mutating = false;
-  let error = null;
-  let generation = 0;
-  const state = ()=>({ enabled, loading, mutating, error });
-  const notify = ()=>onChange(state());
-
-  async function refresh() {
-    const requestGeneration = ++generation;
-    loading = true;
-    error = null;
-    notify();
-    try {
-      const result = recruitmentPublicationResponse(await load({ action: "get_recruitment_publication_state" }));
-      if (requestGeneration !== generation) return false;
-      enabled = result.enabled;
-      loading = false;
-      notify();
-      return true;
-    } catch {
-      if (requestGeneration !== generation) return false;
-      enabled = null;
-      loading = false;
-      error = "Publicatiestatus kon niet worden geladen.";
-      notify();
-      return false;
-    }
-  }
-
-  async function setEnabled(nextEnabled) {
-    if (mutating) return false;
-    const requestGeneration = ++generation;
-    mutating = true;
-    error = null;
-    notify();
-    try {
-      const result = recruitmentPublicationResponse(await execute(recruitmentPublicationRequest(nextEnabled)));
-      if (requestGeneration !== generation) return false;
-      enabled = result.enabled;
-      mutating = false;
-      notify();
-      return result.enabled === nextEnabled;
-    } catch {
-      if (requestGeneration !== generation) return false;
-      mutating = false;
-      error = "De publicatiestatus kon niet worden gewijzigd.";
-      notify();
-      return false;
-    }
-  }
-
-  return { get state() { return state(); }, refresh, setEnabled };
-}
-
-export function createRecruitmentVacancyController({ load, execute, onChange = ()=>{} }) {
-  let items = [];
-  let loading = false;
-  let mutating = false;
-  let error = null;
-  let generation = 0;
-  const state = ()=>({ items: [...items], loading, mutating, error });
-  const notify = ()=>onChange(state());
-
-  async function refresh() {
-    const requestGeneration = ++generation;
-    loading = true;
-    error = null;
-    notify();
-    try {
-      const result = recruitmentVacanciesResponse(await load({ action: "list_recruitment_vacancies" }));
-      if (requestGeneration !== generation) return false;
-      items = result;
-      loading = false;
-      notify();
-      return true;
-    } catch {
-      if (requestGeneration !== generation) return false;
-      loading = false;
-      error = "Vacatures konden niet worden geladen.";
-      notify();
-      return false;
-    }
-  }
-
-  async function mutate(request) {
-    if (mutating) return false;
-    const requestGeneration = ++generation;
-    mutating = true;
-    error = null;
-    notify();
-    try {
-      await execute(request);
-      if (requestGeneration !== generation) return false;
-      mutating = false;
-      notify();
-      return await refresh();
-    } catch {
-      if (requestGeneration !== generation) return false;
-      mutating = false;
-      error = "De vacaturewijziging kon niet worden opgeslagen.";
-      notify();
-      return false;
-    }
-  }
-
-  return {
-    get state() { return state(); },
-    refresh,
-    create: (input)=>mutate(recruitmentVacancyCreateRequest(input)),
-    update: (vacancyId, input)=>mutate(recruitmentVacancyUpdateRequest(vacancyId, input)),
-    setStatus: (vacancyId, status)=>mutate(recruitmentVacancyStatusRequest(vacancyId, status)),
-  };
-}
-
-export function initializeRecruitmentVacancies(root, invoke) {
-  const list = root.getElementById("recruitmentVacancyList");
-  if (!list || list.dataset.initialized === "true") return;
-  if (typeof invoke !== "function") throw new TypeError("RECRUITMENT_VACANCY_LOADER_REQUIRED");
-  list.dataset.initialized = "true";
-  const count = root.getElementById("recruitmentVacancyCount");
-  const message = root.getElementById("recruitmentVacancyMessage");
-  const empty = root.getElementById("recruitmentVacancyEmpty");
-  const workDialog = root.getElementById("recruitmentVacancyDialog");
-  const form = root.getElementById("recruitmentVacancyForm");
-  const formMessage = root.getElementById("recruitmentVacancyFormMessage");
-  const statusDialog = root.getElementById("recruitmentVacancyStatusDialog");
-  const statusForm = root.getElementById("recruitmentVacancyStatusForm");
-  const publicationBadge = root.getElementById("recruitmentPublicationStatus");
-  const publicationAction = root.getElementById("recruitmentPublicationAction");
-  const publicationMessage = root.getElementById("recruitmentPublicationMessage");
-  const publicationDialog = root.getElementById("recruitmentPublicationDialog");
-  const publicationForm = root.getElementById("recruitmentPublicationForm");
-  const statusButtons = Array.from(root.querySelectorAll("[data-recruitment-status]"));
-  let filter = "ALL";
-  let editingId = null;
-  let pendingStatus = null;
-  let lastTrigger = null;
-  let controller;
-  let publicationController;
-  const labels = { DRAFT: "Concept", PUBLISHED: "Gepubliceerd", CLOSED: "Gesloten" };
-
-  function formContent() {
-    return Object.fromEntries([...RECRUITMENT_VACANCY_FIELDS, "slug"].map((field)=>[field, form.elements.namedItem(field).value]));
-  }
-
-  function openWorkDialog(vacancy = null, trigger = null) {
-    editingId = vacancy?.id || null;
-    lastTrigger = trigger;
-    form.reset();
-    for (const field of RECRUITMENT_VACANCY_FIELDS) form.elements.namedItem(field).value = vacancy?.[field] || "";
-    const slug = form.elements.namedItem("slug");
-    slug.value = vacancy?.slug || "";
-    slug.readOnly = Boolean(vacancy);
-    root.getElementById("recruitmentVacancyDialogTitle").textContent = vacancy ? "Vacature bewerken" : "Nieuwe vacature";
-    root.getElementById("recruitmentVacancySave").textContent = vacancy ? "Wijzigingen opslaan" : "Concept aanmaken";
-    formMessage.textContent = "";
-    workDialog.showModal();
-    form.elements.namedItem("title").focus();
-  }
-
-  function render(state = controller.state) {
-    const visible = filter === "ALL" ? state.items : state.items.filter((vacancy)=>vacancy.status === filter);
-    count.textContent = `${state.items.length} ${state.items.length === 1 ? "vacature" : "vacatures"}`;
-    message.textContent = state.error || (state.loading ? "Vacatures laden..." : state.mutating ? "Wijziging opslaan..." : "");
-    list.setAttribute("aria-busy", String(state.loading || state.mutating));
-    list.replaceChildren();
-    for (const vacancy of visible) {
-      const item = root.createElement("li");
-      const heading = root.createElement("div");
-      const title = root.createElement("h2");
-      const badge = root.createElement("span");
-      const metadata = root.createElement("p");
-      const summary = root.createElement("p");
-      const updated = root.createElement("p");
-      const actions = root.createElement("div");
-      item.className = "recruitment-vacancy-item";
-      heading.className = "recruitment-vacancy-item__heading";
-      title.textContent = vacancy.title;
-      badge.className = "badge";
-      badge.dataset.vacancyStatus = vacancy.status;
-      badge.textContent = labels[vacancy.status];
-      metadata.className = "recruitment-vacancy-item__metadata";
-      metadata.textContent = `${vacancy.department} · ${vacancy.location} · ${vacancy.employment_type}`;
-      summary.textContent = vacancy.summary;
-      updated.className = "recruitment-vacancy-item__updated";
-      updated.textContent = `Bijgewerkt ${formatDate(vacancy.updated_at)}`;
-      actions.className = "recruitment-vacancy-item__actions";
-      const edit = root.createElement("button");
-      edit.type = "button";
-      edit.className = "secondary-action";
-      edit.textContent = "Bewerken";
-      edit.disabled = state.mutating;
-      edit.addEventListener("click", ()=>openWorkDialog(vacancy, edit));
-      actions.append(edit);
-      const nextStatus = vacancy.status === "DRAFT" ? "PUBLISHED" : vacancy.status === "PUBLISHED" ? "CLOSED" : null;
-      if (nextStatus) {
-        const lifecycle = root.createElement("button");
-        lifecycle.type = "button";
-        lifecycle.className = nextStatus === "CLOSED" ? "danger-action" : "primary-action primary-action--compact";
-        lifecycle.textContent = nextStatus === "PUBLISHED" ? "Publiceren" : "Sluiten";
-        lifecycle.disabled = state.mutating;
-        lifecycle.addEventListener("click", ()=>{
-          pendingStatus = { vacancy, status: nextStatus };
-          lastTrigger = lifecycle;
-          root.getElementById("recruitmentVacancyStatusTitle").textContent = nextStatus === "PUBLISHED" ? "Vacature publiceren" : "Vacature sluiten";
-          root.getElementById("recruitmentVacancyStatusDescription").textContent = nextStatus === "PUBLISHED" ? `Publiceer “${vacancy.title}”.` : `Sluit “${vacancy.title}”.`;
-          root.getElementById("recruitmentVacancyStatusConfirm").textContent = nextStatus === "PUBLISHED" ? "Publiceren" : "Sluiten";
-          statusDialog.showModal();
-        });
-        actions.append(lifecycle);
-      }
-      heading.append(title, badge);
-      item.append(heading, metadata, summary, updated, actions);
-      list.append(item);
-    }
-    empty.hidden = state.loading || visible.length > 0;
-  }
-
-  function renderPublication(state = publicationController.state) {
-    const known = typeof state.enabled === "boolean";
-    publicationBadge.textContent = known ? (state.enabled ? "ACTIEF" : "NIET ACTIEF") : "NIET BESCHIKBAAR";
-    publicationBadge.dataset.publicationEnabled = known ? String(state.enabled) : "unknown";
-    publicationAction.textContent = state.enabled ? "Rekrutering offline zetten" : "Rekrutering publiceren";
-    publicationAction.disabled = !known || state.loading || state.mutating;
-    publicationAction.setAttribute("aria-busy", String(state.mutating));
-    publicationMessage.textContent = state.error || (state.loading ? "Publicatiestatus laden..." : state.mutating ? "Publicatiestatus wijzigen..." : "");
-  }
-
-  controller = createRecruitmentVacancyController({ load: invoke, execute: invoke, onChange: render });
-  publicationController = createRecruitmentPublicationController({ load: invoke, execute: invoke, onChange: renderPublication });
-  publicationAction.addEventListener("click", ()=>{
-    const activating = publicationController.state.enabled === false;
-    lastTrigger = publicationAction;
-    root.getElementById("recruitmentPublicationDialogTitle").textContent = activating ? "Rekrutering publiceren?" : "Rekrutering offline zetten?";
-    root.getElementById("recruitmentPublicationDialogDescription").textContent = activating
-      ? "De headerlink, footerlink en recruitmentpagina worden samen zichtbaar."
-      : "De headerlink, footerlink en recruitmentpagina worden samen verborgen. Vacatures blijven bewaard.";
-    root.getElementById("recruitmentPublicationConfirm").textContent = activating ? "Rekrutering publiceren" : "Offline zetten";
-    publicationDialog.showModal();
-  });
-  root.getElementById("recruitmentPublicationCancel").addEventListener("click", ()=>{ if (!publicationController.state.mutating) publicationDialog.close(); });
-  publicationDialog.addEventListener("close", ()=>lastTrigger?.focus());
-  publicationForm.addEventListener("submit", async (event)=>{
-    event.preventDefault();
-    if (publicationController.state.mutating || typeof publicationController.state.enabled !== "boolean") return;
-    const changed = await publicationController.setEnabled(!publicationController.state.enabled);
-    if (changed) publicationDialog.close();
-  });
-  root.getElementById("recruitmentVacancyCreate").addEventListener("click", (event)=>openWorkDialog(null, event.currentTarget));
-  root.getElementById("recruitmentVacancyRefresh").addEventListener("click", ()=>{ void controller.refresh(); });
-  for (const button of statusButtons) button.addEventListener("click", ()=>{
-    filter = button.dataset.recruitmentStatus;
-    for (const candidate of statusButtons) candidate.setAttribute("aria-pressed", String(candidate === button));
-    render();
-  });
-  root.getElementById("recruitmentVacancyCancel").addEventListener("click", ()=>{ if (!controller.state.mutating) workDialog.close(); });
-  workDialog.addEventListener("close", ()=>lastTrigger?.focus());
-  form.addEventListener("submit", async (event)=>{
-    event.preventDefault();
-    if (!form.reportValidity() || controller.state.mutating) return;
-    const input = formContent();
-    const saved = editingId ? await controller.update(editingId, input) : await controller.create(input);
-    if (saved) workDialog.close();
-    else formMessage.textContent = controller.state.error || "De vacature kon niet worden opgeslagen.";
-  });
-  root.getElementById("recruitmentVacancyStatusCancel").addEventListener("click", ()=>{ if (!controller.state.mutating) statusDialog.close(); });
-  statusDialog.addEventListener("close", ()=>{ pendingStatus = null; lastTrigger?.focus(); });
-  statusForm.addEventListener("submit", async (event)=>{
-    event.preventDefault();
-    if (!pendingStatus || controller.state.mutating) return;
-    const changed = await controller.setStatus(pendingStatus.vacancy.id, pendingStatus.status);
-    if (changed) statusDialog.close();
-  });
-  render();
-  renderPublication();
-  void publicationController.refresh();
-  void controller.refresh();
-  return controller;
 }
 
 function localDateInputValue(date = new Date()) {
@@ -2837,6 +2220,53 @@ export async function startOperatorDashboard({
   onAuthorizationFailure = ()=>{},
   onDossierRoute = ()=>{},
 }) {
+  async function invoke(input) {
+    const response = await callOperator(client, functionsBaseUrl, input);
+    if (response.status >= 400 || !response.body?.ok) {
+      if (response.status === 401) onAuthorizationFailure();
+      throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
+    }
+    return response.body.result;
+  }
+
+  const currentIdentity = verifiedIdentity || await invoke({ action: "get_current_operator_identity" });
+  onIdentityReady(currentIdentity);
+  const identity = currentOperatorIdentityPresentation(currentIdentity);
+  for (const roleBadge of document.querySelectorAll("[data-operator-role-badge]")) roleBadge.textContent = identity.roleLabel;
+  const moduleNavigation = document.getElementById("operatorModuleNavigation");
+  const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
+  moduleNavigation.hidden = currentIdentity.role !== "owner";
+  presentOperatorModule(document, activeModule);
+  if (activeModule === "dossiers") {
+    for (const id of ["internalSmokePanel", "internalSmokeBPanel", "personalQueueWorkspace", "managerWorkspace"]) {
+      const legacyWorkspace = document.getElementById(id);
+      if (legacyWorkspace) legacyWorkspace.hidden = true;
+    }
+    const controller = initializeOperatorDossiers(document, client, currentIdentity, { onAuthorizationFailure });
+    document.querySelector("[data-dossiers-workspace]").operatorDossiersController = controller;
+    onDossierRoute("dedicated");
+    return currentIdentity;
+  }
+  if (activeModule === "finance") {
+    initializeOperatorFinance(document, client, currentIdentity, { onAuthorizationFailure });
+    return currentIdentity;
+  }
+  if (activeModule === "workforce") {
+    initializeOperatorWorkforce(document, client, currentIdentity, { onAuthorizationFailure });
+    return currentIdentity;
+  }
+  if (activeModule === "calendar") {
+    initializeOperatorCalendar(document, client, currentIdentity, { onAuthorizationFailure });
+    return currentIdentity;
+  }
+  if (activeModule === "recruitment") {
+    initializeOperatorRecruitment(document, client, currentIdentity, { onAuthorizationFailure });
+    return currentIdentity;
+  }
+  if (activeModule === "messages") {
+    initializeOperatorMessages(document, client, currentIdentity);
+    return currentIdentity;
+  }
   const roleBadges = Array.from(document.querySelectorAll("[data-operator-role-badge]"));
   const personalQueueWorkspace = document.getElementById("personalQueueWorkspace");
   const personalQueueList = document.getElementById("personalQueueList");
@@ -3005,15 +2435,6 @@ export async function startOperatorDashboard({
   let selectedDossierReference = null;
   let quotationActionBusy = false;
 
-  async function invoke(input) {
-    const response = await callOperator(client, functionsBaseUrl, input);
-    if (response.status >= 400 || !response.body?.ok) {
-      if (response.status === 401) onAuthorizationFailure();
-      throw new Error(response.body?.code || "OPERATOR_REQUEST_FAILED");
-    }
-    return response.body.result;
-  }
-
   const sdfDocumentController = createSdfDocumentWorkspaceController(invoke, (state)=>{
     const activeUpload = state.request?.upload_request;
     sdfDocumentActions.hidden = !state.application;
@@ -3041,23 +2462,14 @@ export async function startOperatorDashboard({
   });
   sdfDocumentUploadRevoke.addEventListener("click", ()=>sdfDocumentController.revokeUploadLink());
 
-  const currentIdentity = verifiedIdentity || await invoke({ action: "get_current_operator_identity" });
-  onIdentityReady(currentIdentity);
-  const identity = currentOperatorIdentityPresentation(currentIdentity);
   for (const roleBadge of roleBadges) roleBadge.textContent = identity.roleLabel;
-  const moduleNavigation = document.getElementById("operatorModuleNavigation");
-  const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
-  moduleNavigation.hidden = currentIdentity.role !== "owner";
-  presentOperatorModule(document, activeModule);
-  if (activeModule === "calendar") initializeWorkforceCalendar(document, invoke);
-  if (activeModule === "recruitment") initializeRecruitmentVacancies(document, invoke);
   if (activeModule !== "dossiers") {
     internalSmokePanel.hidden = true;
     internalSmokeBPanel.hidden = true;
     personalQueueWorkspace.hidden = true;
     managerWorkspace.hidden = true;
   }
-  if (activeModule === "finance") {
+  /* Legacy Finance runtime archived after extraction to operator-finance.mjs.
     const activeFinanceTab = financeTabFromUrl(window.location.href, currentIdentity.role);
     presentFinanceTab(document, activeFinanceTab);
     if (activeFinanceTab === "websites") {
@@ -3875,6 +3287,7 @@ export async function startOperatorDashboard({
       });
     }
   }
+  */
   const canManagePendingIntakes = ["owner", "admin"].includes(currentIdentity.role);
   if (pendingIntakesEntry) pendingIntakesEntry.hidden = !canManagePendingIntakes;
 

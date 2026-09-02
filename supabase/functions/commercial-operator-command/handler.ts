@@ -2344,7 +2344,7 @@ export async function handleCommercialOperator(
           ? await deps.signOperatorCursor(nextPosition, input)
           : null;
         return response(200, "APPLICATION_ACTION_ACCEPTED", {
-          result: { items: raw.items, next_cursor: nextCursor },
+          result: { items: raw.items, has_more: raw.has_more, next_cursor: nextCursor },
         });
       }
       if (input.action === "get_application_facets_v2") {

@@ -1,0 +1,101 @@
+create or replace function lws_internal.operator_workspace_module_authorized_v1(p_role text, p_module_key text)
+returns boolean
+language sql
+immutable
+set search_path = pg_catalog
+as $$
+  select case lower(btrim(coalesce(p_module_key, '')))
+    when 'messages' then p_role = 'owner'
+    when 'calendar' then p_role in ('owner', 'admin', 'operations_manager')
+    when 'recruitment' then p_role = 'owner'
+    when 'workforce' then p_role in ('owner', 'admin', 'operations_manager')
+    when 'finance' then p_role = 'owner'
+    when 'dossiers' then p_role = 'owner'
+    else false
+  end;
+$$;
+
+create or replace function public.join_operator_workspace_v1(
+  p_workspace_id uuid,
+  p_epoch bigint,
+  p_window_id uuid,
+  p_module_key text,
+  p_slot_key text
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, auth, pg_catalog
+as $$
+declare
+  v_operator public.commercial_operators%rowtype;
+  v_workspace public.operator_workspace_sessions%rowtype;
+  v_claim public.operator_workspace_window_claims%rowtype;
+  v_module_key text := lower(btrim(coalesce(p_module_key, '')));
+  v_slot_key text := lower(btrim(coalesce(p_slot_key, '')));
+  v_now timestamptz := clock_timestamp();
+begin
+  if p_window_id is null then raise exception using errcode = '22023', message = 'WINDOW_ID_REQUIRED'; end if;
+  if v_module_key !~ '^[a-z][a-z0-9-]{0,47}$' then raise exception using errcode = '22023', message = 'WORKSPACE_MODULE_INVALID'; end if;
+  if v_slot_key !~ '^[a-z][a-z0-9-]{0,47}$' then raise exception using errcode = '22023', message = 'WORKSPACE_SLOT_INVALID'; end if;
+
+  v_operator := lws_internal.require_active_workspace_operator_v1();
+  if v_module_key not in ('messages', 'calendar', 'recruitment', 'workforce', 'finance', 'dossiers') then
+    raise exception using errcode = '42501', message = 'WORKSPACE_MODULE_NOT_ENABLED';
+  end if;
+  if not lws_internal.operator_workspace_module_authorized_v1(v_operator.role, v_module_key) then
+    raise exception using errcode = '42501', message = 'WORKSPACE_MODULE_NOT_AUTHORIZED';
+  end if;
+
+  select * into v_workspace
+  from public.operator_workspace_sessions
+  where workspace_id = p_workspace_id
+    and epoch = p_epoch
+    and operator_id = v_operator.operator_id
+  for update;
+  if not found then raise exception using errcode = '42501', message = 'WORKSPACE_NOT_AVAILABLE'; end if;
+  if v_workspace.status <> 'ACTIVE' or v_workspace.lease_expires_at <= v_now then
+    raise exception using errcode = '42501', message = 'WORKSPACE_NOT_ACTIVE';
+  end if;
+
+  select * into v_claim
+  from public.operator_workspace_window_claims
+  where workspace_id = v_workspace.workspace_id
+    and module_key = v_module_key
+    and slot_key = v_slot_key;
+
+  if found then
+    return jsonb_build_object(
+      'joined', v_claim.window_id = p_window_id,
+      'workspace_id', v_workspace.workspace_id,
+      'epoch', v_workspace.epoch,
+      'window_id', v_claim.window_id,
+      'module_key', v_claim.module_key,
+      'slot_key', v_claim.slot_key,
+      'lease_expires_at', v_workspace.lease_expires_at
+    );
+  end if;
+
+  insert into public.operator_workspace_window_claims(workspace_id, window_id, module_key, slot_key, claimed_at)
+  values(v_workspace.workspace_id, p_window_id, v_module_key, v_slot_key, v_now)
+  returning * into v_claim;
+
+  return jsonb_build_object(
+    'joined', true,
+    'workspace_id', v_workspace.workspace_id,
+    'epoch', v_workspace.epoch,
+    'window_id', v_claim.window_id,
+    'module_key', v_claim.module_key,
+    'slot_key', v_claim.slot_key,
+    'lease_expires_at', v_workspace.lease_expires_at
+  );
+end;
+$$;
+
+revoke all on function lws_internal.operator_workspace_module_authorized_v1(text, text) from public, anon, authenticated, service_role;
+revoke all on function public.join_operator_workspace_v1(uuid, bigint, uuid, text, text) from public, anon, authenticated, service_role;
+grant execute on function public.join_operator_workspace_v1(uuid, bigint, uuid, text, text) to authenticated;
+
+comment on function public.join_operator_workspace_v1(uuid, bigint, uuid, text, text) is
+  'Generic module-slot child join for the six approved Multi-Screen modules; Dossiers remains owner-only and independently server-authorized.';

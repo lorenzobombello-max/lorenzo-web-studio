@@ -62,15 +62,15 @@ select is(
   'SUBMITTED',
   'submitted intake projects SUBMITTED'
 );
-select is(
-  lws_internal.resolve_operator_operational_status_v2('slimme_documentenflow',null,null,null,false),
-  'SUBMITTED',
-  'SDF without workflow authority falls back to SUBMITTED'
-);
 select throws_ok(
-  $$select lws_internal.resolve_operator_operational_status_v2('website','submitted','ACTIVE','UNKNOWN_STATE',false)$$,
-  '22023', 'UNKNOWN_OPERATOR_PROJECT_STATE',
-  'unknown project state fails closed'
+  $$select lws_internal.resolve_operator_operational_status_v2('slimme_documentenflow',null,null,null,false)$$,
+  '22023', 'INVALID_SDF_OPERATIONAL_AUTHORITY',
+  'SDF without workflow authority fails closed'
+);
+select is(
+  lws_internal.resolve_operator_operational_status_v2('website','submitted','ACTIVE','UNKNOWN_STATE',false),
+  'UNKNOWN_STATE',
+  'present project state remains the canonical operational authority'
 );
 
 insert into auth.users(id,email) values
@@ -115,6 +115,26 @@ insert into public.quote_requests(
   ('b2120000-0000-4000-8000-000000000003','LWS-AAN-2098-0003','production','slimme_documentenflow','maatwerk','2098-08-15T10:00:00Z','Charlie Trashed','Hidden Company','charlie@example.test','Phase 2B Q3 trash fixture.',true,'approved'),
   ('b2130000-0000-4000-8000-000000000004','LWS-AAN-2098-0004','production','slimme_documentenflow','start','2098-11-15T10:00:00Z','Delta Active','Acme Organization','delta@example.test','Phase 2B Q4 SDF fixture.',true,'approved'),
   ('b2140000-0000-4000-8000-000000000005','LWS-AAN-2097-0001','production','slimme_documentenflow','start','2097-12-15T10:00:00Z','Earlier Year','Historic Company','earlier@example.test','Phase 2B prior-year fixture.',true,'approved');
+
+insert into public.sdf_qualification_intakes(
+  quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+)
+select
+  request.id,
+  'submitted',
+  encode(extensions.digest(convert_to(request.id::text, 'UTF8'), 'sha256'), 'hex'),
+  'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '2100-01-01T00:00:00Z'::timestamptz,
+  request.created_at
+from public.quote_requests request
+where request.id in (
+  'b2100000-0000-4000-8000-000000000001',
+  'b2110000-0000-4000-8000-000000000002',
+  'b2120000-0000-4000-8000-000000000003',
+  'b2130000-0000-4000-8000-000000000004',
+  'b2140000-0000-4000-8000-000000000005'
+);
 
 insert into public.quote_requests(
   id,application_reference,record_classification,request_kind,created_at,name,company,email,
@@ -239,6 +259,23 @@ insert into public.quote_requests(
   ('b2500000-0000-4000-8000-000000000001','production','slimme_documentenflow','start','2098-12-01T12:00:00Z','Tie Fixture One','tie-one@example.test','Phase 2B tie fixture one.',true,'approved'),
   ('b2510000-0000-4000-8000-000000000002','production','slimme_documentenflow','start','2098-12-01T12:00:00Z','Tie Fixture Two','tie-two@example.test','Phase 2B tie fixture two.',true,'approved');
 
+insert into public.sdf_qualification_intakes(
+  quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+)
+select
+  request.id,
+  'submitted',
+  encode(extensions.digest(convert_to(request.id::text, 'UTF8'), 'sha256'), 'hex'),
+  'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '2100-01-01T00:00:00Z'::timestamptz,
+  request.created_at
+from public.quote_requests request
+where request.id in (
+  'b2500000-0000-4000-8000-000000000001',
+  'b2510000-0000-4000-8000-000000000002'
+);
+
 select is(
   (select string_agg(value->>'quote_request_id',',' order by ordinal)
   from jsonb_array_elements(pg_temp.v2_list(p_search=>'Tie Fixture',p_limit=>100)->'items')
@@ -330,7 +367,23 @@ select
   'Local synthetic Phase 2B performance fixture ' || series || '.',
   true,'approved'
 from generate_series(1,10000) as series;
+insert into public.sdf_qualification_intakes(
+  quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+)
+select
+  request.id,
+  'submitted',
+  encode(extensions.digest(convert_to(request.id::text, 'UTF8'), 'sha256'), 'hex'),
+  'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '2100-01-01T00:00:00Z'::timestamptz,
+  request.created_at
+from public.quote_requests request
+where request.created_at >= '2096-01-01T00:00:00Z'::timestamptz
+  and request.created_at < '2097-01-01T00:00:00Z'::timestamptz
+  and request.request_kind='slimme_documentenflow';
 analyze public.quote_requests;
+analyze public.sdf_qualification_intakes;
 analyze lws_internal.operator_dossier_states;
 
 select is(jsonb_array_length(pg_temp.v2_list(p_year=>2096)->'items'),50,'10k dataset keeps default page bounded to 50');

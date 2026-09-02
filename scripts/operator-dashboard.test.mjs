@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { calendarStatusPresentation, createOperatorFinanceNavigation, createOperatorModuleNavigation, createRecruitmentPublicationController, createRecruitmentVacancyController, createWorkforceCalendarController, createWorkforceCalendarModel, isOperatorAuthorizationFailure, recruitmentPublicationRequest, recruitmentPublicationResponse, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest, workforceCalendarRequest, workforceCalendarResponse } from "../assets/js/operator-dashboard.js";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, isOperatorAuthorizationFailure } from "../assets/js/operator-dashboard.js";
+import { calendarStatusPresentation, createOperatorCalendarController as createWorkforceCalendarController, createOperatorCalendarModel as createWorkforceCalendarModel, operatorCalendarResponse as workforceCalendarResponse } from "../assets/js/operator-calendar.mjs";
+import { createRecruitmentPublicationController, createRecruitmentVacancyController, recruitmentPublicationRequest, recruitmentPublicationResponse, recruitmentVacanciesResponse, recruitmentVacancyCreateRequest, recruitmentVacancyStatusRequest, recruitmentVacancyUpdateRequest } from "../assets/js/operator-recruitment.mjs";
 import { applicationIdentityPresentation, applicationLocatorFromUrl, applicationReferenceFromUrl, applyDetailVisibility, appendUniqueCustomerRequestItems, appendUniqueOperatorItems, appendUniquePersonalQueueItems, assignmentError, assignmentPresentation, buildAssignmentCommand, buildDossierLifecycleCommand, buildIntakeLifecycleCommand, businessExpenseAmountMinor, businessExpenseCategoryLabel, businessExpenseCreateRequest, businessExpenseFinancePortfolioPresentation, businessExpenseRelationLabel, canIssueApprovedQuotation, canOfferDossierPurge, canPromoteApplication, createBusinessExpenseEntryController, createCustomerRequestDetailController, createCustomerRequestListController, createDocumentInboxCommandController, createInternalSmokeBSyntheticPng, createInternalSmokeOneShotTrigger, createOperatorListController, createPersonalQueueController, currentOperatorIdentityPresentation, customerCorePresentation, customerRequestDetailRequest, customerRequestTransitionRequest, customerRequestUploadCreateRequest, customerRequestUploadRevokeRequest, customerRequestsForDossierRequest, customerRequestWorkCommand, DOCUMENT_INBOX_CATEGORIES, DOCUMENT_INBOX_DOCUMENT_TYPES, DOCUMENT_INBOX_STATUSES, documentInboxApproveRequest, documentInboxConfirmRequest, documentInboxFilter, documentInboxProcessRequest, documentInboxProposalRequest, documentInboxReadPresentation, documentInboxRejectRequest, documentInboxStatusPresentation, dossierLifecycleAction, dossierLifecycleError, dossierLifecyclePresentation, dossierPurgeRequest, dossierReferenceFromDetail, effectiveOperatorZone, financeMilestoneStatus, financeTabFromUrl, focusDossierLifecycle, focusIntakeLifecycle, formatFinanceMoney, intakeLifecycleError, intakeLifecyclePresentation, internalSmokeAvailable, nextWorkflowStage, normalizeSupportReference, operatorFacetsRequest, operatorListRequest, operatorListVisibility, operatorModuleFromUrl, operatorStatusPresentation, personalQueueRequest, projectSitePresentation, quotationDeliveryPresentation, quotationIssuanceRequest, refreshAfterOperatorMutation, refreshOperatorSelection, resolveDashboardAuthority, runInternalSmokeA, runInternalSmokeB, sdfFinancePortfolioPresentation, sdfM1InvoiceCandidatePresentation, sdfPackageLabel, sdfPricingPresentation, sdfProjectPresentation, sdfQuotationPresentation, validateCustomerRequestDetail, websiteFinancePortfolioPresentation } from "../assets/js/operator-dashboard.js";
 import { businessExpenseDocumentLinkRequest, createDocumentInboxExtractionController, createDocumentInboxUploadController, createSupplierDocumentExpenseLinkController, DOCUMENT_INBOX_EXTRACTION_STATUSES, documentInboxExtractionFailure, documentInboxExtractionPresentation, documentInboxExtractionRequest, documentInboxReceiveRequest, documentInboxUploadResponse, SUPPLIER_DOCUMENT_ACCEPT, SUPPLIER_DOCUMENT_MAX_BYTES, SUPPLIER_DOCUMENT_RELATION_TYPES, SUPPLIER_DOCUMENT_TYPES, supplierDocumentCreateRequest, supplierDocumentFileError, supplierDocumentUploadResponse } from "../assets/js/operator-dashboard.js";
 import { buildPendingIntakeDeleteCommand, buildPendingIntakeRetentionCommand, pendingIntakeCountRequest, pendingIntakeIdentityPresentation, pendingIntakePresentation, pendingIntakePurgePresentation, pendingIntakesRequest, pendingIntakeWorkspaceItems, pendingSdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
@@ -13,7 +15,9 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260901-pending-sdf-purge";
+const OPERATOR_ASSET_RELEASE = "20260902-login-stability";
+const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
+const FINANCE_ASSET_RELEASE = "20260902-phase2h1";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
@@ -66,7 +70,7 @@ test("recruitment vacancy controller refreshes after writes and ignores stale li
 
   const content = Object.fromEntries(["title", "department", "location", "employment_type", "summary", "description", "requirements"].map((key)=>[key, recruitmentVacancy[key]]));
   const publication = controller.setStatus(recruitmentVacancy.id, "PUBLISHED");
-  await Promise.resolve();
+  while (pending.length < 3) await Promise.resolve();
   pending[2]([{ ...recruitmentVacancy, status: "PUBLISHED", published_at: "2026-08-30T19:00:00.000Z" }]);
   assert.equal(await publication, true);
   assert.deepEqual(calls.at(-2), { action: "set_recruitment_vacancy_status", vacancy_id: recruitmentVacancy.id, status: "PUBLISHED" });
@@ -98,10 +102,11 @@ test("recruitment publication controller is server-confirmed and stale-safe", as
 });
 
 test("recruitment owner workspace exposes bounded content and separate lifecycle dialogs", async () => {
-  const [html, css, script] = await Promise.all([
+  const [html, css, script, recruitment] = await Promise.all([
     read("operator/dashboard/index.html"),
     read("assets/css/operator-dashboard.css"),
     read("assets/js/operator-dashboard.js"),
+    read("assets/js/operator-recruitment.mjs"),
   ]);
   const workspace = html.match(/<section class="module-shell recruitment-workspace"[\s\S]*?<\/section>/)?.[0] || "";
   const workDialog = html.match(/<dialog id="recruitmentVacancyDialog"[\s\S]*?<\/dialog>/)?.[0] || "";
@@ -119,13 +124,14 @@ test("recruitment owner workspace exposes bounded content and separate lifecycle
   assert.match(workspace, /id="recruitmentPublicationStatus"/);
   assert.match(workspace, /id="recruitmentPublicationAction"/);
   assert.match(publicationDialog, /class="operator-modal--action-confirm"/);
-  assert.match(script, /Rekrutering publiceren\?/);
-  assert.match(script, /Rekrutering offline zetten\?/);
+  assert.match(recruitment, /Rekrutering publiceren\?/);
+  assert.match(recruitment, /Rekrutering offline zetten\?/);
   assert.doesNotMatch(workspace, /kandidaat|testprofiel|testtoewijzing|contract/i);
-  const initializer = script.match(/export function initializeRecruitmentVacancies[\s\S]*?\n\}/)?.[0] || "";
-  assert.match(script, /initializeRecruitmentVacancies\(document, invoke\)/);
-  assert.match(initializer, /createRecruitmentVacancyController\(\{ load: invoke, execute: invoke/);
-  assert.doesNotMatch(initializer, /fetch\(|client\.rpc\(/);
+  assert.match(script, /initializeOperatorRecruitment\(document, client, currentIdentity, \{ onAuthorizationFailure \}\)/);
+  assert.match(recruitment, /export function initializeOperatorRecruitment/);
+  assert.match(recruitment, /createRecruitmentVacancyController\(\{ execute, onChange: render \}\)/);
+  assert.match(recruitment, /client\.rpc\(name, parameters\)/);
+  assert.doesNotMatch(recruitment, /commercial-operator-command|recruitment-public|sdf-qualification/);
   assert.match(css, /\.recruitment-vacancy-list \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /@media \(max-width:800px\)[^{]*\{[^}]*\.recruitment-heading \{ flex-direction:column; \}/);
 });
@@ -181,7 +187,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
   assert.doesNotMatch(css, /(?:^|\n)dialog \{[^}]*\bwidth:/);
 });
 
-test("operator dashboard assets share one versioned Pages-compatible release identity", async () => {
+test("operator dashboard assets use explicit Pages-compatible release identities", async () => {
   const [html, guard, prepare, verify] = await Promise.all([
     read("operator/dashboard/index.html"),
     read("assets/js/operator-dashboard-guard.mjs"),
@@ -193,11 +199,11 @@ test("operator dashboard assets share one versioned Pages-compatible release ide
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_ASSET_RELEASE}`,
-    `./operator-dashboard.js?v=${OPERATOR_ASSET_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${FINANCE_ASSET_RELEASE}`,
+    `./operator-dashboard.js?v=${FINANCE_ASSET_RELEASE}`,
   ]);
-  for (const url of [cssUrl, guardUrl, dashboardUrl]) {
-    assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), OPERATOR_ASSET_RELEASE);
+  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, FINANCE_ASSET_RELEASE], [dashboardUrl, FINANCE_ASSET_RELEASE]]) {
+    assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
   }
@@ -375,7 +381,7 @@ test("dashboard guard intercepts local module links and supports browser history
   assert.match(guard, /window\.history\.pushState\(null, "", url\)/);
   assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void navigateModule\(window\.location\.href, \{ push: false \}\)\)/);
   assert.match(guard, /verifiedIdentity: context\.identity/);
-  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*window\.location\.replace/);
+  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*workspaceMaster\?\.lockWorkspace\("AUTH_SIGNED_OUT"\);\s*window\.location\.replace/);
   assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
   assert.equal((guard.match(/gate\.hidden = true/g) || []).length, 1);
   assert.doesNotMatch(guard, /gate\.hidden = false/);
@@ -3021,13 +3027,13 @@ test("internal Smoke B static UI is separate, hidden, confirmed, and has no capa
 
 test("owner module shell exposes six accessible query-routed modules without mock data", async () => {
   const [html, css] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css")]);
-  const modules = [["dossiers", "Dossiers"], ["finance", "Financieel"], ["workforce", "Personeel"], ["recruitment", "Rekrutering"], ["messages", "Berichten"], ["calendar", "Kalender"]];
-  for (const [module, label] of modules) {
-    assert.match(html, new RegExp(`href="/operator/dashboard/\\?module=${module}"[^>]*data-operator-module="${module}"[^>]*>${label}</a>`));
+  const modules = [["dossiers", "Dossiers", "Dossiers"], ["finance", "Financieel", "Financieel"], ["workforce", "Personeel", "Personeel"], ["recruitment", "Rekrutering", "Rekrutering"], ["messages", "Berichten", "Berichtenkamer"], ["calendar", "Kalender", "Kalender"]];
+  for (const [module, navigationLabel] of modules) {
+    assert.match(html, new RegExp(`href="/operator/dashboard/\\?module=${module}"[^>]*data-operator-module="${module}"[^>]*>${navigationLabel}</a>`));
   }
   const navigation = html.match(/<nav id="operatorModuleNavigation"[\s\S]*?<\/nav>/)?.[0] || "";
-  assert.deepEqual([...navigation.matchAll(/data-operator-module="([^"]+)"/g)].map((match) => match[1]), modules.map(([module]) => module));
-  for (const [module, title] of modules.slice(1)) {
+  assert.deepEqual([...navigation.matchAll(/data-operator-module="([^"]+)"/g)].map((match) => match[1]), modules.map(([module])=>module));
+  for (const [module, , title] of modules.slice(1)) {
     assert.match(html, new RegExp(`data-module-panel="${module}"[\\s\\S]{0,180}<h1[^>]*>${title}</h1>`));
   }
   assert.match(html, /id="operatorModuleNavigation"[^>]*aria-label="Operatormodules"[^>]*hidden/);
@@ -4069,7 +4075,7 @@ test("operator workspace globally fills short desktop and mobile viewports", asy
 });
 
 test("calendar foundation exposes accessible read-only controls and no mutation surface", async () => {
-  const [html, css, script] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css"), read("assets/js/operator-dashboard.js")]);
+  const [html, css, dashboard, calendarSource] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css"), read("assets/js/operator-dashboard.js"), read("assets/js/operator-calendar.mjs")]);
   const calendar = html.match(/class="module-shell module-shell--calendar"[\s\S]*?<\/section>/)?.[0] || "";
   assert.match(calendar, /data-calendar-view="day"/);
   assert.match(calendar, /data-calendar-view="week"[^>]*aria-pressed="true"/);
@@ -4085,26 +4091,26 @@ test("calendar foundation exposes accessible read-only controls and no mutation 
   assert.doesNotMatch(calendar, /aanvragen|goedkeuren|melden|upload|boeken|clock|payroll|IBAN/i);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.calendar-heading/);
-  assert.match(script, /initializeWorkforceCalendar\(root, load\)/);
-  assert.match(script, /initializeWorkforceCalendar\(document, invoke\)/);
-  assert.match(script, /const emptyContent = Array\.from\(empty\.childNodes\)/);
-  assert.match(script, /else empty\.replaceChildren\(\.\.\.emptyContent\)/);
-  assert.match(script, /action: "list_workforce_calendar"/);
-  assert.doesNotMatch(script.match(/function initializeWorkforceCalendar[\s\S]*?\n\}/)?.[0] || "", /fetch\(|client\.rpc\(/);
-  assert.doesNotMatch(script, /commercial_operators|mockEmployees|placeholder employee/i);
+  assert.match(dashboard, /initializeOperatorCalendar\(document, client, currentIdentity/);
+  assert.match(calendarSource, /initializeOperatorCalendar\(root, client, identity/);
+  assert.match(calendarSource, /const emptyContent = Array\.from\(empty\.childNodes\)/);
+  assert.match(calendarSource, /else empty\.replaceChildren\(\.\.\.emptyContent\)/);
+  assert.match(calendarSource, /client\.rpc\("get_operator_calendar_v1"/);
+  assert.doesNotMatch(calendarSource, /commercial-operator-command|Website|SDF|finance|dossier/i);
+  assert.doesNotMatch(calendarSource, /commercial_operators|mockEmployees|placeholder employee/i);
 });
 
 test("calendar model supports day week month year and deterministic navigation", () => {
   const model = createWorkforceCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
   assert.equal(model.snapshot().view, "week");
   assert.equal(model.snapshot().dates.length, 7);
-  assert.deepEqual(workforceCalendarRequest(model.snapshot()), { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" });
-  assert.deepEqual(workforceCalendarRequest(model.setView("day")), { action: "list_workforce_calendar", start_date: "2026-08-30", end_date: "2026-08-30" });
+  assert.deepEqual(model.snapshot().range, { start_date: "2026-08-24", end_date: "2026-08-30" });
+  assert.deepEqual(model.setView("day").range, { start_date: "2026-08-30", end_date: "2026-08-30" });
   assert.equal(model.navigate(-1).anchor, "2026-08-29");
   assert.equal(model.goToday().anchor, "2026-08-30");
-  assert.deepEqual(workforceCalendarRequest(model.setView("month")), { action: "list_workforce_calendar", start_date: "2026-08-01", end_date: "2026-08-31" });
+  assert.deepEqual(model.setView("month").range, { start_date: "2026-08-01", end_date: "2026-08-31" });
   assert.equal(model.navigate(1).anchor, "2026-09-01");
-  assert.deepEqual(workforceCalendarRequest(model.setView("year")), { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" });
+  assert.deepEqual(model.setView("year").range, { start_date: "2026-01-01", end_date: "2026-12-31" });
   assert.equal(model.navigate(-1).anchor, "2025-09-01");
 });
 
@@ -4147,8 +4153,8 @@ test("calendar response accepts exact empty and employee DTOs and rejects drift 
   assert.deepEqual(workforceCalendarResponse(workforceResult(range.start_date, range.end_date), range).employees, []);
   const employee = workforceEmployee(1, [{ date: "2026-08-24", status: "WORKED_FULL_DAY" }]);
   assert.equal(workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [employee]), range).employees[0].employee_id, employee.employee_id);
-  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, operator_id: employee.employee_id }]), range), /INVALID_WORKFORCE_CALENDAR_RESPONSE/);
-  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, entries: [{ date: "2026-08-24", status: "UNKNOWN" }] }]), range), /INVALID_WORKFORCE_CALENDAR_RESPONSE/);
+  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, operator_id: employee.employee_id }]), range), /INVALID_OPERATOR_CALENDAR_RESPONSE/);
+  assert.throws(()=>workforceCalendarResponse(workforceResult(range.start_date, range.end_date, [{ ...employee, entries: [{ date: "2026-08-24", status: "UNKNOWN" }] }]), range), /INVALID_OPERATOR_CALENDAR_RESPONSE/);
 });
 
 test("calendar controller loads initial empty authority and reloads day week month year navigation", async () => {
@@ -4167,14 +4173,14 @@ test("calendar controller loads initial empty authority and reloads day week mon
   await controller.navigate(1);
   await controller.goToday();
   assert.deepEqual(requests, [
-    { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" },
-    { action: "list_workforce_calendar", start_date: "2026-08-30", end_date: "2026-08-30" },
-    { action: "list_workforce_calendar", start_date: "2026-08-24", end_date: "2026-08-30" },
-    { action: "list_workforce_calendar", start_date: "2026-08-01", end_date: "2026-08-31" },
-    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
-    { action: "list_workforce_calendar", start_date: "2025-01-01", end_date: "2025-12-31" },
-    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
-    { action: "list_workforce_calendar", start_date: "2026-01-01", end_date: "2026-12-31" },
+    { start_date: "2026-08-24", end_date: "2026-08-30" },
+    { start_date: "2026-08-30", end_date: "2026-08-30" },
+    { start_date: "2026-08-24", end_date: "2026-08-30" },
+    { start_date: "2026-08-01", end_date: "2026-08-31" },
+    { start_date: "2026-01-01", end_date: "2026-12-31" },
+    { start_date: "2025-01-01", end_date: "2025-12-31" },
+    { start_date: "2026-01-01", end_date: "2026-12-31" },
+    { start_date: "2026-01-01", end_date: "2026-12-31" },
   ]);
   assert.deepEqual(controller.state.employees, []);
 });

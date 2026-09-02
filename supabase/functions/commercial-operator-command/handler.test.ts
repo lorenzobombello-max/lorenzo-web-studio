@@ -2153,6 +2153,7 @@ Deno.test("v2 list preserves preflight verify core sign order and hides raw posi
   assertEquals(harness.events, ["preflight", "verify", "core", "sign"]);
   const body = await response.json();
   assertEquals(Array.isArray(body.result.items), true);
+  assertEquals(body.result.has_more, true);
   assertEquals(typeof body.result.next_cursor, "string");
   assertEquals("next_position" in body.result, false);
 });

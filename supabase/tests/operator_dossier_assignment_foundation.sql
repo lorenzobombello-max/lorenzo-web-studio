@@ -1,7 +1,125 @@
-begin;
-
 create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink with schema extensions;
+
+create temporary table assignment_concurrency_fixture (
+  quote_request_id uuid not null,
+  application_reference text not null,
+  race_a_idempotency_key uuid not null,
+  race_b_idempotency_key uuid not null,
+  owner_user_id uuid not null,
+  race_a_user_id uuid not null,
+  race_b_user_id uuid not null,
+  owner_operator_id uuid not null,
+  race_a_operator_id uuid not null,
+  race_b_operator_id uuid not null,
+  owner_user_email text not null,
+  race_a_user_email text not null,
+  race_b_user_email text not null,
+  setup_connection_result text,
+  setup_result text
+) on commit preserve rows;
+
+with run_identity as materialized (
+  select
+    gen_random_uuid() as run_token,
+    gen_random_uuid() as owner_user_id,
+    gen_random_uuid() as race_a_user_id,
+    gen_random_uuid() as race_b_user_id,
+    gen_random_uuid() as owner_operator_id,
+    gen_random_uuid() as race_a_operator_id,
+    gen_random_uuid() as race_b_operator_id
+), candidates as materialized (
+  select floor(random() * 100000000)::bigint as reference_number
+  from generate_series(1, 100)
+)
+insert into assignment_concurrency_fixture (
+  quote_request_id, application_reference,
+  race_a_idempotency_key, race_b_idempotency_key,
+  owner_user_id, race_a_user_id, race_b_user_id,
+  owner_operator_id, race_a_operator_id, race_b_operator_id,
+  owner_user_email, race_a_user_email, race_b_user_email
+)
+select
+  gen_random_uuid(),
+  format(
+    'LWS-AAN-%s-%s',
+    lpad((reference_number / 10000)::text, 4, '0'),
+    lpad((reference_number % 10000)::text, 4, '0')
+  ),
+  gen_random_uuid(),
+  gen_random_uuid(),
+  run_identity.owner_user_id,
+  run_identity.race_a_user_id,
+  run_identity.race_b_user_id,
+  run_identity.owner_operator_id,
+  run_identity.race_a_operator_id,
+  run_identity.race_b_operator_id,
+  format('assignment-race-owner+%s@example.test', run_identity.run_token),
+  format('assignment-race-a+%s@example.test', run_identity.run_token),
+  format('assignment-race-b+%s@example.test', run_identity.run_token)
+from candidates
+cross join run_identity
+where not exists (
+  select 1
+  from lws_internal.dossier_identity_anchors
+  where application_reference = format(
+    'LWS-AAN-%s-%s',
+    lpad((reference_number / 10000)::text, 4, '0'),
+    lpad((reference_number % 10000)::text, 4, '0')
+  )
+)
+limit 1;
+
+do $fixture_setup$
+declare
+  v_connection_result text;
+  v_setup_result text;
+begin
+  v_connection_result := extensions.dblink_connect(
+    'assignment_concurrency_setup',
+    'host=host.docker.internal port=54322 dbname=' || current_database() || ' user=postgres password=postgres application_name=assignment_concurrency_setup'
+  );
+
+  select extensions.dblink_exec(
+    'assignment_concurrency_setup',
+    format($setup$
+      insert into auth.users(id, email) values
+        (%L, %L),
+        (%L, %L),
+        (%L, %L);
+      insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
+        (%L, %L, 'Assignment Race Owner', 'owner', 'ACTIVE'),
+        (%L, %L, 'Assignment Race A', 'operator', 'ACTIVE'),
+        (%L, %L, 'Assignment Race B', 'operator', 'ACTIVE');
+      insert into public.quote_requests(
+        id, application_reference, record_classification, request_kind,
+        name, email, website_type, budget, timing, description, privacy_consent, status
+      ) values (
+        %L, %L, 'production', 'website',
+        'Assignment race fixture', 'assignment-race@example.test', 'business',
+        'Meer dan EUR 6.000', 'flexible', 'Assignment race fixture.', true, 'approved'
+      );
+    $setup$,
+      owner_user_id, owner_user_email,
+      race_a_user_id, race_a_user_email,
+      race_b_user_id, race_b_user_email,
+      owner_operator_id, owner_user_id,
+      race_a_operator_id, race_a_user_id,
+      race_b_operator_id, race_b_user_id,
+      quote_request_id, application_reference
+    )
+  )
+  into v_setup_result
+  from assignment_concurrency_fixture;
+
+  update assignment_concurrency_fixture
+  set setup_connection_result = v_connection_result,
+      setup_result = v_setup_result;
+end;
+$fixture_setup$;
+
+begin;
+
 set local search_path = public, extensions;
 select plan(85);
 
@@ -496,34 +614,24 @@ select is(
 );
 
 select is(
-  extensions.dblink_connect(
-    'assignment_concurrency_setup',
-    'host=host.docker.internal port=54322 dbname=' || current_database() || ' user=postgres password=postgres application_name=assignment_concurrency_setup'
-  ),
+  (select setup_connection_result from assignment_concurrency_fixture),
   'OK', 'concurrency setup connection opens'
 );
-select lives_ok(
-  $test$select extensions.dblink_exec(
-    'assignment_concurrency_setup',
-    $setup$
-      insert into auth.users(id, email) values
-        ('a7000000-0000-4000-8000-000000000001', 'assignment-race-owner@example.test'),
-        ('a7000000-0000-4000-8000-000000000002', 'assignment-race-a@example.test'),
-        ('a7000000-0000-4000-8000-000000000003', 'assignment-race-b@example.test');
-      insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
-        ('a7010000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'Assignment Race Owner', 'owner', 'ACTIVE'),
-        ('a7010000-0000-4000-8000-000000000002', 'a7000000-0000-4000-8000-000000000002', 'Assignment Race A', 'operator', 'ACTIVE'),
-        ('a7010000-0000-4000-8000-000000000003', 'a7000000-0000-4000-8000-000000000003', 'Assignment Race B', 'operator', 'ACTIVE');
-      insert into public.quote_requests(
-        id, application_reference, record_classification, request_kind,
-        name, email, website_type, budget, timing, description, privacy_consent, status
-      ) values (
-        'a7100000-0000-4000-8000-000000000001', 'LWS-AAN-2099-0701', 'production', 'website',
-        'Assignment race fixture', 'assignment-race@example.test', 'business',
-        'Meer dan EUR 6.000', 'flexible', 'Assignment race fixture.', true, 'approved'
-      );
-    $setup$
-  )$test$,
+select ok(
+  (select fixture.setup_result = 'INSERT 0 1'
+      and (select count(*) = 3
+           from auth.users
+           where id in (fixture.owner_user_id, fixture.race_a_user_id, fixture.race_b_user_id))
+      and (select count(*) = 3
+           from public.commercial_operators
+           where operator_id in (fixture.owner_operator_id, fixture.race_a_operator_id, fixture.race_b_operator_id))
+      and exists (
+        select 1
+        from public.quote_requests
+        where id = fixture.quote_request_id
+          and application_reference = fixture.application_reference
+      )
+   from assignment_concurrency_fixture as fixture),
   'committed concurrency fixture is created outside the pgTAP transaction'
 );
 select is(
@@ -547,7 +655,8 @@ from extensions.dblink('assignment_race_b', 'select pg_backend_pid()') as connec
 select is(
   extensions.dblink_exec(
     'assignment_race_a',
-    'begin; set request.jwt.claim.sub = ''a7000000-0000-4000-8000-000000000001'''
+    (select format('begin; set request.jwt.claim.sub = %L', owner_user_id)
+     from assignment_concurrency_fixture)
   ),
   'SET', 'first assignment race transaction starts'
 );
@@ -555,27 +664,30 @@ select is(
   (select result->>'revision'
    from extensions.dblink(
      'assignment_race_a',
-     $$select public.assign_operator_dossier_v1(
-       'LWS-AAN-2099-0701', 'a7010000-0000-4000-8000-000000000002', 0,
-       'a7200000-0000-4000-8000-000000000001', null
-     )$$
+     (select format($sql$select public.assign_operator_dossier_v1(
+       %L, %L, 0,
+       %L, null
+     )$sql$, application_reference, race_a_operator_id, race_a_idempotency_key)
+      from assignment_concurrency_fixture)
    ) as assignment(result jsonb)),
   '1', 'first concurrent assignment succeeds while retaining its row lock'
 );
 select is(
   extensions.dblink_exec(
     'assignment_race_b',
-    'set request.jwt.claim.sub = ''a7000000-0000-4000-8000-000000000001'''
+    (select format('set request.jwt.claim.sub = %L', owner_user_id)
+     from assignment_concurrency_fixture)
   ),
   'SET', 'second assignment race identity is configured'
 );
 select ok(
   extensions.dblink_send_query(
     'assignment_race_b',
-    $$select public.assign_operator_dossier_v1(
-      'LWS-AAN-2099-0701', 'a7010000-0000-4000-8000-000000000003', 0,
-      'a7200000-0000-4000-8000-000000000002', null
-    )$$
+    (select format($sql$select public.assign_operator_dossier_v1(
+      %L, %L, 0,
+      %L, null
+    )$sql$, application_reference, race_b_operator_id, race_b_idempotency_key)
+     from assignment_concurrency_fixture)
   ) = 1,
   'second concurrent assignment starts'
 );
@@ -589,39 +701,49 @@ select throws_ok(
   '40001', 'CONCURRENT_MODIFICATION', 'second assignment resumes and loses on expected revision'
 );
 select ok(
-  (select assignee_operator_id = 'a7010000-0000-4000-8000-000000000002' and revision = 1
-   from lws_internal.operator_dossier_assignments where quote_request_id = 'a7100000-0000-4000-8000-000000000001')
+  (select assignment.assignee_operator_id = fixture.race_a_operator_id
+      and assignment.revision = 1
+   from lws_internal.operator_dossier_assignments as assignment
+   join assignment_concurrency_fixture as fixture using (quote_request_id))
   and
-  (select count(*) = 1 from lws_internal.operator_dossier_assignment_events where quote_request_id = 'a7100000-0000-4000-8000-000000000001'),
+  (select count(*) = 1
+   from lws_internal.operator_dossier_assignment_events as event
+   join assignment_concurrency_fixture as fixture using (quote_request_id)),
   'concurrent race leaves one winner, one revision, and one event'
 );
 select is(extensions.dblink_disconnect('assignment_race_a'), 'OK', 'first race connection closes');
 select is(extensions.dblink_disconnect('assignment_race_b'), 'OK', 'second race connection closes');
 select lives_ok(
-  $test$select extensions.dblink_exec(
+  format($test$select extensions.dblink_exec(
     'assignment_concurrency_setup',
     $cleanup$
       set session_replication_role = replica;
-      delete from lws_internal.operator_dossier_assignment_commands where quote_request_id = 'a7100000-0000-4000-8000-000000000001';
-      delete from lws_internal.operator_dossier_assignment_events where quote_request_id = 'a7100000-0000-4000-8000-000000000001';
-      delete from lws_internal.operator_dossier_assignments where quote_request_id = 'a7100000-0000-4000-8000-000000000001';
-      delete from lws_internal.operator_dossier_states where quote_request_id = 'a7100000-0000-4000-8000-000000000001';
-      delete from public.quote_requests where id = 'a7100000-0000-4000-8000-000000000001';
+      delete from lws_internal.operator_dossier_assignment_commands where quote_request_id = %L;
+      delete from lws_internal.operator_dossier_assignment_events where quote_request_id = %L;
+      delete from lws_internal.operator_dossier_assignments where quote_request_id = %L;
+      delete from lws_internal.operator_dossier_states where quote_request_id = %L;
+      delete from public.quote_requests where id = %L;
       delete from public.commercial_operators where operator_id in (
-        'a7010000-0000-4000-8000-000000000001',
-        'a7010000-0000-4000-8000-000000000002',
-        'a7010000-0000-4000-8000-000000000003'
+        %L,
+        %L,
+        %L
       );
       delete from auth.users where id in (
-        'a7000000-0000-4000-8000-000000000001',
-        'a7000000-0000-4000-8000-000000000002',
-        'a7000000-0000-4000-8000-000000000003'
+        %L,
+        %L,
+        %L
       );
       set session_replication_role = origin;
     $cleanup$
   )$test$,
+    quote_request_id, quote_request_id, quote_request_id,
+    quote_request_id, quote_request_id,
+    owner_operator_id, race_a_operator_id, race_b_operator_id,
+    owner_user_id, race_a_user_id, race_b_user_id
+  ),
   'committed concurrency fixture is removed'
-);
+)
+from assignment_concurrency_fixture;
 select is(extensions.dblink_disconnect('assignment_concurrency_setup'), 'OK', 'concurrency setup connection closes');
 
 select * from finish();

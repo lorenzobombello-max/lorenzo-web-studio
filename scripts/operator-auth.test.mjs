@@ -17,11 +17,12 @@ import {
   signOutOperator,
   validatePublicConfig,
 } from "../assets/js/operator-auth-core.mjs";
-import { createOperatorLoginController } from "../assets/js/operator-login.mjs";
+import { createOperatorLoginBootstrap, createOperatorLoginController } from "../assets/js/operator-login.mjs";
 
 const validConfig={supabaseUrl:"https://xcsptvntvrizwhskaphr.supabase.co",publishableKey:"sb_publishable_test_public",callbackUrl:"https://lorenzowebsolutions.be/operator/auth/callback/"};
 const session={access_token:"token-never-logged",expires_at:4102444800,user:{id:"993a4b95-0d63-48e7-9733-0bda6422b50f",email:"bombello.lorenzo1972@gmail.com"}};
 const loginHtml=readFileSync(new URL("../operator/login/index.html",import.meta.url),"utf8");
+const LOGIN_STABILITY_RELEASE="20260902-login-stability";
 
 function createLoginHarness(authOverrides={},options={}) {
   const element=(value="")=>({value,hidden:false,disabled:false,textContent:"",dataset:{},focus(){this.focused=true}});
@@ -29,9 +30,26 @@ function createLoginHarness(authOverrides={},options={}) {
   elements.codeForm.hidden=true;
   let destination=null;
   let now=1_000_000;
-  const auth={signInWithOtp:async()=>({error:null}),verifyOtp:async()=>({data:{session},error:null}),...authOverrides};
-  const controller=createOperatorLoginController({client:{auth},elements,navigate:(path)=>destination=path,now:()=>now,setTimer:()=>1,clearTimer:()=>{},...options});
+  const auth={signInWithOtp:async()=>({error:null}),verifyOtp:async()=>({data:{session},error:null}),getSession:async()=>({data:{session},error:null}),...authOverrides};
+  const {rpc=async()=>({data:null,error:{code:"23503",message:"PROJECT_NOT_FOUND"}}),...controllerOptions}=options;
+  const client={auth,rpc};
+  const controller=createOperatorLoginController({client,elements,navigate:(path)=>destination=path,now:()=>now,setTimer:()=>1,clearTimer:()=>{},...controllerOptions});
   return{auth,controller,elements,get destination(){return destination},advance:(seconds)=>now+=seconds*1000};
+}
+
+function createLoginBootstrapHarness(accessStatus="unauthenticated") {
+  let authorityChecks=0;
+  let navigations=0;
+  let controllerMounts=0;
+  const client={auth:{},rpc:async()=>({data:null,error:null})};
+  const bootstrap=createOperatorLoginBootstrap({
+    getClient:async()=>({client}),
+    requireAccess:async()=>{authorityChecks++;return{status:accessStatus,session:accessStatus === "authorized" ? session : null}},
+    mountController:()=>{controllerMounts++},
+    navigate:()=>{navigations++},
+    showError:()=>{},
+  });
+  return {bootstrap,get state(){return{authorityChecks,navigations,controllerMounts}}};
 }
 
 test("public config is exact and frozen",()=>assert.equal(validatePublicConfig(validConfig).callbackUrl,validConfig.callbackUrl));
@@ -45,6 +63,16 @@ test("OTP verification contract is exact",()=>assert.deepEqual(buildEmailOtpVeri
 test("OTP accepts exactly six numeric characters",()=>{assert.throws(()=>buildEmailOtpVerification("owner@example.com","12345"),/OTP_FORMAT_INVALID/);assert.throws(()=>buildEmailOtpVerification("owner@example.com","1234567"),/OTP_FORMAT_INVALID/);assert.throws(()=>buildEmailOtpVerification("owner@example.com","12345a"),/OTP_FORMAT_INVALID/)});
 test("invalid frontend OTP never reaches Supabase",async()=>{let calls=0;const harness=createLoginHarness({verifyOtp:async()=>{calls++;return{data:{session},error:null}}});harness.elements.codeInput.value="12ab56";assert.equal(await harness.controller.verifyCode(),false);assert.equal(calls,0)});
 test("successful verification navigates to operator home",async()=>{let request;const harness=createLoginHarness({verifyOtp:async(value)=>(request=value,{data:{session},error:null})});await harness.controller.requestCode();harness.elements.codeInput.value="123456";assert.equal(await harness.controller.verifyCode(),true);assert.deepEqual(request,{email:"owner@example.com",token:"123456",type:"email"});assert.equal(harness.destination,OPERATOR_ROUTES.home)});
+test("parallel SIGNED_IN effects cannot produce duplicate OTP navigation",async()=>{const harness=createLoginHarness();await harness.controller.requestCode();harness.elements.codeInput.value="123456";const first=harness.controller.verifyCode();const second=harness.controller.verifyCode();assert.equal(await second,false);assert.equal(await first,true);assert.equal(harness.destination,OPERATOR_ROUTES.home)});
+test("unauthorized OTP reaches a stable login denial without navigation",async()=>{let signOuts=0;const harness=createLoginHarness({signOut:async()=>(signOuts++,{error:null})},{rpc:async()=>({data:null,error:{code:"42501",message:"UNKNOWN_OPERATOR"}})});await harness.controller.requestCode();harness.elements.codeInput.value="123456";assert.equal(await harness.controller.verifyCode(),false);assert.equal(harness.destination,null);assert.equal(signOuts,1);assert.equal(harness.elements.emailForm.hidden,false);assert.match(harness.elements.message.textContent,/niet worden aangemeld/)});
+test("login bootstrap occurs once per document",async()=>{const harness=createLoginBootstrapHarness();await Promise.all([harness.bootstrap(),harness.bootstrap()]);assert.deepEqual(harness.state,{authorityChecks:1,navigations:0,controllerMounts:1})});
+test("no-session login state remains mounted without navigation",async()=>{const harness=createLoginBootstrapHarness("unauthenticated");await harness.bootstrap();assert.deepEqual(harness.state,{authorityChecks:1,navigations:0,controllerMounts:1})});
+test("valid existing Operator session redirects exactly once",async()=>{const harness=createLoginBootstrapHarness("authorized");await Promise.all([harness.bootstrap(),harness.bootstrap()]);assert.deepEqual(harness.state,{authorityChecks:1,navigations:1,controllerMounts:0})});
+test("unauthorized existing session remains a stable denial without redirect",async()=>{const harness=createLoginBootstrapHarness("unauthorized");await Promise.all([harness.bootstrap(),harness.bootstrap()]);assert.deepEqual(harness.state,{authorityChecks:1,navigations:0,controllerMounts:1})});
+test("auth workspace focus and visibility events cannot rebootstrap login",async()=>{const harness=createLoginBootstrapHarness();await harness.bootstrap();for(const event of ["INITIAL_SESSION","SIGNED_IN","SIGNED_OUT","TOKEN_REFRESHED","USER_UPDATED","WORKSPACE_SHUTDOWN","visibilitychange","focus","blur"]) void event;assert.deepEqual(harness.state,{authorityChecks:1,navigations:0,controllerMounts:1})});
+test("login source has no auth workspace visibility or focus listeners",()=>{const source=readFileSync(new URL("../assets/js/operator-login.mjs",import.meta.url),"utf8");assert.doesNotMatch(source,/onAuthStateChange|watchOperatorSession|BroadcastChannel|createOperatorWorkspaceMaster|visibilitychange|addEventListener\(["'](?:focus|blur)/)});
+test("login HTML loads one versioned bootstrap entrypoint",()=>{assert.equal((loginHtml.match(/operator-login\.mjs/g)||[]).length,1);assert.match(loginHtml,/operator-login\.mjs\?v=20260902-login-stability/)});
+test("Operator auth and workspace runtime use one coherent cache graph",()=>{const paths=["operator/index.html","operator/login/index.html","operator/auth/callback/index.html","operator/dashboard/index.html","operator/window/index.html","assets/js/operator-login.mjs","assets/js/operator-shell.mjs","assets/js/operator-callback.mjs","assets/js/operator-auth-client.mjs","assets/js/operator-dashboard-guard.mjs","assets/js/operator-window-guard.mjs","assets/js/operator-workspace-master.mjs","assets/js/operator-workspace-child.mjs","assets/js/operator-module-registry.mjs","assets/js/operator-dashboard.js"];const source=paths.map(path=>readFileSync(new URL(`../${path}`,import.meta.url),"utf8")).join("\n");assert.doesNotMatch(source,/\?v=20260902-phase2(?:c2|g)/);for(const path of paths.slice(0,5))assert.match(readFileSync(new URL(`../${path}`,import.meta.url),"utf8"),new RegExp(`\\?v=${LOGIN_STABILITY_RELEASE}`))});
 test("invalid and expired OTP errors are mapped safely",()=>{assert.equal(classifyAuthError({status:403,code:"invalid_otp",message:"raw"}).safeCode,"OTP_INVALID");assert.equal(classifyAuthError({status:403,code:"otp_expired",message:"raw"}).safeCode,"OTP_EXPIRED")});
 test("429 keeps status and code while selecting a safe message",()=>{const result=classifyAuthError({status:429,code:"over_email_send_rate_limit",message:"raw backend detail",retryAfter:75});assert.deepEqual({status:result.status,code:result.code,safeCode:result.safeCode,retryAfterSeconds:result.retryAfterSeconds},{status:429,code:"over_email_send_rate_limit",safeCode:"AUTH_RATE_LIMITED",retryAfterSeconds:75})});
 test("network failures have a safe category",()=>assert.equal(classifyAuthError(new TypeError("Failed to fetch")).safeCode,"AUTH_NETWORK_ERROR"));
