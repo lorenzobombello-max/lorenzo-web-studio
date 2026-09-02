@@ -9,8 +9,8 @@
   <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260901-2" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260901-3"></script>
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260902-1" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260902-1"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -76,15 +76,21 @@
               <span>Één keuze</span>
             </div>
             <div class="sdf-package-options" id="packageDirection" role="radiogroup" aria-labelledby="packageDirectionLabel">
-              <label><input type="radio" name="packageDirection" value="start" /><span><strong>START</strong><small>Max. 1 flow, 2 documenttypes, 500 pagina's/maand · Tot 3 gebruikersaccounts.</small><small>€2.850 implementatie · €175/maand · excl. btw</small></span></label>
-              <label><input type="radio" name="packageDirection" value="groei" /><span><strong>GROEI</strong><small>Max. 3 flows, 5 documenttypes, 2.500 pagina's/maand · Tot 10 gebruikersaccounts.</small><small>€5.700 implementatie · €299/maand · excl. btw</small></span></label>
-              <label><input type="radio" name="packageDirection" value="pro" /><span><strong>PRO</strong><small>Max. 6 flows, 10 documenttypes, 7.500 pagina's/maand · Tot 25 gebruikersaccounts.</small><small>€7.500 implementatie · €449/maand · excl. btw</small></span></label>
+              <label data-package-card="start"><input type="radio" name="packageDirection" value="start" /><span><strong>START</strong><small>Max. 1 flow, 2 documenttypes, 500 pagina's/maand · Tot 3 gebruikersaccounts.</small><small>€2.850 implementatie · €175/maand · excl. btw</small><small class="sdf-package-unavailable" hidden>Past niet bij huidige capaciteit</small></span></label>
+              <label data-package-card="groei"><input type="radio" name="packageDirection" value="groei" /><span><strong>GROEI</strong><small>Max. 3 flows, 5 documenttypes, 2.500 pagina's/maand · Tot 10 gebruikersaccounts.</small><small>€5.700 implementatie · €299/maand · excl. btw</small><small class="sdf-package-unavailable" hidden>Past niet bij huidige capaciteit</small></span></label>
+              <label data-package-card="pro"><input type="radio" name="packageDirection" value="pro" /><span><strong>PRO</strong><small>Max. 6 flows, 10 documenttypes, 7.500 pagina's/maand · Tot 25 gebruikersaccounts.</small><small>€7.500 implementatie · €449/maand · excl. btw</small><small class="sdf-package-unavailable" hidden>Past niet bij huidige capaciteit</small></span></label>
               <label><input type="radio" name="packageDirection" value="maatwerk" /><span><strong>MAATWERK</strong><small>Boven PRO-grenzen of uitzonderlijke complexiteit.</small><small>Prijs na beoordeling en offerte.</small></span></label>
               <label><input type="radio" name="packageDirection" value="advice_requested" /><span><strong>ADVIES GEWENST</strong><small>We bepalen samen welke richting passend is.</small></span></label>
             </div>
             <div id="customComplexityField" class="sdf-field" hidden><label for="customComplexity">Wat maakt uw documentenflow afwijkend of complex?</label><textarea id="customComplexity" rows="4" maxlength="2000"></textarea></div>
             <div class="sdf-field"><label for="flowCount">Aantal afzonderlijke document- of businessflows</label><input id="flowCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
             <div class="sdf-field"><label for="userCount">Aantal gebruikersaccounts of personen</label><input id="userCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
+            <section id="capacityPreview" class="sdf-capacity-preview" data-state="incomplete" role="status" aria-live="polite" aria-atomic="true">
+              <div class="sdf-capacity-preview__heading"><h3 id="capacityPreviewHeading">Budget Guard — voorlopige capaciteitscheck</h3><span id="capacityPreviewBadge">Voorlopig · alleen capaciteit</span></div>
+              <p id="capacityPreviewMessage">Budget Guard wordt berekend zodra de vereiste capaciteitsgegevens ingevuld zijn.</p>
+              <p id="capacityPreviewDetail">Complexiteit en eventuele uitzonderlijke scope worden na indiening nog beoordeeld.</p>
+              <ul id="capacityPreviewReasons" hidden></ul>
+            </section>
           </section>
 
           <section class="sdf-form-section" aria-labelledby="documentTypesLabel">

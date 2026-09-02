@@ -102,7 +102,7 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     read("assets/js/sdf-qualification-intake.js"),
   ]);
 
-  assert.match(html, /sdf-qualification-intake\.js\?v=20260901-3/);
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260902-1/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
@@ -121,9 +121,31 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     assert.match(script, new RegExp(`${key}:`), `Missing payload key ${key}`);
   }
 
-  for (const action of ["inspect", "save_draft", "submit"]) {
+  for (const action of ["inspect", "save_draft", "evaluate_capacity_preview", "submit"]) {
     assert.match(script, new RegExp(`action:"${action}"`), `Missing API action ${action}`);
   }
+});
+
+test("SDF capacity preview is preliminary, server-derived, and keyboard-safe", async () => {
+  const [html, script, presenter, publishScript] = await Promise.all([
+    read("pages/sdf-qualification-intake.html"),
+    read("assets/js/sdf-qualification-intake.js"),
+    read("assets/js/sdf-budget-guard-capacity-preview.mjs"),
+    read("scripts/prepare-pages-dist.ps1"),
+  ]);
+
+  for (const id of ["capacityPreview", "capacityPreviewHeading", "capacityPreviewBadge", "capacityPreviewMessage", "capacityPreviewDetail", "capacityPreviewReasons"]) {
+    assert.match(html, new RegExp(`id="${id}"`), `Missing preview region #${id}`);
+  }
+  assert.match(html, /role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(html, /Budget Guard — voorlopige capaciteitscheck/);
+  assert.match(script, /buildSdfCapacityPreviewPresentation/);
+  assert.match(script, /input\.disabled=packageState\.disabled/);
+  assert.match(script, /action:"evaluate_capacity_preview"/);
+  assert.match(script, /await saveDraft\(true\)/);
+  assert.match(presenter, /finalDecisionPending: true/);
+  assert.doesNotMatch(presenter, /max_flows|max_document_types|max_pages_per_month|max_users|setup_price|monthly_price/);
+  assert.match(publishScript, /assets\/js\/sdf-budget-guard-capacity-preview\.mjs/);
 });
 
 test("SDF qualification intake personalizes only the capability-bound customer dossier", async () => {

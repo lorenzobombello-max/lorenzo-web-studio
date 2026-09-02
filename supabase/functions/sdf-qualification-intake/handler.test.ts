@@ -15,6 +15,29 @@ Deno.test("SDF intake inspect returns server-owned confirmation authority",async
   const output=await response.json(); assertEquals(response.status,200); assertEquals(names,["consume_sdf_qualification_rate_limit_v1","inspect_sdf_qualification_intake_v1"]); assertEquals(output.confirmation.version,SDF_CONFIRMATION_VERSION); assertEquals(output.confirmation.sha256.length,64);
 });
 
+Deno.test("SDF capacity preview evaluates only the capability-bound server draft",async()=>{
+  const names:string[]=[]; let parameters:Record<string,unknown>={};
+  const response=await handleSdfQualificationIntake(request({action:"evaluate_capacity_preview"}),{hashCapability,rpc:async(name,input)=>{names.push(name);parameters=input;return name.startsWith("consume_")?{data:true,error:null}:{data:{preview_status:"READY",preview_kind:"CAPACITY_ONLY",minimum_capacity_package:"groei",final_decision_pending:true},error:null};}});
+  const output=await response.json();
+  assertEquals(response.status,200);
+  assertEquals(names,["consume_sdf_qualification_rate_limit_v1","evaluate_sdf_budget_guard_capacity_preview_v1"]);
+  assertEquals(parameters,{p_customer_capability_digest:"b".repeat(64)});
+  assertEquals(output.result.preview_kind,"CAPACITY_ONLY");
+});
+
+Deno.test("SDF capacity preview rejects client-forged result and normalized volume fields",async()=>{
+  for(const forged of [
+    {minimum_package:"start"},
+    {minimum_capacity_package:"start"},
+    {normalized_monthly_pages:1},
+  ]){
+    let calls=0;
+    const response=await handleSdfQualificationIntake(request({action:"evaluate_capacity_preview",...forged}),{hashCapability,rpc:async()=>{calls+=1;return{data:null,error:null};}});
+    assertEquals(response.status,400);
+    assertEquals(calls,0);
+  }
+});
+
 Deno.test("SDF intake submit supplies fixed confirmation integrity and idempotency",async()=>{
   let parameters:Record<string,unknown>={}; const response=await handleSdfQualificationIntake(request({action:"submit",expected_revision:2,idempotency_key:"11111111-1111-4111-8111-111111111111",confirmation_accepted:true,confirmation_version:SDF_CONFIRMATION_VERSION}),{hashCapability,rpc:async(name,input)=>{if(name.startsWith("consume_"))return{data:true,error:null};parameters=input;return{data:{status:"submitted"},error:null};}});
   assertEquals(response.status,200); assertEquals(parameters.p_confirmation_accepted,true); assertEquals(parameters.p_confirmation_version,SDF_CONFIRMATION_VERSION); assertEquals(String(parameters.p_confirmation_sha256).length,64); assertEquals(parameters.p_expected_revision,2);

@@ -37,13 +37,14 @@ export async function handleSdfQualificationIntake(request: Request, dependencie
     const rawToken=bearer(request); const capabilityDigest=await dependencies.hashCapability(rawToken); const input=await body(request);
     const action=input.action;
     if (!Object.keys(input).every(key=>["action","expected_revision","answers","idempotency_key","confirmation_accepted","confirmation_version"].includes(key))) throw new RequestError(400,"INVALID_REQUEST_SHAPE");
-    if (!['inspect','save_draft','submit'].includes(String(action))) throw new RequestError(400,"INVALID_ACTION");
+    if (!['inspect','save_draft','evaluate_capacity_preview','submit'].includes(String(action))) throw new RequestError(400,"INVALID_ACTION");
     const operation=action==='submit'?'submit':'inspect_save';
     const limited=await dependencies.rpc("consume_sdf_qualification_rate_limit_v1",{p_pseudonymous_key:capabilityDigest,p_operation:operation});
     if (limited.error) throw new RequestError(503,"RATE_LIMIT_UNAVAILABLE");
     if (limited.data!==true) throw new RequestError(429,"RATE_LIMITED");
     let result: RpcResult;
     if (action==='inspect') result=await dependencies.rpc("inspect_sdf_qualification_intake_v1",{p_customer_capability_digest:capabilityDigest});
+    else if (action==='evaluate_capacity_preview') result=await dependencies.rpc("evaluate_sdf_budget_guard_capacity_preview_v1",{p_customer_capability_digest:capabilityDigest});
     else if (action==='save_draft') {
       if (!input.answers || typeof input.answers!=="object" || Array.isArray(input.answers)) throw new RequestError(400,"INVALID_ANSWERS");
       result=await dependencies.rpc("save_sdf_qualification_intake_draft_v1",{p_customer_capability_digest:capabilityDigest,p_expected_revision:revision(input.expected_revision),p_answers:input.answers});
