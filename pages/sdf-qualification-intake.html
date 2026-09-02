@@ -9,8 +9,8 @@
   <title>Kwalificatie documentenflow | Lorenzo Web Solutions</title>
   <link rel="icon" href="../assets/icons/favicon.ico" sizes="any" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
-  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260902-1" />
-  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260902-1"></script>
+  <link rel="stylesheet" href="../assets/css/sdf-qualification-intake.css?v=20260902-2" />
+  <script type="module" src="../assets/js/sdf-qualification-intake.js?v=20260902-2"></script>
 </head>
 <body class="sdf-intake-page">
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -75,6 +75,21 @@
               <div><p class="eyebrow">Commerciële richting</p><h2 id="packageDirectionLabel">Welke oplossing overweegt u?</h2></div>
               <span>Één keuze</span>
             </div>
+            <section id="commercialSummary" class="sdf-commercial-summary" data-state="incomplete" role="status" aria-live="polite" aria-atomic="true">
+              <div class="sdf-commercial-summary__heading"><p class="eyebrow">Huidige inschatting</p><span id="commercialSummaryBadge">Voorlopig · capaciteit</span></div>
+              <h3 id="commercialSummaryPackage">Nog niet berekend</h3>
+              <div id="commercialSummaryPrices" class="sdf-commercial-summary__prices" hidden>
+                <div><span>Implementatie</span><strong id="commercialSummaryImplementation"></strong><small>excl. btw</small></div>
+                <div><span>Recurrent</span><strong id="commercialSummaryRecurring"></strong><small>excl. btw</small></div>
+              </div>
+              <p id="commercialSummaryPriceMessage" class="sdf-commercial-summary__price-message" hidden></p>
+              <p id="commercialSummarySelection" class="sdf-commercial-summary__selection" hidden></p>
+              <p id="commercialSummaryMinimum" class="sdf-commercial-summary__minimum" hidden></p>
+              <p id="commercialSummaryMessage">Vul de capaciteitsgegevens verder aan om uw voorlopige pakket en prijs te zien.</p>
+              <ul id="commercialSummaryFacts" class="sdf-commercial-summary__facts" hidden></ul>
+              <p id="commercialSummaryDetail">Complexiteit en uitzonderlijke scope worden na indiening nog beoordeeld.</p>
+              <ul id="commercialSummaryReasons" class="sdf-commercial-summary__reasons" hidden></ul>
+            </section>
             <div class="sdf-package-options" id="packageDirection" role="radiogroup" aria-labelledby="packageDirectionLabel">
               <label data-package-card="start"><input type="radio" name="packageDirection" value="start" /><span><strong>START</strong><small>Max. 1 flow, 2 documenttypes, 500 pagina's/maand · Tot 3 gebruikersaccounts.</small><small>€2.850 implementatie · €175/maand · excl. btw</small><small class="sdf-package-unavailable" hidden>Past niet bij huidige capaciteit</small></span></label>
               <label data-package-card="groei"><input type="radio" name="packageDirection" value="groei" /><span><strong>GROEI</strong><small>Max. 3 flows, 5 documenttypes, 2.500 pagina's/maand · Tot 10 gebruikersaccounts.</small><small>€5.700 implementatie · €299/maand · excl. btw</small><small class="sdf-package-unavailable" hidden>Past niet bij huidige capaciteit</small></span></label>
@@ -85,12 +100,6 @@
             <div id="customComplexityField" class="sdf-field" hidden><label for="customComplexity">Wat maakt uw documentenflow afwijkend of complex?</label><textarea id="customComplexity" rows="4" maxlength="2000"></textarea></div>
             <div class="sdf-field"><label for="flowCount">Aantal afzonderlijke document- of businessflows</label><input id="flowCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
             <div class="sdf-field"><label for="userCount">Aantal gebruikersaccounts of personen</label><input id="userCount" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric" required /></div>
-            <section id="capacityPreview" class="sdf-capacity-preview" data-state="incomplete" role="status" aria-live="polite" aria-atomic="true">
-              <div class="sdf-capacity-preview__heading"><h3 id="capacityPreviewHeading">Budget Guard — voorlopige capaciteitscheck</h3><span id="capacityPreviewBadge">Voorlopig · alleen capaciteit</span></div>
-              <p id="capacityPreviewMessage">Budget Guard wordt berekend zodra de vereiste capaciteitsgegevens ingevuld zijn.</p>
-              <p id="capacityPreviewDetail">Complexiteit en eventuele uitzonderlijke scope worden na indiening nog beoordeeld.</p>
-              <ul id="capacityPreviewReasons" hidden></ul>
-            </section>
           </section>
 
           <section class="sdf-form-section" aria-labelledby="documentTypesLabel">

@@ -102,7 +102,7 @@ test("SDF qualification intake preserves capability and API contracts", async ()
     read("assets/js/sdf-qualification-intake.js"),
   ]);
 
-  assert.match(html, /sdf-qualification-intake\.js\?v=20260902-1/);
+  assert.match(html, /sdf-qualification-intake\.js\?v=20260902-2/);
   assert.match(script, /new URLSearchParams\(location\.hash\.slice\(1\)\)/);
   assert.match(script, /history\.replaceState\(null,"",location\.pathname\)/);
   assert.doesNotMatch(script, /location\.search/);
@@ -134,11 +134,9 @@ test("SDF capacity preview is preliminary, server-derived, and keyboard-safe", a
     read("scripts/prepare-pages-dist.ps1"),
   ]);
 
-  for (const id of ["capacityPreview", "capacityPreviewHeading", "capacityPreviewBadge", "capacityPreviewMessage", "capacityPreviewDetail", "capacityPreviewReasons"]) {
-    assert.match(html, new RegExp(`id="${id}"`), `Missing preview region #${id}`);
-  }
+  assert.match(html, /id="commercialSummary"/);
   assert.match(html, /role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(html, /Budget Guard — voorlopige capaciteitscheck/);
+  assert.match(html, /Voorlopig · capaciteit/);
   assert.match(script, /buildSdfCapacityPreviewPresentation/);
   assert.match(script, /input\.disabled=packageState\.disabled/);
   assert.match(script, /action:"evaluate_capacity_preview"/);
@@ -146,6 +144,40 @@ test("SDF capacity preview is preliminary, server-derived, and keyboard-safe", a
   assert.match(presenter, /finalDecisionPending: true/);
   assert.doesNotMatch(presenter, /max_flows|max_document_types|max_pages_per_month|max_users|setup_price|monthly_price/);
   assert.match(publishScript, /assets\/js\/sdf-budget-guard-capacity-preview\.mjs/);
+});
+
+test("SDF live commercial summary is prominent, preliminary, and SDF-owned", async () => {
+  const [html, script, presenter, publishScript] = await Promise.all([
+    read("pages/sdf-qualification-intake.html"),
+    read("assets/js/sdf-qualification-intake.js"),
+    read("assets/js/sdf-budget-guard-commercial-summary.mjs"),
+    read("scripts/prepare-pages-dist.ps1"),
+  ]);
+
+  for (const id of [
+    "commercialSummary",
+    "commercialSummaryPackage",
+    "commercialSummaryImplementation",
+    "commercialSummaryRecurring",
+    "commercialSummaryMinimum",
+    "commercialSummaryFacts",
+    "commercialSummaryReasons",
+    "commercialSummaryDetail",
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`), `Missing commercial summary #${id}`);
+  }
+  assert.ok(html.indexOf('id="commercialSummary"') < html.indexOf('id="packageDirection"'));
+  assert.match(html, /id="commercialSummary"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+  assert.match(html, /Huidige inschatting/);
+  assert.match(html, /Voorlopig · capaciteit/);
+  assert.match(html, /Complexiteit en uitzonderlijke scope worden na indiening nog beoordeeld/);
+  assert.match(script, /buildSdfCommercialSummary/);
+  assert.match(script, /renderCommercialSummary\(latestCapacityPreviewResult,true\)/);
+  assert.match(script, /shouldApplySdfCapacityPreview\(sequence,capacityPreviewSequence\)/);
+  assert.match(script, /renderCommercialSummary\(latestCapacityPreviewResult\)/);
+  assert.match(presenter, /PACKAGE_PRICES/);
+  assert.doesNotMatch(presenter, /max_flows|max_document_types|max_pages_per_month|max_users/);
+  assert.match(publishScript, /assets\/js\/sdf-budget-guard-commercial-summary\.mjs/);
 });
 
 test("SDF qualification intake personalizes only the capability-bound customer dossier", async () => {
