@@ -18,6 +18,7 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "revoke_customer_request_upload_link", "create_sdf_customer_request",
   "get_dossier_assignment", "get_assignment_operator_roster", "assign_dossier",
   "archive_dossier", "reactivate_dossier", "trash_dossier", "restore_dossier",
+  "archive_pending_intake", "restore_pending_intake", "permanently_delete_pending_intake",
   "promote_accepted_application", "issue_and_deliver_approved_quotation",
 ]);
 const DOSSIER_RPC_ACTIONS = new Set(["can_purge_dossier_v1", "purge_dossier_v1", "can_purge_sdf_dossier_v1", "purge_sdf_dossier_v1"]);
@@ -25,6 +26,17 @@ const CUSTOMER_REQUEST_DETAIL_FIELDS = new Set([
   "request_id", "request_reference", "source", "request_type", "title", "description",
   "status", "priority", "submitted_at", "revision", "updated_at", "upload_request",
 ]);
+
+export function formatOperatorDate(value) {
+  if (value == null || value === "") return "Niet beschikbaar";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Niet beschikbaar";
+  return new Intl.DateTimeFormat("nl-BE", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZone: "Europe/Brussels",
+  }).format(date).replace(",", " –");
+}
 
 function errorCode(error, fallback = "OPERATOR_REQUEST_FAILED") {
   return String(error?.context?.code || error?.code || error?.message || fallback);
@@ -59,7 +71,10 @@ export function dossierSubstanceRequest(value) {
 
 export function dossierListRequest(query = {}, cursor = null) {
   const zone = ["PENDING", "ACTIVE", "ARCHIVED", "TRASHED"].includes(query.zone) ? query.zone : "PENDING";
-  if (zone === "PENDING") return { action: "list_pending_intakes", retention_state: "ACTIVE" };
+  if (zone === "PENDING") return {
+    action: "list_pending_intakes",
+    retention_state: query.retention_state === "ARCHIVED" ? "ARCHIVED" : "ACTIVE",
+  };
   const request = {
     action: "list_applications_v2",
     zone: zone === "ACTIVE" && String(query.search || "").trim() ? "ACTIVE_ARCHIVED" : zone,
@@ -73,6 +88,66 @@ export function dossierListRequest(query = {}, cursor = null) {
   };
   if (request.search?.length > 140) throw new Error("INVALID_DOSSIER_SEARCH");
   return request;
+}
+
+export function pendingIntakeRetentionRequest(action, item, reason, idempotencyKey) {
+  const expectedState = action === "archive_pending_intake" ? "ACTIVE"
+    : action === "restore_pending_intake" ? "ARCHIVED" : null;
+  const normalizedReason = String(reason || "").trim();
+  if (!expectedState || item?.retention_state !== expectedState || !UUID.test(String(item?.intake_id || ""))
+    || !Number.isSafeInteger(item?.retention_revision) || item.retention_revision < 0
+    || !UUID.test(String(idempotencyKey || "")) || normalizedReason.length < 1 || normalizedReason.length > 500) {
+    throw new Error("INVALID_PENDING_RETENTION_COMMAND");
+  }
+  return {
+    action,
+    intake_id: item.intake_id,
+    expected_revision: item.retention_revision,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
+  };
+}
+
+export function pendingIntakeDeleteRequest(item, reason, idempotencyKey) {
+  const normalizedReason = String(reason || "").trim();
+  if (item?.can_permanently_delete !== true || !UUID.test(String(item?.intake_id || ""))
+    || !UUID.test(String(item?.quote_request_id || "")) || !UUID.test(String(idempotencyKey || ""))
+    || normalizedReason.length < 1 || normalizedReason.length > 500) {
+    throw new Error("INVALID_PENDING_DELETE_COMMAND");
+  }
+  return {
+    action: "permanently_delete_pending_intake",
+    intake_id: item.intake_id,
+    quote_request_id: item.quote_request_id,
+    idempotency_key: idempotencyKey,
+    reason: normalizedReason,
+  };
+}
+
+export function pendingSdfDossierPurgeRequest(item, eligibility, reason, idempotencyKey) {
+  const normalizedReason = String(reason || "").trim();
+  if (item?.request_kind !== "slimme_documentenflow" || eligibility?.can_purge !== true || eligibility.reason !== null
+    || !UUID.test(String(item?.quote_request_id || "")) || !UUID.test(String(idempotencyKey || ""))
+    || normalizedReason.length < 1 || normalizedReason.length > 500) {
+    throw new Error("INVALID_PENDING_SDF_PURGE_REQUEST");
+  }
+  return {
+    p_quote_request_id: item.quote_request_id,
+    p_reason: normalizedReason,
+    p_idempotency_key: idempotencyKey,
+  };
+}
+
+function purgeBlockMessage(reason) {
+  return {
+    COMMERCIAL_FOLLOW_UP_EXISTS: "Definitief verwijderen is niet mogelijk omdat commerciële opvolging bestaat.",
+    QUOTATION_EXISTS: "Definitief verwijderen is niet mogelijk omdat reeds een offerte aan dit dossier gekoppeld is.",
+    OFFICIAL_QUOTATION_EXISTS: "Definitief verwijderen is niet mogelijk omdat reeds een officiële offerte aan dit dossier gekoppeld is.",
+    PROJECT_EXISTS: "Definitief verwijderen is niet mogelijk omdat een project aan dit dossier gekoppeld is.",
+    INVOICE_EXISTS: "Definitief verwijderen is niet mogelijk omdat een factuurafhankelijkheid bestaat.",
+    CUSTOMER_REQUEST_EXISTS: "Definitief verwijderen is niet mogelijk omdat klantverzoeken aan dit dossier gekoppeld zijn.",
+    FINANCIAL_DEPENDENCY_EXISTS: "Definitief verwijderen is niet mogelijk omdat een financiële afhankelijkheid bestaat.",
+  }[reason] || "Definitief verwijderen is niet toegestaan omdat een beschermde afhankelijkheid bestaat.";
 }
 
 export function dossierAssignmentRequest(detail, assignment, assigneeOperatorId, reason, idempotencyKey) {
@@ -296,14 +371,16 @@ function dossierWorkspaceMarkup() {
     <header class="project-heading dossiers-heading"><div><p class="eyebrow">Operator dossiers</p><h1>Dossiers</h1><p>Server-authoritatieve aanvragen, toewijzingen en documenten.</p></div><div class="dossiers-heading__actions"><button type="button" class="secondary-action" data-operator-window-module="dossiers" data-operator-window-slot="main" hidden>Open in nieuw venster</button><button type="button" class="secondary-action" data-dossiers-action="refresh">Vernieuwen</button></div></header>
     <nav class="dossiers-status-overview" aria-label="Dossierstatus"><button type="button" data-dossiers-zone="PENDING" aria-current="true"><span>Nieuwe aanvragen</span><strong data-dossiers-counter="PENDING">0</strong><small><span data-dossiers-counter="invited">0</span> uitgenodigd · <span data-dossiers-counter="in_progress">0</span> bezig</small></button><button type="button" data-dossiers-zone="ACTIVE"><span>Actieve dossiers</span><strong data-dossiers-counter="ACTIVE">—</strong><small>In behandeling en ingediend</small></button><button type="button" data-dossiers-zone="ARCHIVED"><span>Afgerond / Archief</span><strong data-dossiers-counter="ARCHIVED">—</strong><small>Afgeronde dossiers</small></button><button type="button" data-dossiers-zone="TRASHED"><span>Prullenbak</span><strong data-dossiers-counter="TRASHED">—</strong><small>Verwijderde dossiers</small></button></nav>
     <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="PENDING">Nieuwe aanvragen</option><option value="ACTIVE">Actieve dossiers</option><option value="ARCHIVED">Afgerond / Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle producten</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Zoeken</button></form>
+    <div class="zone-filters pending-intake-tabs" data-dossiers-pending-retention role="group" aria-label="Intake-opvolging"><button type="button" data-dossiers-retention-state="ACTIVE" aria-pressed="true">Actief</button><button type="button" data-dossiers-retention-state="ARCHIVED" aria-pressed="false">Gearchiveerd</button></div>
     <p class="action-message action-message--dark" data-dossiers-status role="status" aria-live="polite"></p>
     <div class="dashboard-grid dossiers-grid"><section class="panel" aria-labelledby="dossiersListTitle"><div class="panel__heading"><div><p class="eyebrow">Werkvoorraad</p><h2 id="dossiersListTitle">Dossiers</h2></div><span class="badge" data-dossiers-count>0</span></div><ul class="application-list dossiers-list" data-dossiers-list></ul><p class="empty-state" data-dossiers-empty hidden>Geen dossiers gevonden.</p><button type="button" class="secondary-action" data-dossiers-action="more" hidden>Meer laden</button></section>
       <aside class="context-column" aria-label="Dossierdetail"><section class="panel" data-dossiers-detail-empty><h2>Selecteer een dossier</h2><p class="empty-state">Kies een dossier uit de werkvoorraad.</p></section>
-        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow" data-dossiers-field="reference"></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
+        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow">Dossierreferentie <strong data-dossiers-field="reference"></strong></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
         <section class="panel dossiers-customer" data-dossiers-customer hidden><div class="panel__heading"><div><p class="eyebrow">Relatie</p><h2>Klant</h2></div></div><dl class="application-detail"><div><dt>Naam</dt><dd data-dossiers-field="customer_name"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div></dl></section>
         <section class="panel dossiers-intake" data-dossiers-intake hidden><div class="panel__heading"><div><p class="eyebrow">Klantinput</p><h2>Intake</h2></div><span class="badge" data-dossiers-intake-status></span></div><dl class="application-detail dossiers-intake-meta"><div><dt>Uitnodiging</dt><dd data-dossiers-field="invited_at"></dd></div><div><dt>Gestart</dt><dd data-dossiers-field="started_at"></dd></div><div><dt>Ingediend</dt><dd data-dossiers-field="submitted_at"></dd></div></dl><div class="dossiers-substance-sections" data-dossiers-intake-sections></div></section>
         <section class="panel dossiers-document-overview" data-dossiers-document-overview hidden><div class="panel__heading"><div><p class="eyebrow">Gekoppeld aan aanvraag</p><h2>Documenten</h2></div></div><dl class="application-detail"><div><dt>Klantverzoeken</dt><dd data-dossiers-field="customer_request_count"></dd></div><div><dt>Ontvangen documenten</dt><dd data-dossiers-field="uploaded_document_count"></dd></div></dl></section>
-        <section class="panel dossiers-lifecycle" data-dossiers-lifecycle-panel hidden><div class="panel__heading"><div><p class="eyebrow">Dossierbeheer</p><h2>Status</h2></div><span class="badge" data-dossiers-lifecycle-state></span></div><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-lifecycle="archive_dossier">Archiveren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="reactivate_dossier">Activeren</button><button type="button" class="danger-action" data-dossiers-lifecycle="trash_dossier">Naar prullenbak</button><button type="button" class="secondary-action" data-dossiers-lifecycle="restore_dossier">Herstellen</button><button type="button" class="danger-action" data-dossiers-purge hidden>Permanent verwijderen</button></div><p class="action-message" data-dossiers-purge-message></p></section>
+        <section class="panel dossiers-actions" data-dossiers-lifecycle-panel hidden><div class="panel__heading"><div><p class="eyebrow">Dossierbeheer</p><h2>Dossieracties</h2></div><span class="badge" data-dossiers-lifecycle-state></span></div><div class="dossiers-actions__group"><h3>Acties</h3><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-pdf hidden>Download PDF</button><button type="button" class="secondary-action" data-dossiers-lifecycle="archive_dossier">Archiveren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="reactivate_dossier">Terug activeren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="restore_dossier">Herstellen uit prullenbak</button></div></div><div class="dossiers-actions__group dossiers-actions__group--danger"><h3>Verwijderen</h3><div class="lifecycle-actions"><button type="button" class="danger-action" data-dossiers-lifecycle="trash_dossier">Naar prullenbak</button><button type="button" class="danger-action" data-dossiers-purge hidden>Definitief verwijderen</button></div><p class="action-message" data-dossiers-purge-message></p></div></section>
+        <section class="panel dossiers-actions" data-dossiers-pending-actions hidden><div class="panel__heading"><div><p class="eyebrow">Werkruimte</p><h2>Dossieracties</h2></div><span class="badge" data-dossiers-pending-retention-state></span></div><div class="dossiers-actions__group"><h3>Acties</h3><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-pending-retention-action></button></div><p>Archiveren verwijdert deze intake alleen uit de actieve opvolging.</p></div><div class="dossiers-actions__group dossiers-actions__group--danger"><h3>Verwijderen</h3><div class="lifecycle-actions"><button type="button" class="danger-action" data-dossiers-pending-delete hidden>Definitief verwijderen</button></div><p class="action-message" data-dossiers-pending-delete-message></p></div></section>
         <section class="panel dossiers-assignment" data-dossiers-assignment hidden><div class="panel__heading"><div><p class="eyebrow">Toewijzing</p><h2>Operator</h2></div><strong data-dossiers-assignee></strong></div><form data-dossiers-assignment-form><label>Toewijzen aan<select name="assignee_operator_id" required><option value="">Kies een operator</option></select></label><label>Reden bij hertoewijzing<textarea name="reason" rows="3" maxlength="500"></textarea></label><button type="submit" class="primary-action primary-action--compact">Opslaan</button></form></section>
         <section class="panel" data-dossiers-documents hidden><div class="panel__heading"><div><p class="eyebrow">Documenten</p><h2>Dossierdocumenten</h2></div></div><ul class="document-list" data-dossiers-document-list></ul><p class="empty-state" data-dossiers-document-empty></p></section>
         <section class="panel" data-dossiers-requests hidden><div class="panel__heading"><div><p class="eyebrow">Klantverzoeken</p><h2>Requests</h2></div></div><ul class="customer-request-list" data-dossiers-request-list></ul><p class="empty-state" data-dossiers-request-empty></p><article data-dossiers-request-detail hidden><hr /><p class="eyebrow" data-dossiers-request-reference></p><h3 data-dossiers-request-title></h3><p data-dossiers-request-description></p><dl class="application-detail"><div><dt>Status</dt><dd data-dossiers-request-status></dd></div><div><dt>Prioriteit</dt><dd data-dossiers-request-priority></dd></div></dl><div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-request-transition hidden></button><button type="button" class="secondary-action" data-dossiers-upload-create>Uploadlink maken</button><button type="button" class="secondary-action" data-dossiers-upload-copy hidden>Uploadlink kopiëren</button><button type="button" class="danger-action" data-dossiers-upload-revoke hidden>Uploadlink intrekken</button></div><input type="url" readonly data-dossiers-upload-url hidden aria-label="Veilige uploadlink" /><p class="action-message" data-dossiers-request-message></p></article></section>
@@ -314,6 +391,13 @@ function dossierWorkspaceMarkup() {
 function setText(workspace, field, value) {
   const node = workspace.querySelector(`[data-dossiers-field="${field}"]`);
   if (node) node.textContent = value == null || value === "" ? "Niet beschikbaar" : String(value);
+}
+
+function clearDetailSelection(workspace) {
+  workspace.querySelector("[data-dossiers-detail-empty]").hidden = false;
+  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
+    panel.hidden = true;
+  }
 }
 
 function applicationSummary(item) {
@@ -328,7 +412,7 @@ function pendingSummary(item) {
     || !UUID.test(String(item.intake_id || "")) || typeof item.name !== "string" || !item.name
     || typeof item.support_reference !== "string" || !SUPPORT_REFERENCE.test(item.support_reference)
     || !["website", "slimme_documentenflow"].includes(item.request_kind)
-    || !["invited", "in_progress"].includes(item.intake_status) || item.retention_state !== "ACTIVE") {
+    || !["invited", "in_progress"].includes(item.intake_status) || !["ACTIVE", "ARCHIVED"].includes(item.retention_state)) {
     throw new Error("INVALID_PENDING_DOSSIER_LIST_RESPONSE");
   }
   return {
@@ -445,15 +529,15 @@ function renderSubstanceSections(workspace, sections) {
 }
 
 function renderSubstance(workspace, substance) {
-  setText(workspace, "requested_at", substance.request.requested_at);
+  setText(workspace, "requested_at", formatOperatorDate(substance.request.requested_at));
   setText(workspace, "description", substance.request.original_text);
   setText(workspace, "customer_name", substance.customer.name);
   setText(workspace, "company", substance.customer.company);
   setText(workspace, "email", substance.customer.email);
   setText(workspace, "phone", substance.customer.phone);
-  setText(workspace, "invited_at", substance.intake.invited_at);
-  setText(workspace, "started_at", substance.intake.started_at);
-  setText(workspace, "submitted_at", substance.intake.submitted_at);
+  setText(workspace, "invited_at", formatOperatorDate(substance.intake.invited_at));
+  setText(workspace, "started_at", formatOperatorDate(substance.intake.started_at));
+  setText(workspace, "submitted_at", formatOperatorDate(substance.intake.submitted_at));
   setText(workspace, "customer_request_count", substance.documents.customer_request_count);
   setText(workspace, "uploaded_document_count", substance.documents.uploaded_document_count);
   workspace.querySelector("[data-dossiers-intake-status]").textContent = dossierStatus(substance.intake.status).label;
@@ -507,7 +591,9 @@ function renderList(workspace, items, selectedReference) {
     button.type = "button";
     button.className = "application-list__button";
     button.dataset.dossiersSelect = String(index);
-    if (item.reference === selectedReference) button.setAttribute("aria-current", "true");
+    const selected = item.reference === selectedReference;
+    button.setAttribute("aria-selected", String(selected));
+    if (selected) button.setAttribute("aria-current", "true");
     name.textContent = item.name;
     reference.textContent = item.reference;
     const presentedStatus = dossierStatus(item.status);
@@ -536,6 +622,11 @@ function renderStatusOverview(workspace, state) {
       );
     }
   }
+  const retention = workspace.querySelector("[data-dossiers-pending-retention]");
+  retention.hidden = state.query.zone !== "PENDING";
+  for (const button of retention.querySelectorAll("[data-dossiers-retention-state]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.dossiersRetentionState === state.query.retention_state));
+  }
 }
 
 function renderDetail(workspace, detail, summary, substance) {
@@ -551,6 +642,8 @@ function renderDetail(workspace, detail, summary, substance) {
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
   const lifecycle = workspace.querySelector("[data-dossiers-lifecycle-panel]");
   lifecycle.hidden = !detail.dossier_lifecycle;
+  workspace.querySelector("[data-dossiers-pending-actions]").hidden = true;
+  workspace.querySelector("[data-dossiers-pdf]").hidden = !(detail.request_kind === "website" && detail.application);
   if (detail.dossier_lifecycle) {
     workspace.querySelector("[data-dossiers-lifecycle-state]").textContent = detail.dossier_lifecycle.state;
     const allowed = { ACTIVE: ["archive_dossier", "trash_dossier"], ARCHIVED: ["reactivate_dossier", "trash_dossier"], TRASHED: ["restore_dossier"] }[detail.dossier_lifecycle.state] || [];
@@ -558,7 +651,7 @@ function renderDetail(workspace, detail, summary, substance) {
   }
 }
 
-function renderPendingDetail(workspace, summary, substance) {
+function renderPendingDetail(workspace, summary, substance, identity, purgeEligibility = null) {
   const detail = summary.raw;
   setText(workspace, "reference", detail.support_reference);
   setText(workspace, "name", detail.name);
@@ -573,6 +666,21 @@ function renderPendingDetail(workspace, summary, substance) {
   for (const selector of ["[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
     workspace.querySelector(selector).hidden = true;
   }
+  const actions = workspace.querySelector("[data-dossiers-pending-actions]");
+  const retentionAction = actions.querySelector("[data-dossiers-pending-retention-action]");
+  const archived = detail.retention_state === "ARCHIVED";
+  actions.hidden = false;
+  actions.querySelector("[data-dossiers-pending-retention-state]").textContent = archived ? "Gearchiveerd" : "Actief";
+  retentionAction.dataset.dossiersPendingRetentionAction = archived ? "restore_pending_intake" : "archive_pending_intake";
+  retentionAction.textContent = archived ? "Terugzetten naar actief" : "Archiveren";
+  const purge = actions.querySelector("[data-dossiers-pending-delete]");
+  const eligibility = detail.request_kind === "slimme_documentenflow"
+    ? purgeEligibility
+    : { can_purge: detail.can_permanently_delete === true, reason: detail.delete_block_reason || null };
+  purge.hidden = identity.role !== "owner" || eligibility?.can_purge !== true;
+  actions.querySelector("[data-dossiers-pending-delete-message]").textContent = identity.role !== "owner" ? ""
+    : eligibility?.can_purge === true ? "Definitief verwijderen is server-side toegestaan."
+    : purgeBlockMessage(eligibility?.reason);
 }
 
 function renderDocuments(workspace, documents) {
@@ -664,9 +772,14 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   }
 
   workspace.innerHTML = dossierWorkspaceMarkup();
+  const detailColumn = workspace.querySelector(".context-column");
+  detailColumn.append(
+    workspace.querySelector("[data-dossiers-lifecycle-panel]"),
+    workspace.querySelector("[data-dossiers-pending-actions]"),
+  );
   const authority = createOperatorDossierAuthority(client, options);
   const state = {
-    query: { zone: "PENDING", request_kind: null, search: "" },
+    query: { zone: "PENDING", retention_state: "ACTIVE", request_kind: null, search: "" },
     items: [],
     nextCursor: null,
     selected: null,
@@ -680,6 +793,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     uploadUrl: null,
     requestBusy: false,
     substance: null,
+    pendingPurgeEligibility: null,
   };
   const status = workspace.querySelector("[data-dossiers-status]");
 
@@ -732,6 +846,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.selected = summary;
     state.detail = null;
     state.substance = null;
+    state.pendingPurgeEligibility = null;
     state.requests = [];
     state.request = null;
     state.uploadUrl = null;
@@ -744,13 +859,17 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (summary.kind === "pending") {
       status.textContent = "Dossier laden.";
       try {
-        const substance = validateDossierSubstance(
-          await authority.gateway(dossierSubstanceRequest(summary)),
-          summary.raw.quote_request_id,
-        );
+        const [substanceResponse, purgeEligibility] = await Promise.all([
+          authority.gateway(dossierSubstanceRequest(summary)),
+          identity.role === "owner" && summary.raw.request_kind === "slimme_documentenflow"
+            ? authority.rpc("can_purge_sdf_dossier_v1", { p_quote_request_id: summary.raw.quote_request_id })
+            : Promise.resolve(null),
+        ]);
+        const substance = validateDossierSubstance(substanceResponse, summary.raw.quote_request_id);
         if (controller.disposed || selection !== selectDossier.generation) return false;
         state.substance = substance;
-        renderPendingDetail(workspace, summary, substance);
+        state.pendingPurgeEligibility = purgeEligibility;
+        renderPendingDetail(workspace, summary, substance, identity, purgeEligibility);
         status.textContent = "";
         return true;
       } catch (error) {
@@ -809,7 +928,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           purge.hidden = eligibility?.can_purge !== true;
           workspace.querySelector("[data-dossiers-purge-message]").textContent = eligibility?.can_purge === true
             ? "Permanent verwijderen is server-side toegestaan."
-            : String(eligibility?.reason || "Permanent verwijderen is niet toegestaan.");
+            : purgeBlockMessage(eligibility?.reason);
         }));
       }
       await Promise.allSettled(tasks);
@@ -918,20 +1037,60 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
 
   async function mutate(request) {
     if (!state.detail) return false;
-    status.textContent = "Dossieractie wordt uitgevoerd.";
-    await authority.gateway(request);
+    const selectedReference = state.selected?.reference;
+    try {
+      status.textContent = "Dossieractie wordt uitgevoerd.";
+      await authority.gateway(request);
+      if (controller.disposed) return false;
+      await controller.refresh();
+      const refreshed = state.items.find((item)=>item.reference === selectedReference);
+      if (refreshed) await selectDossier(refreshed);
+      else clearDetailSelection(workspace);
+      return true;
+    } catch {
+      if (!controller.disposed) status.textContent = "Dossieractie is niet uitgevoerd. Vernieuw het dossier en probeer opnieuw.";
+      return false;
+    }
+  }
+
+  async function mutatePending(request, permanentlyDelete = false) {
+    try {
+      status.textContent = permanentlyDelete ? "Intake wordt definitief verwijderd." : "Werkruimtestatus wordt gewijzigd.";
+      await authority.gateway(request);
+      if (controller.disposed) return false;
+      state.selected = null;
+      await controller.refresh();
+      clearDetailSelection(workspace);
+      status.textContent = permanentlyDelete ? "Intake is definitief verwijderd."
+        : request.action === "archive_pending_intake" ? "Intake is gearchiveerd." : "Intake is teruggezet naar actief.";
+      return true;
+    } catch {
+      if (!controller.disposed) status.textContent = "Intakeactie is niet uitgevoerd. Vernieuw het dossier en probeer opnieuw.";
+      return false;
+    }
+  }
+
+  async function purgePendingSdf(parameters) {
+    status.textContent = "Intake wordt definitief verwijderd.";
+    const result = await authority.rpc("purge_sdf_dossier_v1", parameters);
+    if (result?.quote_request_id !== state.selected?.raw?.quote_request_id
+      || result?.deleted !== true || typeof result?.replayed !== "boolean") throw new Error("SDF_DOSSIER_PURGE_FAILED");
     if (controller.disposed) return false;
+    state.selected = null;
     await controller.refresh();
-    const refreshed = state.items.find((item)=>item.reference === state.selected?.reference);
-    if (refreshed) await selectDossier(refreshed);
+    clearDetailSelection(workspace);
+    status.textContent = "Intake is definitief verwijderd.";
     return true;
   }
 
   function openCommandDialog(command) {
     const dialog = workspace.querySelector("[data-dossiers-command-dialog]");
     state.command = command;
-    dialog.querySelector("[data-dossiers-command-title]").textContent = command.kind === "purge" ? "Dossier permanent verwijderen" : "Dossierstatus wijzigen";
-    dialog.querySelector("[data-dossiers-command-message]").textContent = command.kind === "purge"
+    dialog.querySelector("[data-dossiers-command-title]").textContent = command.kind === "purge" ? "Dossier permanent verwijderen"
+      : command.kind === "pending-delete" ? "Intake definitief verwijderen"
+      : command.action === "archive_pending_intake" ? "Intake archiveren"
+      : command.action === "restore_pending_intake" ? "Intake terugzetten naar actief" : "Dossierstatus wijzigen";
+    dialog.querySelector("[data-dossiers-command-message]").textContent = ["purge", "pending-delete"].includes(command.kind)
       ? "Deze actie is definitief. Geef een concrete reden om door te gaan."
       : "Geef een reden voor deze dossieractie.";
     dialog.querySelector("textarea").value = "";
@@ -943,7 +1102,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (event.target.matches("[data-dossiers-filters]")) {
       event.preventDefault();
       const data = new FormData(event.target);
-      state.query = { search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
+      state.query = { ...state.query, search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
       refreshList();
     } else if (event.target.matches("[data-dossiers-assignment-form]")) {
       event.preventDefault();
@@ -952,7 +1111,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       void mutate(dossierAssignmentRequest(state.detail, state.assignment, data.get("assignee_operator_id"), data.get("reason"), crypto.randomUUID()));
     } else if (event.target.matches("[data-dossiers-command-form]")) {
       event.preventDefault();
-      if (!state.detail || !state.command) return;
+      if (!state.command || (!state.detail && !["pending-retention", "pending-delete"].includes(state.command.kind))) return;
       const dialog = workspace.querySelector("[data-dossiers-command-dialog]");
       const reason = new FormData(event.target).get("reason");
       const command = state.command;
@@ -960,6 +1119,18 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       dialog.close();
       if (command.kind === "lifecycle") {
         void mutate(dossierLifecycleRequest(command.action, state.detail, reason, crypto.randomUUID()));
+      } else if (command.kind === "pending-retention") {
+        void mutatePending(pendingIntakeRetentionRequest(command.action, state.selected.raw, reason, crypto.randomUUID()));
+      } else if (command.kind === "pending-delete") {
+        if (state.selected.raw.request_kind === "slimme_documentenflow") {
+          void purgePendingSdf(pendingSdfDossierPurgeRequest(
+            state.selected.raw, state.pendingPurgeEligibility, reason, crypto.randomUUID(),
+          )).catch(()=>{
+            if (!controller.disposed) status.textContent = "Definitief verwijderen is niet uitgevoerd. De serverbescherming blijft van kracht.";
+          });
+        } else {
+          void mutatePending(pendingIntakeDeleteRequest(state.selected.raw, reason, crypto.randomUUID()), true);
+        }
       } else {
         const request = dossierPurgeRequest(state.detail, reason, crypto.randomUUID());
         status.textContent = "Dossier wordt permanent verwijderd.";
@@ -978,7 +1149,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (!event.target.matches('[data-dossiers-filters] select[name="zone"], [data-dossiers-filters] select[name="request_kind"]')) return;
     const form = event.target.form;
     const data = new FormData(form);
-    state.query = { search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
+    state.query = { ...state.query, search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
     refreshList();
   });
   controller.listen(workspace, "click", (event)=>{
@@ -987,6 +1158,10 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (target.dataset.dossiersZone) {
       state.query.zone = target.dataset.dossiersZone;
       workspace.querySelector('[data-dossiers-filters] select[name="zone"]').value = state.query.zone;
+      refreshList();
+    }
+    else if (target.dataset.dossiersRetentionState) {
+      state.query.retention_state = target.dataset.dossiersRetentionState;
       refreshList();
     }
     else if (target.dataset.dossiersAction === "refresh") refreshList();
@@ -1003,8 +1178,20 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     }
     else if (target.dataset.dossiersLifecycle) {
       openCommandDialog({ kind: "lifecycle", action: target.dataset.dossiersLifecycle });
+    } else if (target.dataset.dossiersPendingRetentionAction) {
+      openCommandDialog({ kind: "pending-retention", action: target.dataset.dossiersPendingRetentionAction });
+    } else if (target.hasAttribute("data-dossiers-pending-delete")) {
+      openCommandDialog({ kind: "pending-delete" });
     } else if (target.hasAttribute("data-dossiers-purge")) {
       openCommandDialog({ kind: "purge" });
+    } else if (target.hasAttribute("data-dossiers-pdf")) {
+      if (state.detail?.request_kind === "website" && state.detail.application) {
+        void import("./application-dossier-copy.js?v=20260903-dossier-actions-restoration").then(({ downloadApplicationDossierPdf })=>{
+          if (!controller.disposed) downloadApplicationDossierPdf(state.detail.application);
+        }).catch(()=>{
+          if (!controller.disposed) status.textContent = "PDF kon niet veilig worden aangemaakt.";
+        });
+      }
     } else if (target.hasAttribute("data-dossiers-command-cancel")) {
       state.command = null;
       workspace.querySelector("[data-dossiers-command-dialog]").close();

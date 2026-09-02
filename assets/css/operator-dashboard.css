@@ -426,7 +426,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .application-list li { min-width:0; }
 .application-list__button { position:relative; width:100%; min-height:76px; padding:.8rem .75rem .8rem .9rem; display:flex; align-items:center; justify-content:space-between; gap:.8rem; color:var(--text); border:1px solid transparent; border-radius:7px; background:transparent; text-align:left; transition:transform var(--motion-duration-fast) ease,border-color var(--motion-duration-fast) ease,background-color var(--motion-duration-fast) ease,box-shadow var(--motion-duration-fast) ease; }
 .application-list__button:hover { border-color:var(--line); background:#f7f9fa; }
-.application-list__button[aria-current="true"] { color:var(--navy); border-color:#9ed6d1; background:var(--turquoise-soft); box-shadow:inset 4px 0 0 var(--turquoise); }
+.application-list__button[aria-current="true"] { color:var(--navy); border-color:#238f87; background:#d9f3f0; box-shadow:inset 5px 0 0 var(--turquoise),0 0 0 2px rgba(42,169,160,.18); }
+.application-list__button[aria-current="true"]:hover { border-color:#238f87; background:#d9f3f0; box-shadow:inset 5px 0 0 var(--turquoise),0 0 0 2px rgba(42,169,160,.18); }
 .application-list__button > span:first-child { min-width:0; display:grid; gap:.2rem; }
 .application-list__button > .badge { max-width:none; flex:0 0 auto; overflow-wrap:normal; white-space:nowrap; }
 .application-list__statuses { flex:0 0 auto; display:flex; align-items:flex-end; flex-direction:column; gap:.25rem; }
@@ -505,6 +506,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dossiers-substance-sections dl div { min-width:0; padding:.45rem 0; }
 .dossiers-substance-sections dt { color:var(--muted); font-size:.68rem; font-weight:900; text-transform:uppercase; }
 .dossiers-substance-sections dd { margin:.2rem 0 0; color:var(--navy); font-weight:650; overflow-wrap:anywhere; white-space:pre-wrap; }
+.dossiers-actions { display:grid; gap:1rem; }
+.dossiers-actions[hidden],.dossiers-actions [hidden],[data-dossiers-pending-retention][hidden] { display:none; }
+.dossiers-actions__group { padding-top:.9rem; border-top:1px solid var(--line); }
+.dossiers-actions__group h3 { margin:0 0 .65rem; color:var(--navy); font-size:.82rem; }
+.dossiers-actions__group p { margin:.65rem 0 0; color:var(--muted); }
+.dossiers-actions__group--danger { padding:.9rem; border:1px solid #e7b7b2; border-left:4px solid var(--red); border-radius:6px; background:#fff8f7; }
+.dossiers-actions__group--danger h3 { color:#8f2f27; }
+.pending-intake-tabs { max-width:24rem; margin:-.35rem 0 1rem; }
 .sdf-operator-review { margin-top:1.25rem; display:grid; gap:1.25rem; }
 .sdf-operator-review section { min-width:0; }
 .sdf-operator-review h3 { margin:0 0 .65rem; padding-bottom:.45rem; border-bottom:1px solid var(--line); }

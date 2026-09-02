@@ -213,8 +213,8 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-dossier-detail-restoration/);
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossier-detail-restoration/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-dossier-actions-restoration/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossier-actions-restoration/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);
@@ -223,7 +223,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /data-dossiers-zone="ACTIVE"/);
   assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
   assert.match(source, /Originele klantaanvraag/);
-  assert.match(source, /renderPendingDetail\(workspace, summary, substance\)/);
+  assert.match(source, /renderPendingDetail\(workspace, summary, substance, identity, purgeEligibility\)/);
   assert.doesNotMatch(source, /setText\(workspace, "description", null\)/);
   assert.match(source, /workspace\.setAttribute\("aria-busy", "true"\)/);
   assert.doesNotMatch(source, />Toepassen</);
@@ -272,4 +272,83 @@ test("Dossiers disposal removes listeners before a new instance subscribes", asy
   assert.equal(listeners.size, 1);
   second.dispose();
   assert.equal(listeners.size, 0);
+});
+
+test("Dossiers present Belgian dates, a labelled reference, and persistent accessible selection", async () => {
+  const { formatOperatorDate } = await import("../assets/js/operator-dossiers.mjs");
+  assert.equal(formatOperatorDate("2026-09-02T07:43:27.206665+00:00"), "02/09/2026 – 09:43");
+  assert.equal(formatOperatorDate(null), "Niet beschikbaar");
+  assert.equal(formatOperatorDate("not-a-date"), "Niet beschikbaar");
+  const [source, css] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("assets/css/operator-dashboard.css"),
+  ]);
+  assert.match(source, /Dossierreferentie <strong data-dossiers-field="reference">/);
+  assert.match(source, /button\.setAttribute\("aria-selected", String\(selected\)\)/);
+  assert.match(source, /renderList\(workspace, state\.items, summary\.reference\)/);
+  assert.match(css, /\.application-list__button\[aria-current="true"\]:hover/);
+  assert.match(css, /\.dossiers-actions\[hidden\],\.dossiers-actions \[hidden\]/);
+});
+
+test("historical Pending retention and hard-delete commands remain server-bound", async () => {
+  const { dossierListRequest, pendingIntakeDeleteRequest, pendingIntakeRetentionRequest, pendingSdfDossierPurgeRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const item = {
+    intake_id: "f4300000-0000-4000-8000-000000000001",
+    quote_request_id: "f4300000-0000-4000-8000-000000000002",
+    retention_state: "ACTIVE",
+    retention_revision: 3,
+    can_permanently_delete: true,
+  };
+  const idempotencyKey = "f4300000-0000-4000-8000-000000000003";
+  assert.deepEqual(dossierListRequest({ zone: "PENDING", retention_state: "ARCHIVED" }), {
+    action: "list_pending_intakes", retention_state: "ARCHIVED",
+  });
+  assert.deepEqual(pendingIntakeRetentionRequest("archive_pending_intake", item, " Dubbele intake ", idempotencyKey), {
+    action: "archive_pending_intake", intake_id: item.intake_id, expected_revision: 3,
+    idempotency_key: idempotencyKey, reason: "Dubbele intake",
+  });
+  assert.equal(pendingIntakeRetentionRequest("restore_pending_intake", {
+    ...item, retention_state: "ARCHIVED",
+  }, "Terugzetten", idempotencyKey).action, "restore_pending_intake");
+  assert.deepEqual(pendingIntakeDeleteRequest(item, " Testrecord ", idempotencyKey), {
+    action: "permanently_delete_pending_intake", intake_id: item.intake_id,
+    quote_request_id: item.quote_request_id, idempotency_key: idempotencyKey, reason: "Testrecord",
+  });
+  assert.throws(()=>pendingIntakeDeleteRequest({ ...item, can_permanently_delete: false }, "Nee", idempotencyKey), /INVALID_PENDING_DELETE_COMMAND/);
+  assert.deepEqual(pendingSdfDossierPurgeRequest({
+    ...item, request_kind: "slimme_documentenflow",
+  }, { can_purge: true, reason: null }, " Opschonen ", idempotencyKey), {
+    p_quote_request_id: item.quote_request_id, p_reason: "Opschonen", p_idempotency_key: idempotencyKey,
+  });
+  assert.throws(()=>pendingSdfDossierPurgeRequest({
+    ...item, request_kind: "slimme_documentenflow",
+  }, { can_purge: false, reason: "QUOTATION_EXISTS" }, "Nee", idempotencyKey), /INVALID_PENDING_SDF_PURGE_REQUEST/);
+  const source = await read("assets/js/operator-dossiers.mjs");
+  assert.match(source, />Actief<\/button><button[^>]+>Gearchiveerd<\/button>/);
+  assert.match(source, />Dossieracties<\/h2>/);
+  assert.match(source, />Download PDF<\/button>/);
+  assert.match(source, />Naar prullenbak<\/button>/);
+  assert.match(source, />Herstellen uit prullenbak<\/button>/);
+  assert.match(source, /data-dossiers-command-dialog/);
+  assert.match(source, /import\("\.\/application-dossier-copy\.js\?v=20260903-dossier-actions-restoration"\)/);
+  assert.match(source, /authority\.rpc\("can_purge_sdf_dossier_v1"/);
+  assert.match(source, /authority\.rpc\("purge_sdf_dossier_v1"/);
+  assert.match(source, /reeds een offerte aan dit dossier gekoppeld/);
+  assert.match(source, /detailColumn\.append\([\s\S]*data-dossiers-lifecycle-panel[\s\S]*data-dossiers-pending-actions/);
+});
+
+test("archived Pending records remain valid in the retention workspace", async () => {
+  const { validateDossierListPage } = await import("../assets/js/operator-dossiers.mjs");
+  const item = {
+    quote_request_id: "a1000000-0000-4000-8000-000000000001",
+    intake_id: "a1000000-0000-4000-8000-000000000002",
+    name: "Synthetic customer",
+    organization: "Synthetic company",
+    support_reference: "#A1000000",
+    request_kind: "website",
+    intake_status: "invited",
+    retention_state: "ARCHIVED",
+  };
+  const page = validateDossierListPage({ items: [item] }, "list_pending_intakes");
+  assert.equal(page.items[0].raw.retention_state, "ARCHIVED");
 });
