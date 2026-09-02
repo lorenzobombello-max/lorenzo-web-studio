@@ -1,7 +1,8 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260902-dossiers-pending-fix";
-import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260902-login-stability";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260902-lifecycle-round2";
+import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260902-lifecycle-round2";
+import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -15,11 +16,13 @@ let workspaceMaster = null;
 
 function disposeDossiers() {
   const workspace = document.querySelector("[data-dossiers-workspace]");
+  workspaceMaster?.unbindModuleButton(workspace?.querySelector("[data-operator-window-module=\"dossiers\"]"));
   workspace?.operatorDossiersController?.dispose();
   if (workspace) workspace.operatorDossiersController = null;
 }
 
 function redirectToLogin() {
+  clearOperatorWorkspaceResumeHint(window.history);
   disposeDossiers();
   moduleNavigation?.invalidateIdentity();
   financeNavigation?.invalidateIdentity();
@@ -55,6 +58,7 @@ try {
 
   async function logoutOperator(event) {
     event.currentTarget.disabled = true;
+    clearOperatorWorkspaceResumeHint(window.history);
     await workspaceMaster?.shutdownWorkspace();
     await signOutOperator(client);
     redirectToLogin();
@@ -72,7 +76,7 @@ try {
           identity: verifiedIdentity,
           initialUrl: window.location.href,
           activateTab: (tab)=>presentFinanceTab(document, tab),
-          pushUrl: (url)=>window.history.pushState(null, "", url),
+          pushUrl: (url)=>window.history.pushState(window.history.state, "", url),
           loadTab: async (_tab, context)=>{
             await startOperatorDashboard({
               client,
@@ -90,11 +94,13 @@ try {
     if (identity.role === "owner") {
       workspaceMaster = await createOperatorWorkspaceMaster({
         client,
+        resumeHint: readOperatorWorkspaceResumeHint(window.history),
         onInvalidate: (moduleKey)=>{
           if (moduleKey === "messages") document.getElementById("messagesWorkspace")?.operatorMessagesController?.refresh();
         },
       });
       if (workspaceMaster.active) {
+        writeOperatorWorkspaceResumeHint(window.history, workspaceMaster.resumeHint);
         for (const button of document.querySelectorAll("[data-operator-window-module]")) {
           workspaceMaster.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
         }
@@ -124,7 +130,7 @@ try {
       identity,
       initialUrl: window.location.href,
       activateModule,
-      pushUrl: (url)=>window.history.pushState(null, "", url),
+      pushUrl: (url)=>window.history.pushState(window.history.state, "", url),
       loadModule: async (_module, context)=>{
         disposeDossiers();
         await startOperatorDashboard({
@@ -147,6 +153,11 @@ try {
     });
     async function navigateModule(url, options) {
       const navigated = await moduleNavigation.navigate(url, options);
+      if (workspaceMaster?.active) {
+        for (const button of document.querySelectorAll("[data-operator-window-module]")) {
+          workspaceMaster.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
+        }
+      }
       if (operatorModuleFromUrl(url, identity.role) === "finance") {
         await financeNavigation.navigate(url, { push: false });
       }

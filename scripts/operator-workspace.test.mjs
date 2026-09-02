@@ -8,10 +8,14 @@ import {
   MASTER_SERVER_RENEWAL_INTERVAL_MS,
   SERVER_LEASE_DURATION_MS,
   createWorkspaceEvent,
+  clearOperatorWorkspaceResumeHint,
   managedChildUrl,
+  operatorWorkspaceResumeHint,
   parseChildBootstrap,
+  readOperatorWorkspaceResumeHint,
   shouldLockForLease,
   validWorkspaceEvent,
+  writeOperatorWorkspaceResumeHint,
 } from "../assets/js/operator-workspace-protocol.mjs";
 import { createOperatorWorkspaceChild } from "../assets/js/operator-workspace-child.mjs";
 import { createOperatorWorkspaceMaster } from "../assets/js/operator-workspace-master.mjs";
@@ -247,6 +251,10 @@ test("generic child shell mounts registered modules only after independent autho
   assert.match(guard, /p_slot_key/);
   assert.match(dashboardGuard, /createOperatorWorkspaceMaster/);
   assert.match(dashboardGuard, /shutdownWorkspace/);
+  assert.match(dashboardGuard, /pushState\(window\.history\.state/);
+  assert.match(dashboardGuard, /pagehide", \(\)=>workspaceMaster\?\.dispose\(\)/);
+  assert.doesNotMatch(dashboardGuard, /pagehide[^\n]*shutdownWorkspace/);
+  assert.match(dashboardGuard, /clearOperatorWorkspaceResumeHint\(window\.history\)[\s\S]*shutdownWorkspace/);
   assert.match(registry, /initializeOperatorMessages/);
   assert.match(registry, /initializeOperatorCalendar/);
   assert.match(registry, /initializeOperatorRecruitment/);
@@ -383,6 +391,40 @@ test("a second launch focuses the managed child without opening a duplicate", as
   assert.equal(master.openOperatorModuleWindow("intake", "main"), false);
   assert.equal(openCalls, 1);
   assert.equal(focusCalls, 2);
+});
+
+test("remounted module launch controls are bound once and release detached listeners", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const ids = [masterWindowId];
+  const listeners = new Set();
+  const button = {
+    hidden: true,
+    disabled: true,
+    addEventListener(_type, listener) { listeners.add(listener); },
+    removeEventListener(_type, listener) { listeners.delete(listener); },
+  };
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open() { return null; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  master.bindModuleButton(button, "dossiers", "main");
+  master.bindModuleButton(button, "dossiers", "main");
+  assert.equal(listeners.size, 1);
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(master.unbindModuleButton(button), true);
+  assert.equal(master.unbindModuleButton(button), false);
+  assert.equal(listeners.size, 0);
 });
 
 test("master manages all six required modules as separate children in one workspace", async ()=>{
@@ -546,4 +588,62 @@ test("multi-screen runtime remains origin-relative and production portable", asy
     read("assets/js/operator-window-guard.mjs"),
   ]);
   for (const source of sources) assert.doesNotMatch(source, /127\.0\.0\.1|localhost|Mailpit|Playwright|SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("master refresh hint survives only in history state and contains no authority capability", ()=>{
+  const historyObject = {
+    state: { unrelated: true },
+    replaceState(state) { this.state = state; },
+  };
+  const hint = operatorWorkspaceResumeHint({ workspaceId, epoch, masterWindowId });
+  assert.deepEqual(hint, { workspaceId, epoch, masterWindowId });
+  assert.equal(writeOperatorWorkspaceResumeHint(historyObject, hint), true);
+  assert.deepEqual(readOperatorWorkspaceResumeHint(historyObject), hint);
+  assert.deepEqual(Object.keys(readOperatorWorkspaceResumeHint(historyObject)).sort(), ["epoch", "masterWindowId", "workspaceId"]);
+  assert.equal(JSON.stringify(historyObject.state).includes("token"), false);
+  assert.equal(operatorWorkspaceResumeHint({ ...hint, renewalToken: launchNonce }), null);
+  assert.equal(clearOperatorWorkspaceResumeHint(historyObject), true);
+  assert.equal(readOperatorWorkspaceResumeHint(historyObject), null);
+  assert.equal(historyObject.state.unrelated, true);
+});
+
+test("master refresh resumes the same workspace without locking children or acquiring a second epoch", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const nextMasterWindowId = "f4000000-0000-4000-8000-000000000005";
+  const calls = [];
+  const client = { rpc: async (name, parameters)=>{
+    calls.push({ name, parameters });
+    if (name !== "resume_operator_workspace_v1") assert.fail(`unexpected RPC ${name}`);
+    return { data: {
+      resumed: true,
+      workspace_id: workspaceId,
+      epoch,
+      master_window_id: nextMasterWindowId,
+      renewal_token: launchNonce,
+      lease_expires_at: new Date(25_000).toISOString(),
+    }, error: null };
+  } };
+  const master = await createOperatorWorkspaceMaster({
+    client,
+    resumeHint: { workspaceId, epoch, masterWindowId },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>nextMasterWindowId },
+      location: { origin: "https://operator.local" },
+      open() { return null; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  assert.equal(master.active, true);
+  assert.equal(master.resumed, true);
+  assert.equal(master.workspaceId, workspaceId);
+  assert.deepEqual(master.resumeHint, { workspaceId, epoch, masterWindowId: nextMasterWindowId });
+  assert.deepEqual(calls.map(({ name })=>name), ["resume_operator_workspace_v1"]);
+  master.dispose();
+  assert.equal(master.active, false);
+  assert.equal(FakeBroadcastChannel.instances[0].messages.some(({ type })=>type === "LOCK" || type === "SHUTDOWN"), false);
 });

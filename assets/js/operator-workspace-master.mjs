@@ -5,10 +5,11 @@ import {
   createWindowId,
   createWorkspaceEvent,
   managedChildUrl,
+  operatorWorkspaceResumeHint,
   validUuid,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260902-login-stability";
+} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2";
 import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260902-login-stability";
 
 async function requestLocalMasterLock(navigatorObject) {
@@ -43,12 +44,30 @@ export async function createOperatorWorkspaceMaster({
   setTimeoutFn = setTimeout,
   onInvalidate = ()=>{},
   onInvalidWorkspace = ()=>{},
+  resumeHint = null,
 } = {}) {
   const localLock = await requestLocalMasterLock(navigatorObject);
   if (!localLock.acquired) return Object.freeze({ active: false, reason: "LOCAL_MASTER_EXISTS" });
 
   const masterWindowId = createWindowId(windowObject.crypto);
-  let { data, error } = await client.rpc("acquire_operator_workspace_v1", { p_master_window_id: masterWindowId });
+  const requestedResume = operatorWorkspaceResumeHint(resumeHint);
+  let data;
+  let error;
+  let resumed = false;
+  if (requestedResume) {
+    ({ data, error } = await client.rpc("resume_operator_workspace_v1", {
+      p_workspace_id: requestedResume.workspaceId,
+      p_epoch: requestedResume.epoch,
+      p_previous_master_window_id: requestedResume.masterWindowId,
+      p_new_master_window_id: masterWindowId,
+    }));
+    if (error && authorityFailure(error)) {
+      localLock.release();
+      return Object.freeze({ active: false, reason: "WORKSPACE_RESUME_FAILED" });
+    }
+    resumed = !error && data?.resumed === true;
+  }
+  if (!resumed) ({ data, error } = await client.rpc("acquire_operator_workspace_v1", { p_master_window_id: masterWindowId }));
   if (!error && data?.acquired === false) {
     const leaseExpiry = Date.parse(data.lease_expires_at);
     const retryDelay = Number.isFinite(leaseExpiry)
@@ -59,7 +78,8 @@ export async function createOperatorWorkspaceMaster({
       ({ data, error } = await client.rpc("acquire_operator_workspace_v1", { p_master_window_id: masterWindowId }));
     }
   }
-  if (error || data?.acquired !== true || !validUuid(data.workspace_id) || !validUuid(data.renewal_token)) {
+  if (error || (resumed ? data?.resumed !== true : data?.acquired !== true)
+    || !validUuid(data.workspace_id) || !validUuid(data.renewal_token)) {
     localLock.release();
     return Object.freeze({ active: false, reason: data?.acquired === false ? "SERVER_MASTER_EXISTS" : "WORKSPACE_ACQUIRE_FAILED" });
   }
@@ -73,7 +93,7 @@ export async function createOperatorWorkspaceMaster({
   let sequence = 0;
   let active = true;
   const childWindows = new Map();
-  const openButtons = new Set();
+  const openButtons = new Map();
   let renewalPending = false;
   let leaseExpiresAt = leaseTime(data.lease_expires_at);
 
@@ -123,7 +143,7 @@ export async function createOperatorWorkspaceMaster({
     if (!active) return;
     publish("LOCK");
     active = false;
-    for (const button of openButtons) button.disabled = true;
+    for (const button of openButtons.keys()) button.disabled = true;
     clearIntervalFn(heartbeatTimer);
     clearIntervalFn(renewalTimer);
     clearIntervalFn(safetyTimer);
@@ -163,10 +183,20 @@ export async function createOperatorWorkspaceMaster({
       button.disabled = true;
       return;
     }
-    openButtons.add(button);
+    if (openButtons.has(button)) return;
+    const listener = ()=>openOperatorModuleWindow(moduleKey, slotKey);
+    openButtons.set(button, listener);
     button.hidden = false;
     button.disabled = !active;
-    button.addEventListener("click", ()=>openOperatorModuleWindow(moduleKey, slotKey));
+    button.addEventListener("click", listener);
+  }
+
+  function unbindModuleButton(button) {
+    const listener = openButtons.get(button);
+    if (!listener) return false;
+    button.removeEventListener("click", listener);
+    openButtons.delete(button);
+    return true;
   }
 
   function invalidate(moduleKey = "messages") {
@@ -189,7 +219,7 @@ export async function createOperatorWorkspaceMaster({
     });
     publish("SHUTDOWN");
     active = false;
-    for (const button of openButtons) button.disabled = true;
+    for (const button of openButtons.keys()) button.disabled = true;
     clearIntervalFn(heartbeatTimer);
     clearIntervalFn(renewalTimer);
     clearIntervalFn(safetyTimer);
@@ -203,6 +233,8 @@ export async function createOperatorWorkspaceMaster({
   }
 
   function dispose() {
+    if (!active) return;
+    active = false;
     clearIntervalFn(heartbeatTimer);
     clearIntervalFn(renewalTimer);
     clearIntervalFn(safetyTimer);
@@ -213,7 +245,8 @@ export async function createOperatorWorkspaceMaster({
   publish("HEARTBEAT");
   return {
     get active() { return active; },
-    resumed: false,
+    resumed,
+    resumeHint: operatorWorkspaceResumeHint({ workspaceId: memory.workspaceId, epoch: memory.epoch, masterWindowId: memory.masterWindowId }),
     workspaceId: memory.workspaceId,
     epoch: memory.epoch,
     masterWindowId: memory.masterWindowId,
@@ -223,5 +256,6 @@ export async function createOperatorWorkspaceMaster({
     openOperatorModuleWindow,
     lockWorkspace,
     shutdownWorkspace,
+    unbindModuleButton,
   };
 }

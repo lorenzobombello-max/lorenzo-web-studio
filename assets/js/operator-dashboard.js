@@ -63,7 +63,7 @@ export function financeTabFromUrl(url, role) {
   return FINANCE_TABS.has(tab) ? tab : "overview";
 }
 
-function createOperatorNavigation({ identity, initialUrl, routeFromUrl, activateRoute, loadRoute, pushUrl }) {
+function createOperatorNavigation({ identity, initialUrl, routeFromUrl, activateRoute, loadRoute, pushUrl, shouldReloadRoute = ()=>false }) {
   let verifiedIdentity = identity;
   let currentUrl = new URL(initialUrl, "https://operator.invalid");
   let currentRoute = routeFromUrl(currentUrl, identity?.role);
@@ -80,7 +80,7 @@ function createOperatorNavigation({ identity, initialUrl, routeFromUrl, activate
     const requestGeneration = ++generation;
     if (push) pushUrl(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
     activateRoute(route, nextUrl);
-    if (initialized.has(route)) return true;
+    if (initialized.has(route) && !shouldReloadRoute(route)) return true;
     if (!initializing.has(route)) {
       const initialization = Promise.resolve(loadRoute(route, {
         identity: verifiedIdentity,
@@ -118,6 +118,7 @@ export function createOperatorModuleNavigation({ identity, initialUrl, activateM
     activateRoute: activateModule,
     loadRoute: loadModule,
     pushUrl,
+    shouldReloadRoute: (route)=>route === "dossiers",
   });
 }
 

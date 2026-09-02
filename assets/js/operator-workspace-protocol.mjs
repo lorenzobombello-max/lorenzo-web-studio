@@ -8,6 +8,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const MODULE_OR_SLOT_KEY = /^[a-z][a-z0-9-]{0,47}$/;
 const EVENT_TYPES = new Set(["HELLO", "REGISTERED", "HEARTBEAT", "SHUTDOWN", "LOCK", "INVALIDATE", "FOCUS_REQUEST"]);
 const EVENT_KEYS = new Set(["type", "workspaceId", "epoch", "senderWindowId", "sequence", "timestamp", "moduleKey", "slotKey"]);
+const MASTER_RESUME_STATE_KEY = "lwsOperatorWorkspaceResumeV1";
 
 export function validUuid(value) {
   return UUID.test(String(value || ""));
@@ -72,4 +73,33 @@ export function shouldLockForLease({ leaseExpiresAt, now = Date.now(), serverRea
   if (!Number.isFinite(leaseExpiresAt)) return true;
   if (serverReachable && serverValid === false) return true;
   return now >= leaseExpiresAt;
+}
+
+export function operatorWorkspaceResumeHint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== 3 || !validUuid(value.workspaceId)
+    || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || !validUuid(value.masterWindowId)) return null;
+  return Object.freeze({ workspaceId: value.workspaceId, epoch: value.epoch, masterWindowId: value.masterWindowId });
+}
+
+export function readOperatorWorkspaceResumeHint(historyObject) {
+  return operatorWorkspaceResumeHint(historyObject?.state?.[MASTER_RESUME_STATE_KEY]);
+}
+
+export function writeOperatorWorkspaceResumeHint(historyObject, hint) {
+  const validated = operatorWorkspaceResumeHint(hint);
+  if (!validated || typeof historyObject?.replaceState !== "function") return false;
+  const state = historyObject.state && typeof historyObject.state === "object" && !Array.isArray(historyObject.state)
+    ? historyObject.state : {};
+  historyObject.replaceState({ ...state, [MASTER_RESUME_STATE_KEY]: validated }, "");
+  return true;
+}
+
+export function clearOperatorWorkspaceResumeHint(historyObject) {
+  if (typeof historyObject?.replaceState !== "function") return false;
+  const state = historyObject.state && typeof historyObject.state === "object" && !Array.isArray(historyObject.state)
+    ? { ...historyObject.state } : {};
+  delete state[MASTER_RESUME_STATE_KEY];
+  historyObject.replaceState(state, "");
+  return true;
 }

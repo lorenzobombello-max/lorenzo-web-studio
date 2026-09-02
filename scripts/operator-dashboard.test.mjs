@@ -18,7 +18,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260902-login-stability";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260902-phase2h1";
-const DOSSIERS_ASSET_RELEASE = "20260902-dossiers-pending-fix";
+const DOSSIERS_ASSET_RELEASE = "20260902-lifecycle-round2";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
@@ -239,6 +239,30 @@ test("module navigation updates URL client-side and reuses verified identity", a
   assert.deepEqual(loaded, [["finance", identity]]);
 });
 
+test("Dossiers remounts after every owner module round trip without reloading the page", async () => {
+  const loaded = [];
+  const pushed = [];
+  const navigation = createOperatorModuleNavigation({
+    identity: { display_name: "Owner", role: "owner", status: "ACTIVE" },
+    initialUrl: "https://operator.example/operator/dashboard/?module=dossiers",
+    pushUrl: (url)=>pushed.push(url),
+    activateModule: ()=>{},
+    loadModule: async (module)=>{ loaded.push(module); return true; },
+  });
+  for (const module of ["finance", "workforce", "recruitment", "messages", "calendar"]) {
+    assert.equal(await navigation.navigate(`?module=${module}`), true);
+    assert.equal(await navigation.navigate("?module=dossiers"), true);
+  }
+  assert.deepEqual(loaded, [
+    "finance", "dossiers", "workforce", "dossiers", "recruitment", "dossiers",
+    "messages", "dossiers", "calendar", "dossiers",
+  ]);
+  assert.equal(pushed.length, 10);
+  assert.equal(pushed.every((url)=>url.startsWith("/operator/dashboard/?module=")), true);
+  const guard = await read("assets/js/operator-dashboard-guard.mjs");
+  assert.doesNotMatch(guard, /location\.reload|location\.replace\([^)]*module=dossiers/);
+});
+
 test("module navigation restores history state without pushing a new entry", async () => {
   const pushed = [];
   const activated = [];
@@ -379,7 +403,7 @@ test("dashboard guard intercepts local module links and supports browser history
   assert.match(html, /id="pendingIntakesEntry"[^>]*data-operator-module="intake"/);
   assert.match(html, /href="\/operator\/dashboard\/\?module=dossiers" data-operator-module="dossiers">Terug naar dossiers/);
   assert.match(guard, /event\.preventDefault\(\);\s*void navigateModule\(target\)/);
-  assert.match(guard, /window\.history\.pushState\(null, "", url\)/);
+  assert.match(guard, /window\.history\.pushState\(window\.history\.state, "", url\)/);
   assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void navigateModule\(window\.location\.href, \{ push: false \}\)\)/);
   assert.match(guard, /verifiedIdentity: context\.identity/);
   assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*workspaceMaster\?\.lockWorkspace\("AUTH_SIGNED_OUT"\);\s*window\.location\.replace/);

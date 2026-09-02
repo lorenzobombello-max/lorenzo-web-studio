@@ -1,8 +1,8 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260902-phase2h1";
-import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-login-stability";
-import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-login-stability";
+import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-lifecycle-round2";
+import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";
 
 const gate = document.getElementById("operatorWindowGate");

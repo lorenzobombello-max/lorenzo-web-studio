@@ -41,18 +41,27 @@ test("Dossiers initializer mounts and dispose clears sensitive DOM", async () =>
   const workspace = {
     dataset: {},
     removeAttribute(name) { if (name === "data-dossiers-mounted") delete this.dataset.dossiersMounted; },
-    replaceChildren() { this.cleared = true; },
+    replaceChildren() { this.clearCount = (this.clearCount || 0) + 1; },
   };
-  const controller = initializeOperatorDossiers(
+  const firstController = initializeOperatorDossiers(
     { querySelector: ()=>workspace },
     { rpc() {} },
     { role: "operator", status: "ACTIVE" },
   );
   assert.equal(workspace.dataset.dossiersMounted, "true");
-  assert.equal(typeof controller.dispose, "function");
-  controller.dispose();
+  assert.equal(typeof firstController.dispose, "function");
+  firstController.dispose();
   assert.equal(workspace.dataset.dossiersMounted, undefined);
-  assert.equal(workspace.cleared, true);
+  assert.equal(workspace.clearCount, 1);
+  const secondController = initializeOperatorDossiers(
+    { querySelector: ()=>workspace },
+    { rpc() {} },
+    { role: "operator", status: "ACTIVE" },
+  );
+  assert.notEqual(secondController, firstController);
+  assert.equal(workspace.dataset.dossiersMounted, "true");
+  secondController.dispose();
+  assert.equal(workspace.clearCount, 2);
   for (const identity of [
     { role: "operator", status: "DISABLED" },
     { role: "unknown", status: "ACTIVE" },
@@ -204,4 +213,45 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(await read("assets/js/operator-dossiers.mjs"), /Pending \/ Nieuwe aanvragen/);
+});
+
+test("pending and active Dossiers reload on fresh instances after disposal", async () => {
+  const { initializeOperatorDossiers } = await import("../assets/js/operator-dossiers.mjs");
+  const workspace = {
+    dataset: {},
+    removeAttribute(name) { if (name === "data-dossiers-mounted") delete this.dataset.dossiersMounted; },
+    replaceChildren() {},
+  };
+  const loaded = [];
+  for (const zone of ["PENDING", "ACTIVE"]) {
+    const controller = initializeOperatorDossiers(
+      { querySelector: ()=>workspace },
+      { rpc() {} },
+      { role: "owner", status: "ACTIVE" },
+      { load: async (isCurrent)=>{ if (isCurrent()) loaded.push(zone); } },
+    );
+    assert.equal(await controller.refresh(), true);
+    controller.dispose();
+  }
+  assert.deepEqual(loaded, ["PENDING", "ACTIVE"]);
+});
+
+test("Dossiers disposal removes listeners before a new instance subscribes", async () => {
+  const { createOperatorDossiersController } = await import("../assets/js/operator-dossiers.mjs");
+  const listeners = new Set();
+  const target = {
+    addEventListener(_type, listener) { listeners.add(listener); },
+    removeEventListener(_type, listener) { listeners.delete(listener); },
+  };
+  let calls = 0;
+  const first = createOperatorDossiersController();
+  first.listen(target, "click", ()=>{ calls += 1; });
+  first.dispose();
+  const second = createOperatorDossiersController();
+  second.listen(target, "click", ()=>{ calls += 1; });
+  for (const listener of listeners) listener();
+  assert.equal(calls, 1);
+  assert.equal(listeners.size, 1);
+  second.dispose();
+  assert.equal(listeners.size, 0);
 });
