@@ -18,6 +18,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260902-login-stability";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260902-phase2h1";
+const DOSSIERS_ASSET_RELEASE = "20260902-dossiers-pending-fix";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {
@@ -199,10 +200,10 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${FINANCE_ASSET_RELEASE}`,
-    `./operator-dashboard.js?v=${FINANCE_ASSET_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${DOSSIERS_ASSET_RELEASE}`,
+    `./operator-dashboard.js?v=${DOSSIERS_ASSET_RELEASE}`,
   ]);
-  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, FINANCE_ASSET_RELEASE], [dashboardUrl, FINANCE_ASSET_RELEASE]]) {
+  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, DOSSIERS_ASSET_RELEASE], [dashboardUrl, DOSSIERS_ASSET_RELEASE]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
