@@ -54,6 +54,64 @@ insert into public.sdf_qualification_intake_events(event_id,intake_id,event_kind
 values('bf500000-0000-4000-8000-000000000001','bf300000-0000-4000-8000-000000000001','QUALIFICATION_COMPLETE','under_review','qualification_complete','system',1);
 select set_config('request.jwt.claim.sub','bf100000-0000-4000-8000-000000000001',true);
 
+insert into public.sdf_projects(project_id,quote_request_id)
+values('bfe00000-0000-4000-8000-000000000001','bf200000-0000-4000-8000-000000000001');
+insert into public.customer_requests(
+  request_id,request_reference,quote_request_id,source,request_type,title,
+  description,status,priority,submitted_at,submitter_type
+) values (
+  'bfa00000-0000-4000-8000-000000000001','LWS-VRZ-2099-9801',
+  'bf200000-0000-4000-8000-000000000001','OPERATOR','FILE_DELIVERY',
+  'BG-3 synthetic evidence','Synthetic invoice evidence.','NEW','NORMAL',
+  clock_timestamp(),'OPERATOR'
+);
+insert into public.customer_request_upload_requests(
+  upload_request_id,customer_request_id,token_digest,status,expires_at,created_at,
+  created_by_operator_id,completed_at
+)
+select 'bfb00000-0000-4000-8000-000000000001','bfa00000-0000-4000-8000-000000000001',
+  repeat('a',64),'COMPLETED',clock_timestamp()+interval '1 day',clock_timestamp(),
+  operator_id,clock_timestamp()
+from public.commercial_operators where auth_user_id='bf100000-0000-4000-8000-000000000001';
+insert into public.customer_request_uploaded_files(
+  uploaded_file_id,upload_request_id,customer_request_id,status,storage_object_path,
+  original_file_name,file_extension,declared_content_type,declared_byte_count,
+  observed_content_type,observed_byte_count,sha256,accepted_at
+) values (
+  'bfc00000-0000-4000-8000-000000000001','bfb00000-0000-4000-8000-000000000001',
+  'bfa00000-0000-4000-8000-000000000001','ACCEPTED',
+  'requests/bfa00000-0000-4000-8000-000000000001/uploads/bfb00000-0000-4000-8000-000000000001/files/bfc00000-0000-4000-8000-000000000001.pdf',
+  'bg3-invoice.pdf','pdf','application/pdf',100,'application/pdf',100,repeat('b',64),clock_timestamp()
+);
+insert into public.document_inbox_items(
+  id,sha256,storage_object_path,original_file_name,mime_type,byte_count,
+  source_type,source_instance,external_id,created_by_operator_id
+)
+select 'bfd00000-0000-4000-8000-000000000001',repeat('b',64),
+  'documents/'||repeat('b',64)||'.pdf','bg3-invoice.pdf','application/pdf',100,
+  'CUSTOMER_REQUEST_UPLOAD','bfa00000-0000-4000-8000-000000000001',
+  'bfc00000-0000-4000-8000-000000000001',operator_id
+from public.commercial_operators where auth_user_id='bf100000-0000-4000-8000-000000000001';
+insert into public.document_inbox_customer_request_upload_sources(
+  uploaded_file_id,customer_request_id,quote_request_id,document_inbox_item_id,
+  promoted_by_operator_id
+)
+select 'bfc00000-0000-4000-8000-000000000001','bfa00000-0000-4000-8000-000000000001',
+  'bf200000-0000-4000-8000-000000000001','bfd00000-0000-4000-8000-000000000001',operator_id
+from public.commercial_operators where auth_user_id='bf100000-0000-4000-8000-000000000001';
+create temporary table bg3_requirement as
+select (public.create_sdf_document_requirement_v1(
+  'bf200000-0000-4000-8000-000000000001','invoice',1
+)->>'requirement_id')::uuid requirement_id;
+select public.bind_sdf_document_requirement_evidence_v1(
+  (select requirement_id from bg3_requirement),'bfc00000-0000-4000-8000-000000000001'
+);
+select public.confirm_sdf_scope_classification_v1(
+  'bf200000-0000-4000-8000-000000000001',
+  'bf400000-0000-4000-8000-000000000001',
+  'standard',false,'pro','bf700000-0000-4000-8000-000000000001'
+);
+
 select is(public.authorize_sdf_quotation_preparation_v1('bf200000-0000-4000-8000-000000000001','bf600000-0000-4000-8000-000000000001')->>'sdf_package','pro','quotation preparation returns evaluator package, not request package');
 select is((select sdf_package from public.sdf_quotation_preparation_authorities where quote_request_id='bf200000-0000-4000-8000-000000000001'),'pro','quotation authority persists evaluator package');
 select is((select pricing_authority_version from public.sdf_quotation_preparation_authorities where quote_request_id='bf200000-0000-4000-8000-000000000001'),2,'V3 quotation authority binds pricing version 2');

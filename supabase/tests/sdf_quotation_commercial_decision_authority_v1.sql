@@ -256,6 +256,14 @@ from qf2a_fixtures;
 
 select set_config('request.jwt.claim.sub',pg_temp.fixture_uuid('qf2a-owner-auth')::text,true);
 
+select public.confirm_sdf_scope_classification_v1(
+  fixture.quote_request_id,
+  pg_temp.fixture_uuid('qf2a-' || fixture.label || '-submission'),
+  'standard',false,fixture.expected_package,
+  pg_temp.fixture_uuid('qf2a-' || fixture.label || '-classification-key')
+)
+from qf2a_fixtures fixture;
+
 create temporary table qf2a_requirements as
 select fixture.label, fixture.uploaded_file_id,
   (public.create_sdf_document_requirement_v1(fixture.quote_request_id,'invoice',1)->>'requirement_id')::uuid requirement_id
@@ -271,6 +279,19 @@ set preparation_authority_id = (
     pg_temp.fixture_uuid('qf2a-' || fixture.label || '-preparation-key')
   )->>'authority_id'
 )::uuid;
+
+select ok(
+  (select bool_and(
+    preparation.classification_authority_id = classification.classification_authority_id
+    and rtrim(preparation.classification_sha256) = rtrim(classification.classification_sha256)
+  )
+  from qf2a_fixtures fixture
+  join public.sdf_quotation_preparation_authorities preparation
+    on preparation.authority_id = fixture.preparation_authority_id
+  join public.sdf_scope_classification_authorities classification
+    on classification.quote_request_id = fixture.quote_request_id),
+  'V3 preparation snapshot binds the exact immutable classification authority and SHA-256'
+);
 
 create temporary table qf2a_vat_fixture as
 select vat_decision_authority_id approved_id

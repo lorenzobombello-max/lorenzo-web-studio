@@ -234,6 +234,13 @@ from qf3a_fixtures;
 select set_config(
   'request.jwt.claim.sub',pg_temp.qf3a_uuid('qf3a-owner-auth')::text,true
 );
+select public.confirm_sdf_scope_classification_v1(
+  fixture.quote_request_id,
+  pg_temp.qf3a_uuid('qf3a-'||fixture.label||'-submission'),
+  'standard',false,fixture.package,
+  pg_temp.qf3a_uuid('qf3a-'||fixture.label||'-classification-key')
+)
+from qf3a_fixtures fixture;
 create temporary table qf3a_requirements as
 select label,uploaded_file_id,
   (public.create_sdf_document_requirement_v1(
