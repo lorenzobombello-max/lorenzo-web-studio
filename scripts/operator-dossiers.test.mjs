@@ -212,7 +212,23 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
-  assert.match(await read("assets/js/operator-dossiers.mjs"), /Pending \/ Nieuwe aanvragen/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260902-dossiers-ux-restoration/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260902-dossiers-ux-restoration/);
+  const source = await read("assets/js/operator-dossiers.mjs");
+  assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
+  assert.match(source, /Nieuwe aanvragen/);
+  assert.match(source, /Uitgenodigd/);
+  assert.match(source, /Intake bezig/);
+  assert.match(source, /data-dossiers-zone="ACTIVE"/);
+  assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
+  assert.match(source, /Originele klantaanvraag/);
+  assert.match(source, /setText\(workspace, "description", null\)/);
+  assert.match(source, /workspace\.setAttribute\("aria-busy", "true"\)/);
+  assert.doesNotMatch(source, />Toepassen</);
+  const css = await read("assets/css/operator-dashboard.css");
+  assert.match(css, /\.dossiers-status-overview/);
+  assert.match(css, /\.dossiers-grid \{ grid-template-columns:/);
+  assert.match(css, /\.dossiers-original-request/);
 });
 
 test("pending and active Dossiers reload on fresh instances after disposal", async () => {

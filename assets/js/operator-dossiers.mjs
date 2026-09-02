@@ -286,11 +286,12 @@ export function createOperatorDossiersController({ load = async ()=>{}, onChange
 function dossierWorkspaceMarkup() {
   return `
     <header class="project-heading dossiers-heading"><div><p class="eyebrow">Operator dossiers</p><h1>Dossiers</h1><p>Server-authoritatieve aanvragen, toewijzingen en documenten.</p></div><div class="dossiers-heading__actions"><button type="button" class="secondary-action" data-operator-window-module="dossiers" data-operator-window-slot="main" hidden>Open in nieuw venster</button><button type="button" class="secondary-action" data-dossiers-action="refresh">Vernieuwen</button></div></header>
-    <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="PENDING">Pending / Nieuwe aanvragen</option><option value="ACTIVE">Actief</option><option value="ARCHIVED">Afgerond / Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Toepassen</button></form>
+    <nav class="dossiers-status-overview" aria-label="Dossierstatus"><button type="button" data-dossiers-zone="PENDING" aria-current="true"><span>Nieuwe aanvragen</span><strong data-dossiers-counter="PENDING">0</strong><small><span data-dossiers-counter="invited">0</span> uitgenodigd · <span data-dossiers-counter="in_progress">0</span> bezig</small></button><button type="button" data-dossiers-zone="ACTIVE"><span>Actieve dossiers</span><strong data-dossiers-counter="ACTIVE">—</strong><small>In behandeling en ingediend</small></button><button type="button" data-dossiers-zone="ARCHIVED"><span>Afgerond / Archief</span><strong data-dossiers-counter="ARCHIVED">—</strong><small>Afgeronde dossiers</small></button><button type="button" data-dossiers-zone="TRASHED"><span>Prullenbak</span><strong data-dossiers-counter="TRASHED">—</strong><small>Verwijderde dossiers</small></button></nav>
+    <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="PENDING">Nieuwe aanvragen</option><option value="ACTIVE">Actieve dossiers</option><option value="ARCHIVED">Afgerond / Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle producten</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Zoeken</button></form>
     <p class="action-message action-message--dark" data-dossiers-status role="status" aria-live="polite"></p>
-    <div class="dashboard-grid dossiers-grid"><section class="panel" aria-labelledby="dossiersListTitle"><div class="panel__heading"><div><p class="eyebrow">Werkvoorraad</p><h2 id="dossiersListTitle">Dossiers</h2></div><span class="badge" data-dossiers-count>0</span></div><ul class="application-list" data-dossiers-list></ul><p class="empty-state" data-dossiers-empty hidden>Geen dossiers gevonden.</p><button type="button" class="secondary-action" data-dossiers-action="more" hidden>Meer laden</button></section>
+    <div class="dashboard-grid dossiers-grid"><section class="panel" aria-labelledby="dossiersListTitle"><div class="panel__heading"><div><p class="eyebrow">Werkvoorraad</p><h2 id="dossiersListTitle">Dossiers</h2></div><span class="badge" data-dossiers-count>0</span></div><ul class="application-list dossiers-list" data-dossiers-list></ul><p class="empty-state" data-dossiers-empty hidden>Geen dossiers gevonden.</p><button type="button" class="secondary-action" data-dossiers-action="more" hidden>Meer laden</button></section>
       <aside class="context-column" aria-label="Dossierdetail"><section class="panel" data-dossiers-detail-empty><h2>Selecteer een dossier</h2><p class="empty-state">Kies een dossier uit de werkvoorraad.</p></section>
-        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow" data-dossiers-field="reference"></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div><div class="application-detail__wide"><dt>Omschrijving</dt><dd data-dossiers-field="description"></dd></div></dl></article>
+        <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow" data-dossiers-field="reference"></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
         <section class="panel dossiers-lifecycle" data-dossiers-lifecycle-panel hidden><div class="panel__heading"><div><p class="eyebrow">Dossierbeheer</p><h2>Status</h2></div><span class="badge" data-dossiers-lifecycle-state></span></div><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-lifecycle="archive_dossier">Archiveren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="reactivate_dossier">Activeren</button><button type="button" class="danger-action" data-dossiers-lifecycle="trash_dossier">Naar prullenbak</button><button type="button" class="secondary-action" data-dossiers-lifecycle="restore_dossier">Herstellen</button><button type="button" class="danger-action" data-dossiers-purge hidden>Permanent verwijderen</button></div><p class="action-message" data-dossiers-purge-message></p></section>
         <section class="panel dossiers-assignment" data-dossiers-assignment hidden><div class="panel__heading"><div><p class="eyebrow">Toewijzing</p><h2>Operator</h2></div><strong data-dossiers-assignee></strong></div><form data-dossiers-assignment-form><label>Toewijzen aan<select name="assignee_operator_id" required><option value="">Kies een operator</option></select></label><label>Reden bij hertoewijzing<textarea name="reason" rows="3" maxlength="500"></textarea></label><button type="submit" class="primary-action primary-action--compact">Opslaan</button></form></section>
         <section class="panel" data-dossiers-documents hidden><div class="panel__heading"><div><p class="eyebrow">Documenten</p><h2>Dossierdocumenten</h2></div></div><ul class="document-list" data-dossiers-document-list></ul><p class="empty-state" data-dossiers-document-empty></p></section>
@@ -350,6 +351,16 @@ function customerValue(detail, key) {
   return detail?.customer?.[key] ?? detail?.application?.customer?.[key] ?? detail?.[key] ?? null;
 }
 
+function dossierStatus(status) {
+  return {
+    invited: { label: "Uitgenodigd", className: "badge--amber" },
+    in_progress: { label: "Intake bezig", className: "badge--cyan" },
+    SUBMITTED: { label: "Ingediend", className: "badge--cyan" },
+    REVIEWED: { label: "In behandeling", className: "badge--amber" },
+    QUOTE_ACCEPTED: { label: "Geactiveerd", className: "badge--green" },
+  }[status] || { label: String(status || "Onbekend").replaceAll("_", " "), className: "" };
+}
+
 function authorizedDocumentUrl(value) {
   const url = new URL(String(value || ""), globalThis.location?.origin || "https://operator.invalid");
   if (url.protocol !== "https:" && url.origin !== globalThis.location?.origin) throw new Error("INVALID_DOSSIER_DOCUMENT_ACCESS");
@@ -380,8 +391,10 @@ function renderList(workspace, items, selectedReference) {
     if (item.reference === selectedReference) button.setAttribute("aria-current", "true");
     name.textContent = item.name;
     reference.textContent = item.reference;
-    status.className = "badge";
-    status.textContent = item.status.replaceAll("_", " ");
+    const presentedStatus = dossierStatus(item.status);
+    button.dataset.dossiersStatus = item.status;
+    status.className = `badge ${presentedStatus.className}`.trim();
+    status.textContent = presentedStatus.label;
     identity.append(name, reference);
     button.append(identity, status);
     row.append(button);
@@ -391,10 +404,27 @@ function renderList(workspace, items, selectedReference) {
   workspace.querySelector("[data-dossiers-empty]").hidden = items.length > 0;
 }
 
+function renderStatusOverview(workspace, state) {
+  for (const button of workspace.querySelectorAll("[data-dossiers-zone]")) {
+    button.setAttribute("aria-current", String(button.dataset.dossiersZone === state.query.zone));
+  }
+  const zoneCounter = workspace.querySelector(`[data-dossiers-counter="${state.query.zone}"]`);
+  if (zoneCounter) zoneCounter.textContent = String(state.items.length);
+  if (state.query.zone === "PENDING") {
+    for (const pendingStatus of ["invited", "in_progress"]) {
+      workspace.querySelector(`[data-dossiers-counter="${pendingStatus}"]`).textContent = String(
+        state.items.filter((item)=>item.status === pendingStatus).length,
+      );
+    }
+  }
+}
+
 function renderDetail(workspace, detail, summary) {
   setText(workspace, "reference", dossierReference(detail));
   setText(workspace, "name", detail.name);
-  setText(workspace, "status", detail.operational_status || summary?.status);
+  const presentedStatus = dossierStatus(detail.operational_status || summary?.status);
+  setText(workspace, "status", presentedStatus.label);
+  workspace.querySelector('[data-dossiers-field="status"]').className = `badge ${presentedStatus.className}`.trim();
   setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
   setText(workspace, "zone", detail.dossier_lifecycle?.state || summary?.zone);
   setText(workspace, "company", customerValue(detail, "company") || detail.organization);
@@ -416,13 +446,15 @@ function renderPendingDetail(workspace, summary) {
   const detail = summary.raw;
   setText(workspace, "reference", detail.support_reference);
   setText(workspace, "name", detail.name);
-  setText(workspace, "status", detail.intake_status);
+  const presentedStatus = dossierStatus(detail.intake_status);
+  setText(workspace, "status", presentedStatus.label);
+  workspace.querySelector('[data-dossiers-field="status"]').className = `badge ${presentedStatus.className}`.trim();
   setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
   setText(workspace, "zone", "Pending / Nieuwe aanvraag");
   setText(workspace, "company", detail.organization);
   setText(workspace, "email", detail.email);
   setText(workspace, "phone", detail.phone);
-  setText(workspace, "description", detail.website_type);
+  setText(workspace, "description", null);
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
   for (const selector of ["[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
@@ -539,6 +571,12 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
 
   async function loadList(isCurrent, append = false) {
     status.textContent = "Dossiers laden.";
+    workspace.setAttribute("aria-busy", "true");
+    if (!append) {
+      state.items = [];
+      state.selected = null;
+      renderList(workspace, [], null);
+    }
     const request = identity.role === "owner"
       ? dossierListRequest(state.query, append ? state.nextCursor : null)
       : { action: "get_my_assigned_dossiers", limit: 25, ...(append && state.nextCursor ? { cursor: state.nextCursor } : {}) };
@@ -555,14 +593,24 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.items = [...new Map(combined.map((item)=>[item.reference, item])).values()];
     state.nextCursor = page.nextCursor;
     renderList(workspace, state.items, state.selected?.reference);
+    renderStatusOverview(workspace, state);
     workspace.querySelector('[data-dossiers-action="more"]').hidden = !page.hasMore;
     status.textContent = "";
+    workspace.setAttribute("aria-busy", "false");
   }
 
   const controller = createOperatorDossiersController({
     load: options.load || ((isCurrent)=>loadList(isCurrent)),
     onChange: options.onChange,
   });
+
+  function refreshList() {
+    void controller.refresh().catch((error)=>{
+      if (controller.disposed) return;
+      workspace.setAttribute("aria-busy", "false");
+      status.textContent = errorCode(error) === "DOSSIER_DISPOSED" ? "" : "Dossiers konden niet veilig worden geladen.";
+    });
+  }
 
   async function selectDossier(summary) {
     if (!summary) return false;
@@ -763,7 +811,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       event.preventDefault();
       const data = new FormData(event.target);
       state.query = { search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
-      void controller.refresh();
+      refreshList();
     } else if (event.target.matches("[data-dossiers-assignment-form]")) {
       event.preventDefault();
       if (!state.detail || !state.assignment) return;
@@ -793,10 +841,22 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       }
     }
   });
+  controller.listen(workspace, "change", (event)=>{
+    if (!event.target.matches('[data-dossiers-filters] select[name="zone"], [data-dossiers-filters] select[name="request_kind"]')) return;
+    const form = event.target.form;
+    const data = new FormData(form);
+    state.query = { search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
+    refreshList();
+  });
   controller.listen(workspace, "click", (event)=>{
     const target = event.target.closest?.("button");
     if (!target) return;
-    if (target.dataset.dossiersAction === "refresh") void controller.refresh();
+    if (target.dataset.dossiersZone) {
+      state.query.zone = target.dataset.dossiersZone;
+      workspace.querySelector('[data-dossiers-filters] select[name="zone"]').value = state.query.zone;
+      refreshList();
+    }
+    else if (target.dataset.dossiersAction === "refresh") refreshList();
     else if (target.dataset.dossiersAction === "more") void loadList(()=>!controller.disposed, true);
     else if (target.dataset.dossiersSelect !== undefined) void selectDossier(state.items[Number(target.dataset.dossiersSelect)]);
     else if (target.dataset.dossiersRequest !== undefined) void selectCustomerRequest(state.requests[Number(target.dataset.dossiersRequest)]);
