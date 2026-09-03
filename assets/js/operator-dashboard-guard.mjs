@@ -1,8 +1,9 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-pending-dossier-copy-symbol";
-import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260902-lifecycle-round2-hotfix1";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-trash-refresh-r1";
+import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260903-multiscreen-ux-r1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
+import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -10,6 +11,7 @@ const gateMessage = document.querySelector("#operatorDashboardGateMessage");
 const logout = document.querySelector("#operatorDashboardLogout");
 const activeLogout = document.querySelector("#operatorDashboardLogoutActive");
 const dashboard = document.querySelector("#operatorDashboard");
+const presentWorkspaceStatus = createOperatorWorkspaceStatusPresenter(document.querySelector("#operatorMultiScreenStatus"));
 let moduleNavigation = null;
 let financeNavigation = null;
 let workspaceMaster = null;
@@ -95,6 +97,7 @@ try {
       workspaceMaster = await createOperatorWorkspaceMaster({
         client,
         resumeHint: readOperatorWorkspaceResumeHint(window.history),
+        onAvailabilityChange: presentWorkspaceStatus,
         onInvalidate: (moduleKey)=>{
           if (moduleKey === "messages") document.getElementById("messagesWorkspace")?.operatorMessagesController?.refresh();
         },

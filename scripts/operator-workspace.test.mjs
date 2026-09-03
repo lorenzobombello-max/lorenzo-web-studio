@@ -28,6 +28,10 @@ import {
   validOperatorSlotKey,
 } from "../assets/js/operator-module-registry.mjs";
 import { createOperatorWindowHost } from "../assets/js/operator-window-host.mjs";
+import {
+  OPERATOR_WORKSPACE_OCCUPIED_MESSAGE,
+  createOperatorWorkspaceStatusPresenter,
+} from "../assets/js/operator-workspace-status.mjs";
 
 const workspaceId = "f4000000-0000-4000-8000-000000000001";
 const masterWindowId = "f4000000-0000-4000-8000-000000000002";
@@ -655,4 +659,81 @@ test("master refresh resumes the same workspace without locking children or acqu
   master.dispose();
   assert.equal(master.active, false);
   assert.equal(FakeBroadcastChannel.instances[0].messages.some(({ type })=>type === "LOCK" || type === "SHUTDOWN"), false);
+});
+
+test("workspace occupancy status distinguishes active, occupied, and failed acquisition", ()=>{
+  const status = { hidden: true, textContent: "" };
+  const present = createOperatorWorkspaceStatusPresenter(status);
+  present("active");
+  assert.deepEqual(status, { hidden: true, textContent: "" });
+  present("occupied");
+  assert.deepEqual(status, { hidden: false, textContent: OPERATOR_WORKSPACE_OCCUPIED_MESSAGE });
+  present("unavailable");
+  assert.deepEqual(status, { hidden: true, textContent: "" });
+});
+
+test("existing master occupancy is announced once without activating launch controls", async ()=>{
+  const states = [];
+  const button = { hidden: true, disabled: false, addEventListener() {} };
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: false, lease_expires_at: new Date(10_000).toISOString() }, error: null }) },
+    navigatorObject: availableWebLock(),
+    windowObject: { crypto: { randomUUID: ()=>masterWindowId } },
+    now: ()=>10_000,
+    setTimeoutFn: async (callback)=>callback(),
+    onAvailabilityChange: (state)=>states.push(state),
+  });
+  master.bindModuleButton(button, "messages");
+  assert.equal(master.active, false);
+  assert.equal(master.reason, "SERVER_MASTER_EXISTS");
+  assert.deepEqual(states, ["occupied"]);
+  assert.equal(button.hidden, true);
+});
+
+test("normal occupied to acquired transition clears status and preserves launcher binding", async ()=>{
+  const states = [];
+  let calls = 0;
+  const listeners = [];
+  const button = { hidden: true, disabled: true, addEventListener(_type, listener) { listeners.push(listener); } };
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>++calls === 1
+      ? { data: { acquired: false, lease_expires_at: new Date(10_000).toISOString() }, error: null }
+      : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
+    navigatorObject: availableWebLock(),
+    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>masterWindowId }, location: { origin: "https://operator.local" }, open() { return null; } },
+    now: ()=>10_000,
+    setTimeoutFn: async (callback)=>callback(),
+    onAvailabilityChange: (state)=>states.push(state),
+  });
+  master.bindModuleButton(button, "messages");
+  assert.deepEqual(states, ["occupied", "active"]);
+  assert.equal(master.active, true);
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(listeners.length, 1);
+});
+
+test("technical acquisition failure never presents another-window occupancy", async ()=>{
+  const states = [];
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: null, error: { message: "Failed to fetch" } }) },
+    navigatorObject: availableWebLock(),
+    windowObject: { crypto: { randomUUID: ()=>masterWindowId } },
+    onAvailabilityChange: (state)=>states.push(state),
+  });
+  assert.equal(master.reason, "WORKSPACE_ACQUIRE_FAILED");
+  assert.deepEqual(states, ["unavailable"]);
+});
+
+test("dashboard exposes one responsive live Multi-Screen occupancy status for every module", async ()=>{
+  const [html, css, guard] = await Promise.all([
+    read("operator/dashboard/index.html"),
+    read("assets/css/operator-dashboard.css"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+  ]);
+  assert.equal((html.match(/id="operatorMultiScreenStatus"/g) || []).length, 1);
+  assert.match(html, /id="operatorMultiScreenStatus"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"[^>]*hidden/);
+  assert.match(css, /\.operator-workspace-status \{[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /@media \(max-width:700px\)[^{]*\{[^}]*\.workspace,\.operator-workspace-status/);
+  assert.match(guard, /onAvailabilityChange: presentWorkspaceStatus/);
 });

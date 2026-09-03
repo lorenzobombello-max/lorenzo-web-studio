@@ -257,8 +257,8 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(guard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-pending-dossier-copy-symbol/);
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-cal-c1/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-trash-refresh-r1/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-multiscreen-ux-r1/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);

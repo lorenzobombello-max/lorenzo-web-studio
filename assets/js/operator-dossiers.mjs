@@ -155,6 +155,32 @@ function purgeBlockMessage(reason) {
   }[reason] || "Definitief verwijderen is niet toegestaan omdat een beschermde afhankelijkheid bestaat.";
 }
 
+export function bindDossierPurgeEligibility(reference, eligibility) {
+  const normalizedReference = String(reference || "").trim();
+  if (!normalizedReference) throw new Error("INVALID_DOSSIER_PURGE_ELIGIBILITY_STATE");
+  return Object.freeze({
+    reference: normalizedReference,
+    canPurge: eligibility?.can_purge === true,
+    reason: typeof eligibility?.reason === "string" ? eligibility.reason : null,
+  });
+}
+
+export function retainDossierPurgeEligibility(eligibility, reference) {
+  return eligibility?.reference === String(reference || "").trim() ? eligibility : null;
+}
+
+export function presentDossierPurgeEligibility(workspace, eligibility, { refreshing = false } = {}) {
+  const purge = workspace.querySelector("[data-dossiers-purge]");
+  const allowed = eligibility?.canPurge === true;
+  purge.hidden = !allowed;
+  purge.disabled = allowed && refreshing;
+  if (purge.disabled) purge.setAttribute("aria-busy", "true");
+  else purge.removeAttribute("aria-busy");
+  workspace.querySelector("[data-dossiers-purge-message]").textContent = allowed
+    ? "Permanent verwijderen is server-side toegestaan."
+    : eligibility ? purgeBlockMessage(eligibility.reason) : "";
+}
+
 export function dossierAssignmentRequest(detail, assignment, assigneeOperatorId, reason, idempotencyKey) {
   const reference = dossierReference(detail);
   const normalizedReason = String(reason || "").trim();
@@ -861,6 +887,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     substance: null,
     copySource: null,
     pendingPurgeEligibility: null,
+    purgeEligibility: null,
     counters: null,
   };
   const status = workspace.querySelector("[data-dossiers-status]");
@@ -884,6 +911,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.uploadUrl = null;
     state.requestBusy = false;
     state.copySource = null;
+    state.purgeEligibility = null;
     clearDetailSelection(workspace);
     return false;
   }
@@ -991,6 +1019,10 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (!summary) return false;
     const selection = ++selectDossier.generation;
     resetDossierCopyPreview(workspace);
+    const retainPurgeEligibility = identity.role === "owner" && summary.kind !== "pending" && state.query.zone === "TRASHED";
+    state.purgeEligibility = retainPurgeEligibility
+      ? retainDossierPurgeEligibility(state.purgeEligibility, summary.reference)
+      : null;
     state.selected = summary;
     state.detail = null;
     state.substance = null;
@@ -1001,8 +1033,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.requestBusy = false;
     selectCustomerRequest.generation += 1;
     workspace.querySelector("[data-dossiers-request-detail]").hidden = true;
-    workspace.querySelector("[data-dossiers-purge]").hidden = true;
-    workspace.querySelector("[data-dossiers-purge-message]").textContent = "";
+    presentDossierPurgeEligibility(workspace, state.purgeEligibility, { refreshing: Boolean(state.purgeEligibility) });
     renderList(workspace, state.items, summary.reference);
     if (summary.kind === "pending") {
       status.textContent = "Dossier laden.";
@@ -1034,6 +1065,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
       renderDetail(workspace, detail, summary, substance);
       const reference = dossierReference(detail);
+      const canRequestPurgeEligibility = identity.role === "owner" && detail.dossier_lifecycle?.state === "TRASHED";
+      if (!canRequestPurgeEligibility) {
+        state.purgeEligibility = null;
+        presentDossierPurgeEligibility(workspace, null);
+      }
       const tasks = [
         authority.gateway(dossierDocumentRequest(detail)).then((documents)=>{
           if (!Array.isArray(documents) || selection !== selectDossier.generation) return;
@@ -1065,22 +1101,24 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           section.hidden = false;
         }));
       }
-      if (identity.role === "owner" && detail.dossier_lifecycle?.state === "TRASHED") {
+      if (canRequestPurgeEligibility) {
         const request = dossierPurgeEligibilityRequest(detail);
         tasks.push(authority.rpc(request.name, request.parameters).then((eligibility)=>{
           if (selection !== selectDossier.generation) return;
-          const purge = workspace.querySelector("[data-dossiers-purge]");
-          purge.hidden = eligibility?.can_purge !== true;
-          workspace.querySelector("[data-dossiers-purge-message]").textContent = eligibility?.can_purge === true
-            ? "Permanent verwijderen is server-side toegestaan."
-            : purgeBlockMessage(eligibility?.reason);
+          state.purgeEligibility = bindDossierPurgeEligibility(summary.reference, eligibility);
+          presentDossierPurgeEligibility(workspace, state.purgeEligibility);
+        }, ()=>{
+          if (selection === selectDossier.generation) presentDossierPurgeEligibility(workspace, state.purgeEligibility);
         }));
       }
       await Promise.allSettled(tasks);
       if (selection === selectDossier.generation) status.textContent = "";
       return true;
     } catch (error) {
-      if (selection === selectDossier.generation) status.textContent = errorCode(error) === "DOSSIER_DISPOSED" ? "" : "Dossier kon niet veilig worden geladen.";
+      if (selection === selectDossier.generation) {
+        presentDossierPurgeEligibility(workspace, state.purgeEligibility);
+        status.textContent = errorCode(error) === "DOSSIER_DISPOSED" ? "" : "Dossier kon niet veilig worden geladen.";
+      }
       return false;
     }
   }

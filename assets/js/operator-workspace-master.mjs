@@ -59,10 +59,14 @@ export async function createOperatorWorkspaceMaster({
   setTimeoutFn = setTimeout,
   onInvalidate = ()=>{},
   onInvalidWorkspace = ()=>{},
+  onAvailabilityChange = ()=>{},
   resumeHint = null,
 } = {}) {
   const localLock = await requestLocalMasterLock(navigatorObject);
-  if (!localLock.acquired) return inactiveWorkspaceMaster("LOCAL_MASTER_EXISTS");
+  if (!localLock.acquired) {
+    onAvailabilityChange("unavailable");
+    return inactiveWorkspaceMaster("LOCAL_MASTER_EXISTS");
+  }
 
   const masterWindowId = createWindowId(windowObject.crypto);
   const requestedResume = operatorWorkspaceResumeHint(resumeHint);
@@ -84,6 +88,7 @@ export async function createOperatorWorkspaceMaster({
   }
   if (!resumed) ({ data, error } = await client.rpc("acquire_operator_workspace_v1", { p_master_window_id: masterWindowId }));
   if (!error && data?.acquired === false) {
+    onAvailabilityChange("occupied");
     const leaseExpiry = Date.parse(data.lease_expires_at);
     const retryDelay = Number.isFinite(leaseExpiry)
       ? Math.min(Math.max(leaseExpiry - now() + 100, 100), SERVER_LEASE_DURATION_MS + 100)
@@ -95,9 +100,11 @@ export async function createOperatorWorkspaceMaster({
   }
   if (error || (resumed ? data?.resumed !== true : data?.acquired !== true)
     || !validUuid(data.workspace_id) || !validUuid(data.renewal_token)) {
+    if (error || data?.acquired !== false) onAvailabilityChange("unavailable");
     localLock.release();
     return inactiveWorkspaceMaster(data?.acquired === false ? "SERVER_MASTER_EXISTS" : "WORKSPACE_ACQUIRE_FAILED");
   }
+  onAvailabilityChange("active");
   const memory = {
     workspaceId: data.workspace_id,
     epoch: Number(data.epoch),
