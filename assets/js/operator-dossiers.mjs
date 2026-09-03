@@ -21,7 +21,6 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "get_dossier_assignment", "get_assignment_operator_roster", "assign_dossier",
   "archive_dossier", "reactivate_dossier", "trash_dossier", "restore_dossier",
   "archive_pending_intake", "restore_pending_intake",
-  "mark_dossier_seen",
   "promote_accepted_application", "issue_and_deliver_approved_quotation",
 ]);
 const DOSSIER_RPC_ACTIONS = new Set(["can_purge_dossier_v1", "purge_dossier_v1", "can_purge_sdf_dossier_v1", "purge_sdf_dossier_v1"]);
@@ -70,20 +69,6 @@ export function dossierSubstanceRequest(value) {
   const quoteRequestId = String(value?.quote_request_id || value?.raw?.quote_request_id || "");
   if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_SUBSTANCE_REQUEST");
   return { action: "get_dossier_substance", quote_request_id: quoteRequestId };
-}
-
-export function dossierSeenRequest(value) {
-  const quoteRequestId = String(value?.quote_request_id || value?.raw?.quote_request_id || "");
-  if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_SEEN_REQUEST");
-  return { action: "mark_dossier_seen", quote_request_id: quoteRequestId };
-}
-
-export function validateDossierSeenResult(value, expectedQuoteRequestId) {
-  if (!value || Object.keys(value).length !== 2 || value.quote_request_id !== expectedQuoteRequestId
-    || typeof value.seen_at !== "string" || !Number.isFinite(Date.parse(value.seen_at))) {
-    throw new Error("INVALID_DOSSIER_SEEN_RESPONSE");
-  }
-  return value;
 }
 
 export function dossierListRequest(query = {}, cursor = null) {
@@ -457,25 +442,6 @@ function pendingSummary(item) {
   };
 }
 
-export function dossierWorkqueuePresentation(item) {
-  const raw = item?.raw;
-  const person = String(raw?.name || item?.name || "").trim();
-  const company = String(raw?.organization || raw?.company || "").trim();
-  const requestKind = raw?.request_kind;
-  const requestedAt = raw?.dossier_date || raw?.submitted_at || raw?.started_at || raw?.invited_at || null;
-  if (!person || !["website", "slimme_documentenflow"].includes(requestKind)) {
-    throw new Error("INVALID_DOSSIER_WORKQUEUE_ITEM");
-  }
-  return {
-    person,
-    company: company && company !== person ? company : null,
-    product: requestKind === "website" ? "Website" : "Slimme Documentenflow",
-    requestedAt,
-    reference: item.reference,
-    status: dossierStatus(item.status),
-  };
-}
-
 export function validateDossierListPage(page, action = "list_applications_v2") {
   if (action === "list_pending_intakes") {
     if (!page || !Array.isArray(page.items) || Object.keys(page).length !== 1) throw new Error("INVALID_PENDING_DOSSIER_LIST_RESPONSE");
@@ -691,34 +657,22 @@ function renderList(workspace, items, selectedReference) {
     const button = list.ownerDocument.createElement("button");
     const identity = list.ownerDocument.createElement("span");
     const name = list.ownerDocument.createElement("strong");
-    const company = list.ownerDocument.createElement("small");
-    const context = list.ownerDocument.createElement("small");
     const reference = list.ownerDocument.createElement("small");
-    const statuses = list.ownerDocument.createElement("span");
-    const seen = list.ownerDocument.createElement("span");
     const status = list.ownerDocument.createElement("span");
-    const presentation = dossierWorkqueuePresentation(item);
     button.type = "button";
     button.className = "application-list__button";
     button.dataset.dossiersSelect = String(index);
     const selected = item.reference === selectedReference;
     button.setAttribute("aria-selected", String(selected));
     if (selected) button.setAttribute("aria-current", "true");
-    identity.className = "dossiers-list__identity";
-    name.textContent = presentation.person;
-    company.textContent = presentation.company || "";
-    company.hidden = !presentation.company;
-    context.textContent = `${presentation.product} · ${formatOperatorDate(presentation.requestedAt)}`;
-    reference.textContent = presentation.reference;
-    statuses.className = "dossiers-list__statuses";
-    seen.className = `badge ${item.raw?.seen_at ? "badge--muted" : "badge--green"}`;
-    seen.textContent = item.raw?.seen_at ? "Gezien" : "Nieuw";
+    name.textContent = item.name;
+    reference.textContent = item.reference;
+    const presentedStatus = dossierStatus(item.status);
     button.dataset.dossiersStatus = item.status;
-    status.className = `badge ${presentation.status.className}`.trim();
-    status.textContent = presentation.status.label;
-    identity.append(name, company, context, reference);
-    statuses.append(seen, status);
-    button.append(identity, statuses);
+    status.className = `badge ${presentedStatus.className}`.trim();
+    status.textContent = presentedStatus.label;
+    identity.append(name, reference);
+    button.append(identity, status);
     row.append(button);
     list.append(row);
   }
@@ -1033,24 +987,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     onLifecycle: heartbeat.update,
   });
 
-  async function markSeenAfterIntentionalOpen(summary, selection, intentional) {
-    if (!intentional) return false;
-    try {
-      const request = dossierSeenRequest(summary);
-      const result = validateDossierSeenResult(
-        await authority.gateway(request),
-        request.quote_request_id,
-      );
-      if (controller.disposed || selection !== selectDossier.generation) return false;
-      summary.raw.seen_at = result.seen_at;
-      renderList(workspace, state.items, summary.reference);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async function selectDossier(summary, { intentional = false } = {}) {
+  async function selectDossier(summary) {
     if (!summary) return false;
     const selection = ++selectDossier.generation;
     resetDossierCopyPreview(workspace);
@@ -1076,7 +1013,6 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         state.substance = substance;
         state.copySource = pendingDossierCopy(summary, substance);
         renderPendingDetail(workspace, summary, substance, state.copySource);
-        await markSeenAfterIntentionalOpen(summary, selection, intentional);
         status.textContent = "";
         return true;
       } catch (error) {
@@ -1097,7 +1033,6 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       state.substance = substance;
       state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
       renderDetail(workspace, detail, summary, substance);
-      await markSeenAfterIntentionalOpen(summary, selection, intentional);
       const reference = dossierReference(detail);
       const tasks = [
         authority.gateway(dossierDocumentRequest(detail)).then((documents)=>{
@@ -1283,7 +1218,6 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   function openCommandDialog(command) {
     const dialog = workspace.querySelector("[data-dossiers-command-dialog]");
     state.command = command;
-    dialog.dataset.dossiersCommandKind = command.kind;
     dialog.querySelector("[data-dossiers-command-title]").textContent = command.kind === "purge" ? "Dossier permanent verwijderen"
       : command.kind === "pending-trash" ? "Dossier naar prullenbak"
       : command.action === "archive_pending_intake" ? "Intake archiveren"
@@ -1356,10 +1290,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     }
     else if (target.dataset.dossiersAction === "refresh") void refreshWorkspace();
     else if (target.dataset.dossiersAction === "more") void loadList(()=>!controller.disposed, true);
-    else if (target.dataset.dossiersSelect !== undefined) void selectDossier(
-      state.items[Number(target.dataset.dossiersSelect)],
-      { intentional: true },
-    );
+    else if (target.dataset.dossiersSelect !== undefined) void selectDossier(state.items[Number(target.dataset.dossiersSelect)]);
     else if (target.dataset.dossiersRequest !== undefined) void selectCustomerRequest(state.requests[Number(target.dataset.dossiersRequest)]);
     else if (target.hasAttribute("data-dossiers-request-transition")) void transitionCustomerRequest(target.dataset.command);
     else if (target.hasAttribute("data-dossiers-upload-create")) void createCustomerUploadLink();

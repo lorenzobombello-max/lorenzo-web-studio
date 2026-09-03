@@ -1162,17 +1162,6 @@ if (import.meta.main) {
               clientFor,
             );
           }
-          if (input.action === "mark_dossier_seen") {
-            const { data, error } = await serviceClient().rpc(
-              "mark_operator_dossier_seen_v1",
-              {
-                p_actor_auth_user_id: actorAuthUserId,
-                p_quote_request_id: input.quote_request_id,
-              },
-            );
-            if (error) throw new Error(error.message);
-            return data;
-          }
           if (input.action === "list_pending_sdf_qualification_intakes") {
             const { data, error } = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
             if (error) throw new Error(error.message);

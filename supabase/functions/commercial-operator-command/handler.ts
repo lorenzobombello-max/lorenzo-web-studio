@@ -53,7 +53,6 @@ const APPLICATION_ACTIONS = new Set([
   "get_application_facets_v2",
   "get_application_detail",
   "get_dossier_substance",
-  "mark_dossier_seen",
   "get_assignment_operator_roster",
   "get_dossier_assignment",
   "get_my_assigned_dossiers",
@@ -1016,8 +1015,6 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "support_reference",
     ])
     : action === "get_dossier_substance"
-    ? new Set(["action", "quote_request_id"])
-    : action === "mark_dossier_seen"
     ? new Set(["action", "quote_request_id"])
     : action === "get_assignment_operator_roster"
     ? new Set(["action"])
@@ -2419,7 +2416,6 @@ export async function handleCommercialOperator(
           "list_applications_v2",
           "get_application_facets_v2",
           "get_dossier_substance",
-          "mark_dossier_seen",
           "list_pending_intakes",
           "list_pending_sdf_qualification_intakes",
           "count_pending_intakes",
