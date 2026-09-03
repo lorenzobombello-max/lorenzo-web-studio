@@ -15,7 +15,8 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260903-dossiers-seen-state-r1";
+const OPERATOR_ASSET_RELEASE = "20260903-operator-profiles-r1";
+const OPERATOR_PROFILE_RELEASE = "20260903-operator-profiles-r1";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-dossiers-seen-state-r1";
@@ -203,10 +204,10 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${DOSSIERS_ASSET_RELEASE}`,
-    `./operator-dashboard.js?v=${DOSSIERS_ASSET_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_PROFILE_RELEASE}`,
+    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}`,
   ]);
-  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, DOSSIERS_ASSET_RELEASE], [dashboardUrl, DOSSIERS_ASSET_RELEASE]]) {
+  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_PROFILE_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
@@ -2289,7 +2290,7 @@ test("project site presentation accepts only the exact project-bound HTTPS origi
 test("dashboard role presentation uses one exact server identity projection", async () => {
   const labels = {
     owner: "OWNER", operations_manager: "OPERATIONS MANAGER", operator: "OPERATOR",
-    reviewer: "REVIEWER", read_only: "READ ONLY", admin: "ADMIN",
+    reviewer: "REVIEWER", read_only: "READ ONLY", admin: "ADMIN", profile_only: "PROFIEL",
   };
   for (const [role, roleLabel] of Object.entries(labels)) {
     assert.deepEqual(currentOperatorIdentityPresentation({ display_name: "Current User", role, status: "ACTIVE" }), {
@@ -3055,15 +3056,15 @@ test("internal Smoke B static UI is separate, hidden, confirmed, and has no capa
   assert.doesNotMatch(script, /localStorage|sessionStorage|console\.(?:log|error|warn)/);
 });
 
-test("owner module shell exposes six accessible query-routed modules without mock data", async () => {
+test("owner module shell exposes seven accessible query-routed modules without mock data", async () => {
   const [html, css] = await Promise.all([read("operator/dashboard/index.html"), read("assets/css/operator-dashboard.css")]);
-  const modules = [["dossiers", "Dossiers", "Dossiers"], ["finance", "Financieel", "Financieel"], ["workforce", "Personeel", "Personeel"], ["recruitment", "Rekrutering", "Rekrutering"], ["messages", "Berichten", "Berichtenkamer"], ["calendar", "Kalender", "Kalender"]];
+  const modules = [["profile", "Profiel", ""], ["dossiers", "Dossiers", "Dossiers"], ["finance", "Financieel", "Financieel"], ["workforce", "Personeel", "Personeel"], ["recruitment", "Rekrutering", "Rekrutering"], ["messages", "Berichten", "Berichtenkamer"], ["calendar", "Kalender", "Kalender"]];
   for (const [module, navigationLabel] of modules) {
     assert.match(html, new RegExp(`href="/operator/dashboard/\\?module=${module}"[^>]*data-operator-module="${module}"[^>]*>${navigationLabel}</a>`));
   }
   const navigation = html.match(/<nav id="operatorModuleNavigation"[\s\S]*?<\/nav>/)?.[0] || "";
   assert.deepEqual([...navigation.matchAll(/data-operator-module="([^"]+)"/g)].map((match) => match[1]), modules.map(([module])=>module));
-  for (const [module, , title] of modules.slice(1)) {
+  for (const [module, , title] of modules.slice(2)) {
     assert.match(html, new RegExp(`data-module-panel="${module}"[\\s\\S]{0,180}<h1[^>]*>${title}</h1>`));
   }
   assert.match(html, /id="operatorModuleNavigation"[^>]*aria-label="Operatormodules"[^>]*hidden/);
@@ -3094,6 +3095,9 @@ test("module routing defaults and fails safe to dossiers", () => {
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=unknown", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "operator"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "operator"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=profile", "operations_manager"), "profile");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "profile_only"), "profile");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "profile_only"), "profile");
 });
 
 test("recruitment route remains active when the URL is resolved after refresh", () => {

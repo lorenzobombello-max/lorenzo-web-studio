@@ -4,6 +4,19 @@ export const REQUIRED_MULTI_SCREEN_MODULES = Object.freeze(["messages", "calenda
 
 const descriptors = [
   {
+    moduleKey: "profile",
+    displayName: "Profiel",
+    route: "/operator/dashboard/?module=profile",
+    currentlyImplemented: true,
+    initializer: "initializeOperatorProfile",
+    serverAuthority: "get_current_operator_profile_v1 exact Auth email binding",
+    standaloneAllowed: false,
+    multiScreenAllowed: false,
+    singletonPolicy: "module-slot",
+    desktopMultiWindowAllowed: false,
+    blockReason: "PROFILE_BOUND_TO_CURRENT_AUTH_SUBJECT",
+  },
+  {
     moduleKey: "dossiers",
     displayName: "Dossiers",
     route: "/operator/dashboard/?module=dossiers",

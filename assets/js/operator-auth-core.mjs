@@ -5,8 +5,6 @@ export const OPERATOR_ROUTES = Object.freeze({
   dashboard: "/operator/dashboard/",
 });
 
-const OPERATOR_AUTHORIZATION_PROBE_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
-
 const AUTH_PARAMETER_NAMES = new Set([
   "access_token",
   "refresh_token",
@@ -139,12 +137,8 @@ export async function requireOperatorSession(client, nowSeconds) {
 export async function requireAuthorizedOperator(client, nowSeconds) {
   const session = await requireOperatorSession(client, nowSeconds);
   if (!session) return { status: "unauthenticated", session: null };
-  const { error } = await client.rpc("get_commercial_project_view_v2", {
-    p_project_id: OPERATOR_AUTHORIZATION_PROBE_PROJECT_ID,
-  });
-  if (!error || (error.code === "23503" && error.message === "PROJECT_NOT_FOUND")) {
-    return { status: "authorized", session };
-  }
+  const { error } = await client.rpc("get_current_operator_identity_v1", {});
+  if (!error) return { status: "authorized", session };
   return { status: "unauthorized", session: null };
 }
 

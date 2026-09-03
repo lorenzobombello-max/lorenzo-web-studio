@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-dossiers-seen-state-r1";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-operator-profiles-r1";
 import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260903-multiscreen-ux-r1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";

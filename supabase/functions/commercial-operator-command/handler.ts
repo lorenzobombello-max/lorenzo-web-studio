@@ -188,7 +188,8 @@ type CurrentOperatorIdentity = Readonly<{
     | "operator"
     | "reviewer"
     | "read_only"
-    | "admin";
+    | "admin"
+    | "profile_only";
   status: "ACTIVE";
 }>;
 export type WorkforceCalendarActionInput = Readonly<{
@@ -2631,6 +2632,7 @@ export async function executeCurrentOperatorIdentityTransport(
       "reviewer",
       "read_only",
       "admin",
+      "profile_only",
     ].includes(String(identity.role || "")) ||
     identity.status !== "ACTIVE"
   ) {

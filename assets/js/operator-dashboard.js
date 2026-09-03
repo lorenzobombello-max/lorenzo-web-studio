@@ -14,6 +14,7 @@ import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=2026
 import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260903-dossiers-seen-state-r1";
+import { initializeOperatorProfile } from "./operator-profile.mjs?v=20260903-operator-profiles-r1";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
@@ -29,8 +30,9 @@ const OPERATOR_ROLE_LABELS = Object.freeze({
   reviewer: "REVIEWER",
   read_only: "READ ONLY",
   admin: "ADMIN",
+  profile_only: "PROFIEL",
 });
-const OPERATOR_MODULES = new Set(["dossiers", "intake", "finance", "workforce", "recruitment", "messages", "calendar"]);
+const OPERATOR_MODULES = new Set(["profile", "dossiers", "intake", "finance", "workforce", "recruitment", "messages", "calendar"]);
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 
 function exactObjectKeys(value, keys) {
@@ -47,10 +49,12 @@ function localDateInputValue(date = new Date()) {
 
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
+  const module = parsed.searchParams.get("module") || (role === "profile_only" ? "profile" : "dossiers");
+  if (module === "profile") return module;
   if (parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
     return "dossiers";
   }
-  const module = parsed.searchParams.get("module") || "dossiers";
+  if (role === "profile_only") return "profile";
   if (module === "intake" && ["owner", "admin"].includes(role)) return module;
   if (role !== "owner") return "dossiers";
   return OPERATOR_MODULES.has(module) ? module : "dossiers";
@@ -2238,6 +2242,10 @@ export async function startOperatorDashboard({
   const activeModule = operatorModuleFromUrl(window.location.href, currentIdentity.role);
   moduleNavigation.hidden = currentIdentity.role !== "owner";
   presentOperatorModule(document, activeModule);
+  if (activeModule === "profile") {
+    await initializeOperatorProfile(document, client);
+    return currentIdentity;
+  }
   if (activeModule === "dossiers") {
     for (const id of ["internalSmokePanel", "internalSmokeBPanel", "personalQueueWorkspace", "managerWorkspace"]) {
       const legacyWorkspace = document.getElementById(id);

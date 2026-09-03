@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <title>TEST | Operator testomgeving</title>
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/assets/css/pages.css" />
+  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260903-operator-profiles-r1" />
+  <link rel="stylesheet" href="/assets/css/operator-test.css?v=20260903-operator-test-r1" />
+</head>
+<body class="operator-test-page">
+  <div id="operatorDashboard">
+    <a class="skip-link" href="#workspace">Ga naar testscherm</a>
+    <header class="topbar">
+      <a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatoromgeving">
+        <img class="identity__mark" src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" />
+        <span><strong>Lorenzo Web Solutions</strong><small>Operator testomgeving</small></span>
+      </a>
+      <div class="topbar__status"><span class="operator-test-badge">TEST</span></div>
+    </header>
+    <main id="workspace" class="workspace">
+      <section class="module-shell operator-profile operator-test" aria-labelledby="operatorTestName">
+        <p class="eyebrow">Operator testprofiel</p>
+        <div class="operator-test-notice" role="status"><strong>TESTOMGEVING</strong><span>Geen productiegegevens of echte acties</span></div>
+        <div class="operator-profile__content">
+          <header class="operator-profile__heading">
+            <span class="operator-profile__avatar operator-test__avatar" aria-hidden="true">TT</span>
+            <div><span class="operator-profile__code">TEST-OP</span><h1 id="operatorTestName" class="module-shell__title">Test Operator</h1><p class="operator-profile__role">Afgeschermd testprofiel</p></div>
+          </header>
+          <dl class="operator-profile__details">
+            <div><dt>Gegevensbron</dt><dd>Synthetische lokale testdata</dd></div>
+            <div><dt>Status</dt><dd><span class="operator-test__status">TEST</span></dd></div>
+          </dl>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

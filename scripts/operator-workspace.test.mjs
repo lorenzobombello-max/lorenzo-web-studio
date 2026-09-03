@@ -126,7 +126,7 @@ test("child bootstrap parses generic module identity and rejects malformed ident
 });
 
 test("registry resolves only registered standalone-safe modules", ()=>{
-  assert.equal(OPERATOR_MODULE_DESCRIPTORS.length, 7);
+  assert.equal(OPERATOR_MODULE_DESCRIPTORS.length, 8);
   assert.equal(resolveStandaloneOperatorModule("messages")?.initializer, "initializeOperatorMessages");
   assert.equal(resolveStandaloneOperatorModule("calendar")?.initializer, "initializeOperatorCalendar");
   assert.equal(resolveStandaloneOperatorModule("recruitment")?.initializer, "initializeOperatorRecruitment");
@@ -138,6 +138,7 @@ test("registry resolves only registered standalone-safe modules", ()=>{
 
 test("Dossiers inventory enables all required modules and preserves the Intake blocker", ()=>{
   const expected = {
+    profile: "PROFILE_BOUND_TO_CURRENT_AUTH_SUBJECT",
     dossiers: null,
     intake: "dossier workspace and mixed Website/SDF intake projections",
     finance: null,
