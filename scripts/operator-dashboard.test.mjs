@@ -3069,6 +3069,14 @@ test("owner module shell exposes six accessible query-routed modules without moc
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.topbar[^}]*grid-template-columns:1fr/);
 });
 
+test("dashboard and managed window CSP permit only the project Realtime websocket origin", async () => {
+  const entrypoints = await Promise.all([read("operator/dashboard/index.html"), read("operator/window/index.html")]);
+  for (const html of entrypoints) {
+    assert.match(html, /connect-src 'self' https:\/\/xcsptvntvrizwhskaphr\.supabase\.co wss:\/\/xcsptvntvrizwhskaphr\.supabase\.co/);
+    assert.equal((html.match(/wss:\/\//g) || []).length, 1);
+  }
+});
+
 test("module routing defaults and fails safe to dossiers", () => {
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "owner"), "dossiers");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "owner"), "finance");
