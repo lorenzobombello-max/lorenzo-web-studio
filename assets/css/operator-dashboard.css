@@ -749,7 +749,7 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 .operator-modal--action-confirm .confirmation__field textarea { min-height:clamp(8rem,16vh,12rem); padding:clamp(1rem,1vw,1.4rem); font-size:clamp(1rem,.75vw,1.15rem); }
 .operator-modal--action-confirm .confirmation__actions { margin-top:clamp(1.75rem,2vw,2.75rem); gap:clamp(.75rem,1vw,1.25rem); }
 .operator-modal--action-confirm .confirmation__actions button { min-height:clamp(3rem,3vw,4rem); padding:clamp(.75rem,.8vw,1.1rem) clamp(1.15rem,1.3vw,1.8rem); font-size:clamp(.95rem,.7vw,1.1rem); }
-dialog.dossiers-command-dialog { width:min(42rem,calc(100vw - 2rem)); overflow:auto; }
+dialog.dossiers-command-dialog { width:68vw; overflow:auto; }
 .dossiers-command-dialog .confirmation { background:var(--white); }
 .dossiers-command-dialog .confirmation > .eyebrow { margin:0; }
 .dossiers-command-dialog .confirmation > p:not(.eyebrow) { margin:.75rem 0 0; color:var(--muted); line-height:1.55; }

@@ -15,7 +15,7 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260903-shared-dossier-modal-ui-r1";
+const OPERATOR_ASSET_RELEASE = "20260903-dossier-modal-width-r1";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-shared-dossier-modal-ui-r1";
@@ -179,7 +179,7 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?:is\(\.operator-modal--reading,\.operator-modal--work\) :is\(input,select,textarea\) \{ min-height:clamp/);
   assert.match(css, /@media \(min-width:2000px\) \{[\s\S]*?#documentInboxUploadDialog \.document-inbox-upload-zone \{ min-height:clamp/);
   assert.match(css, /\.operator-modal--action-confirm \.confirmation__field textarea \{ min-height:clamp/);
-  assert.match(css, /dialog\.dossiers-command-dialog \{ width:min\(42rem,calc\(100vw - 2rem\)\); overflow:auto; \}/);
+  assert.match(css, /dialog\.dossiers-command-dialog \{ width:68vw; overflow:auto; \}/);
   assert.match(css, /\.dossiers-command-dialog \.confirmation__field textarea \{ box-sizing:border-box; max-width:100%; line-height:1\.5; \}/);
   assert.match(css, /@media \(max-width:540px\) \{ dialog\.dossiers-command-dialog \{ width:calc\(100vw - 2rem\); \}[^\n]+\.confirmation__actions \{ flex-direction:column-reverse; \}[^\n]+button \{ width:100%; \} \}/);
   assert.match(css, /dialog\.operator-modal--reading,dialog\.operator-modal--work,dialog\.operator-modal--compact,dialog\.operator-modal--action-confirm \{ max-width:calc\(100vw - 4rem\); max-height:calc\(100dvh - 2rem\); \}/);

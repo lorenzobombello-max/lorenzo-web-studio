@@ -23,7 +23,7 @@ const validConfig={supabaseUrl:"https://xcsptvntvrizwhskaphr.supabase.co",publis
 const session={access_token:"token-never-logged",expires_at:4102444800,user:{id:"993a4b95-0d63-48e7-9733-0bda6422b50f",email:"bombello.lorenzo1972@gmail.com"}};
 const loginHtml=readFileSync(new URL("../operator/login/index.html",import.meta.url),"utf8");
 const LOGIN_STABILITY_RELEASE="20260902-login-stability";
-const DOSSIERS_UX_RELEASE="20260903-shared-dossier-modal-ui-r1";
+const DOSSIERS_UX_RELEASE="20260903-dossier-modal-width-r1";
 
 function createLoginHarness(authOverrides={},options={}) {
   const element=(value="")=>({value,hidden:false,disabled:false,textContent:"",dataset:{},focus(){this.focused=true}});
