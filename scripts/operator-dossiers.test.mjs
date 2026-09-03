@@ -257,7 +257,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(guard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-pending-dossier-copy/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-pending-dossier-copy-symbol/);
   for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-owner-flow-audit/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
@@ -374,7 +374,7 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
   assert.match(source, />Naar prullenbak<\/button>/);
   assert.match(source, />Herstellen uit prullenbak<\/button>/);
   assert.match(source, /data-dossiers-command-dialog/);
-  assert.match(source, /import\("\.\/application-dossier-copy\.js\?v=20260903-pending-dossier-copy"\)/);
+  assert.match(source, /import\("\.\/application-dossier-copy\.js\?v=20260903-pending-dossier-copy-symbol"\)/);
   assert.match(source, /boundDossierCopy\(state\.selected, state\.items, state\.copySource\) !== copySource/);
   assert.match(source, /data-dossiers-copy-actions\]"\)\.hidden = !dossierCopyAvailable\(detail\)/);
   assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\)/);

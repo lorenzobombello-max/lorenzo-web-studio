@@ -172,6 +172,17 @@ Deno.test("download preserves euro and common Dutch and French characters", () =
   assertEquals(source.match(/\/Type \/Page\b/g)?.length, 1);
 });
 
+Deno.test("PDF preserves Greek mu through the built-in Symbol font", () => {
+  const pdf = createApplicationDossierPdf({
+    ...pending,
+    request: { ...pending.request, originalText: "Maatvoering: 5.25 μm" },
+  });
+  const source = new TextDecoder("windows-1252").decode(pdf.bytes);
+  assertEquals(new TextDecoder().decode(pdf.bytes.slice(0, 8)), "%PDF-1.4");
+  assertStringIncludes(source, "/BaseFont /Symbol");
+  assertStringIncludes(source, "/F2 8.5 Tf\n(m) Tj");
+});
+
 Deno.test("PDF generation fails explicitly for characters outside WinAnsi", () => {
   let message = "";
   try {

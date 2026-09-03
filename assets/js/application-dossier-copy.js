@@ -230,6 +230,7 @@ const WIN_ANSI_BYTES = new Map([
   [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b],
   [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
 ]);
+const PDF_SYMBOL_GLYPHS = new Map([[0x03bc, { byte: 0x6d, width: 576 }]]);
 
 function winAnsi(value) {
   let encoded = "";
@@ -262,9 +263,11 @@ const HELVETICA_ASCII_WIDTHS = [
 ];
 
 export function measureApplicationDossierPdfText(value) {
-  winAnsi(value);
   const units = [...value].reduce((total, character) => {
     const codePoint = character.codePointAt(0);
+    const symbol = PDF_SYMBOL_GLYPHS.get(codePoint);
+    if (symbol) return total + symbol.width;
+    winAnsi(character);
     if (codePoint >= 0x20 && codePoint <= 0x7e) return total + HELVETICA_ASCII_WIDTHS[codePoint - 0x20];
     const base = character.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (base.length === 1) {
@@ -274,6 +277,28 @@ export function measureApplicationDossierPdfText(value) {
     return total + 1000;
   }, 0);
   return units * PDF_FONT_SIZE / 1000;
+}
+
+function pdfTextCommands(value) {
+  const commands = [];
+  let font = null;
+  let segment = "";
+  const flush = () => {
+    if (!segment) return;
+    commands.push(`/${font} ${PDF_FONT_SIZE} Tf`, `(${font === "F1" ? pdfEscape(segment) : segment}) Tj`);
+    segment = "";
+  };
+  for (const character of value) {
+    const symbol = PDF_SYMBOL_GLYPHS.get(character.codePointAt(0));
+    const nextFont = symbol ? "F2" : "F1";
+    if (font !== nextFont) {
+      flush();
+      font = nextFont;
+    }
+    segment += symbol ? String.fromCharCode(symbol.byte) : character;
+  }
+  flush();
+  return commands;
 }
 
 function splitPdfToken(token, width = PDF_COLUMN_WIDTH) {
@@ -328,11 +353,12 @@ export function createApplicationDossierPdf(application) {
   const linesPerPage = linesPerColumn * columnsPerPage;
   const pages = [];
   for (let offset = 0; offset < lines.length; offset += linesPerPage) pages.push(lines.slice(offset, offset + linesPerPage));
-  const pageIds = pages.map((_, index) => 4 + index * 2);
+  const pageIds = pages.map((_, index) => 5 + index * 2);
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>",
   ];
   pages.forEach((page, index) => {
     const pageId = pageIds[index];
@@ -341,15 +367,15 @@ export function createApplicationDossierPdf(application) {
     for (let column = 0; column < columnsPerPage; column += 1) {
       const columnLines = page.slice(column * linesPerColumn, (column + 1) * linesPerColumn);
       if (!columnLines.length) continue;
-      commands.push("BT", `/F1 ${PDF_FONT_SIZE} Tf`, `${32 + column * 405} 559 Td`, "10.5 TL");
+      commands.push("BT", `${32 + column * 405} 559 Td`, "10.5 TL");
       columnLines.forEach((line, lineIndex) => {
         if (lineIndex) commands.push("T*");
-        commands.push(`(${pdfEscape(line)}) Tj`);
+        commands.push(...pdfTextCommands(line));
       });
       commands.push("ET");
     }
     const stream = commands.join("\n");
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
     objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
 

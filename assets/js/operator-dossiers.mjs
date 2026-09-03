@@ -1304,7 +1304,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     } else if (target.dataset.dossiersCopy) {
       const copySource = boundDossierCopy(state.selected, state.items, state.copySource);
       if (copySource) {
-        void import("./application-dossier-copy.js?v=20260903-pending-dossier-copy").then((copy)=>{
+        void import("./application-dossier-copy.js?v=20260903-pending-dossier-copy-symbol").then((copy)=>{
           if (controller.disposed || boundDossierCopy(state.selected, state.items, state.copySource) !== copySource) return;
           if (target.dataset.dossiersCopy === "view") {
             const presentation = copy.renderApplicationDossier(workspace.querySelector("[data-dossiers-copy-content]"), copySource);

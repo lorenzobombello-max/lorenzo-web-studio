@@ -73,7 +73,7 @@ Deno.test("dossier assets use their current intake and operator cache identities
   const dossierCopyVersion = "20260828-dossier-ux";
   const operatorCssVersion = "20260903-owner-flow-audit";
   const operatorVersion = "20260903-auto-refresh-8s";
-  const operatorDossierVersion = "20260903-pending-dossier-copy";
+  const operatorDossierVersion = "20260903-pending-dossier-copy-symbol";
   assertStringIncludes(intakeHtml, `intake.css?v=${intakeCssVersion}`);
   assertStringIncludes(intakeHtml, `intake.js?v=${intakeVersion}`);
   assertStringIncludes(operatorHtml, `operator-dashboard.css?v=${operatorCssVersion}`);
