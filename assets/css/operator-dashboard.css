@@ -749,6 +749,11 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 .operator-modal--action-confirm .confirmation__field textarea { min-height:clamp(8rem,16vh,12rem); padding:clamp(1rem,1vw,1.4rem); font-size:clamp(1rem,.75vw,1.15rem); }
 .operator-modal--action-confirm .confirmation__actions { margin-top:clamp(1.75rem,2vw,2.75rem); gap:clamp(.75rem,1vw,1.25rem); }
 .operator-modal--action-confirm .confirmation__actions button { min-height:clamp(3rem,3vw,4rem); padding:clamp(.75rem,.8vw,1.1rem) clamp(1.15rem,1.3vw,1.8rem); font-size:clamp(.95rem,.7vw,1.1rem); }
+dialog.dossiers-command-dialog { width:min(42rem,calc(100vw - 2rem)); overflow:auto; }
+.dossiers-command-dialog .confirmation { background:var(--white); }
+.dossiers-command-dialog .confirmation > .eyebrow { margin:0; }
+.dossiers-command-dialog .confirmation > p:not(.eyebrow) { margin:.75rem 0 0; color:var(--muted); line-height:1.55; }
+.dossiers-command-dialog .confirmation__field textarea { box-sizing:border-box; max-width:100%; line-height:1.5; }
 .secondary-action,.danger-action { min-height:44px; padding:.65rem .9rem; border-radius:4px; font-weight:900; }
 .secondary-action { border:1px solid var(--line); background:var(--white); transition:transform var(--motion-duration-fast) ease,border-color var(--motion-duration-fast) ease,background-color var(--motion-duration-fast) ease,box-shadow var(--motion-duration-fast) ease; }
 .secondary-action:not(:disabled):hover { transform:translateY(-1px); border-color:var(--turquoise); background:var(--turquoise-soft); box-shadow:0 6px 16px rgba(20,124,118,.12); }
@@ -803,4 +808,6 @@ dialog::backdrop { background:rgba(5,10,14,.72); }
 @media (max-width:900px) { dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal--action-confirm { width:calc(100vw - 1.5rem); max-width:none; } }
 @media (max-width:540px) { .finance-modal-brand { height:72px; padding:.6rem 1rem; gap:.75rem; } .finance-modal-brand img { width:52px; height:52px; } .finance-modal-brand__name { font-size:1.05rem; } .operator-modal--reading .dossier-preview-dialog__header > div:first-child::before,.operator-modal--action-confirm .confirmation::before { min-height:3.75rem; padding-left:4.5rem; background-size:3.75rem 3.75rem; font-size:1.2rem; } }
 @media (max-width:540px) { dialog.operator-modal--reading,dialog.operator-modal--work,dialog.operator-modal--compact,dialog.operator-modal--action-confirm { width:calc(100vw - 1rem); max-width:none; max-height:calc(100dvh - 1rem); } .operator-modal--action-confirm .confirmation { padding:1.5rem; } }
+@media (max-width:900px) { dialog.dossiers-command-dialog { width:min(42rem,calc(100vw - 3rem)); } }
+@media (max-width:540px) { dialog.dossiers-command-dialog { width:calc(100vw - 2rem); } .dossiers-command-dialog .confirmation { padding:1.25rem; } .dossiers-command-dialog .confirmation__actions { flex-direction:column-reverse; } .dossiers-command-dialog .confirmation__actions button { width:100%; } }
 @media (max-width:540px) { .document-inbox-heading__actions { width:100%; justify-content:space-between; } .document-inbox-upload-zone { min-height:165px; padding:1rem; } .document-inbox-upload-actions { flex-direction:column-reverse; } .document-inbox-upload-actions button { width:100%; } }

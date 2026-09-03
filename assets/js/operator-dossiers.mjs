@@ -427,7 +427,7 @@ function dossierWorkspaceMarkup() {
         <section class="panel" data-dossiers-requests hidden><div class="panel__heading"><div><p class="eyebrow">Klantverzoeken</p><h2>Requests</h2></div></div><ul class="customer-request-list" data-dossiers-request-list></ul><p class="empty-state" data-dossiers-request-empty></p><article data-dossiers-request-detail hidden><hr /><p class="eyebrow" data-dossiers-request-reference></p><h3 data-dossiers-request-title></h3><p data-dossiers-request-description></p><dl class="application-detail"><div><dt>Status</dt><dd data-dossiers-request-status></dd></div><div><dt>Prioriteit</dt><dd data-dossiers-request-priority></dd></div></dl><div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-request-transition hidden></button><button type="button" class="secondary-action" data-dossiers-upload-create>Uploadlink maken</button><button type="button" class="secondary-action" data-dossiers-upload-copy hidden>Uploadlink kopiëren</button><button type="button" class="danger-action" data-dossiers-upload-revoke hidden>Uploadlink intrekken</button></div><input type="url" readonly data-dossiers-upload-url hidden aria-label="Veilige uploadlink" /><p class="action-message" data-dossiers-request-message></p></article></section>
       </aside></div>
     <dialog class="operator-modal--reading dossier-preview-dialog" data-dossiers-copy-dialog aria-labelledby="dossiersCopyTitle"><div class="dossier-preview-dialog__shell"><header class="dossier-preview-dialog__header"><div><p class="eyebrow">Documentpreview</p><h2 id="dossiersCopyTitle">Historische dossierkopie</h2><p class="empty-state" data-dossiers-copy-reference></p></div><div class="dossier-preview-dialog__actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-copy="download">Download PDF</button><button type="button" class="secondary-action" data-dossiers-copy="print">Afdrukken</button><button type="button" class="secondary-action" data-dossiers-copy-close>Sluiten</button></div></header><div class="dossier-preview-dialog__body"><div class="application-dossier-copy" data-dossiers-copy-content></div></div></div></dialog>
-    <dialog class="operator-dialog" data-dossiers-command-dialog aria-labelledby="dossiersCommandTitle"><form data-dossiers-command-form><p class="eyebrow">Bevestiging vereist</p><h2 id="dossiersCommandTitle" data-dossiers-command-title>Dossieractie</h2><p data-dossiers-command-message></p><label>Reden<textarea name="reason" rows="4" minlength="1" maxlength="500" required></textarea></label><div class="dialog-actions"><button type="button" class="secondary-action" data-dossiers-command-cancel>Annuleren</button><button type="submit" class="danger-action">Bevestigen</button></div></form></dialog>`;
+    <dialog class="operator-modal--action-confirm dossiers-command-dialog" data-dossiers-command-dialog aria-modal="true" aria-labelledby="dossiersCommandTitle" aria-describedby="dossiersCommandDescription"><form class="confirmation" data-dossiers-command-form><p class="eyebrow" data-dossiers-command-eyebrow>Bevestiging vereist</p><h2 id="dossiersCommandTitle" data-dossiers-command-title>Dossieractie</h2><p id="dossiersCommandDescription" data-dossiers-command-message></p><label class="confirmation__field" for="dossiersCommandReason"><span>Reden</span><textarea id="dossiersCommandReason" name="reason" rows="4" minlength="1" maxlength="500" required></textarea></label><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-command-cancel>Annuleren</button><button type="submit" class="danger-action" data-dossiers-command-confirm>Bevestigen</button></div></form></dialog>`;
 }
 
 function setText(workspace, field, value) {
@@ -1265,13 +1265,19 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   function openCommandDialog(command) {
     const dialog = workspace.querySelector("[data-dossiers-command-dialog]");
     state.command = command;
+    const destructive = command.kind === "purge" || command.kind === "pending-trash" || command.action === "trash_dossier";
+    dialog.querySelector("[data-dossiers-command-eyebrow]").className = destructive ? "eyebrow eyebrow--red" : "eyebrow";
     dialog.querySelector("[data-dossiers-command-title]").textContent = command.kind === "purge" ? "Dossier permanent verwijderen"
-      : command.kind === "pending-trash" ? "Dossier naar prullenbak"
+      : command.kind === "pending-trash" || command.action === "trash_dossier" ? "Dossier naar prullenbak"
+      : command.action === "archive_dossier" ? "Dossier archiveren"
+      : command.action === "reactivate_dossier" ? "Dossier opnieuw activeren"
+      : command.action === "restore_dossier" ? "Dossier herstellen"
       : command.action === "archive_pending_intake" ? "Intake archiveren"
       : command.action === "restore_pending_intake" ? "Intake terugzetten naar actief" : "Dossierstatus wijzigen";
     dialog.querySelector("[data-dossiers-command-message]").textContent = command.kind === "purge"
       ? "Deze actie is definitief. Geef een concrete reden om door te gaan."
       : "Geef een reden voor deze dossieractie.";
+    dialog.querySelector("[data-dossiers-command-confirm]").className = destructive ? "danger-action" : "primary-action primary-action--compact";
     dialog.querySelector("textarea").value = "";
     dialog.showModal();
     dialog.querySelector("textarea").focus();

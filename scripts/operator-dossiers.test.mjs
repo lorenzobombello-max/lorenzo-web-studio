@@ -201,8 +201,19 @@ test("permanent deletion is product-aware, owner-presented, and exact RPC-bound"
   }, "Niet toegestaan", idempotencyKey), /INVALID_DOSSIER_PURGE_COMMAND/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-command-dialog/);
+  assert.match(source, /class="operator-modal--action-confirm dossiers-command-dialog"/);
+  assert.match(source, /aria-modal="true" aria-labelledby="dossiersCommandTitle" aria-describedby="dossiersCommandDescription"/);
+  assert.match(source, /class="confirmation" data-dossiers-command-form/);
+  assert.match(source, /id="dossiersCommandDescription" data-dossiers-command-message/);
+  assert.match(source, /class="confirmation__field" for="dossiersCommandReason"><span>Reden<\/span><textarea id="dossiersCommandReason"/);
+  assert.match(source, /class="confirmation__actions"/);
+  assert.match(source, /data-dossiers-command-confirm/);
   assert.doesNotMatch(source, /globalThis\.prompt|\bprompt\s*\(/);
   assert.match(source, /identity\.role === "owner"/);
+  assert.match(source, /command\.kind === "pending-trash" \|\| command\.action === "trash_dossier" \? "Dossier naar prullenbak"/);
+  assert.match(source, /command\.action === "restore_dossier" \? "Dossier herstellen"/);
+  assert.match(source, /command\.kind === "purge" \? "Dossier permanent verwijderen"/);
+  assert.match(source, /data-dossiers-command-confirm[^\n]+destructive \? "danger-action" : "primary-action primary-action--compact"/);
 });
 
 test("customer request actions are revision-bound, status-closed, and ephemeral", async () => {
@@ -258,14 +269,14 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const cacheIdentity = "20260903-trash-visual-stability-r1";
+  const cacheIdentity = "20260903-shared-dossier-modal-ui-r1";
   assert.match(dashboardHtml, new RegExp(`operator-dashboard-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(dashboardGuard, new RegExp(`operator-dashboard\\.js\\?v=${cacheIdentity}`));
   assert.match(dashboard, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
   assert.match(childHtml, new RegExp(`operator-window-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(windowGuard, new RegExp(`operator-module-registry\\.mjs\\?v=${cacheIdentity}`));
   assert.match(registry, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-multiscreen-ux-r1/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-shared-dossier-modal-ui-r1/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);

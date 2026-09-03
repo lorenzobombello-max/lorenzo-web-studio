@@ -100,7 +100,7 @@ export const OPERATOR_MODULE_DESCRIPTORS = Object.freeze(descriptors.map((descri
 const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descriptor.moduleKey, descriptor]));
 const standaloneInitializers = new Map([
   ["dossiers", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260903-trash-visual-stability-r1");
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260903-shared-dossier-modal-ui-r1");
     const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
