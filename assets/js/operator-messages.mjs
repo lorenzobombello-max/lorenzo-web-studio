@@ -1,4 +1,5 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const MESSAGE_SCOPES = new Set(["PERSONAL", "ALL"]);
 const MAILBOXES = new Set(["received", "sent"]);
@@ -382,6 +383,7 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
       if (destroyed) return;
       destroyed = true;
       autoRefresh.dispose();
+      heartbeat.dispose();
       realtime?.dispose();
       abortController.abort();
       sending = false;
@@ -407,6 +409,7 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
     },
   };
   const panel = workspace.closest?.("[data-module-panel]");
+  const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "messages", titleElement: root.getElementById("messagesModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "messages",
     refresh: ()=>loadMessages({ background: true }),
@@ -414,6 +417,7 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
     isBlocked: ()=>workspace.dataset.panelMode === "compose" || sending || markingRead.size > 0,
     documentTarget: root,
     windowTarget: root.defaultView,
+    onLifecycle: heartbeat.update,
   });
   const realtime = createOperatorMessagesRealtime({ client, onInvalidate: autoRefresh.request });
   workspace.operatorMessagesController = controller;

@@ -1,4 +1,5 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VACANCY_FIELDS = Object.freeze(["title", "department", "location", "employment_type", "summary", "description", "requirements"]);
@@ -300,14 +301,16 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
   controller = createRecruitmentVacancyController({ execute, onChange: render });
   publicationController = createRecruitmentPublicationController({ execute, onChange: renderPublication });
   const panel = list.closest?.("[data-module-panel]");
+  const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "recruitment", titleElement: root.getElementById("recruitmentModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "recruitment",
-    refresh: (options)=>Promise.all([controller.refresh(options), publicationController.refresh(options)]),
+    refresh: async (options)=>(await Promise.all([controller.refresh(options), publicationController.refresh(options)])).every(Boolean),
     isActive: ()=>!panel?.hidden,
     isBlocked: ()=>[workDialog, statusDialog, publicationDialog].some((dialog)=>dialog.open)
       || controller.state.mutating || publicationController.state.mutating,
     documentTarget: root,
     windowTarget: root.defaultView,
+    onLifecycle: heartbeat.update,
   });
   listen(publicationAction, "click", ()=>{
     const activating = publicationController.state.enabled === false;
@@ -361,6 +364,7 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
       if (disposed) return;
       disposed = true;
       autoRefresh.dispose();
+      heartbeat.dispose();
       listenerController.abort();
       controller.dispose();
       publicationController.dispose();

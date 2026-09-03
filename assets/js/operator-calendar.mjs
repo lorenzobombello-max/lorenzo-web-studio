@@ -1,4 +1,5 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
@@ -249,12 +250,14 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   };
   controller = createOperatorCalendarController({ model: createOperatorCalendarModel(), load, onChange: render });
   const panel = viewport.closest?.("[data-module-panel]");
+  const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "calendar", titleElement: root.getElementById("calendarModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "calendar",
     refresh: ()=>controller.reload({ background: true }),
     isActive: ()=>!panel?.hidden,
     documentTarget: root,
     windowTarget: root.defaultView,
+    onLifecycle: heartbeat.update,
   });
   const signal = listeners.signal;
   for (const button of viewButtons) button.addEventListener("click", ()=>{ void controller.setView(button.dataset.calendarView); }, { signal });
@@ -262,7 +265,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); }, { signal });
   root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); }, { signal });
   const dispose = controller.dispose.bind(controller);
-  controller.dispose = ()=>{ autoRefresh.dispose(); listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
+  controller.dispose = ()=>{ autoRefresh.dispose(); heartbeat.dispose(); listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
   viewport.operatorCalendarController = controller;
   render();
   void controller.reload();

@@ -106,6 +106,7 @@ $requiredFiles = @(
   "assets/js/operator-messages.mjs",
   "assets/js/operator-module-registry.mjs",
   "assets/js/operator-recruitment.mjs",
+  "assets/js/operator-refresh-heartbeat.mjs",
   "assets/js/operator-shell.mjs",
   "assets/js/operator-window-guard.mjs",
   "assets/js/operator-window-host.mjs",

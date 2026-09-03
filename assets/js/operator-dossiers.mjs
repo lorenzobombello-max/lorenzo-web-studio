@@ -1,5 +1,6 @@
 import { buildSdfQualificationPresentation } from "./sdf-qualification-review.mjs";
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const DOSSIER_ROLES = new Set(["owner", "admin", "operations_manager", "operator", "reviewer", "read_only"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -372,7 +373,7 @@ export function createOperatorDossiersController({ load = async ()=>{}, onChange
 
 function dossierWorkspaceMarkup() {
   return `
-    <header class="project-heading dossiers-heading"><div><p class="eyebrow">Operator dossiers</p><h1>Dossiers</h1><p>Server-authoritatieve aanvragen, toewijzingen en documenten.</p></div><div class="dossiers-heading__actions"><button type="button" class="secondary-action" data-operator-window-module="dossiers" data-operator-window-slot="main" hidden>Open in nieuw venster</button><button type="button" class="secondary-action" data-dossiers-action="refresh">Vernieuwen</button></div></header>
+    <header class="project-heading dossiers-heading"><div><p class="eyebrow">Operator dossiers</p><h1 id="dossiersModuleTitle" class="module-shell__title">Dossiers</h1><p>Server-authoritatieve aanvragen, toewijzingen en documenten.</p></div><div class="dossiers-heading__actions"><button type="button" class="secondary-action" data-operator-window-module="dossiers" data-operator-window-slot="main" hidden>Open in nieuw venster</button><button type="button" class="secondary-action" data-dossiers-action="refresh">Vernieuwen</button></div></header>
     <nav class="dossiers-status-overview" aria-label="Dossierstatus"><button type="button" data-dossiers-zone="PENDING" aria-current="true"><span>Nieuwe aanvragen</span><strong data-dossiers-counter="PENDING">0</strong><small><span data-dossiers-counter="invited">0</span> uitgenodigd · <span data-dossiers-counter="in_progress">0</span> bezig</small></button><button type="button" data-dossiers-zone="ACTIVE"><span>Actieve dossiers</span><strong data-dossiers-counter="ACTIVE">—</strong><small>In behandeling en ingediend</small></button><button type="button" data-dossiers-zone="ARCHIVED"><span>Afgerond / Archief</span><strong data-dossiers-counter="ARCHIVED">—</strong><small>Afgeronde dossiers</small></button><button type="button" data-dossiers-zone="TRASHED"><span>Prullenbak</span><strong data-dossiers-counter="TRASHED">—</strong><small>Verwijderde dossiers</small></button></nav>
     <form class="application-search dossiers-filters" data-dossiers-filters role="search"><label><span>Zoeken</span><input name="search" type="search" maxlength="140" autocomplete="off" placeholder="Naam, bedrijf of referentie" /></label><label>Zone<select name="zone"><option value="PENDING">Nieuwe aanvragen</option><option value="ACTIVE">Actieve dossiers</option><option value="ARCHIVED">Afgerond / Archief</option><option value="TRASHED">Prullenbak</option></select></label><label>Product<select name="request_kind"><option value="">Alle producten</option><option value="website">Website</option><option value="slimme_documentenflow">Slimme Documentenflow</option></select></label><button type="submit" class="primary-action primary-action--compact">Zoeken</button></form>
     <div class="zone-filters pending-intake-tabs" data-dossiers-pending-retention role="group" aria-label="Intake-opvolging"><button type="button" data-dossiers-retention-state="ACTIVE" aria-pressed="true">Actief</button><button type="button" data-dossiers-retention-state="ARCHIVED" aria-pressed="false">Gearchiveerd</button></div>
@@ -968,6 +969,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   const ownerWindow = ownerDocument.defaultView;
   const panel = workspace.closest?.("[data-module-panel]");
   const assignmentForm = workspace.querySelector("[data-dossiers-assignment-form]");
+  const heartbeat = createOperatorRefreshHeartbeat({
+    root: ownerDocument,
+    moduleKey: "dossiers",
+    titleElement: workspace.querySelector("#dossiersModuleTitle"),
+  });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "dossiers",
     refresh: (refreshOptions)=>refreshWorkspace(refreshOptions),
@@ -978,6 +984,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         !== (state.assignment.assignee_operator_id || ""))),
     documentTarget: ownerDocument,
     windowTarget: ownerWindow,
+    onLifecycle: heartbeat.update,
   });
 
   async function selectDossier(summary) {
@@ -1339,6 +1346,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       selectCustomerRequest.generation += 1;
       state.uploadUrl = null;
       autoRefresh.dispose();
+      heartbeat.dispose();
       controller.dispose();
       authority.dispose();
       workspace.removeAttribute("data-dossiers-mounted");

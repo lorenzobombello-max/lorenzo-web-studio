@@ -1,5 +1,6 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 const AUTHORIZATION_FAILURE = /AUTHENTICATION_REQUIRED|HUMAN_JWT_REQUIRED|OPERATOR_NOT_ACTIVE|OWNER_REQUIRED|WORKSPACE_MODULE_NOT_AUTHORIZED/;
@@ -539,6 +540,7 @@ export function initializeOperatorFinance(root, client, identity, { onAuthorizat
     },
     onChange: present,
   });
+  const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "finance", titleElement: root.getElementById("financeModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "finance",
     refresh: ()=>controller.refresh({ background: true }),
@@ -546,6 +548,7 @@ export function initializeOperatorFinance(root, client, identity, { onAuthorizat
     isBlocked: ()=>FINANCE_DIALOG_IDS.some((id)=>root.getElementById(id)?.open),
     documentTarget: root,
     windowTarget: root.defaultView,
+    onLifecycle: heartbeat.update,
   });
 
   const expenseForm = root.getElementById("businessExpenseForm");
@@ -672,6 +675,7 @@ export function initializeOperatorFinance(root, client, identity, { onAuthorizat
     if (disposed) return;
     disposed = true;
     autoRefresh.dispose();
+    heartbeat.dispose();
     listeners.abort();
     writes.dispose();
     disposeController();

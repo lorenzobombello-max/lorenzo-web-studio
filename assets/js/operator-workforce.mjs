@@ -1,4 +1,5 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AUTHORIZED_ROLES = new Set(["owner", "admin", "operations_manager"]);
@@ -147,12 +148,14 @@ export function initializeOperatorWorkforce(root, client, identity, { onAuthoriz
     onChange: render,
   });
   const panel = list.closest?.("[data-module-panel]");
+  const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "workforce", titleElement: root.getElementById("workforceModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "workforce",
     refresh: ()=>controller.refresh({ background: true }),
     isActive: ()=>!panel?.hidden,
     documentTarget: root,
     windowTarget: root.defaultView,
+    onLifecycle: heartbeat.update,
   });
   root.getElementById("workforceRefresh").addEventListener("click", ()=>{ void controller.refresh(); }, { signal: listeners.signal });
   const dispose = controller.dispose.bind(controller);
@@ -160,6 +163,7 @@ export function initializeOperatorWorkforce(root, client, identity, { onAuthoriz
     if (disposed) return;
     disposed = true;
     autoRefresh.dispose();
+    heartbeat.dispose();
     listeners.abort();
     dispose();
     delete list.operatorWorkforceController;

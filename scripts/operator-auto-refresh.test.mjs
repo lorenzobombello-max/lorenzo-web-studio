@@ -91,3 +91,48 @@ test("Operator auto-refresh resumes on visibility and recovers after failure", a
   assert.equal(calls, 4);
   coordinator.dispose();
 });
+
+test("Operator auto-refresh reports only real refresh lifecycle activity", async () => {
+  const documentTarget = eventTarget();
+  const lifecycle = [];
+  let blocked = true;
+  let succeeds = true;
+  const coordinator = createOperatorAutoRefresh({
+    moduleKey: "dossiers",
+    refresh: async ()=>succeeds,
+    isBlocked: ()=>blocked,
+    documentTarget,
+    windowTarget: eventTarget(),
+    setTimer: ()=>1,
+    clearTimer: ()=>{},
+    onLifecycle: (event)=>lifecycle.push(event),
+  });
+  assert.equal(await coordinator.request(), false);
+  assert.deepEqual(lifecycle, []);
+  blocked = false;
+  assert.equal(await coordinator.request(), true);
+  succeeds = false;
+  assert.equal(await coordinator.request(), false);
+  documentTarget.visibilityState = "hidden";
+  documentTarget.dispatch("visibilitychange");
+  assert.deepEqual(lifecycle.map(({ state })=>state), ["refreshing", "success", "refreshing", "error", "idle"]);
+  assert.ok(lifecycle.every(({ moduleKey })=>moduleKey === "dossiers"));
+  coordinator.dispose();
+  assert.equal(lifecycle.at(-1).state, "idle");
+});
+
+test("Operator refresh authority is isolated from lifecycle presentation failures", async () => {
+  let refreshes = 0;
+  const coordinator = createOperatorAutoRefresh({
+    moduleKey: "calendar",
+    refresh: async ()=>{ refreshes += 1; },
+    documentTarget: eventTarget(),
+    windowTarget: eventTarget(),
+    setTimer: ()=>1,
+    clearTimer: ()=>{},
+    onLifecycle: ()=>{ throw new Error("PRESENTATION_FAILURE"); },
+  });
+  assert.equal(await coordinator.request(), true);
+  assert.equal(refreshes, 1);
+  assert.doesNotThrow(()=>coordinator.dispose());
+});
