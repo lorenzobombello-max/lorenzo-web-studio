@@ -130,6 +130,8 @@ function pendingIntakeDto(
     reminder_1_sent_at: null,
     reminder_2_sent_at: null,
     last_activity_at: "2099-01-01T10:01:00Z",
+    dossier_state: "ACTIVE",
+    dossier_revision: 0,
     ...overrides,
   };
 }
@@ -3936,10 +3938,15 @@ Deno.test("pending-intake list accepts the current reminder DTO and rejects cont
 
   const missingReminderCycle = pendingIntakeDto();
   delete missingReminderCycle.current_reminder_cycle;
+  const missingDossierState = pendingIntakeDto();
+  delete missingDossierState.dossier_state;
   for (
     const item of [
       missingReminderCycle,
+      missingDossierState,
       pendingIntakeDto({ current_reminder_cycle: "0" }),
+      pendingIntakeDto({ dossier_state: "TRASHED" }),
+      pendingIntakeDto({ dossier_revision: -1 }),
       pendingIntakeDto({ unknown_field: true }),
     ]
   ) {

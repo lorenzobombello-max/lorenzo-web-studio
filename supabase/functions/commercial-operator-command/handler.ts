@@ -602,6 +602,8 @@ function validatePendingIntakesResult(value: unknown) {
     "reminder_1_sent_at",
     "reminder_2_sent_at",
     "last_activity_at",
+    "dossier_state",
+    "dossier_revision",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, ["items"]) ||
@@ -659,7 +661,10 @@ function validatePendingIntakesResult(value: unknown) {
         typeof item.reminder_1_sent_at !== "string") ||
       (item.reminder_2_sent_at !== null &&
         typeof item.reminder_2_sent_at !== "string") ||
-      typeof item.last_activity_at !== "string" || !item.last_activity_at
+      typeof item.last_activity_at !== "string" || !item.last_activity_at ||
+      item.dossier_state !== "ACTIVE" ||
+      !Number.isSafeInteger(item.dossier_revision) ||
+      Number(item.dossier_revision) < 0
     ) {
       throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
     }
