@@ -134,6 +134,7 @@ function pendingIntakeDto(
     last_activity_at: "2099-01-01T10:01:00Z",
     dossier_state: "ACTIVE",
     dossier_revision: 0,
+    seen_at: null,
     ...overrides,
   };
 }
@@ -146,6 +147,7 @@ Deno.test("Website pending rows normalize to the canonical cross-product DTO", a
   const normalized = normalizeWebsitePendingItems({ items: [legacy] });
   assertEquals(normalized, [pendingIntakeDto({
     last_activity_at: "2099-01-01T10:00:00Z",
+    seen_at: "2099-01-02T10:00:00Z",
   })]);
   const compatible = dependencies({
     executePendingIntakes: async () => ({ items: normalized }),
@@ -167,7 +169,7 @@ Deno.test("Website pending rows normalize to the canonical cross-product DTO", a
   })]);
 });
 
-Deno.test("pending seen-state normalization strips only seen_at for Website and SDF", async () => {
+Deno.test("pending seen-state normalization preserves seen_at for Website and SDF", async () => {
   const sdfItem = pendingIntakeDto({
     request_kind: "slimme_documentenflow",
     sdf_package: "groei",
@@ -177,12 +179,12 @@ Deno.test("pending seen-state normalization strips only seen_at for Website and 
   const normalizedSdf = normalizePendingSeenStateItems({
     items: [{ ...sdfItem, seen_at: "2099-01-02T10:00:00Z" }],
   });
-  assertEquals(normalizedSdf, [sdfItem]);
+  assertEquals(normalizedSdf, [{ ...sdfItem, seen_at: "2099-01-02T10:00:00Z" }]);
 
   const normalizedUnknown = normalizePendingSeenStateItems({
     items: [{ ...sdfItem, seen_at: null, unknown_field: true }],
   });
-  assertEquals(normalizedUnknown, [{ ...sdfItem, unknown_field: true }]);
+  assertEquals(normalizedUnknown, [{ ...sdfItem, seen_at: null, unknown_field: true }]);
 
   const compatible = dependencies({
     executePendingIntakes: async () => ({ items: normalizedSdf }),
@@ -308,6 +310,10 @@ function dependencies(overrides: Record<string, unknown> = {}) {
           },
         },
         documents: { customer_request_count: 0, uploaded_document_count: 0 },
+      }),
+      executeMarkDossierSeen: async () => ({
+        quote_request_id: userId,
+        seen_at: "2099-01-02T10:00:00Z",
       }),
       signOperatorCursor: async (
         position: Record<string, string>,
@@ -1025,6 +1031,39 @@ Deno.test("dossier substance requires one quote request and validates its closed
   });
   assertEquals((await handleCommercialOperator(
     request({ action: "get_dossier_substance", quote_request_id: userId }),
+    invalid.deps,
+  )).status, 500);
+});
+
+Deno.test("dossier seen state is actor-bound and accepts only the closed RPC response", async () => {
+  const calls: Array<{ actorAuthUserId: string; quoteRequestId: string }> = [];
+  const harness = dependencies({
+    executeMarkDossierSeen: async (actorAuthUserId: string, quoteRequestId: string) => {
+      calls.push({ actorAuthUserId, quoteRequestId });
+      return { quote_request_id: quoteRequestId, seen_at: "2099-01-02T10:00:00Z" };
+    },
+  });
+  const accepted = await handleCommercialOperator(
+    request({ action: "mark_dossier_seen", quote_request_id: userId }),
+    harness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(harness.events, ["preflight"]);
+  assertEquals(calls, [{ actorAuthUserId: userId, quoteRequestId: userId }]);
+
+  for (const body of [
+    { action: "mark_dossier_seen" },
+    { action: "mark_dossier_seen", quote_request_id: "invalid" },
+    { action: "mark_dossier_seen", quote_request_id: userId, operator_id: userId },
+  ]) {
+    assertEquals((await handleCommercialOperator(request(body), harness.deps)).status, 400);
+  }
+
+  const invalid = dependencies({
+    executeMarkDossierSeen: async () => ({ quote_request_id: userId, seen_at: null }),
+  });
+  assertEquals((await handleCommercialOperator(
+    request({ action: "mark_dossier_seen", quote_request_id: userId }),
     invalid.deps,
   )).status, 500);
 });

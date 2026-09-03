@@ -153,6 +153,8 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
     dossierDocumentRequest,
     dossierLifecycleRequest,
     dossierListRequest,
+    dossierSeenRequest,
+    applyDossierSeen,
     validateDossierListPage,
   } = await import("../assets/js/operator-dossiers.mjs");
   const calls = [];
@@ -198,8 +200,26 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
       requestedAt: "2026-09-03T05:33:00Z",
       status: "invited",
       zone: "PENDING",
+      seenAt: null,
     },
   );
+  assert.deepEqual(dossierSeenRequest({ raw: pending }), {
+    action: "mark_dossier_seen",
+    quote_request_id: pending.quote_request_id,
+  });
+  const seenAt = "2026-09-03T15:00:00Z";
+  const unseenSummary = validateDossierListPage({ items: [pending] }, "list_pending_intakes").items[0];
+  const seenItems = applyDossierSeen([unseenSummary], unseenSummary.reference, {
+    quote_request_id: pending.quote_request_id,
+    seen_at: seenAt,
+  });
+  assert.equal(unseenSummary.seenAt, null);
+  assert.equal(seenItems[0].seenAt, seenAt);
+  assert.equal(seenItems[0].raw.seen_at, seenAt);
+  assert.throws(()=>applyDossierSeen([unseenSummary], unseenSummary.reference, {
+    quote_request_id: "50000000-0000-4000-8000-000000000099",
+    seen_at: seenAt,
+  }), /INVALID_DOSSIER_SEEN_RESPONSE/);
   assert.throws(()=>validateDossierListPage({ items: [] }), /INVALID_DOSSIER_LIST_RESPONSE/);
   assert.throws(()=>validateDossierListPage({ items: [pending], error: "hidden" }, "list_pending_intakes"), /INVALID_PENDING_DOSSIER_LIST_RESPONSE/);
   assert.deepEqual(dossierLifecycleRequest("archive_dossier", detail, " Gereed ", "20000000-0000-4000-8000-000000000002"), {
@@ -315,14 +335,14 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const cacheIdentity = "20260903-dossiers-instant-zone-r1";
+  const cacheIdentity = "20260903-dossiers-seen-state-r1";
   assert.match(dashboardHtml, new RegExp(`operator-dashboard-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(dashboardGuard, new RegExp(`operator-dashboard\\.js\\?v=${cacheIdentity}`));
   assert.match(dashboard, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
   assert.match(childHtml, new RegExp(`operator-window-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(windowGuard, new RegExp(`operator-module-registry\\.mjs\\?v=${cacheIdentity}`));
   assert.match(registry, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossiers-list-contrast-r1/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossiers-seen-state-r1/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);
@@ -331,6 +351,14 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /data-dossiers-zone="ACTIVE"/);
   assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
   assert.match(source, /select\[name="zone"\]'\)\.value = state\.query\.zone;\s*renderStatusOverview\(workspace, state\);\s*refreshList\(\);/);
+  assert.match(source, /async function selectDossier\(summary, \{ markSeen = false \} = \{\}\)/);
+  assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\);\s*if \(markSeen\) void markSelectedDossierSeen/);
+  assert.match(source, /renderDetail\(workspace, detail, summary, substance\);\s*if \(markSeen\) void markSelectedDossierSeen/);
+  assert.match(source, /target\.dataset\.dossiersSelect[^\n]+selectDossier\([^\n]+\{ markSeen: true \}\)/);
+  assert.equal(source.match(/\{ markSeen: true \}/g)?.length, 1);
+  assert.match(source, /NIEUW \/ NIET GEZIEN/);
+  assert.doesNotMatch(source, /textContent = "GEZIEN"/);
+  assert.match(source, /if \(!item\.seenAt\)[\s\S]*unseen\.className = "badge badge--green"[\s\S]*badges\.append\(unseen\)/);
   assert.match(source, /Originele klantaanvraag/);
   assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\)/);
   assert.match(source, /data-operator-window-module="dossiers"[^>]*hidden>Open in nieuw venster<\/button>/);
@@ -400,7 +428,7 @@ test("Dossiers present Belgian dates, a labelled reference, and persistent acces
   assert.match(source, /button\.setAttribute\("aria-selected", String\(selected\)\)/);
   assert.match(source, /company\.textContent = item\.company \|\| "Niet beschikbaar"/);
   assert.match(source, /metadata\.textContent = `\$\{item\.product\} · \$\{formatOperatorDate\(item\.requestedAt\)/);
-  assert.match(source, /identity\.append\(name, company, metadata, reference\)/);
+  assert.match(source, /identity\.append\(name, company, metadata, reference\);\s*button\.append\(identity, badges\)/);
   assert.match(source, /renderList\(workspace, state\.items, summary\.reference\)/);
   assert.match(css, /\.application-list__button\[aria-current="true"\]:hover/);
   assert.match(css, /\.dossiers-list \.application-list__button\[aria-current="true"\][^}]*background:#d9f3f0/);

@@ -53,6 +53,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_application_facets_v2",
   "get_application_detail",
   "get_dossier_substance",
+  "mark_dossier_seen",
   "get_assignment_operator_roster",
   "get_dossier_assignment",
   "get_my_assigned_dossiers",
@@ -410,6 +411,10 @@ type CommercialOperatorDependencies = Readonly<{
     actorAuthUserId: string,
     quoteRequestId: string,
   ): PromiseLike<unknown>;
+  executeMarkDossierSeen(
+    actorAuthUserId: string,
+    quoteRequestId: string,
+  ): PromiseLike<unknown>;
   signOperatorCursor(
     position: Record<string, string>,
     input: Record<string, unknown>,
@@ -604,6 +609,7 @@ function validatePendingIntakesResult(value: unknown) {
     "last_activity_at",
     "dossier_state",
     "dossier_revision",
+    "seen_at",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, ["items"]) ||
@@ -664,7 +670,8 @@ function validatePendingIntakesResult(value: unknown) {
       typeof item.last_activity_at !== "string" || !item.last_activity_at ||
       item.dossier_state !== "ACTIVE" ||
       !Number.isSafeInteger(item.dossier_revision) ||
-      Number(item.dossier_revision) < 0
+      Number(item.dossier_revision) < 0 ||
+      (item.seen_at !== null && typeof item.seen_at !== "string")
     ) {
       throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
     }
@@ -1015,6 +1022,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "support_reference",
     ])
     : action === "get_dossier_substance"
+    ? new Set(["action", "quote_request_id"])
+    : action === "mark_dossier_seen"
     ? new Set(["action", "quote_request_id"])
     : action === "get_assignment_operator_roster"
     ? new Set(["action"])
@@ -2416,6 +2425,7 @@ export async function handleCommercialOperator(
           "list_applications_v2",
           "get_application_facets_v2",
           "get_dossier_substance",
+          "mark_dossier_seen",
           "list_pending_intakes",
           "list_pending_sdf_qualification_intakes",
           "count_pending_intakes",
@@ -2446,6 +2456,20 @@ export async function handleCommercialOperator(
         const result = validateDossierSubstanceResult(
           await deps.executeDossierSubstance(user.id, String(input.quote_request_id)),
         );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "mark_dossier_seen") {
+        const result = await deps.executeMarkDossierSeen(
+          user.id,
+          String(input.quote_request_id),
+        );
+        if (
+          !isRecord(result) ||
+          !hasExactKeys(result, ["quote_request_id", "seen_at"]) ||
+          result.quote_request_id !== input.quote_request_id ||
+          typeof result.seen_at !== "string" ||
+          !result.seen_at
+        ) throw new Error("INVALID_DOSSIER_SEEN_RESPONSE");
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
       if (input.action === "list_applications_v2") {

@@ -1014,10 +1014,7 @@ export async function executeCallerJwtInternalE2EAcceptedFileCleanupAction(
 export function normalizePendingSeenStateItems(data: unknown): Record<string, unknown>[] | null {
   const items = (data as { items?: unknown[] } | null)?.items;
   if (!Array.isArray(items)) return null;
-  return items.map((value) => {
-    const { seen_at: _seenAt, ...item } = value as Record<string, unknown>;
-    return item;
-  });
+  return items.map((value) => ({ ...value as Record<string, unknown> }));
 }
 
 export function normalizeWebsitePendingItems(data: unknown): Record<string, unknown>[] | null {
@@ -1166,6 +1163,20 @@ if (import.meta.main) {
         ) => {
           const { data, error } = await serviceClient().rpc(
             "get_operator_dossier_substance_v1",
+            {
+              p_actor_auth_user_id: actorAuthUserId,
+              p_quote_request_id: quoteRequestId,
+            },
+          );
+          if (error) throw new Error(error.message);
+          return data;
+        },
+        executeMarkDossierSeen: async (
+          actorAuthUserId: string,
+          quoteRequestId: string,
+        ) => {
+          const { data, error } = await serviceClient().rpc(
+            "mark_operator_dossier_seen_v1",
             {
               p_actor_auth_user_id: actorAuthUserId,
               p_quote_request_id: quoteRequestId,

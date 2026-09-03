@@ -13,7 +13,7 @@ const AUTHORIZATION_FAILURES = new Set([
   "DOSSIER_ASSIGNMENT_READER_REQUIRED", "DOSSIER_ASSIGNMENT_ACTOR_REQUIRED",
 ]);
 const DOSSIER_GATEWAY_ACTIONS = new Set([
-  "list_applications_v2", "list_pending_intakes", "count_pending_intakes", "get_application_facets_v2", "get_application_detail", "get_dossier_substance",
+  "list_applications_v2", "list_pending_intakes", "count_pending_intakes", "get_application_facets_v2", "get_application_detail", "get_dossier_substance", "mark_dossier_seen",
   "get_project_dossier", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
@@ -94,6 +94,30 @@ export function dossierSubstanceRequest(value) {
   const quoteRequestId = String(value?.quote_request_id || value?.raw?.quote_request_id || "");
   if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_SUBSTANCE_REQUEST");
   return { action: "get_dossier_substance", quote_request_id: quoteRequestId };
+}
+
+export function dossierSeenRequest(value) {
+  const quoteRequestId = String(value?.raw?.quote_request_id || value?.quote_request_id || "");
+  if (!UUID.test(quoteRequestId)) throw new Error("INVALID_DOSSIER_SEEN_REQUEST");
+  return { action: "mark_dossier_seen", quote_request_id: quoteRequestId };
+}
+
+export function applyDossierSeen(items, reference, result) {
+  if (!Array.isArray(items) || typeof reference !== "string"
+    || !result || Object.keys(result).length !== 2
+    || !UUID.test(String(result.quote_request_id || ""))
+    || typeof result.seen_at !== "string" || !result.seen_at) {
+    throw new Error("INVALID_DOSSIER_SEEN_RESPONSE");
+  }
+  let matched = false;
+  const updated = items.map((item)=>{
+    if (item.reference !== reference) return item;
+    if (item.raw?.quote_request_id !== result.quote_request_id) throw new Error("INVALID_DOSSIER_SEEN_RESPONSE");
+    matched = true;
+    return { ...item, seenAt: result.seen_at, raw: { ...item.raw, seen_at: result.seen_at } };
+  });
+  if (!matched) throw new Error("INVALID_DOSSIER_SEEN_RESPONSE");
+  return updated;
 }
 
 export function dossierListRequest(query = {}, cursor = null) {
@@ -477,6 +501,7 @@ function clearDetailSelection(workspace) {
 
 function applicationSummary(item) {
   if (!item || typeof item !== "object") throw new Error("INVALID_DOSSIER_LIST_RESPONSE");
+  if (item.seen_at !== null && item.seen_at !== undefined && typeof item.seen_at !== "string") throw new Error("INVALID_DOSSIER_LIST_RESPONSE");
   const locator = dossierLocator(item);
   const reference = dossierReference(item) || Object.values(locator)[0];
   return {
@@ -489,6 +514,7 @@ function applicationSummary(item) {
     requestedAt: item.dossier_date,
     status: String(item.operational_status || item.status || "ONBEKEND"),
     zone: String(item.zone || "ACTIVE"),
+    seenAt: item.seen_at || null,
   };
 }
 
@@ -498,7 +524,8 @@ function pendingSummary(item) {
     || typeof item.support_reference !== "string" || !SUPPORT_REFERENCE.test(item.support_reference)
     || !["website", "slimme_documentenflow"].includes(item.request_kind)
     || !["invited", "in_progress"].includes(item.intake_status) || !["ACTIVE", "ARCHIVED"].includes(item.retention_state)
-    || item.dossier_state !== "ACTIVE" || !Number.isSafeInteger(item.dossier_revision) || item.dossier_revision < 0) {
+    || item.dossier_state !== "ACTIVE" || !Number.isSafeInteger(item.dossier_revision) || item.dossier_revision < 0
+    || (item.seen_at !== null && item.seen_at !== undefined && typeof item.seen_at !== "string")) {
     throw new Error("INVALID_PENDING_DOSSIER_LIST_RESPONSE");
   }
   return {
@@ -512,6 +539,7 @@ function pendingSummary(item) {
     requestedAt: item.invitation_created_at,
     status: item.intake_status,
     zone: "PENDING",
+    seenAt: item.seen_at || null,
   };
 }
 
@@ -733,6 +761,7 @@ function renderList(workspace, items, selectedReference) {
     const company = list.ownerDocument.createElement("span");
     const metadata = list.ownerDocument.createElement("small");
     const reference = list.ownerDocument.createElement("small");
+    const badges = list.ownerDocument.createElement("span");
     const status = list.ownerDocument.createElement("span");
     button.type = "button";
     button.className = "application-list__button";
@@ -747,12 +776,20 @@ function renderList(workspace, items, selectedReference) {
     metadata.textContent = `${item.product} · ${formatOperatorDate(item.requestedAt).replace(" –", " ·")}`;
     reference.className = "dossiers-list__reference";
     reference.textContent = item.reference;
+    badges.className = "dossiers-list__badges";
     const presentedStatus = dossierStatus(item.status);
     button.dataset.dossiersStatus = item.status;
     status.className = `badge ${presentedStatus.className}`.trim();
     status.textContent = presentedStatus.label;
+    badges.append(status);
+    if (!item.seenAt) {
+      const unseen = list.ownerDocument.createElement("span");
+      unseen.className = "badge badge--green";
+      unseen.textContent = "NIEUW / NIET GEZIEN";
+      badges.append(unseen);
+    }
     identity.append(name, company, metadata, reference);
-    button.append(identity, status);
+    button.append(identity, badges);
     row.append(button);
     list.append(row);
   }
@@ -1069,7 +1106,20 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     onLifecycle: heartbeat.update,
   });
 
-  async function selectDossier(summary) {
+  async function markSelectedDossierSeen(summary, selection) {
+    try {
+      const result = await authority.gateway(dossierSeenRequest(summary));
+      if (controller.disposed || selection !== selectDossier.generation) return false;
+      state.items = applyDossierSeen(state.items, summary.reference, result);
+      state.selected = state.items.find((item)=>item.reference === summary.reference) || null;
+      renderList(workspace, state.items, state.selected?.reference);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function selectDossier(summary, { markSeen = false } = {}) {
     if (!summary) return false;
     const selection = ++selectDossier.generation;
     resetDossierCopyPreview(workspace);
@@ -1101,6 +1151,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         state.substance = substance;
         state.copySource = summary.raw.request_kind === "website" ? pendingDossierCopy(summary, substance) : null;
         renderPendingDetail(workspace, summary, substance, state.copySource);
+        if (markSeen) void markSelectedDossierSeen(summary, selection);
         status.textContent = "";
         return true;
       } catch (error) {
@@ -1124,6 +1175,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       state.substance = substance;
       state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
       renderDetail(workspace, detail, summary, substance);
+      if (markSeen) void markSelectedDossierSeen(summary, selection);
       const reference = dossierReference(detail);
       const canRequestPurgeEligibility = identity.role === "owner" && detail.dossier_lifecycle?.state === "TRASHED";
       if (!canRequestPurgeEligibility) {
@@ -1404,7 +1456,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     }
     else if (target.dataset.dossiersAction === "refresh") void refreshWorkspace();
     else if (target.dataset.dossiersAction === "more") void loadList(()=>!controller.disposed, true);
-    else if (target.dataset.dossiersSelect !== undefined) void selectDossier(state.items[Number(target.dataset.dossiersSelect)]);
+    else if (target.dataset.dossiersSelect !== undefined) void selectDossier(state.items[Number(target.dataset.dossiersSelect)], { markSeen: true });
     else if (target.dataset.dossiersRequest !== undefined) void selectCustomerRequest(state.requests[Number(target.dataset.dossiersRequest)]);
     else if (target.hasAttribute("data-dossiers-request-transition")) void transitionCustomerRequest(target.dataset.command);
     else if (target.hasAttribute("data-dossiers-upload-create")) void createCustomerUploadLink();
