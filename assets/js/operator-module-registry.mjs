@@ -87,7 +87,7 @@ const descriptors = [
     route: "/operator/dashboard/?module=calendar",
     currentlyImplemented: true,
     initializer: "initializeOperatorCalendar",
-    serverAuthority: "get_operator_calendar_v1 and workspace module authority",
+    serverAuthority: "get_operator_calendar_v1, owner-only leave request queue and decision RPCs, and workspace module authority",
     standaloneAllowed: true,
     multiScreenAllowed: true,
     singletonPolicy: "module-slot",
@@ -118,7 +118,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["calendar", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260903-auto-refresh-8s");
+    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260903-cal-c1");
     const controller = initializeOperatorCalendar(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),

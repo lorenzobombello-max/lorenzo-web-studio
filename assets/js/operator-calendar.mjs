@@ -1,5 +1,12 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
 import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
+import {
+  decideOperatorLeaveRequest,
+  emptyOperatorLeaveQueue,
+  initializeCalendarLeaveManagement,
+  loadOperatorLeaveQueue,
+  operatorLeaveQueueResponse,
+} from "./operator-calendar-leave.mjs?v=20260903-cal-c1";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
@@ -178,10 +185,11 @@ export function operatorCalendarResponse(value, expectedRange) {
   return value;
 }
 
-export function createOperatorCalendarModel({ today = ()=>new Date(), employees = [], initialView = "week" } = {}) {
+export function createOperatorCalendarModel({ today = ()=>new Date(), employees = [], initialView = "week", leaveQueue = null } = {}) {
   let view = CALENDAR_VIEWS.has(initialView) ? initialView : "week";
   let anchor = calendarDate(today());
   let currentEmployees = employees;
+  let currentLeaveQueue = leaveQueue;
   function snapshot() {
     const dates = periodDates(view, anchor);
     const range = view === "year"
@@ -199,6 +207,8 @@ export function createOperatorCalendarModel({ today = ()=>new Date(), employees 
       date: dateKey(date),
       ...calendarCapacity(mappedEmployees.map((employee)=>employee.statuses[index])),
     }));
+    const rangeLeaveQueue = currentLeaveQueue?.start_date === range.start_date && currentLeaveQueue?.end_date === range.end_date
+      ? currentLeaveQueue : emptyOperatorLeaveQueue(range);
     return {
       view, anchor: dateKey(anchor), label: periodLabel(view, dates, anchor), dates: dates.map(dateKey), range,
       employees: mappedEmployees,
@@ -207,26 +217,29 @@ export function createOperatorCalendarModel({ today = ()=>new Date(), employees 
         ...calendarCapacity(mappedEmployees.flatMap((employee)=>employee.statuses)),
       },
       dailyCapacity,
+      leaveQueue: rangeLeaveQueue,
     };
   }
   return {
     snapshot,
-    setView(nextView) { if (CALENDAR_VIEWS.has(nextView)) view = nextView; return snapshot(); },
+    setView(nextView) { if (CALENDAR_VIEWS.has(nextView)) { view = nextView; currentLeaveQueue = null; } return snapshot(); },
     navigate(direction) {
       const amount = Number(direction) < 0 ? -1 : 1;
       if (view === "day") anchor = addDays(anchor, amount);
       else if (view === "week") anchor = addDays(anchor, amount * 7);
       else if (view === "month") anchor = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + amount, 1, 12));
       else anchor = new Date(Date.UTC(anchor.getUTCFullYear() + amount, anchor.getUTCMonth(), 1, 12));
+      currentLeaveQueue = null;
       return snapshot();
     },
-    goToday() { anchor = calendarDate(today()); return snapshot(); },
-    openMonth(date) { anchor = calendarDate(date); view = "month"; return snapshot(); },
+    goToday() { anchor = calendarDate(today()); currentLeaveQueue = null; return snapshot(); },
+    openMonth(date) { anchor = calendarDate(date); view = "month"; currentLeaveQueue = null; return snapshot(); },
     replaceEmployees(nextEmployees) { currentEmployees = nextEmployees; return snapshot(); },
+    replaceLeaveQueue(nextLeaveQueue) { currentLeaveQueue = nextLeaveQueue; return snapshot(); },
   };
 }
 
-export function createOperatorCalendarController({ model, load, onChange = ()=>{} }) {
+export function createOperatorCalendarController({ model, load, loadLeaveRequests = (range)=>emptyOperatorLeaveQueue(range), onChange = ()=>{} }) {
   let loading = false;
   let error = null;
   let generation = 0;
@@ -248,9 +261,12 @@ export function createOperatorCalendarController({ model, load, onChange = ()=>{
     }
     const task = (async ()=>{
       try {
-        const result = operatorCalendarResponse(await load(request), request);
+        const [calendarValue, leaveValue] = await Promise.all([load(request), loadLeaveRequests(request)]);
+        const result = operatorCalendarResponse(calendarValue, request);
+        const leaveQueue = operatorLeaveQueueResponse(leaveValue, request);
         if (disposed || requestGeneration !== generation) return false;
         model.replaceEmployees(result.employees);
+        model.replaceLeaveQueue(leaveQueue);
         loading = false;
         notify();
         return true;
@@ -313,6 +329,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   let selectedDate = null;
   let selectedEmployeeId = null;
   let payrollPreviewOpen = false;
+  let leaveManagement = null;
   let controller;
 
   panel.querySelector(".calendar-heading p:last-child").textContent = "Personeelsplanning en afwezigheden";
@@ -346,6 +363,21 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   panel.querySelector(".calendar-legend").before(summarySection, capacitySection);
   viewport.after(detailSection);
   detailSection.after(employeeDetailSection);
+  if (identity.role === "owner") {
+    leaveManagement = initializeCalendarLeaveManagement({
+      root,
+      panel,
+      before: summarySection,
+      onDecide: (request, decision, managementNote)=>decideOperatorLeaveRequest(
+        client,
+        request,
+        decision,
+        managementNote,
+        { onAuthorizationFailure },
+      ),
+      onRefresh: ()=>controller.reload({ background: true }),
+    });
+  }
 
   function renderSummary(state) {
     summarySection.dataset.calendarSummaryView = state.view;
@@ -757,6 +789,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     for (const button of viewButtons) button.setAttribute("aria-pressed", String(button.dataset.calendarView === state.view));
     renderSummary(state);
     renderCapacity(state);
+    leaveManagement?.render(state.leaveQueue);
     if (selectedDate) renderDayDetail(state, selectedDate);
     if (selectedEmployeeId) renderEmployeeDetail(state, selectedEmployeeId);
     viewport.replaceChildren();
@@ -830,7 +863,15 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     }
     return data;
   };
-  controller = createOperatorCalendarController({ model: createOperatorCalendarModel(), load, onChange: render });
+  const loadLeaveRequests = identity.role === "owner"
+    ? (range)=>loadOperatorLeaveQueue(client, range, { onAuthorizationFailure })
+    : (range)=>emptyOperatorLeaveQueue(range);
+  controller = createOperatorCalendarController({
+    model: createOperatorCalendarModel(),
+    load,
+    loadLeaveRequests,
+    onChange: render,
+  });
   const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "calendar", titleElement: root.getElementById("calendarModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "calendar",
@@ -855,7 +896,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     } else closeEmployeeDetail({ restoreFocus: true });
   }, { signal });
   const dispose = controller.dispose.bind(controller);
-  controller.dispose = ()=>{ autoRefresh.dispose(); heartbeat.dispose(); listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
+  controller.dispose = ()=>{ autoRefresh.dispose(); heartbeat.dispose(); leaveManagement?.dispose(); listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
   viewport.operatorCalendarController = controller;
   render();
   void controller.reload();
