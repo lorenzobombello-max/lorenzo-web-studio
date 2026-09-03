@@ -315,7 +315,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const cacheIdentity = "20260903-dossier-loading-stability-r1";
+  const cacheIdentity = "20260903-dossiers-instant-zone-r1";
   assert.match(dashboardHtml, new RegExp(`operator-dashboard-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(dashboardGuard, new RegExp(`operator-dashboard\\.js\\?v=${cacheIdentity}`));
   assert.match(dashboard, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
@@ -330,6 +330,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /Intake bezig/);
   assert.match(source, /data-dossiers-zone="ACTIVE"/);
   assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
+  assert.match(source, /select\[name="zone"\]'\)\.value = state\.query\.zone;\s*renderStatusOverview\(workspace, state\);\s*refreshList\(\);/);
   assert.match(source, /Originele klantaanvraag/);
   assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\)/);
   assert.match(source, /data-operator-window-module="dossiers"[^>]*hidden>Open in nieuw venster<\/button>/);

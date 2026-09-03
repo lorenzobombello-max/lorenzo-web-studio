@@ -1386,6 +1386,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     const form = event.target.form;
     const data = new FormData(form);
     state.query = { ...state.query, search: data.get("search"), zone: data.get("zone"), request_kind: data.get("request_kind") || null };
+    renderStatusOverview(workspace, state);
     refreshList();
   });
   controller.listen(workspace, "click", (event)=>{
@@ -1394,6 +1395,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (target.dataset.dossiersZone) {
       state.query.zone = target.dataset.dossiersZone;
       workspace.querySelector('[data-dossiers-filters] select[name="zone"]').value = state.query.zone;
+      renderStatusOverview(workspace, state);
       refreshList();
     }
     else if (target.dataset.dossiersRetentionState) {
