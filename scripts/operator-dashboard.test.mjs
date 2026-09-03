@@ -15,7 +15,7 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260903-dossier-modal-width-r1";
+const OPERATOR_ASSET_RELEASE = "20260903-dossier-card-light-sweep-r1";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-dossier-loading-stability-r1";
