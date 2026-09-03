@@ -214,6 +214,8 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard\.js"/);
+  assert.match(prepare, /"assets\/js\/operator-workspace-status\.mjs"/);
+  assert.match(verify, /"assets\/js\/operator-workspace-status\.mjs"/);
   assert.match(verify, /\$clean = \(\$clean -split '\\\?'\)\[0\]/);
 });
 

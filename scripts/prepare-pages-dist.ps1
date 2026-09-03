@@ -115,6 +115,7 @@ $requiredFiles = @(
   "assets/js/operator-workspace-child.mjs",
   "assets/js/operator-workspace-master.mjs",
   "assets/js/operator-workspace-protocol.mjs",
+  "assets/js/operator-workspace-status.mjs",
   "assets/js/pages.js",
   "assets/js/recruitment-public.js",
   "assets/js/recruitment-publication.js",

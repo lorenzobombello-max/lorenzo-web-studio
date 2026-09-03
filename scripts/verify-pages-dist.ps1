@@ -272,6 +272,7 @@ $operatorRequiredPaths = @(
   "assets/js/operator-workspace-child.mjs",
   "assets/js/operator-workspace-master.mjs",
   "assets/js/operator-workspace-protocol.mjs",
+  "assets/js/operator-workspace-status.mjs",
   "assets/config/operator-auth.json",
   "assets/config/public-recruitment.json"
 )
