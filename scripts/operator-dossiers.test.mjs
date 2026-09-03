@@ -322,10 +322,34 @@ test("Dossiers disposal removes listeners before a new instance subscribes", asy
 });
 
 test("Dossiers present Belgian dates, a labelled reference, and persistent accessible selection", async () => {
-  const { formatOperatorDate } = await import("../assets/js/operator-dossiers.mjs");
+  const { dossierSeenRequest, dossierWorkqueuePresentation, formatOperatorDate, validateDossierSeenResult } = await import("../assets/js/operator-dossiers.mjs");
+  const quoteRequestId = "d0500000-0000-4000-8000-000000000001";
+  assert.deepEqual(dossierSeenRequest({ raw: { quote_request_id: quoteRequestId } }), {
+    action: "mark_dossier_seen", quote_request_id: quoteRequestId,
+  });
+  assert.deepEqual(validateDossierSeenResult({
+    quote_request_id: quoteRequestId, seen_at: "2026-09-03T15:00:00Z",
+  }, quoteRequestId), {
+    quote_request_id: quoteRequestId, seen_at: "2026-09-03T15:00:00Z",
+  });
+  assert.throws(()=>dossierSeenRequest({}), /INVALID_DOSSIER_SEEN_REQUEST/);
+  assert.throws(()=>validateDossierSeenResult({
+    quote_request_id: quoteRequestId, seen_at: "not-a-date",
+  }, quoteRequestId), /INVALID_DOSSIER_SEEN_RESPONSE/);
   assert.equal(formatOperatorDate("2026-09-02T07:43:27.206665+00:00"), "02/09/2026 – 09:43");
   assert.equal(formatOperatorDate(null), "Niet beschikbaar");
   assert.equal(formatOperatorDate("not-a-date"), "Niet beschikbaar");
+  assert.deepEqual(dossierWorkqueuePresentation({
+    raw: {
+      name: "Sofie De Smet", organization: "Studio Noord", request_kind: "website",
+      dossier_date: "2026-09-02T07:43:27.206665+00:00",
+    },
+    reference: "LWS-AAN-2099-0001", status: "SUBMITTED",
+  }), {
+    person: "Sofie De Smet", company: "Studio Noord", product: "Website",
+    requestedAt: "2026-09-02T07:43:27.206665+00:00", reference: "LWS-AAN-2099-0001",
+    status: { label: "Ingediend", className: "badge--cyan" },
+  });
   const [source, css] = await Promise.all([
     read("assets/js/operator-dossiers.mjs"),
     read("assets/css/operator-dashboard.css"),
@@ -333,6 +357,11 @@ test("Dossiers present Belgian dates, a labelled reference, and persistent acces
   assert.match(source, /Dossierreferentie <strong data-dossiers-field="reference">/);
   assert.match(source, /button\.setAttribute\("aria-selected", String\(selected\)\)/);
   assert.match(source, /renderList\(workspace, state\.items, summary\.reference\)/);
+  assert.match(source, /identity\.append\(name, company, context, reference\)/);
+  assert.match(source, /item\.raw\?\.seen_at \? "Gezien" : "Nieuw"/);
+  assert.match(source, /renderPendingDetail\([\s\S]*await markSeenAfterIntentionalOpen\(summary, selection, intentional\)/);
+  assert.match(source, /target\.dataset\.dossiersSelect[\s\S]*\{ intentional: true \}/);
+  assert.match(source, /if \(!intentional\) return false/);
   assert.match(css, /\.application-list__button\[aria-current="true"\]:hover/);
   assert.match(css, /\.dossiers-list \.application-list__button\[aria-current="true"\][^}]*background:#d9f3f0/);
   assert.match(css, /\.dossiers-actions\[hidden\],\.dossiers-actions \[hidden\]/);
@@ -442,4 +471,15 @@ test("Dossiers uses the shared quiet refresh lifecycle and preserves dirty assig
   assert.match(source, /assignmentForm\.querySelector\('textarea\[name="reason"\]'\)\.value\.trim\(\)/);
   assert.match(source, /if \(!append && !background\)/);
   assert.match(source, /autoRefresh\.dispose\(\)/);
+});
+
+test("Dossier seen transport derives actor identity and uses service-only authority", async () => {
+  const [handler, edge] = await Promise.all([
+    read("supabase/functions/commercial-operator-command/handler.ts"),
+    read("supabase/functions/commercial-operator-command/index.ts"),
+  ]);
+  assert.match(handler, /action === "mark_dossier_seen"\s*\? new Set\(\["action", "quote_request_id"\]\)/);
+  assert.match(handler, /"get_dossier_substance",\s*"mark_dossier_seen",[\s\S]*authorizeApplicationReader\(jwt\)/);
+  assert.match(edge, /input\.action === "mark_dossier_seen"[\s\S]*serviceClient\(\)\.rpc\([\s\S]*"mark_operator_dossier_seen_v1"/);
+  assert.match(edge, /p_actor_auth_user_id: actorAuthUserId[\s\S]*p_quote_request_id: input\.quote_request_id/);
 });
