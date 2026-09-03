@@ -402,6 +402,10 @@ test("Dossiers present Belgian dates, a labelled reference, and persistent acces
   assert.match(source, /renderList\(workspace, state\.items, summary\.reference\)/);
   assert.match(css, /\.application-list__button\[aria-current="true"\]:hover/);
   assert.match(css, /\.dossiers-list \.application-list__button\[aria-current="true"\][^}]*background:#d9f3f0/);
+  assert.match(css, /\.dossiers-list \.application-list__button \{[^}]*overflow:hidden[^}]*isolation:isolate/);
+  assert.match(css, /\.dossiers-list \.application-list__button\[aria-current="true"\]::after[^}]*skewX\(-16deg\)[^}]*animation:dossier-card-light-sweep 9s/);
+  assert.match(css, /@keyframes dossier-card-light-sweep[^}]*15%[^}]*opacity:0[^}]*skewX\(-16deg\)/);
+  assert.doesNotMatch(css, /\.dossiers-list \.application-list__button:not\(\[aria-current="true"\]\)::after/);
   assert.match(css, /\.dossiers-list__company[^}]*overflow-wrap:anywhere/);
   assert.match(css, /\.dossiers-actions\[hidden\],\.dossiers-actions \[hidden\]/);
 });
