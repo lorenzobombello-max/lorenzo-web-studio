@@ -240,12 +240,13 @@ test("customer request actions are revision-bound, status-closed, and ephemeral"
 });
 
 test("embedded dashboard and generic child use the same Dossiers initializer", async () => {
-  const [dashboard, registry, childHtml, dashboardHtml, guard] = await Promise.all([
+  const [dashboard, registry, childHtml, dashboardHtml, dashboardGuard, windowGuard] = await Promise.all([
     read("assets/js/operator-dashboard.js"),
     read("assets/js/operator-module-registry.mjs"),
     read("operator/window/index.html"),
     read("operator/dashboard/index.html"),
     read("assets/js/operator-dashboard-guard.mjs"),
+    read("assets/js/operator-window-guard.mjs"),
   ]);
   assert.match(dashboard, /initializeOperatorDossiers/);
   assert.match(dashboard, /activeModule === "dossiers"[\s\S]*return currentIdentity;[\s\S]*activeModule === "finance"[\s\S]*return currentIdentity;/);
@@ -254,10 +255,16 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(childHtml, /id="operatorModuleTemplate-dossiers"/);
   assert.match(childHtml, /data-dossiers-workspace/);
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
-  assert.match(guard, /operatorDossiersController\?\.dispose/);
-  assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
-  assert.match(guard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-trash-refresh-r1/);
+  assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
+  assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
+  assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
+  const cacheIdentity = "20260903-trash-visual-stability-r1";
+  assert.match(dashboardHtml, new RegExp(`operator-dashboard-guard\\.mjs\\?v=${cacheIdentity}`));
+  assert.match(dashboardGuard, new RegExp(`operator-dashboard\\.js\\?v=${cacheIdentity}`));
+  assert.match(dashboard, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
+  assert.match(childHtml, new RegExp(`operator-window-guard\\.mjs\\?v=${cacheIdentity}`));
+  assert.match(windowGuard, new RegExp(`operator-module-registry\\.mjs\\?v=${cacheIdentity}`));
+  assert.match(registry, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
   for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-multiscreen-ux-r1/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);

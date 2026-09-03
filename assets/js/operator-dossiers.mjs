@@ -173,12 +173,21 @@ export function presentDossierPurgeEligibility(workspace, eligibility, { refresh
   const purge = workspace.querySelector("[data-dossiers-purge]");
   const allowed = eligibility?.canPurge === true;
   purge.hidden = !allowed;
-  purge.disabled = allowed && refreshing;
-  if (purge.disabled) purge.setAttribute("aria-busy", "true");
-  else purge.removeAttribute("aria-busy");
+  purge.disabled = false;
+  if (allowed && refreshing) {
+    purge.setAttribute("aria-busy", "true");
+    purge.setAttribute("aria-disabled", "true");
+  } else {
+    purge.removeAttribute("aria-busy");
+    purge.removeAttribute("aria-disabled");
+  }
   workspace.querySelector("[data-dossiers-purge-message]").textContent = allowed
     ? "Permanent verwijderen is server-side toegestaan."
     : eligibility ? purgeBlockMessage(eligibility.reason) : "";
+}
+
+export function dossierPurgeInteractionBlocked(purge) {
+  return purge?.getAttribute?.("aria-disabled") === "true";
 }
 
 export function dossierAssignmentRequest(detail, assignment, assigneeOperatorId, reason, idempotencyKey) {
@@ -1344,7 +1353,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       openCommandDialog({ kind: "pending-retention", action: target.dataset.dossiersPendingRetentionAction });
     } else if (target.hasAttribute("data-dossiers-pending-trash")) {
       openCommandDialog({ kind: "pending-trash" });
-    } else if (target.hasAttribute("data-dossiers-purge")) {
+    } else if (target.hasAttribute("data-dossiers-purge") && !dossierPurgeInteractionBlocked(target)) {
       openCommandDialog({ kind: "purge" });
     } else if (target.dataset.dossiersCopy) {
       const copySource = boundDossierCopy(state.selected, state.items, state.copySource);

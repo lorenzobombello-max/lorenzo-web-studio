@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   bindDossierPurgeEligibility,
+  dossierPurgeInteractionBlocked,
   presentDossierPurgeEligibility,
   retainDossierPurgeEligibility,
 } from "../assets/js/operator-dossiers.mjs";
@@ -19,6 +20,7 @@ function createPurgeWorkspace() {
     attributes: new Map(),
     setAttribute(name, value) { this.attributes.set(name, value); },
     removeAttribute(name) { this.attributes.delete(name); },
+    getAttribute(name) { return this.attributes.get(name) ?? null; },
   };
   const message = { textContent: "" };
   return {
@@ -39,9 +41,27 @@ test("confirmed allowed Trash eligibility remains visible while refresh is pendi
   const workspace = createPurgeWorkspace();
   presentDossierPurgeEligibility(workspace, retainDossierPurgeEligibility(allowed(), referenceA), { refreshing: true });
   assert.equal(workspace.purge.hidden, false);
-  assert.equal(workspace.purge.disabled, true);
+  assert.equal(workspace.purge.disabled, false);
   assert.equal(workspace.purge.attributes.get("aria-busy"), "true");
+  assert.equal(workspace.purge.attributes.get("aria-disabled"), "true");
   assert.equal(workspace.message.textContent, "Permanent verwijderen is server-side toegestaan.");
+});
+
+test("busy allowed Trash eligibility blocks every click activation path without native disabled styling", ()=>{
+  const workspace = createPurgeWorkspace();
+  presentDossierPurgeEligibility(workspace, allowed(), { refreshing: true });
+  assert.equal(dossierPurgeInteractionBlocked(workspace.purge), true);
+  assert.equal(workspace.purge.disabled, false);
+  let purgeCommands = 0;
+  const activate = ()=>{
+    if (!dossierPurgeInteractionBlocked(workspace.purge)) purgeCommands += 1;
+  };
+  for (const activation of ["mouse", "Enter", "Space", "programmatic"]) activate(activation);
+  assert.equal(purgeCommands, 0);
+  presentDossierPurgeEligibility(workspace, allowed());
+  assert.equal(dossierPurgeInteractionBlocked(workspace.purge), false);
+  activate("mouse");
+  assert.equal(purgeCommands, 1);
 });
 
 test("same-dossier allowed refresh keeps permanent deletion available", ()=>{
@@ -50,6 +70,7 @@ test("same-dossier allowed refresh keeps permanent deletion available", ()=>{
   assert.equal(workspace.purge.hidden, false);
   assert.equal(workspace.purge.disabled, false);
   assert.equal(workspace.purge.attributes.has("aria-busy"), false);
+  assert.equal(workspace.purge.attributes.has("aria-disabled"), false);
 });
 
 test("same-dossier explicit denied refresh replaces confirmed allowed state", ()=>{
@@ -108,9 +129,12 @@ test("repeated periodic refresh cycles never toggle confirmed allowed visibility
     current = retainDossierPurgeEligibility(current, referenceA);
     presentDossierPurgeEligibility(workspace, current, { refreshing: true });
     assert.equal(workspace.purge.hidden, false);
+    assert.equal(workspace.purge.disabled, false);
+    assert.equal(dossierPurgeInteractionBlocked(workspace.purge), true);
     current = allowed();
     presentDossierPurgeEligibility(workspace, current);
     assert.equal(workspace.purge.hidden, false);
+    assert.equal(dossierPurgeInteractionBlocked(workspace.purge), false);
   }
 });
 
@@ -119,5 +143,6 @@ test("refresh integration preserves by reference without adding network or timer
   assert.match(source, /retainDossierPurgeEligibility\(state\.purgeEligibility, summary\.reference\)/);
   assert.match(source, /presentDossierPurgeEligibility\(workspace, state\.purgeEligibility, \{ refreshing: Boolean\(state\.purgeEligibility\) \}\)/);
   assert.match(source, /state\.purgeEligibility = bindDossierPurgeEligibility\(summary\.reference, eligibility\)/);
+  assert.match(source, /hasAttribute\("data-dossiers-purge"\) && !dossierPurgeInteractionBlocked\(target\)/);
   assert.doesNotMatch(source, /purgeEligibility[\s\S]{0,120}(?:setTimeout|setInterval|createOperatorAutoRefresh)/);
 });
