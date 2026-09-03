@@ -48,6 +48,31 @@ function assertCurrent(disposed, signal) {
   if (disposed() || signal?.aborted) throw new Error("DOSSIER_DISPOSED");
 }
 
+export async function loadDossierReadWithRetry(load, isCurrent = ()=>true, {
+  timeoutMs = 15_000,
+  setTimer = globalThis.setTimeout,
+  clearTimer = globalThis.clearTimeout,
+} = {}) {
+  const attempt = async ()=>{
+    let timer;
+    try {
+      return await Promise.race([
+        load(),
+        new Promise((_, reject)=>{ timer = setTimer(()=>reject(new Error("DOSSIER_READ_TIMEOUT")), timeoutMs); }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimer(timer);
+    }
+  };
+  try {
+    return await attempt();
+  } catch (error) {
+    const code = errorCode(error);
+    if (!isCurrent() || code === "DOSSIER_DISPOSED" || code.startsWith("INVALID_") || AUTHORIZATION_FAILURES.has(code)) throw error;
+    return await attempt();
+  }
+}
+
 export function dossierReference(value) {
   const applicationReference = String(value?.application_reference || value?.reference || "").trim().toUpperCase();
   if (APPLICATION_REFERENCE.test(applicationReference)) return applicationReference;
@@ -1047,11 +1072,14 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     if (summary.kind === "pending") {
       status.textContent = "Dossier laden.";
       try {
-        const substanceResponse = await authority.gateway(dossierSubstanceRequest(summary));
+        const substanceResponse = await loadDossierReadWithRetry(
+          ()=>authority.gateway(dossierSubstanceRequest(summary)),
+          ()=>!controller.disposed && selection === selectDossier.generation,
+        );
         const substance = validateDossierSubstance(substanceResponse, summary.raw.quote_request_id);
         if (controller.disposed || selection !== selectDossier.generation) return false;
         state.substance = substance;
-        state.copySource = pendingDossierCopy(summary, substance);
+        state.copySource = summary.raw.request_kind === "website" ? pendingDossierCopy(summary, substance) : null;
         renderPendingDetail(workspace, summary, substance, state.copySource);
         status.textContent = "";
         return true;
@@ -1062,10 +1090,13 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     }
     status.textContent = "Dossier laden.";
     try {
-      const [detailResponse, substanceResponse] = await Promise.all([
-        authority.gateway({ action: "get_application_detail", ...summary.locator }),
-        authority.gateway(dossierSubstanceRequest(summary.raw)),
-      ]);
+      const [detailResponse, substanceResponse] = await loadDossierReadWithRetry(
+        ()=>Promise.all([
+          authority.gateway({ action: "get_application_detail", ...summary.locator }),
+          authority.gateway(dossierSubstanceRequest(summary.raw)),
+        ]),
+        ()=>!controller.disposed && selection === selectDossier.generation,
+      );
       const detail = detailIdentity(detailResponse);
       const substance = validateDossierSubstance(substanceResponse, detail.quote_request_id);
       if (controller.disposed || selection !== selectDossier.generation) return false;
@@ -1079,11 +1110,19 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         state.purgeEligibility = null;
         presentDossierPurgeEligibility(workspace, null);
       }
+      const documentSection = workspace.querySelector("[data-dossiers-documents]");
+      documentSection.hidden = false;
+      workspace.querySelector("[data-dossiers-document-empty]").textContent = "Dossierdocumenten laden.";
       const tasks = [
-        authority.gateway(dossierDocumentRequest(detail)).then((documents)=>{
+        loadDossierReadWithRetry(
+          ()=>authority.gateway(dossierDocumentRequest(detail)),
+          ()=>!controller.disposed && selection === selectDossier.generation,
+        ).then((documents)=>{
           if (!Array.isArray(documents) || selection !== selectDossier.generation) return;
           state.documents = documents;
           renderDocuments(workspace, documents);
+        }, ()=>{
+          if (selection === selectDossier.generation) workspace.querySelector("[data-dossiers-document-empty]").textContent = "Dossierdocumenten konden niet worden geladen.";
         }),
         authority.gateway({ action: "list_customer_requests_for_dossier", dossier_reference: reference, cursor: null, limit: 25 }).then((page)=>{
           if (!Array.isArray(page?.items) || selection !== selectDossier.generation) return;
@@ -1120,7 +1159,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           if (selection === selectDossier.generation) presentDossierPurgeEligibility(workspace, state.purgeEligibility);
         }));
       }
-      await Promise.allSettled(tasks);
+      void Promise.allSettled(tasks);
       if (selection === selectDossier.generation) status.textContent = "";
       return true;
     } catch (error) {

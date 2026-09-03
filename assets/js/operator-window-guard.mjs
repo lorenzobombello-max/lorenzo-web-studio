@@ -1,6 +1,6 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260903-shared-dossier-modal-ui-r1";
+import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260903-dossier-loading-stability-r1";
 import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";

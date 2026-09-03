@@ -37,6 +37,38 @@ test("Dossiers controller suppresses stale work and disposal is terminal", async
   assert.equal(changes, 0);
 });
 
+test("Dossier reads retry transient failures without retrying stale, invalid, or unauthorized work", async () => {
+  const { loadDossierReadWithRetry } = await import("../assets/js/operator-dossiers.mjs");
+  let attempts = 0;
+  assert.equal(await loadDossierReadWithRetry(async ()=>{
+    attempts += 1;
+    if (attempts === 1) throw new Error("OPERATOR_REQUEST_FAILED");
+    return "loaded";
+  }), "loaded");
+  assert.equal(attempts, 2);
+  attempts = 0;
+  await assert.rejects(loadDossierReadWithRetry(
+    ()=>{ attempts += 1; return new Promise(()=>{}); },
+    ()=>true,
+    { timeoutMs: 1, setTimer: globalThis.setTimeout, clearTimer: globalThis.clearTimeout },
+  ), /DOSSIER_READ_TIMEOUT/);
+  assert.equal(attempts, 2);
+  for (const [code, isCurrent] of [["INVALID_DOSSIER_SUBSTANCE", true], ["OPERATOR_NOT_AUTHORIZED", true], ["OPERATOR_REQUEST_FAILED", false]]) {
+    attempts = 0;
+    await assert.rejects(loadDossierReadWithRetry(async ()=>{
+      attempts += 1;
+      throw new Error(code);
+    }, ()=>isCurrent), new RegExp(code));
+    assert.equal(attempts, 1);
+  }
+  const source = await read("assets/js/operator-dossiers.mjs");
+  assert.match(source, /loadDossierReadWithRetry\([\s\S]*dossierDocumentRequest\(detail\)/);
+  assert.match(source, /state\.copySource = summary\.raw\.request_kind === "website" \? pendingDossierCopy\(summary, substance\) : null;/);
+  assert.match(source, /Dossierdocumenten laden\.[\s\S]*Dossierdocumenten konden niet worden geladen\./);
+  assert.match(source, /void Promise\.allSettled\(tasks\);[\s\S]*status\.textContent = ""/);
+  assert.doesNotMatch(source, /await Promise\.allSettled\(tasks\)/);
+});
+
 test("Dossiers selection is valid only inside the current visible dataset", async () => {
   const { boundDossierCopy, dossierCopyAvailable, validateDossierCounters, visibleDossierSelection } = await import("../assets/js/operator-dossiers.mjs");
   const selected = { reference: "#77EE2F45", zone: "PENDING" };
@@ -269,7 +301,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const cacheIdentity = "20260903-shared-dossier-modal-ui-r1";
+  const cacheIdentity = "20260903-dossier-loading-stability-r1";
   assert.match(dashboardHtml, new RegExp(`operator-dashboard-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(dashboardGuard, new RegExp(`operator-dashboard\\.js\\?v=${cacheIdentity}`));
   assert.match(dashboard, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
