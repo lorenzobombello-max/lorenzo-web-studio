@@ -967,16 +967,24 @@ export async function executeCallerJwtInternalE2EAcceptedFileCleanupAction(
   return finalization.data;
 }
 
-export function normalizeWebsitePendingItems(data: unknown): Record<string, unknown>[] | null {
+export function normalizePendingSeenStateItems(data: unknown): Record<string, unknown>[] | null {
   const items = (data as { items?: unknown[] } | null)?.items;
   if (!Array.isArray(items)) return null;
   return items.map((value) => {
-    const item = value as Record<string, unknown>;
+    const { seen_at: _seenAt, ...item } = value as Record<string, unknown>;
+    return item;
+  });
+}
+
+export function normalizeWebsitePendingItems(data: unknown): Record<string, unknown>[] | null {
+  const items = normalizePendingSeenStateItems(data);
+  if (!items) return null;
+  return items.map((value) => {
     return {
-      ...item,
+      ...value,
       sdf_package: null,
       invitation_delivery_status: null,
-      last_activity_at: item.invitation_created_at,
+      last_activity_at: value.invitation_created_at,
     };
   });
 }
@@ -1092,8 +1100,8 @@ if (import.meta.main) {
           if (retentionState !== "ACTIVE") return { items: websiteItems };
           const sdf = await serviceClient().rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
           if (sdf.error) throw new Error(sdf.error.message);
-          const sdfItems = (sdf.data as { items?: unknown[] } | null)?.items;
-          if (!Array.isArray(sdfItems)) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+          const sdfItems = normalizePendingSeenStateItems(sdf.data);
+          if (!sdfItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
           return { items: [...websiteItems, ...sdfItems].sort((left, right) => String((right as Record<string, unknown>).last_activity_at).localeCompare(String((left as Record<string, unknown>).last_activity_at))) };
         },
         executePendingIntakeCount: async (actorAuthUserId: string) => {

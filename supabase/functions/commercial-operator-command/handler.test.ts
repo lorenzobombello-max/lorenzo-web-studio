@@ -37,6 +37,7 @@ import {
   executeQuotationBusinessDraftAction,
   executeServiceRoleDossierDocumentAction,
   executeServiceRoleWorkforceCalendarAction,
+  normalizePendingSeenStateItems,
   normalizeWebsitePendingItems,
   verifySupabaseAuthUser,
 } from "./index.ts";
@@ -136,14 +137,73 @@ function pendingIntakeDto(
   };
 }
 
-Deno.test("Website pending rows normalize to the canonical cross-product DTO", () => {
-  const legacy = pendingIntakeDto();
+Deno.test("Website pending rows normalize to the canonical cross-product DTO", async () => {
+  const legacy = pendingIntakeDto({ seen_at: "2099-01-02T10:00:00Z" });
   delete legacy.sdf_package;
   delete legacy.invitation_delivery_status;
   delete legacy.last_activity_at;
-  assertEquals(normalizeWebsitePendingItems({ items: [legacy] }), [pendingIntakeDto({
+  const normalized = normalizeWebsitePendingItems({ items: [legacy] });
+  assertEquals(normalized, [pendingIntakeDto({
     last_activity_at: "2099-01-01T10:00:00Z",
   })]);
+  const compatible = dependencies({
+    executePendingIntakes: async () => ({ items: normalized }),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes" }),
+      compatible.deps,
+    )).status,
+    200,
+  );
+
+  const withoutSeenAt = pendingIntakeDto();
+  delete withoutSeenAt.sdf_package;
+  delete withoutSeenAt.invitation_delivery_status;
+  delete withoutSeenAt.last_activity_at;
+  assertEquals(normalizeWebsitePendingItems({ items: [withoutSeenAt] }), [pendingIntakeDto({
+    last_activity_at: "2099-01-01T10:00:00Z",
+  })]);
+});
+
+Deno.test("pending seen-state normalization strips only seen_at for Website and SDF", async () => {
+  const sdfItem = pendingIntakeDto({
+    request_kind: "slimme_documentenflow",
+    sdf_package: "groei",
+    website_type: "Slimme documentenflow - groei",
+    invitation_delivery_status: "pending",
+  });
+  const normalizedSdf = normalizePendingSeenStateItems({
+    items: [{ ...sdfItem, seen_at: "2099-01-02T10:00:00Z" }],
+  });
+  assertEquals(normalizedSdf, [sdfItem]);
+
+  const normalizedUnknown = normalizePendingSeenStateItems({
+    items: [{ ...sdfItem, seen_at: null, unknown_field: true }],
+  });
+  assertEquals(normalizedUnknown, [{ ...sdfItem, unknown_field: true }]);
+
+  const compatible = dependencies({
+    executePendingIntakes: async () => ({ items: normalizedSdf }),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes" }),
+      compatible.deps,
+    )).status,
+    200,
+  );
+
+  const strict = dependencies({
+    executePendingIntakes: async () => ({ items: normalizedUnknown }),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request({ action: "list_pending_intakes" }),
+      strict.deps,
+    )).status,
+    500,
+  );
 });
 
 function cursorRequest(input: Record<string, unknown>) {
