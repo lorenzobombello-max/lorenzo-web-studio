@@ -32,6 +32,7 @@ import {
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
   executeCallerJwtSdfM1InvoicePreparationAction,
+  executeApplicationDetailRead,
   executeCustomerRequestUploadInboxPromotionAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
@@ -890,6 +891,116 @@ Deno.test("application detail normalizes one support-reference locator", async (
     );
   }
   assertEquals(harness.calls.length, 1);
+});
+
+Deno.test("application detail preserves successful historical support reads", async () => {
+  const calls: string[] = [];
+  const result = await executeApplicationDetailRead(
+    {
+      rpc: async (name) => {
+        calls.push(name);
+        return { data: { source: "historical" }, error: null };
+      },
+    },
+    () => ({
+      rpc: async (name) => {
+        calls.push(name);
+        return { data: null, error: null };
+      },
+    }),
+    {
+      quote_request_id: null,
+      application_reference: null,
+      support_reference: "#F98B2F08",
+    },
+    userId,
+  );
+  assertEquals(result, { data: { source: "historical" }, error: null });
+  assertEquals(calls, ["get_operator_application_by_support_reference_v1"]);
+});
+
+Deno.test("application detail falls back only for a missing support-reference detail", async () => {
+  const calls: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+  const result = await executeApplicationDetailRead(
+    {
+      rpc: async (name, parameters) => {
+        calls.push({ name, parameters });
+        return { data: null, error: { message: "APPLICATION_NOT_FOUND" } };
+      },
+    },
+    () => ({
+      rpc: async (name, parameters) => {
+        calls.push({ name, parameters });
+        return { data: { source: "trashed-website-intake" }, error: null };
+      },
+    }),
+    {
+      quote_request_id: null,
+      application_reference: null,
+      support_reference: "#F98B2F08",
+    },
+    userId,
+  );
+  assertEquals(result, {
+    data: { source: "trashed-website-intake" },
+    error: null,
+  });
+  assertEquals(calls, [
+    {
+      name: "get_operator_application_by_support_reference_v1",
+      parameters: { p_support_reference: "#F98B2F08" },
+    },
+    {
+      name: "get_operator_trashed_website_intake_detail_v1",
+      parameters: {
+        p_actor_auth_user_id: userId,
+        p_support_reference: "#F98B2F08",
+      },
+    },
+  ]);
+});
+
+Deno.test("application detail never falls back for other errors or locators", async () => {
+  let fallbackCalls = 0;
+  const serviceClient = () => ({
+    rpc: async () => {
+      fallbackCalls += 1;
+      return { data: null, error: null };
+    },
+  });
+  const denied = await executeApplicationDetailRead(
+    {
+      rpc: async () => ({
+        data: null,
+        error: { message: "APPLICATION_SCOPE_DENIED" },
+      }),
+    },
+    serviceClient,
+    {
+      quote_request_id: null,
+      application_reference: null,
+      support_reference: "#F98B2F08",
+    },
+    userId,
+  );
+  const normalMissing = await executeApplicationDetailRead(
+    {
+      rpc: async () => ({
+        data: null,
+        error: { message: "APPLICATION_NOT_FOUND" },
+      }),
+    },
+    serviceClient,
+    {
+      quote_request_id: userId,
+      application_reference: null,
+      support_reference: null,
+    },
+    userId,
+  );
+  assertEquals(denied.error, { message: "APPLICATION_SCOPE_DENIED" });
+  assertEquals(normalMissing.error, { message: "APPLICATION_NOT_FOUND" });
+  assertEquals(fallbackCalls, 0);
 });
 
 Deno.test("dossier substance requires one quote request and validates its closed response", async () => {

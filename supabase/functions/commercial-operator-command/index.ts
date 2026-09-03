@@ -241,6 +241,50 @@ type OperatorCursorDatabasePosition = Readonly<{
   quote_request_id: string;
 }>;
 
+type ApplicationDetailRpcClient = Readonly<{
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): PromiseLike<
+    Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>
+  >;
+}>;
+
+export async function executeApplicationDetailRead(
+  callerClient: ApplicationDetailRpcClient,
+  serviceClient: () => ApplicationDetailRpcClient,
+  input: Readonly<{
+    quote_request_id: string | null;
+    application_reference: string | null;
+    support_reference: string | null;
+  }>,
+  actorAuthUserId: string,
+): Promise<
+  Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>
+> {
+  const primary = input.support_reference
+    ? await callerClient.rpc("get_operator_application_by_support_reference_v1", {
+      p_support_reference: input.support_reference,
+    })
+    : await callerClient.rpc("get_operator_application_v1", {
+      p_quote_request_id: input.quote_request_id,
+      p_application_reference: input.application_reference,
+    });
+  const primaryError = String(
+    (primary.error as { message?: unknown } | null)?.message || "",
+  );
+  if (
+    !input.support_reference || primaryError !== "APPLICATION_NOT_FOUND"
+  ) return primary;
+  return await serviceClient().rpc(
+    "get_operator_trashed_website_intake_detail_v1",
+    {
+      p_actor_auth_user_id: actorAuthUserId,
+      p_support_reference: input.support_reference,
+    },
+  );
+}
+
 async function sha256(value: string): Promise<string> {
   const bytes = await crypto.subtle.digest(
     "SHA-256",
@@ -1538,14 +1582,12 @@ if (import.meta.main) {
               p_project_id: input.project_id,
             })
             : input.action === "get_application_detail"
-            ? input.support_reference
-              ? client.rpc("get_operator_application_by_support_reference_v1", {
-                p_support_reference: input.support_reference,
-              })
-              : client.rpc("get_operator_application_v1", {
-                p_quote_request_id: input.quote_request_id,
-                p_application_reference: input.application_reference,
-              })
+            ? executeApplicationDetailRead(
+              client,
+              serviceClient,
+              input,
+              actorAuthUserId,
+            )
             : client.rpc("promote_operator_application_v1", {
               p_idempotency_key: input.idempotency_key,
               p_quote_request_id: input.quote_request_id,
