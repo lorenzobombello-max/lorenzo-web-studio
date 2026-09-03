@@ -457,7 +457,53 @@ export function visibleDossierSelection(selected, items) {
 }
 
 export function dossierCopyAvailable(detail) {
-  return Boolean(detail?.request_kind === "website" && detail.application);
+  return Boolean(detail?.kind === "pending_intake"
+    || (detail?.request_kind === "website" && detail.application));
+}
+
+export function pendingDossierCopy(summary, substance) {
+  const detail = summary?.raw;
+  if (summary?.kind !== "pending" || detail?.request_kind !== "website"
+    || substance?.request_kind !== "website" || substance.quote_request_id !== detail.quote_request_id
+    || substance?.intake?.intake_id !== detail.intake_id || substance?.intake?.status !== detail.intake_status
+    || substance?.request?.reference !== detail.support_reference
+    || !substance.intake.structured_answers || typeof substance.intake.structured_answers !== "object"
+    || !Number.isSafeInteger(substance?.documents?.customer_request_count)
+    || !Number.isSafeInteger(substance?.documents?.uploaded_document_count)) {
+    throw new Error("INVALID_PENDING_DOSSIER_COPY");
+  }
+  return {
+    kind: "pending_intake",
+    reference: detail.support_reference,
+    requestKind: "website",
+    status: detail.intake_status,
+    statusLabel: dossierStatus(detail.intake_status).label,
+    websiteType: detail.website_type,
+    customer: { ...substance.customer },
+    request: {
+      requestedAt: substance.request.requested_at,
+      requestedService: substance.request.requested_service,
+      originalText: substance.request.original_text,
+    },
+    intake: {
+      invitedAt: substance.intake.invited_at,
+      startedAt: substance.intake.started_at,
+      submittedAt: substance.intake.submitted_at,
+      structuredAnswers: substance.intake.structured_answers,
+    },
+    documents: {
+      customerRequestCount: substance.documents.customer_request_count,
+      uploadedDocumentCount: substance.documents.uploaded_document_count,
+    },
+  };
+}
+
+export function boundDossierCopy(selected, items, copySource) {
+  const current = visibleDossierSelection(selected, items);
+  const reference = copySource?.kind === "pending_intake"
+    ? copySource.reference
+    : copySource?.applicationReference;
+  return current?.reference === reference ? copySource : null;
 }
 
 function detailIdentity(detail) {
@@ -677,7 +723,7 @@ function renderDetail(workspace, detail, summary, substance) {
   }
 }
 
-function renderPendingDetail(workspace, summary, substance) {
+function renderPendingDetail(workspace, summary, substance, copySource) {
   const detail = summary.raw;
   setText(workspace, "reference", detail.support_reference);
   setText(workspace, "name", detail.name);
@@ -689,7 +735,8 @@ function renderPendingDetail(workspace, summary, substance) {
   renderSubstance(workspace, substance);
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
-  for (const selector of ["[data-dossiers-copy-actions]", "[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
+  workspace.querySelector("[data-dossiers-copy-actions]").hidden = !dossierCopyAvailable(copySource);
+  for (const selector of ["[data-dossiers-lifecycle-panel]", "[data-dossiers-assignment]", "[data-dossiers-documents]", "[data-dossiers-requests]"]) {
     workspace.querySelector(selector).hidden = true;
   }
   const actions = workspace.querySelector("[data-dossiers-pending-actions]");
@@ -811,6 +858,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     uploadUrl: null,
     requestBusy: false,
     substance: null,
+    copySource: null,
     pendingPurgeEligibility: null,
     counters: null,
   };
@@ -834,6 +882,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.request = null;
     state.uploadUrl = null;
     state.requestBusy = false;
+    state.copySource = null;
     clearDetailSelection(workspace);
     return false;
   }
@@ -938,6 +987,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.selected = summary;
     state.detail = null;
     state.substance = null;
+    state.copySource = null;
     state.requests = [];
     state.request = null;
     state.uploadUrl = null;
@@ -954,7 +1004,8 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         const substance = validateDossierSubstance(substanceResponse, summary.raw.quote_request_id);
         if (controller.disposed || selection !== selectDossier.generation) return false;
         state.substance = substance;
-        renderPendingDetail(workspace, summary, substance);
+        state.copySource = pendingDossierCopy(summary, substance);
+        renderPendingDetail(workspace, summary, substance, state.copySource);
         status.textContent = "";
         return true;
       } catch (error) {
@@ -973,6 +1024,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       if (controller.disposed || selection !== selectDossier.generation) return false;
       state.detail = detail;
       state.substance = substance;
+      state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
       renderDetail(workspace, detail, summary, substance);
       const reference = dossierReference(detail);
       const tasks = [
@@ -1250,20 +1302,16 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     } else if (target.hasAttribute("data-dossiers-purge")) {
       openCommandDialog({ kind: "purge" });
     } else if (target.dataset.dossiersCopy) {
-      const selected = visibleDossierSelection(state.selected, state.items);
-      const application = dossierCopyAvailable(state.detail)
-        && selected?.reference === dossierReference(state.detail) ? state.detail.application : null;
-      if (application) {
-        void import("./application-dossier-copy.js?v=20260903-owner-flow-audit").then((copy)=>{
-          const current = visibleDossierSelection(state.selected, state.items);
-          if (controller.disposed || current?.reference !== selected.reference
-            || state.detail?.application !== application || dossierReference(state.detail) !== selected.reference) return;
+      const copySource = boundDossierCopy(state.selected, state.items, state.copySource);
+      if (copySource) {
+        void import("./application-dossier-copy.js?v=20260903-pending-dossier-copy").then((copy)=>{
+          if (controller.disposed || boundDossierCopy(state.selected, state.items, state.copySource) !== copySource) return;
           if (target.dataset.dossiersCopy === "view") {
-            copy.renderApplicationDossier(workspace.querySelector("[data-dossiers-copy-content]"), application);
-            workspace.querySelector("[data-dossiers-copy-reference]").textContent = application.applicationReference;
+            const presentation = copy.renderApplicationDossier(workspace.querySelector("[data-dossiers-copy-content]"), copySource);
+            workspace.querySelector("[data-dossiers-copy-reference]").textContent = presentation.reference;
             workspace.querySelector("[data-dossiers-copy-dialog]").showModal();
-          } else if (target.dataset.dossiersCopy === "download") copy.downloadApplicationDossierPdf(application);
-          else copy.printApplicationDossier(application);
+          } else if (target.dataset.dossiersCopy === "download") copy.downloadApplicationDossierPdf(copySource);
+          else copy.printApplicationDossier(copySource);
         }).catch(()=>{
           if (!controller.disposed) status.textContent = "Dossierkopie kon niet veilig worden geopend.";
         });

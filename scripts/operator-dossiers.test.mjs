@@ -38,7 +38,7 @@ test("Dossiers controller suppresses stale work and disposal is terminal", async
 });
 
 test("Dossiers selection is valid only inside the current visible dataset", async () => {
-  const { dossierCopyAvailable, validateDossierCounters, visibleDossierSelection } = await import("../assets/js/operator-dossiers.mjs");
+  const { boundDossierCopy, dossierCopyAvailable, validateDossierCounters, visibleDossierSelection } = await import("../assets/js/operator-dossiers.mjs");
   const selected = { reference: "#77EE2F45", zone: "PENDING" };
   const fresh = { reference: "#77EE2F45", zone: "PENDING", status: "in_progress" };
   assert.equal(visibleDossierSelection(selected, [fresh]), fresh);
@@ -59,6 +59,11 @@ test("Dossiers selection is valid only inside the current visible dataset", asyn
   assert.equal(dossierCopyAvailable({ request_kind: "website", application: null }), false);
   assert.equal(dossierCopyAvailable({ request_kind: "slimme_documentenflow", application: {} }), false);
   assert.equal(dossierCopyAvailable(null), false);
+  const firstCopy = { kind: "pending_intake", reference: fresh.reference };
+  const secondCopy = { kind: "pending_intake", reference: "#88EE2F46" };
+  assert.equal(boundDossierCopy(selected, [fresh], firstCopy), firstCopy);
+  assert.equal(boundDossierCopy(selected, [fresh], secondCopy), null);
+  assert.equal(boundDossierCopy(selected, [], firstCopy), null);
   assert.deepEqual(validateDossierCounters(
     { active_count: 4 },
     { years: [{ year: 2026, count: 2 }, { year: 2025, count: 1 }] },
@@ -252,7 +257,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(guard, /operatorDossiersController\?\.dispose/);
   assert.match(guard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(guard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-auto-refresh-8s/);
+  for (const source of [dashboard, registry]) assert.match(source, /operator-dossiers\.mjs\?v=20260903-pending-dossier-copy/);
   for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-owner-flow-audit/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
@@ -262,7 +267,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /data-dossiers-zone="ACTIVE"/);
   assert.match(source, /data-dossiers-filters[^]*select\[name="zone"\]/);
   assert.match(source, /Originele klantaanvraag/);
-  assert.match(source, /renderPendingDetail\(workspace, summary, substance\)/);
+  assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\)/);
   assert.match(source, /data-operator-window-module="dossiers"[^>]*hidden>Open in nieuw venster<\/button>/);
   assert.match(source, /<form class="assignment-form" data-dossiers-assignment-form>/);
   assert.doesNotMatch(source, /setText\(workspace, "description", null\)/);
@@ -334,7 +339,7 @@ test("Dossiers present Belgian dates, a labelled reference, and persistent acces
 });
 
 test("Pending retention and trash-first lifecycle commands remain server-bound", async () => {
-  const { dossierListRequest, pendingDossierTrashRequest, pendingIntakeRetentionRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const { dossierListRequest, pendingDossierCopy, pendingDossierTrashRequest, pendingIntakeRetentionRequest } = await import("../assets/js/operator-dossiers.mjs");
   const item = {
     intake_id: "f4300000-0000-4000-8000-000000000001",
     quote_request_id: "f4300000-0000-4000-8000-000000000002",
@@ -369,16 +374,42 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
   assert.match(source, />Naar prullenbak<\/button>/);
   assert.match(source, />Herstellen uit prullenbak<\/button>/);
   assert.match(source, /data-dossiers-command-dialog/);
-  assert.match(source, /import\("\.\/application-dossier-copy\.js\?v=20260903-owner-flow-audit"\)/);
-  assert.match(source, /visibleDossierSelection\(state\.selected, state\.items\)[\s\S]*state\.detail\?\.application !== application/);
+  assert.match(source, /import\("\.\/application-dossier-copy\.js\?v=20260903-pending-dossier-copy"\)/);
+  assert.match(source, /boundDossierCopy\(state\.selected, state\.items, state\.copySource\) !== copySource/);
   assert.match(source, /data-dossiers-copy-actions\]"\)\.hidden = !dossierCopyAvailable\(detail\)/);
-  assert.match(source, /for \(const selector of \["\[data-dossiers-copy-actions\]", "\[data-dossiers-lifecycle-panel\]"/);
+  assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\)/);
   assert.match(source, /function resetDossierCopyPreview[\s\S]*if \(dialog\.open\) dialog\.close\(\);[\s\S]*replaceChildren\(\)/);
   assert.match(source, /const selection = \+\+selectDossier\.generation;\s*resetDossierCopyPreview\(workspace\)/);
   assert.doesNotMatch(source, /permanently_delete_pending_intake|pendingSdfDossierPurgeRequest/);
   assert.match(source, /detail\.dossier_lifecycle\?\.state === "TRASHED"/);
   assert.match(source, /reeds een offerte aan dit dossier gekoppeld/);
   assert.match(source, /detailColumn\.append\([\s\S]*data-dossiers-lifecycle-panel[\s\S]*data-dossiers-pending-actions/);
+
+  const substance = {
+    quote_request_id: item.quote_request_id,
+    request_kind: "website",
+    request: { reference: "#F4300000", requested_at: "2026-09-03T01:00:00Z", requested_service: "Website", original_text: "Authority text" },
+    customer: { name: "Synthetic", company: null, email: "synthetic@example.test", phone: null },
+    intake: { intake_id: item.intake_id, status: "invited", invited_at: "2026-09-03T01:01:00Z", started_at: null, submitted_at: null, structured_answers: { shop_required: false } },
+    documents: { customer_request_count: 0, uploaded_document_count: 0 },
+  };
+  const summary = { kind: "pending", reference: "#F4300000", name: "Synthetic", raw: { ...item, support_reference: "#F4300000", request_kind: "website", intake_status: "invited", website_type: "Website op maat" } };
+  const invitedCopy = pendingDossierCopy(summary, substance);
+  assert.equal(invitedCopy.status, "invited");
+  assert.equal(invitedCopy.request.originalText, "Authority text");
+  const inProgressCopy = pendingDossierCopy(
+    { ...summary, raw: { ...summary.raw, intake_status: "in_progress" } },
+    { ...substance, intake: { ...substance.intake, status: "in_progress", started_at: "2026-09-03T01:02:00Z" } },
+  );
+  assert.equal(inProgressCopy.status, "in_progress");
+  assert.equal(inProgressCopy.intake.startedAt, "2026-09-03T01:02:00Z");
+  assert.throws(
+    ()=>pendingDossierCopy(summary, { ...substance, intake: { ...substance.intake, status: "in_progress" } }),
+    /INVALID_PENDING_DOSSIER_COPY/,
+  );
+  assert.match(source, /target\.dataset\.dossiersCopy === "view"[\s\S]*renderApplicationDossier[\s\S]*showModal\(\)/);
+  assert.match(source, /target\.dataset\.dossiersCopy === "download"[\s\S]*downloadApplicationDossierPdf\(copySource\)/);
+  assert.match(source, /printApplicationDossier\(copySource\)/);
 });
 
 test("archived Pending records remain valid in the retention workspace", async () => {

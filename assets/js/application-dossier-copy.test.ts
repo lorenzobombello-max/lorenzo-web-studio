@@ -3,6 +3,7 @@ import {
   buildApplicationDossierPresentation,
   createApplicationDossierPdf,
   measureApplicationDossierPdfText,
+  printApplicationDossier,
 } from "./application-dossier-copy.js";
 import type { ApplicationOutput } from "../../supabase/functions/_shared/application-output.ts";
 
@@ -48,6 +49,33 @@ const application: ApplicationOutput = {
   },
 };
 
+const pending = {
+  kind: "pending_intake",
+  reference: "#77EE2F45",
+  requestKind: "website",
+  status: "invited",
+  statusLabel: "Uitgenodigd",
+  websiteType: "Website op maat",
+  customer: { name: "Pending Klant", company: null, email: "pending@example.test", phone: null },
+  request: {
+    requestedAt: "2026-09-03T01:25:00Z",
+    requestedService: "Website",
+    originalText: "Volledige oorspronkelijke aanvraagtekst.",
+  },
+  intake: {
+    invitedAt: "2026-09-03T01:31:00Z",
+    startedAt: null,
+    submittedAt: null,
+    structuredAnswers: {
+      shop_required: false,
+      website_goals: ["Meer aanvragen"],
+      budget_notes: null,
+      shop_details: { online_payments: false, categories: [] },
+    },
+  },
+  documents: { customerRequestCount: 2, uploadedDocumentCount: 1 },
+} as const;
+
 Deno.test("dossier presentation is one stable customer and operator truth", () => {
   const dossier = buildApplicationDossierPresentation(application);
   assertEquals(dossier.reference, "LWS-AAN-2026-0042");
@@ -57,6 +85,71 @@ Deno.test("dossier presentation is one stable customer and operator truth", () =
   assertEquals(dossier.sections.flatMap((section) => section.rows).find((row) => row.label === "Webshop")?.value, "Ja");
   assertEquals(dossier.sections.flatMap((section) => section.rows).find((row) => row.label === "Boeking/reservatie")?.value, "Nee");
   assertStringIncludes(dossier.sections[0].rows[1].value, "15:14");
+});
+
+Deno.test("invited and in-progress authority payloads normalize to the canonical dossier presentation", () => {
+  for (const [status, statusLabel] of [["invited", "Uitgenodigd"], ["in_progress", "Intake bezig"]] as const) {
+    const dossier = buildApplicationDossierPresentation({ ...pending, status, statusLabel });
+    const rows = dossier.sections.flatMap((group) => group.rows);
+    assertEquals(dossier.title, "Dossierkopie");
+    assertEquals(dossier.reference, "#77EE2F45");
+    assertEquals(rows.find((row) => row.label === "Status")?.value, statusLabel);
+    assertEquals(rows.find((row) => row.label === "Volledige aanvraagtekst")?.value, pending.request.originalText);
+    assertEquals(rows.find((row) => row.label === "shop required")?.value, "Nee");
+    assertEquals(rows.find((row) => row.label === "website goals")?.value, "Meer aanvragen");
+    assertEquals(rows.find((row) => row.label === "budget notes")?.value, "Niet beschikbaar");
+    assertEquals(rows.find((row) => row.label === "shop details")?.value, "categories: Niet beschikbaar; online payments: Nee");
+    assertEquals(rows.find((row) => row.label === "Klantverzoeken")?.value, "2");
+  }
+});
+
+Deno.test("pending dossier PDF uses the same engine and remains deterministic with partial fields", () => {
+  const first = createApplicationDossierPdf(pending);
+  const second = createApplicationDossierPdf({
+    ...pending,
+    customer: { ...pending.customer, company: undefined },
+    documents: { customerRequestCount: undefined, uploadedDocumentCount: undefined },
+    intake: { ...pending.intake, structuredAnswers: {} },
+  });
+  assertEquals(first.type, "application/pdf");
+  assertEquals(first.fileName, "aanvraag-#77EE2F45.pdf");
+  assertEquals(new TextDecoder().decode(first.bytes.slice(0, 8)), "%PDF-1.4");
+  const partialSource = new TextDecoder("windows-1252").decode(second.bytes);
+  assertStringIncludes(partialSource, "Niet beschikbaar");
+  assertStringIncludes(partialSource, "Beschikbare antwoorden");
+});
+
+Deno.test("pending dossier print uses the canonical presentation and triggers the print flow", () => {
+  const globalScope = globalThis as typeof globalThis & { document?: unknown };
+  const originalDocument = globalScope.document;
+  let loadListener = () => {};
+  let printCalls = 0;
+  let appended = false;
+  const frame = {
+    hidden: false,
+    title: "",
+    srcdoc: "",
+    contentWindow: { focus() {}, print() { printCalls += 1; } },
+    addEventListener(_type: string, listener: () => void) { loadListener = listener; },
+    remove() {},
+  };
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      createElement: () => frame,
+      body: { append(node: unknown) { appended = node === frame; } },
+    },
+  });
+  try {
+    printApplicationDossier(pending);
+    assertEquals(appended, true);
+    assertStringIncludes(frame.srcdoc, "#77EE2F45");
+    assertStringIncludes(frame.srcdoc, "Volledige oorspronkelijke aanvraagtekst.");
+    loadListener();
+    assertEquals(printCalls, 1);
+  } finally {
+    Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+  }
 });
 
 Deno.test("download preserves euro and common Dutch and French characters", () => {

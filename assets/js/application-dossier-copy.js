@@ -1,4 +1,19 @@
 const DISCLAIMER = "Dit document is een kopie van de ingediende aanvraag. Prijzen en bedragen zijn indicatief en niet-bindend. Dit is geen definitieve offerte of overeenkomst.";
+const PENDING_DISCLAIMER = "Dit document is een momentopname van het dossier op basis van de gegevens die op dit moment door de server zijn uitgegeven. Ontbrekende gegevens zijn nog niet beschikbaar.";
+
+/**
+ * @typedef {object} PendingDossierCopy
+ * @property {"pending_intake"} kind
+ * @property {string} reference
+ * @property {"website"} requestKind
+ * @property {"invited" | "in_progress"} status
+ * @property {string} statusLabel
+ * @property {string | null | undefined} websiteType
+ * @property {{name?: string | null, company?: string | null, email?: string | null, phone?: string | null}} customer
+ * @property {{requestedAt?: string | null, requestedService?: string | null, originalText?: string | null}} request
+ * @property {{invitedAt?: string | null, startedAt?: string | null, submittedAt?: string | null, structuredAnswers: Record<string, unknown>}} intake
+ * @property {{customerRequestCount?: number, uploadedDocumentCount?: number}} documents
+ */
 
 function text(value, fallback = "Niet opgegeven") {
   if (typeof value === "string" && value.trim()) return value.trim();
@@ -24,17 +39,76 @@ function detail(value) {
   return entries.length ? entries.map(([key, item]) => `${key}: ${Array.isArray(item) ? item.join(", ") : String(item)}`).join("; ") : "Niet opgegeven";
 }
 
+function date(value) {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return "Niet beschikbaar";
+  return new Intl.DateTimeFormat("nl-BE", { dateStyle: "long", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(value));
+}
+
+function structuredValue(value) {
+  if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return "Niet beschikbaar";
+  if (value === true) return "Ja";
+  if (value === false) return "Nee";
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
+  if (typeof value === "object") {
+    const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right, "en"));
+    return entries.length
+      ? entries.map(([key, item]) => `${key.replaceAll("_", " ")}: ${structuredValue(item)}`).join("; ")
+      : "Niet beschikbaar";
+  }
+  return String(value);
+}
+
 /** @param {string} title @param {Array<[string, string]>} rows */
 function section(title, rows) {
   return { title, rows: rows.map(([label, value]) => ({ label, value })) };
 }
 
+function pendingDossierPresentation(source) {
+  if (source?.kind !== "pending_intake" || source.requestKind !== "website"
+    || !/^#[0-9A-F]{8}$/.test(String(source.reference || ""))
+    || !["invited", "in_progress"].includes(source.status)
+    || !source.customer || !source.request || !source.intake || !source.documents
+    || !source.intake.structuredAnswers || typeof source.intake.structuredAnswers !== "object"
+    || Array.isArray(source.intake.structuredAnswers)) throw new TypeError("INVALID_PENDING_DOSSIER_COPY");
+  const answers = Object.entries(source.intake.structuredAnswers)
+    .sort(([left], [right]) => left.localeCompare(right, "en"))
+    .map(([key, value]) => [key.replaceAll("_", " "), structuredValue(value)]);
+  return {
+    title: "Dossierkopie",
+    reference: source.reference,
+    submittedAt: source.intake.submittedAt || null,
+    disclaimer: PENDING_DISCLAIMER,
+    sections: [
+      section("Dossier", [
+        ["Dossierreferentie", source.reference], ["Status", text(source.statusLabel)],
+        ["Product", "Website"], ["Commerciële richting", text(source.websiteType, "Niet beschikbaar")],
+        ["Aangevraagd op", date(source.request.requestedAt)], ["Uitgenodigd op", date(source.intake.invitedAt)],
+        ["Gestart op", date(source.intake.startedAt)], ["Ingediend op", date(source.intake.submittedAt)],
+      ]),
+      section("Klant", [
+        ["Naam", text(source.customer.name)], ["Bedrijf", text(source.customer.company)],
+        ["E-mail", text(source.customer.email)], ["Telefoon", text(source.customer.phone)],
+      ]),
+      section("Oorspronkelijke aanvraag", [
+        ["Aangevraagde dienst", text(source.request.requestedService)],
+        ["Volledige aanvraagtekst", text(source.request.originalText)],
+      ]),
+      section("Documenten", [
+        ["Klantverzoeken", Number.isSafeInteger(source.documents.customerRequestCount) ? String(source.documents.customerRequestCount) : "Niet beschikbaar"],
+        ["Ontvangen documenten", Number.isSafeInteger(source.documents.uploadedDocumentCount) ? String(source.documents.uploadedDocumentCount) : "Niet beschikbaar"],
+      ]),
+      section("Intakegegevens", answers.length ? answers : [["Beschikbare antwoorden", "Niet beschikbaar"]]),
+    ],
+  };
+}
+
 /**
  * Builds the sole print/PDF presentation from the server-issued ApplicationOutput.
- * @param {import("../../supabase/functions/_shared/application-output.ts").ApplicationOutput} application
+ * @param {import("../../supabase/functions/_shared/application-output.ts").ApplicationOutput | PendingDossierCopy} application
  */
 export function buildApplicationDossierPresentation(application) {
   if (!application || typeof application !== "object") throw new TypeError("INVALID_APPLICATION_DOSSIER");
+  if (application.kind === "pending_intake") return pendingDossierPresentation(application);
   const recurring = application.commercial.recurringServices.length
     ? application.commercial.recurringServices.map((service) => `${service.label}: ${money(service.amountMinor, application.commercial.currency)} per maand`).join(", ")
     : "Geen";
@@ -233,7 +307,7 @@ function wrap(value, width = PDF_COLUMN_WIDTH) {
   return lines;
 }
 
-/** @param {import("../../supabase/functions/_shared/application-output.ts").ApplicationOutput} application */
+/** @param {import("../../supabase/functions/_shared/application-output.ts").ApplicationOutput | PendingDossierCopy} application */
 export function createApplicationDossierPdf(application) {
   const dossier = buildApplicationDossierPresentation(application);
   const lines = [
@@ -289,7 +363,7 @@ export function createApplicationDossierPdf(application) {
   return {
     bytes: Uint8Array.from(source, (character) => character.charCodeAt(0)),
     type: "application/pdf",
-    fileName: `aanvraag-${application.applicationReference || "historisch"}.pdf`,
+    fileName: `aanvraag-${dossier.reference || "historisch"}.pdf`,
   };
 }
 

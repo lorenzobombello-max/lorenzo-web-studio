@@ -59,25 +59,28 @@ Deno.test("customer and authorized operator use one historical dossier copy modu
 
 Deno.test("operator dossier output is built server-side after authorized detail lookup", () => {
   const detailLookup = operatorEdge.indexOf('input.action === "get_application_detail"');
-  const sharedBuild = operatorEdge.indexOf("loadSubmittedApplicationOutputForOperator(service", detailLookup);
+  const sharedBuild = operatorEdge.indexOf("loadSubmittedApplicationOutputForOperator(", detailLookup);
   assertEquals(detailLookup >= 0, true);
   assertEquals(sharedBuild > detailLookup, true);
-  assertStringIncludes(operatorEdge, "return { ...data, application: context.output }");
+  assertStringIncludes(operatorEdge, "return enrichOperatorApplicationDetailWithOutput(data, context)");
   assertFalse(/access_token_hash|integrity_snapshot|pricingConfigHash/.test(operatorSource));
   assertFalse(/access_token_hash|integrity_snapshot|pricingConfigHash/.test(dossierSource));
 });
 
 Deno.test("dossier assets use their current intake and operator cache identities", () => {
   const intakeCssVersion = "20260828-dossier-copy-remediation";
-  const dossierVersion = "20260828-dossier-ux";
-  const operatorVersion = "20260828-dossier-purge-ui";
+  const intakeVersion = "20260901-intake-context";
+  const dossierCopyVersion = "20260828-dossier-ux";
+  const operatorCssVersion = "20260903-owner-flow-audit";
+  const operatorVersion = "20260903-auto-refresh-8s";
+  const operatorDossierVersion = "20260903-pending-dossier-copy";
   assertStringIncludes(intakeHtml, `intake.css?v=${intakeCssVersion}`);
-  assertStringIncludes(intakeHtml, `intake.js?v=${dossierVersion}`);
-  assertStringIncludes(operatorHtml, `operator-dashboard.css?v=${operatorVersion}`);
+  assertStringIncludes(intakeHtml, `intake.js?v=${intakeVersion}`);
+  assertStringIncludes(operatorHtml, `operator-dashboard.css?v=${operatorCssVersion}`);
   assertStringIncludes(operatorHtml, `operator-dashboard-guard.mjs?v=${operatorVersion}`);
   assertStringIncludes(operatorGuardSource, `operator-dashboard.js?v=${operatorVersion}`);
-  assertStringIncludes(intakeSource, `application-dossier-copy.js?v=${dossierVersion}`);
-  assertStringIncludes(operatorSource, `application-dossier-copy.js?v=${operatorVersion}`);
+  assertStringIncludes(intakeSource, `application-dossier-copy.js?v=${dossierCopyVersion}`);
+  assertStringIncludes(operatorSource, `operator-dossiers.mjs?v=${operatorDossierVersion}`);
 });
 
 Deno.test("operator dossier stays compact and opens the shared copy in a document dialog", () => {
