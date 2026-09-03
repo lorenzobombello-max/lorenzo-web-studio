@@ -4,7 +4,7 @@
 
 `OPERATOR_FUNCTIONAL_BASELINE_RESTORED: YES`
 
-The Dossiers state-consistency, trash-first, Multi-Screen preservation, final dossier-copy controls and six-module automatic-refresh contracts are green. The production-equivalent artifact built and verified successfully, and the complete pgTAP run passed. The authenticated production owner shell was inspected read-only and exposed all six modules. Post-deployment acceptance on the production origin remains mandatory; no real email or customer mutation was performed.
+The Dossiers state-consistency, trash-first, Multi-Screen preservation, final dossier-copy controls and six-module automatic-refresh contracts are green. The production-equivalent artifact built and verified successfully, and the complete pgTAP run passed. Authenticated post-deployment acceptance passed on the production origin for all six modules, Dossiers recovery and recipient-scoped Messages Realtime. No real email or customer mutation was performed.
 
 ## Six-Module Automatic Refresh Checkpoint
 
@@ -26,7 +26,7 @@ The Dossiers state-consistency, trash-first, Multi-Screen preservation, final do
 - The recipient received one Realtime event, the canonical list RPC contained one matching message at the first/newest position, unread state was correct and duplicate count was zero.
 - Forced websocket disconnect/connect produced two subscription establishments; the next message produced one event and zero duplicates. Reconnect recovery passed.
 - Realtime publishes only `operator_message_recipients`, never canonical `operator_messages` content. Forced RLS and a bounded current-active-operator predicate expose only the authenticated recipient's delivery rows; every mutation remains RPC-only.
-- Browser-DOM Realtime acceptance remains blocked because the integrated browser replaces the external Supabase SDK with a restricted adapter without `channel`. The checked-in 2.112.3 SRI digest independently matches the CDN bytes, so production code was not changed for this tool-specific interception.
+- Production Browser-DOM Realtime acceptance passed after the Operator CSP admitted only the matching project `wss` origin. The browser emitted `phx_join` for `operator_message_recipients`, received `phx_reply` and `system`, and exposed no message-content table.
 - Browser request load at 8-second cadence is 7.5 ticks/minute: Finance 1 request/tick, Personnel 1, Recruitment 2, Calendar 1, Messages fallback 1. Dossiers owner idle is 5, selected Pending 6, selected Active 11 and selected Trash worst-case 12.
 - Worst-case selected-Trash Dossiers load is 90 requests/minute per active Operator: 1 Operator 90, 5 Operators 450, 10 Operators 900 and 20 Operators 1800. Only the active module polls. The burst is bounded but is the known hotspot; no authority endpoints were merged in this focused tuning step.
 
@@ -93,7 +93,7 @@ The Dossiers state-consistency, trash-first, Multi-Screen preservation, final do
 | --- | --- | --- |
 | Owner module navigation | Dossiers, Finance, Workforce, Recruitment, Messages and Calendar route/load contracts are covered in the 438-test frontend run. | PASS |
 | Multi-Screen protocol | Web Locks duplicate denial, BroadcastChannel hints, six module URLs, duplicate focus, server lease renewal/status, revoke, sign-out, expiry and fail-closed behavior are covered in `operator-workspace.test.mjs`. No token/role authority is placed in child URLs or Web Storage. | PASS (contract) |
-| Authenticated browser master/child session | The built dashboard and child routes passed with the safe synthetic-local authority adapter, including independent child join, duplicate focus, refresh resume and logout close. The authenticated production owner shell was also observed read-only with OWNER authority and all six modules; no production lease was mutated. | PASS (synthetic-local flow) / PASS (production shell) |
+| Authenticated browser master/child session | The built dashboard and child routes passed with the safe synthetic-local authority adapter, including independent child join, duplicate focus, refresh resume and logout close. The authenticated production owner shell passed read-only with OWNER authority, all six modules, Dossiers data and Messages Realtime; no customer mutation was performed. | PASS (synthetic-local flow) / PASS (production owner) |
 | Cache delivery | Dashboard/window guards, registry and all six module imports use `20260903-auto-refresh-8s`; unchanged CSS remains on `20260903-owner-flow-audit`. | PASS (source contract) |
 
 ## Cross-Boundary Flows
@@ -124,6 +124,9 @@ The Dossiers state-consistency, trash-first, Multi-Screen preservation, final do
 - Complete pgTAP run: 136 files, 5,004 assertions, PASS.
 - Production-equivalent Pages artifact: 428 files; verifier reported zero forbidden files, broken links, Functions/social/Auth mismatches, missing files and legacy paths.
 - Release-island classification: `WEBSITE_CHANGED_BY_RELEASE: NO`, `SDF_RUNTIME_CHANGED_BY_RELEASE: NO`, `MARKETING_CHANGED_BY_RELEASE: NO`.
+- Production acceptance found and closed two blockers forward-only. Commit `d00e794` aligned the Edge exact-key validator with mandatory pending-dossier state/revision fields and passed 138/138 commercial Operator Edge tests. Commit `0512151` admitted only the project-scoped Realtime websocket origin in both Operator entrypoint CSPs and passed 213/213 dashboard contracts.
+- Pages run `33710446637` completed successfully for runtime SHA `0512151175cb37d9a85d8d45b275b2a6f64838e4`. Production Dossiers completed consecutive 8-second refreshes with six records, coherent 4-invited/2-in-progress counters and no non-2xx action. All six owner modules loaded without a new non-2xx response.
+- Production Messages opened the project websocket without CSP errors and completed recipient-delivery `phx_join`, `phx_reply` and `system` frames for `operator_message_recipients`. No message body, send, mark-read or customer mutation was exercised.
 - Diagnostics for changed refresh, Messages and SQL files: no errors.
 
 ## Release Readiness
@@ -132,4 +135,4 @@ The twelve historical pgTAP fixtures were aligned with current authority without
 
 Website and Marketing protected surfaces have no release diff. SDF customer runtime has no release diff; SDF-named changes are fixture alignment around existing classification and projection authority. Operator, database authority and build-artifact changes are the release scope.
 
-All pre-release blockers are closed. Commit and forward-only push are permitted after the final diff check. Production acceptance remains a post-deployment gate and must use the real production origin; localhost callback adaptation is not accepted as a substitute.
+All pre-release and post-deployment acceptance blockers are closed. The final production acceptance used the real production origin; localhost callback adaptation was not accepted as a substitute.
