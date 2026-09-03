@@ -632,7 +632,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dossiers-list .application-list__button[data-dossiers-status="in_progress"] { border-left:4px solid var(--turquoise); }
 .dossiers-original-request { margin-top:.35rem; padding:1rem!important; border:1px solid #9ed6d1!important; border-left:4px solid var(--turquoise)!important; border-radius:6px; background:var(--turquoise-soft); }
 .dossiers-original-request dd { margin-top:.45rem; white-space:pre-wrap; line-height:1.55; }
-[data-dossiers-workspace][aria-busy="true"] .dossiers-list { opacity:.55; }
 .personal-queue-workspace { max-width:76rem; margin:auto; }
 .personal-queue-workspace > .project-heading .secondary-action { flex:0 0 auto; }
 .personal-request-grid { display:grid; grid-template-columns:minmax(17rem,.72fr) minmax(0,1.28fr); gap:1.25rem; align-items:start; }

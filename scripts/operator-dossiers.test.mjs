@@ -322,7 +322,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(childHtml, new RegExp(`operator-window-guard\\.mjs\\?v=${cacheIdentity}`));
   assert.match(windowGuard, new RegExp(`operator-module-registry\\.mjs\\?v=${cacheIdentity}`));
   assert.match(registry, new RegExp(`operator-dossiers\\.mjs\\?v=${cacheIdentity}`));
-  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossier-card-light-sweep-r1/);
+  for (const html of [dashboardHtml, childHtml]) assert.match(html, /operator-dashboard\.css\?v=20260903-dossiers-list-contrast-r1/);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);
@@ -341,6 +341,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(css, /\.dossiers-status-overview/);
   assert.match(css, /\.dossiers-grid \{ grid-template-columns:/);
   assert.match(css, /\.dossiers-original-request/);
+  assert.doesNotMatch(css, /\[data-dossiers-workspace\]\[aria-busy="true"\] \.dossiers-list \{[^}]*opacity:/);
   assert.match(css, /\.assignment-form \{[^}]*grid-template-columns:/);
 });
 
