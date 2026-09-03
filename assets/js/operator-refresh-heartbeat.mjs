@@ -1,4 +1,5 @@
 const STATES = new Set(["idle", "refreshing", "success", "error", "stale"]);
+const DEFERRED_STATES = new Set(["success", "error"]);
 const LABELS = Object.freeze({
   idle: "Wachten op verversing",
   refreshing: "Verversen",
@@ -35,7 +36,11 @@ export function createOperatorRefreshHeartbeat({
   const heading = root.createElement("span");
   const indicator = root.createElement("span");
   const label = root.createElement("span");
+  const icon = heartbeatIcon(root);
+  const path = icon.children[0];
   let disposed = false;
+  let animationCompleted = false;
+  let pendingState = null;
 
   heading.className = "operator-refresh-heading";
   indicator.className = "operator-refresh-heartbeat";
@@ -43,23 +48,51 @@ export function createOperatorRefreshHeartbeat({
   indicator.setAttribute("role", "status");
   indicator.setAttribute("aria-live", "polite");
   label.className = "operator-refresh-heartbeat__label";
-  indicator.append(heartbeatIcon(root), label);
+  indicator.append(icon, label);
   titleElement.before(heading);
   heading.append(titleElement, indicator);
 
+  function present(state) {
+    indicator.dataset.state = state;
+    label.textContent = LABELS[state];
+  }
+
+  function animationFinished(event) {
+    if (disposed || event?.target !== path || event?.animationName !== "operator-heartbeat-flow") return;
+    animationCompleted = true;
+    if (!pendingState) return;
+    const state = pendingState;
+    pendingState = null;
+    present(state);
+  }
+
   function update(event) {
     if (disposed || event?.moduleKey !== moduleKey || !STATES.has(event?.state)) return;
-    indicator.dataset.state = event.state;
-    label.textContent = LABELS[event.state];
+    if (event.state === "refreshing") {
+      animationCompleted = false;
+      pendingState = null;
+      present("refreshing");
+      return;
+    }
+    const heartbeatIsAnimating = typeof path.getAnimations !== "function"
+      || path.getAnimations().some((animation)=>animation.animationName === "operator-heartbeat-flow");
+    if (indicator.dataset.state === "refreshing" && !animationCompleted && heartbeatIsAnimating && DEFERRED_STATES.has(event.state)) {
+      pendingState = event.state;
+      return;
+    }
+    pendingState = null;
+    present(event.state);
   }
 
   function dispose() {
     if (disposed) return;
     disposed = true;
+    path.removeEventListener("animationend", animationFinished);
     heading.before(titleElement);
     heading.remove();
   }
 
+  path.addEventListener("animationend", animationFinished);
   const controller = Object.freeze({ update, dispose });
   indicator.operatorRefreshHeartbeat = controller;
   update({ moduleKey, state: "idle" });
