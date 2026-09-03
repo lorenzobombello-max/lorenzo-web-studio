@@ -126,7 +126,7 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000001', true);
 select is(
   public.can_purge_dossier_v1('d3752349-3489-4c19-bd03-f0cc076b5607')->>'can_purge',
-  'true', 'active Website dossier without protected dependencies is purge eligible'
+  'false', 'active Website dossier must enter Trash before purge eligibility'
 );
 
 create function pg_temp.trash_dossier(
@@ -151,14 +151,18 @@ begin
 end;
 $$;
 
+select pg_temp.trash_dossier(
+  'd3752349-3489-4c19-bd03-f0cc076b5607',
+  'fa030000-0000-4000-8000-000000000001'
+);
 select is(
   (select state from lws_internal.operator_dossier_states
    where quote_request_id = 'd3752349-3489-4c19-bd03-f0cc076b5607'),
-  'ACTIVE', 'direct purge fixture remains active before execution'
+  'TRASHED', 'clean Website dossier enters persistent Trash before purge'
 );
 select is(
   public.can_purge_dossier_v1('d3752349-3489-4c19-bd03-f0cc076b5607')->>'can_purge',
-  'true', 'active clean Website dossier remains purge eligible'
+  'true', 'trashed clean Website dossier is purge eligible'
 );
 
 select is(
@@ -197,11 +201,11 @@ select ok(
 );
 select ok(
   (select purge_reason = 'Permanent cleanup'
-      and original_dossier_state = 'ACTIVE'
+      and original_dossier_state = 'TRASHED'
       and original_state_before_trash = 'ACTIVE'
    from lws_internal.dossier_purge_tombstones
    where quote_request_id = 'd3752349-3489-4c19-bd03-f0cc076b5607'),
-  'direct active purge retains normalized non-PII tombstone evidence'
+  'trash-first purge retains normalized non-PII tombstone evidence'
 );
 select throws_ok(
   $$update lws_internal.dossier_purge_tombstones
@@ -494,9 +498,13 @@ select * from public.prepare_quotation_issuance_v2(
   'fa080000-0000-4000-8000-000000000001', repeat('f', 64),
   'test:purge-authority'
 );
+select pg_temp.trash_dossier(
+  '620b3fa5-2e6b-4439-9d22-741b8541fbdf',
+  'fa030000-0000-4000-8000-000000000003'
+);
 select is(
   public.can_purge_dossier_v1('620b3fa5-2e6b-4439-9d22-741b8541fbdf')->>'reason',
-  'OFFICIAL_QUOTATION_EXISTS', 'numbered PREPARED quotation blocks active purge eligibility'
+  'OFFICIAL_QUOTATION_EXISTS', 'numbered PREPARED quotation blocks trashed purge eligibility'
 );
 select throws_ok(
   $$select public.purge_dossier_v1(

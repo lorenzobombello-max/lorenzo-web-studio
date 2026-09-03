@@ -1,3 +1,5 @@
+import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+
 const MESSAGE_SCOPES = new Set(["PERSONAL", "ALL"]);
 const MAILBOXES = new Set(["received", "sent"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -34,6 +36,37 @@ function validRecipient(recipient) {
   if (!recipient || typeof recipient !== "object" || Array.isArray(recipient)) return false;
   if (Object.keys(recipient).sort().join(",") !== "display_name,operator_id") return false;
   return UUID.test(String(recipient.operator_id || "")) && String(recipient.display_name || "").trim().length > 0;
+}
+
+export function createOperatorMessagesRealtime({ client, onInvalidate, channelName = `operator-messages:${crypto.randomUUID()}` }) {
+  if (typeof client?.channel !== "function" || typeof client?.removeChannel !== "function") return null;
+  let disposed = false;
+  let subscribed = false;
+  const invalidate = ()=>{ if (!disposed) void onInvalidate(); };
+  const channel = client
+    .channel(channelName)
+    .on("postgres_changes", {
+      event: "INSERT",
+      schema: "public",
+      table: "operator_message_recipients",
+    }, invalidate)
+    .on("postgres_changes", {
+      event: "UPDATE",
+      schema: "public",
+      table: "operator_message_recipients",
+    }, invalidate)
+    .subscribe((status)=>{
+      if (status !== "SUBSCRIBED") return;
+      if (subscribed) invalidate();
+      subscribed = true;
+    });
+  return Object.freeze({
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      void client.removeChannel(channel);
+    },
+  });
 }
 
 export function initializeOperatorMessages(root, client, identity, { onInvalidate = ()=>{} } = {}) {
@@ -238,12 +271,15 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
     showDetail(messages.find((message)=>message.id === selectedId));
   }
 
-  async function loadMessages() {
-    if (destroyed || loading || !MAILBOXES.has(mailbox)) return;
+  async function loadMessages({ background = false } = {}) {
+    if (destroyed || loading || !MAILBOXES.has(mailbox)) return false;
     loading = true;
-    messageLoadError = false;
-    status.textContent = "Berichten laden...";
-    list.setAttribute("aria-busy", "true");
+    if (!background) {
+      messageLoadError = false;
+      status.textContent = "Berichten laden...";
+      list.setAttribute("aria-busy", "true");
+    }
+    let refreshed = false;
     try {
       const { data, error } = await rpc("list_operator_messages_v1", { p_mailbox: mailbox, p_limit: 50 });
       if (error) throw error;
@@ -251,16 +287,20 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
       messages = data;
       selectedId = messages.some((message)=>message.id === selectedId) ? selectedId : null;
       status.textContent = `${messages.length} ${messages.length === 1 ? "bericht" : "berichten"}`;
+      refreshed = true;
     } catch {
-      messages = [];
-      selectedId = null;
-      messageLoadError = true;
-      status.textContent = "De berichten konden niet veilig worden geladen.";
+      if (!background) {
+        messages = [];
+        selectedId = null;
+        messageLoadError = true;
+        status.textContent = "De berichten konden niet veilig worden geladen.";
+      }
     } finally {
       loading = false;
-      list.setAttribute("aria-busy", "false");
-      renderList();
+      if (!background) list.setAttribute("aria-busy", "false");
+      if (refreshed || !background) renderList();
     }
+    return refreshed;
   }
 
   for (const button of root.querySelectorAll("[data-message-mailbox]")) {
@@ -337,13 +377,12 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
     updateComposer();
   });
 
-  updateComposer();
-  void loadRecipients();
-  void loadMessages();
   const controller = {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      autoRefresh.dispose();
+      realtime?.dispose();
       abortController.abort();
       sending = false;
       messages = [];
@@ -367,6 +406,19 @@ export function initializeOperatorMessages(root, client, identity, { onInvalidat
       invalidationPublisher = typeof publisher === "function" ? publisher : ()=>{};
     },
   };
+  const panel = workspace.closest?.("[data-module-panel]");
+  const autoRefresh = createOperatorAutoRefresh({
+    moduleKey: "messages",
+    refresh: ()=>loadMessages({ background: true }),
+    isActive: ()=>!panel?.hidden,
+    isBlocked: ()=>workspace.dataset.panelMode === "compose" || sending || markingRead.size > 0,
+    documentTarget: root,
+    windowTarget: root.defaultView,
+  });
+  const realtime = createOperatorMessagesRealtime({ client, onInvalidate: autoRefresh.request });
   workspace.operatorMessagesController = controller;
+  updateComposer();
+  void loadRecipients();
+  void loadMessages();
   return controller;
 }

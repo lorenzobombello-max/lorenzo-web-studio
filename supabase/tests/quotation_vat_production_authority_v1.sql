@@ -286,6 +286,19 @@ select is(
   'Bijzondere vrijstellingsregeling van belasting',
   'supported context at the exact threshold resolves the canonical literal'
 );
+insert into public.quotation_vat_turnover_snapshots (
+  turnover_snapshot_id, vat_decision_authority_id, threshold_year,
+  measurement_watermark, governed_turnover_minor, currency, state,
+  source_reference, source_sha256, predecessor_snapshot_id,
+  recorded_by, recorded_at
+)
+select
+  'bd390000-0000-4000-8000-000000000009', vat_decision_authority_id,
+  extract(year from current_date)::integer, current_date, 1000000, 'EUR',
+  'BELOW_OR_AT_THRESHOLD', 'TEST_ONLY:TURNOVER:RPC_CURRENT_DATE', repeat('f', 64),
+  null, 'TEST', clock_timestamp()
+from public.quotation_vat_decision_authorities
+where authority_family = 'LWS_OUTGOING_VAT' and status = 'APPROVED';
 select throws_ok(
   $$select public.upsert_quotation_business_draft_v2(
     'bd110000-0000-4000-8000-000000000001',

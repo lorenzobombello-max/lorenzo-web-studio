@@ -1,3 +1,5 @@
+import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AUTHORIZED_ROLES = new Set(["owner", "admin", "operations_manager"]);
 const EMPLOYEE_KEYS = Object.freeze(["employee_id", "display_name", "role_title", "team_name", "employment_status", "start_date"]);
@@ -48,12 +50,14 @@ export function createOperatorWorkforceController({ load, onChange = ()=>{} }) {
   let disposed = false;
   const state = ()=>({ items: [...items], loading, error });
   const notify = ()=>{ if (!disposed) onChange(state()); };
-  async function refresh() {
+  async function refresh({ background = false } = {}) {
     if (disposed) return false;
     const requestGeneration = ++generation;
-    loading = true;
-    error = null;
-    notify();
+    if (!background) {
+      loading = true;
+      error = null;
+      notify();
+    }
     try {
       const response = operatorWorkforceResponse(await load());
       if (disposed || requestGeneration !== generation) return false;
@@ -63,6 +67,7 @@ export function createOperatorWorkforceController({ load, onChange = ()=>{} }) {
       return true;
     } catch {
       if (disposed || requestGeneration !== generation) return false;
+      if (background) return false;
       loading = false;
       error = "Personeelsgegevens konden niet worden geladen.";
       notify();
@@ -141,11 +146,20 @@ export function initializeOperatorWorkforce(root, client, identity, { onAuthoriz
     load: ()=>loadOperatorWorkforce(client, { onAuthorizationFailure }),
     onChange: render,
   });
+  const panel = list.closest?.("[data-module-panel]");
+  const autoRefresh = createOperatorAutoRefresh({
+    moduleKey: "workforce",
+    refresh: ()=>controller.refresh({ background: true }),
+    isActive: ()=>!panel?.hidden,
+    documentTarget: root,
+    windowTarget: root.defaultView,
+  });
   root.getElementById("workforceRefresh").addEventListener("click", ()=>{ void controller.refresh(); }, { signal: listeners.signal });
   const dispose = controller.dispose.bind(controller);
   controller.dispose = ()=>{
     if (disposed) return;
     disposed = true;
+    autoRefresh.dispose();
     listeners.abort();
     dispose();
     delete list.operatorWorkforceController;

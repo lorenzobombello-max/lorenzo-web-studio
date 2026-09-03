@@ -783,7 +783,7 @@ Deno.test("SDF invitation delivery preserves the exact provider payload contract
   const payload = JSON.parse(String(providerRequest.init.body));
   assertEquals(payload.from, "Lorenzo Web Solutions <offertes@mail.lorenzobombello.be>");
   assertEquals(payload.to, ["customer@example.test"]);
-  assertEquals(payload.subject, "Uw SDF-intake staat klaar — #A1B2C3D4");
+  assertEquals(payload.subject, "Jouw persoonlijke SDF-intake");
   assertEquals(typeof payload.html, "string");
   assertEquals(typeof payload.text, "string");
 });

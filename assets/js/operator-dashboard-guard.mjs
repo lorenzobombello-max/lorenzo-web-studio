@@ -1,6 +1,6 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-dossier-actions-restoration";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260903-auto-refresh-8s";
 import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 
@@ -124,6 +124,7 @@ try {
         workspace.hidden = module === "dossiers" ? dossierVisibility.get(workspace) ?? true : true;
       }
       activeModule = module;
+      document.dispatchEvent(new CustomEvent("operator:module-active", { detail: { moduleKey: module } }));
     }
 
     moduleNavigation = createOperatorModuleNavigation({

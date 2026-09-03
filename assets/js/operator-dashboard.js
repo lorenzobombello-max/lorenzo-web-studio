@@ -8,12 +8,12 @@ import {
   printSdfQualificationReview,
   renderSdfQualificationReview,
 } from "./sdf-qualification-review.mjs?v=20260831-operator-parity";
-import { initializeOperatorMessages } from "./operator-messages.mjs?v=20260902-phase1";
-import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260902-phase2e";
-import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260902-phase2f";
-import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260902-login-stability";
-import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260902-phase2h1";
-import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260903-dossier-actions-restoration";
+import { initializeOperatorMessages } from "./operator-messages.mjs?v=20260903-auto-refresh-8s";
+import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260903-auto-refresh-8s";
+import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260903-auto-refresh-8s";
+import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
+import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";
+import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260903-auto-refresh-8s";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;

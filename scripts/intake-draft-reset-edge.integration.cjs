@@ -34,12 +34,24 @@ async function request(action, expectedRevision, data, requestToken = token) {
 }
 
 query(`
+  begin;
+  set local session_replication_role = replica;
   delete from public.quote_request_intakes where id='${intakeId}';
+  delete from lws_internal.intake_identity_anchors where quote_request_id='${requestId}';
+  delete from lws_internal.application_intake_automation_work where quote_request_id='${requestId}';
+  delete from lws_internal.operator_dossier_assignment_commands where quote_request_id='${requestId}';
+  delete from lws_internal.operator_dossier_assignment_events where quote_request_id='${requestId}';
+  delete from lws_internal.operator_dossier_assignments where quote_request_id='${requestId}';
+  delete from lws_internal.operator_dossier_state_events where quote_request_id='${requestId}';
+  delete from lws_internal.operator_dossier_states where quote_request_id='${requestId}';
+  delete from lws_internal.dossier_identity_anchors where quote_request_id='${requestId}';
   delete from public.quote_requests where id='${requestId}';
+  set local session_replication_role = origin;
   insert into public.quote_requests(id,name,email,website_type,budget,timing,description,privacy_consent,status,budget_category_scheme,budget_category_code)
   values ('${requestId}','Edge reset','edge-reset@example.test','business','Meer dan EUR 6.000','flexible','Local Edge fixture',true,'approved','budget_guard_v2','above_6000');
   insert into public.quote_request_intakes(id,quote_request_id,access_token_hash,access_token_expires_at,status,started_at,business_description,draft_revision)
   values ('${intakeId}','${requestId}','${tokenHash}',clock_timestamp()+interval '1 day','in_progress',clock_timestamp()-interval '1 hour','Edge original',3);
+  commit;
 `);
 
 (async () => {

@@ -15,10 +15,10 @@ import { createVisibilityRefreshController } from "../assets/js/operator-dashboa
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260903-dossier-actions-restoration";
+const OPERATOR_ASSET_RELEASE = "20260903-owner-flow-audit";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
-const FINANCE_ASSET_RELEASE = "20260902-phase2h1";
-const DOSSIERS_ASSET_RELEASE = "20260903-dossier-actions-restoration";
+const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
+const DOSSIERS_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const PREVIOUS_OPERATOR_ASSET_RELEASE = "20260831-sdf-short-references";
 
 const recruitmentVacancy = {

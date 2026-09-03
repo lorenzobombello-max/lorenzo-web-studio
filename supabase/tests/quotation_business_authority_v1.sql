@@ -96,13 +96,6 @@ select throws_ok(
   '55000', 'QUOTATION_BUSINESS_AUTHORITY_IMMUTABLE',
   'terms authority is immutable'
 );
-insert into public.quotation_vat_decision_authorities (
-  vat_decision_authority_id, decision_code, decision_version, vat_treatment,
-  vat_rate, authority_source_identifier, status, approved_by, approved_at
-) values (
-  'ba000000-0000-4000-8000-000000000001', 'TEST_STANDARD', '1.0.0',
-  'STANDARD', 21, 'TEST_ONLY', 'APPROVED', 'TEST', '2026-08-28T00:00:00Z'
-);
 select throws_ok(
   $$delete from public.quotation_vat_decision_authorities$$,
   '55000', 'QUOTATION_BUSINESS_AUTHORITY_IMMUTABLE',
@@ -260,7 +253,7 @@ create function pg_temp.quotation_business_input(
   p_percentage numeric default 100,
   p_amount_minor bigint default null,
   p_terms_authority_id uuid default 'b1010000-0000-4000-8000-000000000001',
-  p_vat_authority_id uuid default 'ba000000-0000-4000-8000-000000000001',
+  p_vat_authority_id uuid default 'b1030000-0000-4000-8000-000000000001',
   p_validity_days integer default null
 )
 returns jsonb
@@ -488,7 +481,7 @@ select throws_ok(
 select throws_ok(
   $$select public.upsert_quotation_business_draft_v1(
     'ba100000-0000-4000-8000-000000000001', 'ba130000-0000-4000-8000-000000000001',
-    0, 'ba160000-0000-4000-8000-000000000018', pg_temp.quotation_business_input('extra_standard_page', 1, 0, null, 100, null, 'b1010000-0000-4000-8000-000000000001', 'ba000000-0000-4000-8000-000000000001', 0)
+    0, 'ba160000-0000-4000-8000-000000000018', pg_temp.quotation_business_input('extra_standard_page', 1, 0, null, 100, null, 'b1010000-0000-4000-8000-000000000001', 'b1030000-0000-4000-8000-000000000001', 0)
   )$$,
   '22023', 'VALIDITY_DAYS_INVALID', 'invalid validity override is rejected'
 );
@@ -569,6 +562,7 @@ select throws_ok(
   'selected exact total below authoritative known minimum is rejected'
 );
 
+savepoint quotation_authority_rotation;
 create temporary table quotation_authority_activation_results (
   authority_type text primary key,
   result jsonb not null
@@ -596,17 +590,6 @@ insert into quotation_authority_activation_results values
     ),
     'Rollback-only lifecycle test'
   )),
-  ('VAT', public.activate_quotation_business_authority_version_v1(
-    'ba100000-0000-4000-8000-000000000002', 'VAT',
-    jsonb_build_object(
-      'decision_code', 'TEST_STANDARD',
-      'decision_version', '1.1-test',
-      'vat_treatment', 'STANDARD',
-      'vat_rate', 21,
-      'authority_source_identifier', 'TEST_ONLY_V2'
-    ),
-    'Rollback-only lifecycle test'
-  )),
   ('POLICY', public.activate_quotation_business_authority_version_v1(
     'ba100000-0000-4000-8000-000000000002', 'POLICY',
     jsonb_build_object(
@@ -619,16 +602,17 @@ insert into quotation_authority_activation_results values
   ));
 reset role;
 
-select is((select count(*)::integer from quotation_authority_activation_results), 4, 'all four authority families activate a new version');
+select is((select count(*)::integer from quotation_authority_activation_results), 3, 'generic lifecycle rotates seller, terms, and policy authority families');
 select is((select status from public.quotation_seller_authorities where seller_authority_id = 'b1000000-0000-4000-8000-000000000001'), 'RETIRED', 'previous seller version is retired');
 select is((select status from public.quotation_terms_authorities where terms_authority_id = 'b1010000-0000-4000-8000-000000000001'), 'RETIRED', 'previous terms version is retired');
-select is((select status from public.quotation_vat_decision_authorities where vat_decision_authority_id = 'ba000000-0000-4000-8000-000000000001'), 'RETIRED', 'previous VAT version is retired');
+select is((select status from public.quotation_vat_decision_authorities where vat_decision_authority_id = 'b1030000-0000-4000-8000-000000000001'), 'APPROVED', 'dedicated production VAT authority remains outside generic lifecycle rotation');
 select is((select status from public.quotation_business_policy_authorities where policy_authority_id = 'b1020000-0000-4000-8000-000000000001'), 'RETIRED', 'previous policy version is retired');
 select is((select count(*)::integer from public.quotation_seller_authorities where seller_id = 'LORENZO_WEB_SOLUTIONS' and status = 'APPROVED'), 1, 'seller family has exactly one active version');
 select is((select count(*)::integer from public.quotation_terms_authorities where terms_id = 'LWS_GENERAL_TERMS_NL_BE' and status = 'APPROVED'), 1, 'terms family has exactly one active version');
-select is((select count(*)::integer from public.quotation_vat_decision_authorities where decision_code = 'TEST_STANDARD' and status = 'APPROVED'), 1, 'VAT family has exactly one active version');
+select is((select count(*)::integer from public.quotation_vat_decision_authorities where authority_family = 'LWS_OUTGOING_VAT' and status = 'APPROVED'), 1, 'dedicated VAT family has exactly one active version');
 select is((select count(*)::integer from public.quotation_business_policy_authorities where policy_id = 'QUOTATION_BUSINESS_V1' and status = 'APPROVED'), 1, 'policy family has exactly one active version');
 select is((select seller_identity->>'email' from public.quotation_seller_authorities where seller_authority_id = 'b1000000-0000-4000-8000-000000000001'), 'info@lorenzowebsolution.be', 'retirement preserves prior seller content');
+rollback to savepoint quotation_authority_rotation;
 
 select is(
   extensions.dblink_connect(
@@ -642,6 +626,7 @@ select lives_ok(
   $test$select extensions.dblink_exec(
     'quotation_business_concurrency_setup',
     $setup$
+      set session_replication_role = replica;
       insert into auth.users(id, email) values
         ('ba200000-0000-4000-8000-000000000001', 'quotation-concurrency-owner@example.test');
       insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
@@ -677,13 +662,6 @@ select lives_ok(
       );
       insert into public.quote_request_pricing_snapshot_integrity(snapshot_id,algorithm_version,key_id,mac) values
         ('ba240000-0000-4000-8000-000000000001','hmac-sha256-v1','v1',repeat('c',64));
-      insert into public.quotation_vat_decision_authorities(
-        vat_decision_authority_id,decision_code,decision_version,vat_treatment,vat_rate,
-        authority_source_identifier,status,approved_by,approved_at
-      ) values (
-        'ba250000-0000-4000-8000-000000000001','CONCURRENCY_STANDARD','1.0.0',
-        'STANDARD',21,'TEST_ONLY','APPROVED','TEST','2026-08-28T00:00:00Z'
-      );
       with payload(value) as (values ('{
         "contract_version":1,
         "source_quote_request_id":"ba220000-0000-4000-8000-000000000001",
@@ -714,7 +692,7 @@ select lives_ok(
         "commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Governed quotation line"}],
         "discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},
         "scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},
-        "vat_decision_authority_id":"ba250000-0000-4000-8000-000000000001",
+        "vat_decision_authority_id":"b1030000-0000-4000-8000-000000000001",
         "terms_authority_id":"b1010000-0000-4000-8000-000000000001",
         "payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},
         "validity_days":null
@@ -730,8 +708,8 @@ select lives_ok(
         'ba220000-0000-4000-8000-000000000001','ba230000-0000-4000-8000-000000000001',
         'ba240000-0000-4000-8000-000000000001',1,'ba210000-0000-4000-8000-000000000001',
         'b1000000-0000-4000-8000-000000000001','b1010000-0000-4000-8000-000000000001',
-        'ba250000-0000-4000-8000-000000000001',
-        (select id from public.quotation_template_authorities where status='APPROVED'),
+        'b1030000-0000-4000-8000-000000000001',
+        'e826f6ed-2960-4189-ab05-d53480b486bc',
         'b1020000-0000-4000-8000-000000000001',payload.value,
         public.quotation_approval_payload_sha256_v1(payload.value),
         encode(extensions.digest(convert_to(jsonb_build_object(
@@ -743,6 +721,7 @@ select lives_ok(
         jsonb_build_object('business_revision',1,'canonical_payload_sha256',public.quotation_approval_payload_sha256_v1(payload.value),'marker','CONCURRENT_REPLAY'),
         'OPERATOR:ba210000-0000-4000-8000-000000000001','2026-08-28T00:00:00Z'
       from payload,input;
+      set session_replication_role = origin;
     $setup$
   )$test$,
   'committed concurrency ledger fixture is created outside the pgTAP transaction'
@@ -754,11 +733,11 @@ select ok(extensions.dblink_send_query('quotation_business_retry_a',$query$with 
 )
 select public.upsert_quotation_business_draft_v1(
   'ba200000-0000-4000-8000-000000000001','ba230000-0000-4000-8000-000000000001',0,
-  'ba260000-0000-4000-8000-000000000001','{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Governed quotation line"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"ba250000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
+  'ba260000-0000-4000-8000-000000000001','{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Governed quotation line"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"b1030000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
 ) from lock_contention$query$)=1,'first identical retry starts while holding the idempotency lock');
 select ok(extensions.dblink_send_query('quotation_business_retry_b',$query$select public.upsert_quotation_business_draft_v1(
   'ba200000-0000-4000-8000-000000000001','ba230000-0000-4000-8000-000000000001',0,
-  'ba260000-0000-4000-8000-000000000001','{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Governed quotation line"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"ba250000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
+  'ba260000-0000-4000-8000-000000000001','{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Governed quotation line"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"b1030000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
 )$query$)=1,'second identical retry starts');
 create temporary table quotation_business_concurrent_results as
 select result from extensions.dblink_get_result('quotation_business_retry_a') as replay(result jsonb)
@@ -772,7 +751,7 @@ select throws_ok(
   $$select public.upsert_quotation_business_draft_v1(
     'ba200000-0000-4000-8000-000000000001','ba230000-0000-4000-8000-000000000001',0,
     'ba260000-0000-4000-8000-000000000001',
-    '{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Changed description"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"ba250000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
+    '{"commercial_lines":[{"rule_id":"extra_standard_page","quantity":1,"description_context":"Changed description"}],"discount":{"discount_type":null,"discount_value_minor":0,"discount_reason":null},"scope":{"project_title":"Canonical website","project_type":"website","scope_summary":"Frozen exact quotation scope","requested_languages":["nl"],"included_page_count":6,"features":["contact_form"],"copywriting":null,"seo":null,"hosting":null,"maintenance":null,"exclusions":[],"assumptions":[],"indicative_timing":null},"vat_decision_authority_id":"b1030000-0000-4000-8000-000000000001","terms_authority_id":"b1010000-0000-4000-8000-000000000001","payment_schedule":{"milestones":[{"sequence":1,"label":"Volledige betaling","percentage":100,"amount_minor":null,"trigger":"invoice","due_terms_days":30,"recurring_cycle":null}]},"validity_days":null}'
   )$$,
   'P0001','IDEMPOTENCY_CONFLICT','same idempotency key with changed valid payload fails closed'
 );
@@ -783,7 +762,6 @@ select lives_ok(
     set session_replication_role = replica;
     delete from public.quote_request_quotation_business_drafts where business_draft_id='ba280000-0000-4000-8000-000000000001';
     delete from public.quote_request_quotation_approval_drafts where id='ba270000-0000-4000-8000-000000000001';
-    delete from public.quotation_vat_decision_authorities where vat_decision_authority_id='ba250000-0000-4000-8000-000000000001';
     delete from public.quote_request_pricing_snapshot_integrity where snapshot_id='ba240000-0000-4000-8000-000000000001';
     delete from public.quote_request_pricing_snapshots where id='ba240000-0000-4000-8000-000000000001';
     delete from public.quote_request_intakes where id='ba230000-0000-4000-8000-000000000001';

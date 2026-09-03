@@ -193,6 +193,12 @@ select uploaded_file_id,pg_temp.fixture_uuid('qf2-'||label||'-customer-request')
   pg_temp.fixture_uuid('qf2-owner-operator') from qf2_fixtures;
 
 select set_config('request.jwt.claim.sub',pg_temp.fixture_uuid('qf2-owner-auth')::text,true);
+select public.confirm_sdf_scope_classification_v1(
+  fixture.quote_request_id,
+  (select submission_id from public.sdf_qualification_intake_submissions where intake_id=fixture.intake_id),
+  'standard',false,fixture.package,pg_temp.fixture_uuid('qf2-'||fixture.label||'-classification-key')
+)
+from qf2_fixtures fixture;
 create temporary table qf2_requirements as
 select label,uploaded_file_id,
   (public.create_sdf_document_requirement_v1(quote_request_id,'invoice',1)->>'requirement_id')::uuid requirement_id

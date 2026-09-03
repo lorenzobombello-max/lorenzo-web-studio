@@ -100,7 +100,7 @@ export const OPERATOR_MODULE_DESCRIPTORS = Object.freeze(descriptors.map((descri
 const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descriptor.moduleKey, descriptor]));
 const standaloneInitializers = new Map([
   ["dossiers", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260903-dossier-actions-restoration");
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
@@ -109,7 +109,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["messages", async ({ root, client, identity, onInvalidate })=>{
-    const { initializeOperatorMessages } = await import("./operator-messages.mjs?v=20260902-phase2c");
+    const { initializeOperatorMessages } = await import("./operator-messages.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorMessages(root, client, identity, { onInvalidate });
     return {
       dispose: ()=>controller?.destroy(),
@@ -118,7 +118,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["calendar", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260902-phase2e");
+    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorCalendar(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
@@ -127,7 +127,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["recruitment", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorRecruitment } = await import("./operator-recruitment.mjs?v=20260902-phase2f");
+    const { initializeOperatorRecruitment } = await import("./operator-recruitment.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorRecruitment(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
@@ -136,7 +136,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["workforce", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorWorkforce } = await import("./operator-workforce.mjs?v=20260902-login-stability");
+    const { initializeOperatorWorkforce } = await import("./operator-workforce.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorWorkforce(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
@@ -145,7 +145,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["finance", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorFinance } = await import("./operator-finance.mjs?v=20260902-phase2h1");
+    const { initializeOperatorFinance } = await import("./operator-finance.mjs?v=20260903-auto-refresh-8s");
     const controller = initializeOperatorFinance(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),

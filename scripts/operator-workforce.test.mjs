@@ -55,6 +55,31 @@ test("Workforce controller clears state and suppresses pending work after dispos
   assert.equal(await controller.refresh(), false);
 });
 
+test("Workforce background refresh preserves valid data and recovers after failure", async ()=>{
+  const responses = [
+    { employees: [employee] },
+    new Error("TEMPORARY"),
+    { employees: [{ ...employee, display_name: "Bijgewerkt" }] },
+  ];
+  const renders = [];
+  const controller = createOperatorWorkforceController({
+    load: async ()=>{
+      const response = responses.shift();
+      if (response instanceof Error) throw response;
+      return response;
+    },
+    onChange: (state)=>renders.push(state),
+  });
+  await controller.refresh();
+  const renderCount = renders.length;
+  assert.equal(await controller.refresh({ background: true }), false);
+  assert.equal(renders.length, renderCount);
+  assert.equal(controller.state.items[0].display_name, employee.display_name);
+  assert.equal(await controller.refresh({ background: true }), true);
+  assert.equal(controller.state.items[0].display_name, "Bijgewerkt");
+  controller.dispose();
+});
+
 test("Workforce initializer rejects unauthorized browser identity before any RPC", ()=>{
   let rpcCalls = 0;
   assert.throws(()=>initializeOperatorWorkforce({}, { rpc() { rpcCalls += 1; } }, { role: "operator" }), /WORKFORCE_MANAGEMENT_READER_REQUIRED/);
@@ -67,6 +92,8 @@ test("Workforce module has no cross-island local-only mutation or sensitive-fiel
   assert.doesNotMatch(source, /salary|national|medical|bank|address|family|localhost|127\.0\.0\.1|Mailpit|Playwright|SERVICE_ROLE|JWT_SECRET/i);
   assert.match(source, /new AbortController\(\)/);
   assert.match(source, /listeners\.abort\(\)/);
+  assert.match(source, /createOperatorAutoRefresh\(\{[\s\S]*moduleKey: "workforce"[\s\S]*background: true/);
+  assert.match(source, /autoRefresh\.dispose\(\)/);
   assert.doesNotMatch(source, /(create|update|delete|upload)_workforce|client\.(from|functions)|fetch\(/i);
 });
 
@@ -77,7 +104,7 @@ test("embedded dashboard and generic child use the same dedicated Workforce init
     readFile(new URL("../assets/js/operator-module-registry.mjs", import.meta.url), "utf8"),
     readFile(new URL("../operator/window/index.html", import.meta.url), "utf8"),
   ]);
-  assert.match(dashboard, /import \{ initializeOperatorWorkforce \} from "\.\/operator-workforce\.mjs\?v=20260902-login-stability"/);
+  assert.match(dashboard, /import \{ initializeOperatorWorkforce \} from "\.\/operator-workforce\.mjs\?v=20260903-auto-refresh-8s"/);
   assert.match(dashboard, /activeModule === "workforce"\) \{\s*initializeOperatorWorkforce\(document, client, currentIdentity, \{ onAuthorizationFailure \}\);\s*return currentIdentity;\s*\}/);
   assert.match(dashboardHtml, /data-operator-window-module="workforce"[^>]*data-operator-window-slot="main"/);
   assert.doesNotMatch(dashboardHtml, /Deze module wordt in een volgende fase aangesloten/);

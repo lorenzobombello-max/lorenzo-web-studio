@@ -1,3 +1,5 @@
+import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VACANCY_FIELDS = Object.freeze(["title", "department", "location", "employment_type", "summary", "description", "requirements"]);
 const VACANCY_KEYS = Object.freeze(["id", ...VACANCY_FIELDS, "slug", "status", "published_at", "closed_at", "created_at", "updated_at"]);
@@ -100,11 +102,13 @@ function createControllerState({ initialState, readRequest, readResponse, readEr
   let generation = 0;
   let disposed = false;
   const notify = ()=>{ if (!disposed) onChange({ ...current }); };
-  async function run(request, response, errorMessage, mode) {
+  async function run(request, response, errorMessage, mode, { background = false } = {}) {
     if (disposed || current.mutating) return false;
     const requestGeneration = ++generation;
-    current = { ...current, [mode]: true, error: null };
-    notify();
+    if (!background) {
+      current = { ...current, [mode]: true, error: null };
+      notify();
+    }
     try {
       const value = response(await execute(request));
       if (disposed || requestGeneration !== generation) return false;
@@ -113,6 +117,7 @@ function createControllerState({ initialState, readRequest, readResponse, readEr
       return true;
     } catch {
       if (disposed || requestGeneration !== generation) return false;
+      if (background) return false;
       current = { ...current, [mode]: false, error: errorMessage };
       notify();
       return false;
@@ -120,7 +125,7 @@ function createControllerState({ initialState, readRequest, readResponse, readEr
   }
   return {
     get state() { return { ...current }; },
-    refresh: ()=>run(readRequest, readResponse, readError, "loading"),
+    refresh: (options)=>run(readRequest, readResponse, readError, "loading", options),
     mutate: (request, response=(value)=>value)=>run(request, response, "De wijziging kon niet worden opgeslagen.", "mutating"),
     dispose() { disposed = true; generation += 1; },
   };
@@ -294,6 +299,16 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
 
   controller = createRecruitmentVacancyController({ execute, onChange: render });
   publicationController = createRecruitmentPublicationController({ execute, onChange: renderPublication });
+  const panel = list.closest?.("[data-module-panel]");
+  const autoRefresh = createOperatorAutoRefresh({
+    moduleKey: "recruitment",
+    refresh: (options)=>Promise.all([controller.refresh(options), publicationController.refresh(options)]),
+    isActive: ()=>!panel?.hidden,
+    isBlocked: ()=>[workDialog, statusDialog, publicationDialog].some((dialog)=>dialog.open)
+      || controller.state.mutating || publicationController.state.mutating,
+    documentTarget: root,
+    windowTarget: root.defaultView,
+  });
   listen(publicationAction, "click", ()=>{
     const activating = publicationController.state.enabled === false;
     lastTrigger = publicationAction;
@@ -341,10 +356,11 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
   void controller.refresh();
   return Object.freeze({
     get state() { return controller.state; },
-    refresh: ()=>Promise.all([controller.refresh(), publicationController.refresh()]),
+    refresh: (options)=>Promise.all([controller.refresh(options), publicationController.refresh(options)]),
     dispose() {
       if (disposed) return;
       disposed = true;
+      autoRefresh.dispose();
       listenerController.abort();
       controller.dispose();
       publicationController.dispose();

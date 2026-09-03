@@ -116,6 +116,19 @@ select
   'SDF Fixture ' || series, 'sdf' || series || '@example.test', 'Queue fixture.', true, 'approved'
 from generate_series(100, 126) as series;
 
+insert into public.sdf_qualification_intakes(
+  intake_id, quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+)
+select
+  ('fc' || lpad(series::text, 6, '0') || '-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+  ('fb' || lpad(series::text, 6, '0') || '-0000-4000-8000-' || lpad(series::text, 12, '0'))::uuid,
+  'submitted', encode(extensions.digest(convert_to(series::text, 'UTF8'), 'sha256'), 'hex'),
+  'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  '2100-01-01T00:00:00Z',
+  '2099-01-03T10:00:00Z'::timestamptz + make_interval(mins => series - 100)
+from generate_series(100, 126) as series;
+
 create temporary table queue_delivered_approval_payload as
 select jsonb_build_object(
   'contract_version', 1,

@@ -28,6 +28,11 @@ function cleanup() {
     begin;
     set local session_replication_role = replica;
     delete from lws_internal.application_intake_automation_work where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignment_commands where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignment_events where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignments where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_state_events where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_states where quote_request_id = '${requestId}';
     delete from lws_internal.dossier_identity_anchors where quote_request_id = '${requestId}';
     delete from public.quote_requests where id = '${requestId}';
     commit;

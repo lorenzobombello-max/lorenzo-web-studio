@@ -1,4 +1,6 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+
 const FINANCE_TABS = new Set(["overview", "websites", "sdf", "workforce", "expenses", "inbox", "owner"]);
 const AUTHORIZATION_FAILURE = /AUTHENTICATION_REQUIRED|HUMAN_JWT_REQUIRED|OPERATOR_NOT_ACTIVE|OWNER_REQUIRED|WORKSPACE_MODULE_NOT_AUTHORIZED/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -290,24 +292,30 @@ export function createOperatorFinanceController({ loadTab, onChange = ()=>{} }) 
   const state = ()=>({ activeTab, loading, error, loaded: new Set(loaded) });
   const notify = ()=>{ if (!disposed) onChange(state()); };
 
-  async function activate(tab, { force = false } = {}) {
+  async function activate(tab, { force = false, background = false } = {}) {
     if (disposed || !FINANCE_TABS.has(tab)) return false;
     activeTab = tab;
-    error = null;
     const requestGeneration = ++generation;
-    notify();
+    if (!background) {
+      error = null;
+      notify();
+    }
     if (loaded.has(tab) && !force) return true;
-    loading = true;
-    notify();
+    if (!background) {
+      loading = true;
+      notify();
+    }
     try {
       await loadTab(tab, ()=>!disposed && requestGeneration === generation && activeTab === tab);
       if (disposed || requestGeneration !== generation) return false;
       loaded.add(tab);
       loading = false;
+      error = null;
       notify();
       return true;
     } catch (caught) {
       if (disposed || requestGeneration !== generation) return false;
+      if (background) return false;
       loading = false;
       error = caught;
       notify();
@@ -318,7 +326,7 @@ export function createOperatorFinanceController({ loadTab, onChange = ()=>{} }) 
   return {
     get state() { return state(); },
     activate,
-    refresh: ()=>activate(activeTab, { force: true }),
+    refresh: (options = {})=>activate(activeTab, { ...options, force: true }),
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -531,6 +539,14 @@ export function initializeOperatorFinance(root, client, identity, { onAuthorizat
     },
     onChange: present,
   });
+  const autoRefresh = createOperatorAutoRefresh({
+    moduleKey: "finance",
+    refresh: ()=>controller.refresh({ background: true }),
+    isActive: ()=>!shell.hidden,
+    isBlocked: ()=>FINANCE_DIALOG_IDS.some((id)=>root.getElementById(id)?.open),
+    documentTarget: root,
+    windowTarget: root.defaultView,
+  });
 
   const expenseForm = root.getElementById("businessExpenseForm");
   if (expenseForm) {
@@ -655,6 +671,7 @@ export function initializeOperatorFinance(root, client, identity, { onAuthorizat
   controller.dispose = ()=>{
     if (disposed) return;
     disposed = true;
+    autoRefresh.dispose();
     listeners.abort();
     writes.dispose();
     disposeController();

@@ -22,6 +22,7 @@ select col_has_default('public', 'operator_messages', 'created_at', 'creation ti
 select has_function('public', 'send_operator_message_v1', array['text','uuid','text'], 'scope-aware send authority exists');
 select has_function('public', 'list_operator_messages_v1', array['text','integer'], 'mailbox list authority exists');
 select has_function('public', 'mark_operator_message_read_v1', array['uuid'], 'recipient read authority exists');
+select has_function('public', 'is_current_active_operator_v1', array['uuid'], 'bounded Realtime recipient predicate exists');
 select ok(
   to_regprocedure('public.send_operator_message_v1(text,uuid[],text)') is null,
   'send authority accepts no client-forged recipient array'
@@ -31,9 +32,39 @@ select ok(
   and not has_table_privilege('authenticated', 'public.operator_messages', 'select,insert,update,delete')
   and not has_table_privilege('service_role', 'public.operator_messages', 'select,insert,update,delete')
   and not has_table_privilege('anon', 'public.operator_message_recipients', 'select,insert,update,delete')
-  and not has_table_privilege('authenticated', 'public.operator_message_recipients', 'select,insert,update,delete')
+  and has_table_privilege('authenticated', 'public.operator_message_recipients', 'select')
+  and not has_table_privilege('authenticated', 'public.operator_message_recipients', 'insert,update,delete')
   and not has_table_privilege('service_role', 'public.operator_message_recipients', 'select,insert,update,delete'),
-  'runtime roles have no direct message or recipient-table authority'
+  'Realtime grants authenticated read-only delivery visibility while message content and every mutation remain closed'
+);
+select ok(
+  exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'operator_message_recipients'
+      and policyname = 'operator_message_recipients_realtime_select_v1'
+      and roles = array['authenticated']::name[]
+      and cmd = 'SELECT'
+  ),
+  'recipient delivery Realtime visibility has one authenticated SELECT policy'
+);
+select ok(
+  exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'operator_message_recipients'
+  )
+  and not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'operator_messages'
+  ),
+  'Realtime publishes delivery invalidations without publishing message content'
 );
 select ok(
   has_function_privilege('authenticated', 'public.send_operator_message_v1(text,uuid,text)', 'execute')
@@ -148,6 +179,20 @@ select ok(not exists(
     and recipient_operator_id in ('f2010000-0000-4000-8000-000000000001','f2010000-0000-4000-8000-000000000004')
 ), 'broadcast excludes sender and inactive identities');
 select is((select count(*)::integer from public.operator_messages where id in (select id from message_fixture)), 2, 'personal and broadcast each retain one canonical message body');
+
+select set_config('request.jwt.claim.sub', 'f2000000-0000-4000-8000-000000000002', true);
+set local role authenticated;
+select is(
+  (select count(*)::integer from public.operator_message_recipients),
+  2,
+  'Realtime recipient sees only their own personal and broadcast delivery rows'
+);
+select throws_ok(
+  $$select count(*) from public.operator_messages$$,
+  '42501', null, 'Realtime recipient cannot read canonical message content directly'
+);
+reset role;
+select set_config('request.jwt.claim.sub', 'f2000000-0000-4000-8000-000000000001', true);
 select is(jsonb_array_length(public.list_operator_messages_v1('sent', 50)), 2, 'sender sees each canonical message once in sent items');
 select is(
   (public.list_operator_messages_v1('sent', 50)->0->>'recipient_count')::integer,

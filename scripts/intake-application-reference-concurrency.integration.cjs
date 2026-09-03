@@ -23,20 +23,38 @@ function run(sql) {
 
 const requestValues = [];
 const intakeValues = [];
+const requestIds = [];
+const intakeIds = [];
 for (let index = 1; index <= fixtureCount; index += 1) {
   const suffix = String(index).padStart(12, "0");
   const tokenCharacter = "123456789abc"[index - 1];
-  requestValues.push(`('19b30000-0000-4000-8000-${suffix}','Concurrent ${index}','concurrent-${index}@example.test','business','Meer dan EUR 6.000','flexible','Concurrency fixture',true,'approved','budget_guard_v2','above_6000')`);
-  intakeValues.push(`('19b31000-0000-4000-8000-${suffix}','19b30000-0000-4000-8000-${suffix}',repeat('${tokenCharacter}',64),clock_timestamp()+interval '1 day')`);
+  const requestId = `19b3${String(index).padStart(4, "0")}-0000-4000-8000-${suffix}`;
+  const intakeId = `19b4${String(index).padStart(4, "0")}-0000-4000-8000-${suffix}`;
+  requestIds.push(requestId);
+  intakeIds.push(intakeId);
+  requestValues.push(`('${requestId}','Concurrent ${index}','concurrent-${index}@example.test','business','Meer dan EUR 6.000','flexible','Concurrency fixture',true,'approved','budget_guard_v2','above_6000')`);
+  intakeValues.push(`('${intakeId}','${requestId}',repeat('${tokenCharacter}',64),clock_timestamp()+interval '1 day')`);
 }
 
 query(`
-  delete from public.quote_request_intakes where id::text like '19b31000-0000-4000-8000-%';
-  delete from public.quote_requests where id::text like '19b30000-0000-4000-8000-%';
+  begin;
+  set local session_replication_role = replica;
+  delete from public.quote_request_intakes where id in (${intakeIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.intake_identity_anchors where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.application_intake_automation_work where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.operator_dossier_assignment_commands where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.operator_dossier_assignment_events where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.operator_dossier_assignments where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.operator_dossier_state_events where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.operator_dossier_states where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from lws_internal.dossier_identity_anchors where quote_request_id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  delete from public.quote_requests where id in (${requestIds.map((id)=>`'${id}'`).join(",")});
+  set local session_replication_role = origin;
   insert into public.quote_requests(id,name,email,website_type,budget,timing,description,privacy_consent,status,budget_category_scheme,budget_category_code)
   values ${requestValues.join(",")};
   insert into public.quote_request_intakes(id,quote_request_id,access_token_hash,access_token_expires_at)
   values ${intakeValues.join(",")};
+  commit;
 `);
 
 Promise.all(Array.from({ length: fixtureCount }, (_, offset) => {
@@ -60,7 +78,7 @@ Promise.all(Array.from({ length: fixtureCount }, (_, offset) => {
       'max_sequence',max(right(application_reference,4)::integer)
     )
     from public.quote_requests
-    where id::text like '19b30000-0000-4000-8000-%';
+    where id in (${requestIds.map((id)=>`'${id}'`).join(",")});
   `);
   const parsed = JSON.parse(summary);
   if (parsed.count !== fixtureCount || parsed.unique_count !== fixtureCount || parsed.format_count !== fixtureCount) {

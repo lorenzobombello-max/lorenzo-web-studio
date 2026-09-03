@@ -71,9 +71,11 @@ select throws_matching(
 
 create temporary table phase2_quote_result as
 select *
-from public.create_quote_request_idempotent_v2(
+from public.create_quote_request_idempotent(
   '20000000-0000-0000-0000-000000000001',
   repeat('9', 64),
+  'website',
+  null,
   'V2 quote test',
   'individual',
   null,
@@ -97,24 +99,22 @@ from public.create_quote_request_idempotent_v2(
   repeat('8', 64),
   clock_timestamp() + interval '1 day',
   repeat('7', 64),
-  'phase2-test',
-  'budget_guard_v1',
-  '3200_to_6000_inclusive'
+  'phase2-test'
 );
 
 select is(
   (select was_created from phase2_quote_result),
   true,
-  'new quote caller can use the additive v2 RPC'
+  'new quote caller can use the current request-kind-aware RPC'
 );
 select is(
   (
-    select request.budget_category_code
+    select request.budget
     from public.quote_requests as request
     inner join phase2_quote_result as result on result.request_id = request.id
   ),
-  '3200_to_6000_inclusive',
-  'quote v2 RPC stores the stable category without changing legacy RPCs'
+  'EUR 3.200 t/m EUR 6.000',
+  'current quote RPC preserves the governed website budget label'
 );
 
 select is(

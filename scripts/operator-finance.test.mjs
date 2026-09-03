@@ -32,6 +32,12 @@ test("embedded dashboard and generic child use the same Finance initializer", as
   }
 });
 
+test("mobile Finance tabs scroll inside the module without widening the page", async () => {
+  const css = await read("assets/css/operator-dashboard.css");
+  assert.match(css, /@media \(max-width:540px\) \{ \.finance-tabs \{ margin-inline:0; padding-inline:0; \}/);
+  assert.doesNotMatch(css, /@media \(max-width:540px\) \{ \.finance-tabs \{ margin-inline:-\.75rem;/);
+});
+
 test("standalone Finance owns every existing write flow and dashboard has no dead legacy runtime", async () => {
   const [finance, dashboard] = await Promise.all([
     read("assets/js/operator-finance.mjs"),
@@ -84,6 +90,27 @@ test("Finance controller suppresses stale loads and disposal is terminal", async
   assert.equal(await expenses, false);
   assert.equal(await controller.refresh(), false);
   assert.equal(states.at(-1).activeTab, "expenses");
+});
+
+test("Finance background refresh preserves the active tab and valid state through failure", async () => {
+  const { createOperatorFinanceController } = await import("../assets/js/operator-finance.mjs");
+  const responses = [true, new Error("TEMPORARY"), true];
+  const states = [];
+  const controller = createOperatorFinanceController({
+    loadTab: async ()=>{
+      const response = responses.shift();
+      if (response instanceof Error) throw response;
+    },
+    onChange: (state)=>states.push(state),
+  });
+  assert.equal(await controller.activate("websites"), true);
+  const renderCount = states.length;
+  assert.equal(await controller.refresh({ background: true }), false);
+  assert.equal(states.length, renderCount);
+  assert.equal(controller.state.activeTab, "websites");
+  assert.equal(await controller.refresh({ background: true }), true);
+  assert.equal(controller.state.activeTab, "websites");
+  controller.dispose();
 });
 
 test("Finance initializer rejects every non-owner role", async () => {
@@ -153,4 +180,12 @@ test("Finance write authority uses bounded server contracts and fails closed", a
   assert.throws(()=>authority.command("arbitrary_rpc", { id: documentId, revision: 1 }), /FINANCE_COMMAND_NOT_ALLOWED/);
   authority.dispose();
   await assert.rejects(()=>authority.createExpense({ supplier_name: "L", description: "D", category: "other", amount: "1", expense_date: "2026-09-02" }), /FINANCE_DISPOSED/);
+});
+
+test("Finance auto-refresh is active-tab only, dialog guarded, and disposable", async () => {
+  const source = await read("assets/js/operator-finance.mjs");
+  assert.match(source, /createOperatorAutoRefresh\(\{[\s\S]*moduleKey: "finance"[\s\S]*controller\.refresh\(\{ background: true \}\)/);
+  assert.match(source, /FINANCE_DIALOG_IDS\.some\(\(id\)=>root\.getElementById\(id\)\?\.open\)/);
+  assert.match(source, /autoRefresh\.dispose\(\)/);
+  assert.doesNotMatch(source, /location\.reload|window\.location\.reload/);
 });

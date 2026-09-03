@@ -92,6 +92,13 @@ insert into public.quote_requests(
   ('ea110001-0000-4000-8000-000000000001', 'production', 'slimme_documentenflow', 'start', statement_timestamp() - interval '2 days', 'Customer L', 'l@example.test', 'Valid fixture.', true, 'approved'),
   ('ea110002-0000-4000-8000-000000000002', 'internal_e2e', 'slimme_documentenflow', 'start', statement_timestamp() - interval '2 hours', 'Customer M', 'm@example.test', 'Valid fixture.', true, 'approved');
 
+insert into public.sdf_qualification_intakes(
+  intake_id, quote_request_id, status, customer_capability_digest,
+  customer_capability_encrypted, customer_capability_expires_at, submitted_at
+) values
+  ('ea210001-0000-4000-8000-000000000001', 'ea110001-0000-4000-8000-000000000001', 'submitted', repeat('a', 64), 'v1.AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', statement_timestamp() + interval '1 year', statement_timestamp() - interval '2 days'),
+  ('ea210002-0000-4000-8000-000000000002', 'ea110002-0000-4000-8000-000000000002', 'submitted', repeat('b', 64), 'v1.BBBBBBBBBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', statement_timestamp() + interval '1 year', statement_timestamp() - interval '2 hours');
+
 insert into public.quote_request_intakes(
   id, quote_request_id, access_token_hash, access_token_expires_at, status,
   started_at, submitted_at, reviewed_at, confirmation

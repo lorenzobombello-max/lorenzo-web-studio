@@ -94,6 +94,7 @@ $requiredFiles = @(
   "assets/js/sdf-qualification-stepper.mjs",
   "assets/js/operator-auth-client.mjs",
   "assets/js/operator-auth-core.mjs",
+  "assets/js/operator-auto-refresh.mjs",
   "assets/js/operator-callback.mjs",
   "assets/js/operator-dashboard-contract.js",
   "assets/js/operator-dashboard-guard.mjs",

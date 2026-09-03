@@ -93,6 +93,46 @@ test("Recruitment controllers dispose pending work without later state or DOM ca
   assert.equal(await publicationController.refresh(), false);
 });
 
+test("Recruitment background refresh preserves valid state and recovers after failure", async ()=>{
+  const vacancyResponses = [[vacancy], new Error("TEMPORARY"), [{ ...vacancy, title: "Bijgewerkt" }]];
+  const publicationResponses = [{ enabled: false }, new Error("TEMPORARY"), { enabled: true }];
+  const vacancyRenders = [];
+  const publicationRenders = [];
+  const vacancyController = createRecruitmentVacancyController({
+    execute: async ()=>{
+      const response = vacancyResponses.shift();
+      if (response instanceof Error) throw response;
+      return response;
+    },
+    onChange: (state)=>vacancyRenders.push(state),
+  });
+  const publicationController = createRecruitmentPublicationController({
+    execute: async ()=>{
+      const response = publicationResponses.shift();
+      if (response instanceof Error) throw response;
+      return response;
+    },
+    onChange: (state)=>publicationRenders.push(state),
+  });
+  await Promise.all([vacancyController.refresh(), publicationController.refresh()]);
+  const renderCounts = [vacancyRenders.length, publicationRenders.length];
+  assert.deepEqual(await Promise.all([
+    vacancyController.refresh({ background: true }),
+    publicationController.refresh({ background: true }),
+  ]), [false, false]);
+  assert.deepEqual([vacancyRenders.length, publicationRenders.length], renderCounts);
+  assert.equal(vacancyController.state.items[0].title, vacancy.title);
+  assert.equal(publicationController.state.enabled, false);
+  await Promise.all([
+    vacancyController.refresh({ background: true }),
+    publicationController.refresh({ background: true }),
+  ]);
+  assert.equal(vacancyController.state.items[0].title, "Bijgewerkt");
+  assert.equal(publicationController.state.enabled, true);
+  vacancyController.dispose();
+  publicationController.dispose();
+});
+
 test("Recruitment initializer rejects browser identity that is not owner before any RPC", ()=>{
   let rpcCalls = 0;
   const root = { getElementById: (id)=>id === "recruitmentVacancyList" ? { dataset: {} } : null };
@@ -106,4 +146,6 @@ test("Recruitment module has no Website SDF mixed-gateway or local-only dependen
   assert.doesNotMatch(source, /localhost|127\.0\.0\.1|Mailpit|Playwright|SERVICE_ROLE|JWT_SECRET/);
   assert.match(source, /new AbortController\(\)/);
   assert.match(source, /listenerController\.abort\(\)/);
+  assert.match(source, /createOperatorAutoRefresh\(\{[\s\S]*moduleKey: "recruitment"[\s\S]*publicationController\.refresh\(options\)/);
+  assert.match(source, /autoRefresh\.dispose\(\)/);
 });

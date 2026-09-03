@@ -1,3 +1,5 @@
+import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CALENDAR_VIEWS = new Set(["day", "week", "month", "year"]);
 const CALENDAR_STATUSES = Object.freeze({
@@ -124,15 +126,17 @@ export function createOperatorCalendarController({ model, load, onChange = ()=>{
   let disposed = false;
   const state = ()=>({ ...model.snapshot(), loading, error });
   const notify = ()=>{ if (!disposed) onChange(state()); };
-  async function reload() {
+  async function reload({ background = false } = {}) {
     if (disposed) return false;
     const request = model.snapshot().range;
     const key = `${request.start_date}:${request.end_date}`;
     if (pendingKey === key && pendingPromise) return await pendingPromise;
     const requestGeneration = ++generation;
-    loading = true;
-    error = null;
-    notify();
+    if (!background) {
+      loading = true;
+      error = null;
+      notify();
+    }
     const task = (async ()=>{
       try {
         const result = operatorCalendarResponse(await load(request), request);
@@ -143,6 +147,7 @@ export function createOperatorCalendarController({ model, load, onChange = ()=>{
         return true;
       } catch {
         if (disposed || requestGeneration !== generation) return false;
+        if (background) return false;
         loading = false;
         error = "Kalendergegevens konden niet worden geladen.";
         notify();
@@ -243,13 +248,21 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     return data;
   };
   controller = createOperatorCalendarController({ model: createOperatorCalendarModel(), load, onChange: render });
+  const panel = viewport.closest?.("[data-module-panel]");
+  const autoRefresh = createOperatorAutoRefresh({
+    moduleKey: "calendar",
+    refresh: ()=>controller.reload({ background: true }),
+    isActive: ()=>!panel?.hidden,
+    documentTarget: root,
+    windowTarget: root.defaultView,
+  });
   const signal = listeners.signal;
   for (const button of viewButtons) button.addEventListener("click", ()=>{ void controller.setView(button.dataset.calendarView); }, { signal });
   root.getElementById("calendarPrevious").addEventListener("click", ()=>{ void controller.navigate(-1); }, { signal });
   root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); }, { signal });
   root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); }, { signal });
   const dispose = controller.dispose.bind(controller);
-  controller.dispose = ()=>{ listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
+  controller.dispose = ()=>{ autoRefresh.dispose(); listeners.abort(); dispose(); delete viewport.operatorCalendarController; };
   viewport.operatorCalendarController = controller;
   render();
   void controller.reload();

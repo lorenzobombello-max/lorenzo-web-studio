@@ -243,6 +243,15 @@ select uploaded_file_id,pg_temp.qf5b_uuid('qf5b-customer-request'),quote_request
 from qf5b_fixture;
 
 select set_config('request.jwt.claim.sub',pg_temp.qf5b_uuid('qf5b-owner-auth')::text,true);
+select public.confirm_sdf_scope_classification_v1(
+  quote_request_id,
+  (select submission.submission_id
+   from public.sdf_qualification_intakes intake
+   join public.sdf_qualification_intake_submissions submission using (intake_id)
+   where intake.quote_request_id=qf5b_fixture.quote_request_id),
+  'standard',false,'start',pg_temp.qf5b_uuid('qf5b-classification-key')
+)
+from qf5b_fixture;
 create temporary table qf5b_requirement as
 select uploaded_file_id,(public.create_sdf_document_requirement_v1(
   quote_request_id,'invoice',1

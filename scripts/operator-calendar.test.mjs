@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   calendarStatusPresentation,
@@ -55,4 +56,30 @@ test("calendar controller deduplicates an identical pending range", async ()=>{
   resolveLoad(emptyResult);
   assert.equal(await first, true);
   assert.equal(await second, true);
+});
+
+test("calendar background refresh preserves the current view through failure and recovery", async ()=>{
+  const model = createOperatorCalendarModel({ today: ()=>new Date("2026-08-30T12:00:00Z") });
+  const responses = [emptyResult, new Error("TEMPORARY"), emptyResult];
+  const renders = [];
+  const controller = createOperatorCalendarController({
+    model,
+    load: async ()=>{
+      const response = responses.shift();
+      if (response instanceof Error) throw response;
+      return response;
+    },
+    onChange: (state)=>renders.push(state),
+  });
+  await controller.reload();
+  const renderCount = renders.length;
+  assert.equal(await controller.reload({ background: true }), false);
+  assert.equal(renders.length, renderCount);
+  assert.deepEqual(controller.state.range, range);
+  assert.equal(await controller.reload({ background: true }), true);
+  assert.deepEqual(controller.state.range, range);
+  const source = await readFile(new URL("../assets/js/operator-calendar.mjs", import.meta.url), "utf8");
+  assert.match(source, /createOperatorAutoRefresh\(\{[\s\S]*moduleKey: "calendar"[\s\S]*background: true/);
+  assert.match(source, /autoRefresh\.dispose\(\)/);
+  controller.dispose();
 });

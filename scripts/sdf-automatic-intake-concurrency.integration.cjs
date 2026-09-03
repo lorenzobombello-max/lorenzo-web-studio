@@ -37,6 +37,10 @@ function cleanup() {
     delete from public.sdf_qualification_intake_events where intake_id in (select intake_id from public.sdf_qualification_intakes where quote_request_id = '${requestId}');
     delete from public.sdf_qualification_intakes where quote_request_id = '${requestId}';
     delete from lws_internal.application_intake_automation_work where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignment_commands where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignment_events where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_assignments where quote_request_id = '${requestId}';
+    delete from lws_internal.operator_dossier_state_events where quote_request_id = '${requestId}';
     delete from lws_internal.operator_dossier_states where quote_request_id = '${requestId}';
     delete from lws_internal.dossier_identity_anchors where quote_request_id = '${requestId}';
     delete from public.quote_requests where id = '${requestId}';

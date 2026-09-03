@@ -78,11 +78,11 @@ select is(
 );
 select is(
   (select access_token_expires_at - created_at from public.quote_request_intakes where access_token_hash = repeat('d', 64)),
-  interval '7 days', 'legacy constructor uses seven-day expiry'
+  interval '14 days', 'legacy constructor uses fourteen-day expiry'
 );
 select is(
   (select access_token_expires_at - created_at from public.quote_request_intakes where access_token_hash = repeat('e', 64)),
-  interval '7 days', 'invitation constructor uses seven-day expiry'
+  interval '14 days', 'invitation constructor uses fourteen-day expiry'
 );
 select is(
   (select access_token_expires_at - created_at from public.quote_request_intakes where access_token_hash = repeat('d', 64)),
