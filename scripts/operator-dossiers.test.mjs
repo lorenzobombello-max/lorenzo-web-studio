@@ -182,10 +182,24 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
     quote_request_id: "50000000-0000-4000-8000-000000000005", intake_id: "60000000-0000-4000-8000-000000000006",
     name: "Bestaande aanvraag", organization: null, support_reference: "#5C19F9DD", email: "existing@example.test",
     phone: null, request_kind: "website", website_type: "Website op maat", intake_status: "invited", retention_state: "ACTIVE",
-    dossier_state: "ACTIVE", dossier_revision: 0,
+    dossier_state: "ACTIVE", dossier_revision: 0, invitation_created_at: "2026-09-03T05:33:00Z",
   };
   assert.deepEqual(validateDossierListPage({ items: [] }, "list_pending_intakes"), { items: [], hasMore: false, nextCursor: null });
-  assert.equal(validateDossierListPage({ items: [pending] }, "list_pending_intakes").items[0].zone, "PENDING");
+  assert.deepEqual(
+    validateDossierListPage({ items: [pending] }, "list_pending_intakes").items[0],
+    {
+      raw: pending,
+      kind: "pending",
+      locator: { quote_request_id: pending.quote_request_id },
+      reference: "#5C19F9DD",
+      name: "Bestaande aanvraag",
+      company: "",
+      product: "Website",
+      requestedAt: "2026-09-03T05:33:00Z",
+      status: "invited",
+      zone: "PENDING",
+    },
+  );
   assert.throws(()=>validateDossierListPage({ items: [] }), /INVALID_DOSSIER_LIST_RESPONSE/);
   assert.throws(()=>validateDossierListPage({ items: [pending], error: "hidden" }, "list_pending_intakes"), /INVALID_PENDING_DOSSIER_LIST_RESPONSE/);
   assert.deepEqual(dossierLifecycleRequest("archive_dossier", detail, " Gereed ", "20000000-0000-4000-8000-000000000002"), {
@@ -382,10 +396,34 @@ test("Dossiers present Belgian dates, a labelled reference, and persistent acces
   ]);
   assert.match(source, /Dossierreferentie <strong data-dossiers-field="reference">/);
   assert.match(source, /button\.setAttribute\("aria-selected", String\(selected\)\)/);
+  assert.match(source, /company\.textContent = item\.company \|\| "Niet beschikbaar"/);
+  assert.match(source, /metadata\.textContent = `\$\{item\.product\} · \$\{formatOperatorDate\(item\.requestedAt\)/);
+  assert.match(source, /identity\.append\(name, company, metadata, reference\)/);
   assert.match(source, /renderList\(workspace, state\.items, summary\.reference\)/);
   assert.match(css, /\.application-list__button\[aria-current="true"\]:hover/);
   assert.match(css, /\.dossiers-list \.application-list__button\[aria-current="true"\][^}]*background:#d9f3f0/);
+  assert.match(css, /\.dossiers-list__company[^}]*overflow-wrap:anywhere/);
   assert.match(css, /\.dossiers-actions\[hidden\],\.dossiers-actions \[hidden\]/);
+});
+
+test("Dossiers cards preserve distinguishing list data for customers with the same name", async () => {
+  const { validateDossierListPage } = await import("../assets/js/operator-dossiers.mjs");
+  const items = Array.from({ length: 4 }, (_, index)=>({
+    quote_request_id: `70000000-0000-4000-8000-00000000000${index + 1}`,
+    application_reference: `LWS-AAN-2026-000${index + 1}`,
+    support_reference: `#7000000${index + 1}`,
+    name: "Lorenzo Bombello",
+    organization: `Bedrijf ${index + 1}`,
+    request_kind: index % 2 === 0 ? "website" : "slimme_documentenflow",
+    dossier_date: `2026-09-03T0${index + 5}:33:00Z`,
+    operational_status: index % 2 === 0 ? "SUBMITTED" : "REVIEWED",
+    zone: "ACTIVE",
+  }));
+  const summaries = validateDossierListPage({ items, has_more: false, next_cursor: null }).items;
+  assert.equal(new Set(summaries.map((item)=>item.name)).size, 1);
+  for (const field of ["company", "product", "requestedAt", "reference", "status"]) {
+    assert.ok(new Set(summaries.map((item)=>item[field])).size > 1, `${field} must distinguish equal names`);
+  }
 });
 
 test("Pending retention and trash-first lifecycle commands remain server-bound", async () => {

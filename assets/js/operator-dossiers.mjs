@@ -479,7 +479,17 @@ function applicationSummary(item) {
   if (!item || typeof item !== "object") throw new Error("INVALID_DOSSIER_LIST_RESPONSE");
   const locator = dossierLocator(item);
   const reference = dossierReference(item) || Object.values(locator)[0];
-  return { raw: item, locator, reference, name: String(item.organization || item.name || reference), status: String(item.operational_status || item.status || "ONBEKEND"), zone: String(item.zone || "ACTIVE") };
+  return {
+    raw: item,
+    locator,
+    reference,
+    name: String(item.name || reference),
+    company: String(item.organization || ""),
+    product: item.request_kind === "website" ? "Website" : "Slimme Documentenflow",
+    requestedAt: item.dossier_date,
+    status: String(item.operational_status || item.status || "ONBEKEND"),
+    zone: String(item.zone || "ACTIVE"),
+  };
 }
 
 function pendingSummary(item) {
@@ -496,7 +506,10 @@ function pendingSummary(item) {
     kind: "pending",
     locator: { quote_request_id: item.quote_request_id },
     reference: item.support_reference,
-    name: String(item.organization || item.name),
+    name: item.name,
+    company: String(item.organization || ""),
+    product: item.request_kind === "website" ? "Website" : "Slimme Documentenflow",
+    requestedAt: item.invitation_created_at,
     status: item.intake_status,
     zone: "PENDING",
   };
@@ -717,6 +730,8 @@ function renderList(workspace, items, selectedReference) {
     const button = list.ownerDocument.createElement("button");
     const identity = list.ownerDocument.createElement("span");
     const name = list.ownerDocument.createElement("strong");
+    const company = list.ownerDocument.createElement("span");
+    const metadata = list.ownerDocument.createElement("small");
     const reference = list.ownerDocument.createElement("small");
     const status = list.ownerDocument.createElement("span");
     button.type = "button";
@@ -726,12 +741,17 @@ function renderList(workspace, items, selectedReference) {
     button.setAttribute("aria-selected", String(selected));
     if (selected) button.setAttribute("aria-current", "true");
     name.textContent = item.name;
+    company.className = "dossiers-list__company";
+    company.textContent = item.company || "Niet beschikbaar";
+    metadata.className = "dossiers-list__metadata";
+    metadata.textContent = `${item.product} · ${formatOperatorDate(item.requestedAt).replace(" –", " ·")}`;
+    reference.className = "dossiers-list__reference";
     reference.textContent = item.reference;
     const presentedStatus = dossierStatus(item.status);
     button.dataset.dossiersStatus = item.status;
     status.className = `badge ${presentedStatus.className}`.trim();
     status.textContent = presentedStatus.label;
-    identity.append(name, reference);
+    identity.append(name, company, metadata, reference);
     button.append(identity, status);
     row.append(button);
     list.append(row);
