@@ -99,6 +99,7 @@ $requiredFiles = @(
   "assets/js/operator-dashboard-contract.js",
   "assets/js/operator-dashboard-guard.mjs",
   "assets/js/operator-dashboard.js",
+  "assets/js/operator-calendar-leave.mjs",
   "assets/js/operator-calendar.mjs",
   "assets/js/operator-dossiers.mjs",
   "assets/js/operator-finance.mjs",

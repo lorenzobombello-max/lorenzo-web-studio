@@ -253,6 +253,7 @@ $operatorRequiredPaths = @(
   "assets/css/operator-window.css",
   "assets/js/operator-auth-core.mjs",
   "assets/js/operator-auth-client.mjs",
+  "assets/js/operator-calendar-leave.mjs",
   "assets/js/operator-calendar.mjs",
   "assets/js/operator-login.mjs",
   "assets/js/operator-callback.mjs",
