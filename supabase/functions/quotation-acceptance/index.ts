@@ -1,6 +1,22 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { handleQuotationAcceptance } from "../_shared/quotation-acceptance-handler.ts";
 import { deliverAcceptanceConfirmation } from "../_shared/quotation-email-orchestration.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
+
+export function resolveQuotationAcceptanceConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): { url: string; key: string } | null {
+  const url = environment.get("SUPABASE_URL");
+  if (!url) return null;
+  try {
+    return { url, key: getSupabaseServerSecretKey("default", environment) };
+  } catch {
+    return null;
+  }
+}
 
 async function confirmationIdempotencyKey(acceptanceId: string, audience: "customer" | "internal"): Promise<string> {
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`lws-quotation-acceptance-confirmation:v1:${audience}:${acceptanceId}`)));
@@ -11,9 +27,9 @@ async function confirmationIdempotencyKey(acceptanceId: string, audience: "custo
 }
 
 Deno.serve((request) => {
-  const url = Deno.env.get("SUPABASE_URL"); const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key) return new Response(JSON.stringify({ ok: false, state: "ACCEPTANCE_NOT_AVAILABLE" }), { status: 500, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-  const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const configuration = resolveQuotationAcceptanceConfiguration();
+  if (!configuration) return new Response(JSON.stringify({ ok: false, state: "ACCEPTANCE_NOT_AVAILABLE" }), { status: 500, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  const client = createClient(configuration.url, configuration.key, { auth: { persistSession: false, autoRefreshToken: false } });
   return handleQuotationAcceptance(request, client, async (acceptanceId) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
     const from = Deno.env.get("FROM_EMAIL") || "";
