@@ -269,9 +269,11 @@ function dependencies(overrides: Record<string, unknown> = {}) {
         };
       },
       executePendingIntakes: async (
+        requestJwt: string,
         _actorAuthUserId: string,
         retentionState: string,
       ) => {
+        events.push(requestJwt === jwt ? "caller-jwt" : "wrong-jwt");
         events.push("pending");
         events.push(retentionState);
         return {
@@ -4089,7 +4091,7 @@ Deno.test("pending-intake list uses preflight and returns only the safe DTO", as
     harness.deps,
   );
   assertEquals(response.status, 200);
-  assertEquals(harness.events, ["preflight", "pending", "ACTIVE"]);
+  assertEquals(harness.events, ["preflight", "caller-jwt", "pending", "ACTIVE"]);
   const body = await response.json();
   assertEquals(body.result.items[0].intake_status, "invited");
   assertEquals(body.result.items[0].started_at, null);
@@ -4098,6 +4100,18 @@ Deno.test("pending-intake list uses preflight and returns only the safe DTO", as
   assertEquals(body.result.items[0].reminder_2_sent_at, null);
   assertEquals("access_token_hash" in body.result.items[0], false);
   assertEquals("encrypted_payload" in body.result.items[0], false);
+});
+
+Deno.test("pending SDF list uses caller JWT at every transport callsite", async () => {
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const rpcCallsites = source.match(
+    /(?:serviceClient\(\)|clientFor\(jwt\))\.rpc\("list_operator_pending_sdf_intakes_v1"/g,
+  ) || [];
+  assertEquals(rpcCallsites.length, 3);
+  assertEquals(
+    rpcCallsites.every((callsite) => callsite.startsWith("clientFor(jwt)")),
+    true,
+  );
 });
 
 Deno.test("pending-intake list rejects extra input, unauthorized readers, and unsafe database responses", async () => {
@@ -4220,6 +4234,7 @@ Deno.test("pending-intake list and retention actions use fixed validated state",
   let archivedRetentionState = "";
   const archived = dependencies({
     executePendingIntakes: async (
+      _jwt: string,
       _actorAuthUserId: string,
       retentionState: string,
     ) => {

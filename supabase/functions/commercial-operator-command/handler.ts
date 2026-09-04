@@ -404,10 +404,14 @@ type CommercialOperatorDependencies = Readonly<{
     position: unknown,
   ): PromiseLike<OperatorListCoreResult>;
   executePendingIntakes(
+    jwt: string,
     actorAuthUserId: string,
     retentionState: string,
   ): PromiseLike<unknown>;
-  executePendingIntakeCount(actorAuthUserId: string): PromiseLike<unknown>;
+  executePendingIntakeCount(
+    jwt: string,
+    actorAuthUserId: string,
+  ): PromiseLike<unknown>;
   executeDossierSubstance(
     actorAuthUserId: string,
     quoteRequestId: string,
@@ -2457,6 +2461,7 @@ export async function handleCommercialOperator(
       if (input.action === "list_pending_intakes") {
         const result = validatePendingIntakesResult(
           await deps.executePendingIntakes(
+            jwt,
             user.id,
             String(input.retention_state),
           ),
@@ -2465,7 +2470,7 @@ export async function handleCommercialOperator(
       }
       if (input.action === "count_pending_intakes") {
         const result = validatePendingIntakeCountResult(
-          await deps.executePendingIntakeCount(user.id),
+          await deps.executePendingIntakeCount(jwt, user.id),
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }

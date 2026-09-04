@@ -1125,6 +1125,7 @@ if (import.meta.main) {
           return data;
         },
         executePendingIntakes: async (
+          jwt: string,
           actorAuthUserId: string,
           retentionState: string,
         ) => {
@@ -1139,19 +1140,19 @@ if (import.meta.main) {
           const websiteItems = normalizeWebsitePendingItems(data);
           if (!websiteItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
           if (retentionState !== "ACTIVE") return { items: websiteItems };
-          const sdf = await serviceClient().rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
           if (sdf.error) throw new Error(sdf.error.message);
           const sdfItems = normalizePendingSeenStateItems(sdf.data);
           if (!sdfItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
           return { items: [...websiteItems, ...sdfItems].sort((left, right) => String((right as Record<string, unknown>).last_activity_at).localeCompare(String((left as Record<string, unknown>).last_activity_at))) };
         },
-        executePendingIntakeCount: async (actorAuthUserId: string) => {
+        executePendingIntakeCount: async (jwt: string, actorAuthUserId: string) => {
           const { data, error } = await serviceClient().rpc(
             "count_operator_active_pending_intakes_v1",
             { p_actor_auth_user_id: actorAuthUserId },
           );
           if (error) throw new Error(error.message);
-          const sdf = await serviceClient().rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
           if (sdf.error) throw new Error(sdf.error.message);
           const sdfItems = (sdf.data as { items?: unknown[] } | null)?.items;
           if (!Array.isArray(sdfItems) || typeof (data as { active_count?: unknown } | null)?.active_count !== "number") throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
