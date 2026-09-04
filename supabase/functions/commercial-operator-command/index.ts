@@ -1160,10 +1160,11 @@ if (import.meta.main) {
           return { active_count: Number((data as { active_count: number }).active_count) + sdfItems.length };
         },
         executeDossierSubstance: async (
+          jwt: string,
           actorAuthUserId: string,
           quoteRequestId: string,
         ) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "get_operator_dossier_substance_v1",
             {
               p_actor_auth_user_id: actorAuthUserId,

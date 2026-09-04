@@ -414,6 +414,7 @@ type CommercialOperatorDependencies = Readonly<{
     actorAuthUserId: string,
   ): PromiseLike<unknown>;
   executeDossierSubstance(
+    jwt: string,
     actorAuthUserId: string,
     quoteRequestId: string,
   ): PromiseLike<unknown>;
@@ -2478,7 +2479,7 @@ export async function handleCommercialOperator(
       }
       if (input.action === "get_dossier_substance") {
         const result = validateDossierSubstanceResult(
-          await deps.executeDossierSubstance(user.id, String(input.quote_request_id)),
+          await deps.executeDossierSubstance(jwt, user.id, String(input.quote_request_id)),
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }

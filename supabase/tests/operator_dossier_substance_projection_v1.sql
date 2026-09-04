@@ -6,10 +6,10 @@ select plan(13);
 
 select has_function('public', 'get_operator_dossier_substance_v1', array['uuid', 'uuid'], 'dossier substance projection exists');
 select ok(
-  has_function_privilege('service_role', 'public.get_operator_dossier_substance_v1(uuid,uuid)', 'execute')
-  and not has_function_privilege('authenticated', 'public.get_operator_dossier_substance_v1(uuid,uuid)', 'execute')
+  has_function_privilege('authenticated', 'public.get_operator_dossier_substance_v1(uuid,uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.get_operator_dossier_substance_v1(uuid,uuid)', 'execute')
   and not has_function_privilege('anon', 'public.get_operator_dossier_substance_v1(uuid,uuid)', 'execute'),
-  'only service transport can execute dossier substance projection'
+  'only authenticated caller transport can execute dossier substance projection'
 );
 
 insert into auth.users(id, email) values
@@ -48,6 +48,13 @@ insert into public.sdf_qualification_intakes(
   '{"businessRequirements":{"currentWorkflow":"Handmatig","desiredWorkflow":"Geautomatiseerd","rolesUsers":["Boekhouding"]},"workflowCapabilities":["receive","archive"],"commercialQualification":{"packageDirection":"groei"}}'::jsonb
 );
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"ac100000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}',
+  true
+);
+set local role authenticated;
+
 select is(
   public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000001', 'ac120001-0000-4000-8000-000000000001') #>> '{request,original_text}',
   '<script>exact request</script>',
@@ -68,6 +75,8 @@ select is(
   'Handmatig',
   'SDF draft is projected through explicit keys'
 );
+reset role;
+
 insert into public.sdf_qualification_intake_submissions(
   submission_id, intake_id, submission_sequence, answers, taxonomy_version,
   payload_sha256, confirmation_version, confirmation_sha256
@@ -77,6 +86,12 @@ insert into public.sdf_qualification_intake_submissions(
   'sdf_qualification_intake/1.0.0', repeat('c', 64),
   'SDF_QUALIFICATION_CONFIRMATION_NL_BE_v1', repeat('d', 64)
 );
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"ac100000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}',
+  true
+);
+set local role authenticated;
 select is(
   public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000001', 'ac120002-0000-4000-8000-000000000002') #>> '{intake,structured_answers,businessRequirements,currentWorkflow}',
   'Ingediend exact',
@@ -97,18 +112,43 @@ select ok(
   and not (public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000001', 'ac120002-0000-4000-8000-000000000002') #> '{intake,structured_answers,commercialQualification,documentVolumes,0}') ? 'unknown',
   'unknown root and nested SDF keys are not projected'
 );
+reset role;
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"ac100000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal1"}',
+  true
+);
+set local role authenticated;
 select throws_ok(
   $$select public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000002', 'ac120001-0000-4000-8000-000000000001')$$,
   '42501', 'APPLICATION_SCOPE_DENIED', 'unauthorized operator is rejected'
 );
+reset role;
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"ac100000-0000-4000-8000-000000000003","role":"authenticated","aal":"aal1"}',
+  true
+);
+set local role authenticated;
 select throws_ok(
   $$select public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000003', 'ac120001-0000-4000-8000-000000000001')$$,
   '42501', 'OPERATOR_DISABLED', 'disabled operator is rejected'
 );
+reset role;
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"ac100000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal1"}',
+  true
+);
+set local role authenticated;
 select throws_ok(
   $$select public.get_operator_dossier_substance_v1('ac100000-0000-4000-8000-000000000001', 'ac120003-0000-4000-8000-000000000003')$$,
   'P0001', 'DOSSIER_INTAKE_NOT_FOUND', 'missing linked intake fails safely'
 );
+reset role;
 
 select * from finish();
 rollback;
