@@ -1,5 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { Resend } from "npm:resend@6.25.0";
+import {
+  getSupabaseServerSecretKey,
+  SUPABASE_KEY_BINDING_ERROR,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 
 interface ResendReceivedEvent {
   type: "email.received";
@@ -27,6 +32,21 @@ interface RegistrationResult {
   receipt_id: string;
   replayed: boolean;
 }
+
+interface RegistrationClient {
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): PromiseLike<{ data: unknown; error: { message?: string } | null }>;
+}
+
+type RegistrationClientFactory = (
+  url: string,
+  key: string,
+  options: Readonly<{
+    auth: Readonly<{ persistSession: false; autoRefreshToken: false }>;
+  }>,
+) => RegistrationClient;
 
 interface HandlerDependencies {
   verify(
@@ -80,8 +100,10 @@ function normalizeReceivedAt(value: unknown): string | null {
 function parseReceivedEvent(value: unknown): ResendReceivedEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const event = value as Record<string, unknown>;
-  if (event.type !== "email.received" || !event.data ||
-    typeof event.data !== "object" || Array.isArray(event.data)) return null;
+  if (
+    event.type !== "email.received" || !event.data ||
+    typeof event.data !== "object" || Array.isArray(event.data)
+  ) return null;
   return event as unknown as ResendReceivedEvent;
 }
 
@@ -93,6 +115,47 @@ async function sha256(value: unknown): Promise<string> {
     .join("");
 }
 
+export function createReceiptRegistration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+  clientFactory: RegistrationClientFactory = (url, key, options) =>
+    createClient(url, key, options),
+): HandlerDependencies["register"] {
+  return async (input) => {
+    const supabaseUrl = environment.get("SUPABASE_URL");
+    if (!supabaseUrl) throw new Error("SERVER_CONFIGURATION_ERROR");
+    const serverSecretKey = getSupabaseServerSecretKey("default", environment);
+    const client = clientFactory(supabaseUrl, serverSecretKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await client.rpc(
+      "register_resend_sdf_inbound_receipt_v1",
+      {
+        p_provider_email_id: input.providerEmailId,
+        p_webhook_delivery_id: input.webhookDeliveryId,
+        p_rfc_message_id: input.rfcMessageId,
+        p_sender_email: input.senderEmail,
+        p_matched_recipient: input.matchedRecipient,
+        p_received_at: input.receivedAt,
+        p_canonical_fingerprint: input.canonicalFingerprint,
+      },
+    );
+    if (error) {
+      if (error.message?.includes("INBOUND_RECEIPT_CONFLICT")) {
+        throw new Error("INBOUND_RECEIPT_CONFLICT");
+      }
+      throw new Error("INBOUND_RECEIPT_PERSIST_FAILED");
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    if (
+      !result || typeof result.receipt_id !== "string" ||
+      typeof result.replayed !== "boolean"
+    ) {
+      throw new Error("INBOUND_RECEIPT_PERSIST_FAILED");
+    }
+    return result as RegistrationResult;
+  };
+}
+
 function defaultDependencies(): HandlerDependencies {
   return {
     async verify(payload, headers, secret) {
@@ -102,40 +165,7 @@ function defaultDependencies(): HandlerDependencies {
         webhookSecret: secret,
       });
     },
-    async register(input) {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL");
-      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (!supabaseUrl || !serviceRoleKey) {
-        throw new Error("SERVER_CONFIGURATION_ERROR");
-      }
-      const client = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data, error } = await client.rpc(
-        "register_resend_sdf_inbound_receipt_v1",
-        {
-          p_provider_email_id: input.providerEmailId,
-          p_webhook_delivery_id: input.webhookDeliveryId,
-          p_rfc_message_id: input.rfcMessageId,
-          p_sender_email: input.senderEmail,
-          p_matched_recipient: input.matchedRecipient,
-          p_received_at: input.receivedAt,
-          p_canonical_fingerprint: input.canonicalFingerprint,
-        },
-      );
-      if (error) {
-        if (error.message?.includes("INBOUND_RECEIPT_CONFLICT")) {
-          throw new Error("INBOUND_RECEIPT_CONFLICT");
-        }
-        throw new Error("INBOUND_RECEIPT_PERSIST_FAILED");
-      }
-      const result = Array.isArray(data) ? data[0] : data;
-      if (!result || typeof result.receipt_id !== "string" ||
-        typeof result.replayed !== "boolean") {
-        throw new Error("INBOUND_RECEIPT_PERSIST_FAILED");
-      }
-      return result as RegistrationResult;
-    },
+    register: createReceiptRegistration(),
   };
 }
 
@@ -190,8 +220,10 @@ export async function handleRequest(
   const senderEmail = normalizeEmail(event.data.from);
   const receivedAt = normalizeReceivedAt(event.data.created_at);
   const rfcMessageId = normalizeRfcMessageId(event.data.message_id);
-  if (!providerEmailId || !webhookDeliveryId || !senderEmail || !receivedAt ||
-    rfcMessageId === undefined || !Array.isArray(event.data.to)) {
+  if (
+    !providerEmailId || !webhookDeliveryId || !senderEmail || !receivedAt ||
+    rfcMessageId === undefined || !Array.isArray(event.data.to)
+  ) {
     return json(400, { ok: false, code: "INVALID_WEBHOOK_PAYLOAD" });
   }
   const recipients = event.data.to.map(normalizeEmail);
@@ -226,8 +258,15 @@ export async function handleRequest(
       receipt_id: result.receipt_id,
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "INBOUND_RECEIPT_CONFLICT") {
+    if (
+      error instanceof Error && error.message === "INBOUND_RECEIPT_CONFLICT"
+    ) {
       return json(409, { ok: false, code: "INBOUND_RECEIPT_CONFLICT" });
+    }
+    if (
+      error instanceof Error && error.message === SUPABASE_KEY_BINDING_ERROR
+    ) {
+      return json(500, { ok: false, code: SUPABASE_KEY_BINDING_ERROR });
     }
     return json(500, { ok: false, code: "INBOUND_RECEIPT_PERSIST_FAILED" });
   }
