@@ -93,10 +93,10 @@ for (const [state, tokenState] of [
 ] as const) {
   Deno.test(`operator loads submitted dossier when customer token is ${state}`, async () => {
     const caller = client({}, {
+      get_operator_submitted_application_intake_v1: { ...intake, ...tokenState },
       get_operator_submitted_application_request_v1: request,
     });
     const service = client({
-      quote_request_intakes: { ...intake, ...tokenState },
       quote_request_pricing_snapshots: snapshot,
     }, {
       get_pricing_snapshot_integrity_for_operator_v1: [integrity],
@@ -116,8 +116,11 @@ for (const [state, tokenState] of [
     assertEquals(result?.requestId, requestId);
     assertEquals(result?.output.applicationReference, "LWS-AAN-2026-0042");
     assertEquals(verifiedContexts, [intakeId]);
+    assertEquals(caller.calls.includes("rpc:get_operator_submitted_application_intake_v1"), true);
     assertEquals(caller.calls.includes("rpc:get_operator_submitted_application_request_v1"), true);
+    assertEquals(service.calls.includes("from:quote_request_intakes"), false);
     assertEquals(service.calls.includes("from:quote_requests"), false);
+    assertEquals(service.calls.includes("from:quote_request_pricing_snapshots"), true);
     assertEquals(service.calls.includes("rpc:get_pricing_snapshot_integrity_for_operator_v1"), true);
     assertEquals(service.calls.includes("from:quote_request_pricing_snapshot_integrity"), false);
   });
@@ -134,10 +137,10 @@ Deno.test("customer loader remains bound to token-protected inspection RPCs", as
 
 Deno.test("operator loader remains fail closed when the integrity RPC returns no record", async () => {
   const caller = client({}, {
+    get_operator_submitted_application_intake_v1: intake,
     get_operator_submitted_application_request_v1: request,
   });
   const service = client({
-    quote_request_intakes: intake,
     quote_request_pricing_snapshots: snapshot,
   });
   const failures: string[] = [];
@@ -156,10 +159,10 @@ Deno.test("operator loader remains fail closed when the integrity RPC returns no
 
 Deno.test("operator loader rejects malformed or tampered integrity and remains fail closed", async () => {
   const caller = client({}, {
+    get_operator_submitted_application_intake_v1: intake,
     get_operator_submitted_application_request_v1: request,
   });
   const service = client({
-    quote_request_intakes: intake,
     quote_request_pricing_snapshots: snapshot,
   }, {
     get_pricing_snapshot_integrity_for_operator_v1: [integrity],

@@ -31,18 +31,6 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 const REQUEST_FIELDS = "id, record_classification, application_reference, name, company, email, phone, website_type, budget, timing";
-const INTAKE_EVIDENCE_FIELDS = [
-  "id", "quote_request_id", "status", "submitted_at", "business_description", "target_audience",
-  "has_existing_website", "existing_website_url", "elements_to_keep", "improvement_areas",
-  "website_goals", "primary_conversion_goal", "requested_pages", "other_pages", "requested_features",
-  "shop_required", "shop_details", "booking_required", "booking_details", "languages", "primary_language",
-  "additional_languages", "page_scope_details", "quote_form_details", "multilingual_details", "download_details",
-  "newsletter_details", "integrations", "social_channels", "seo_priority", "seo_details", "brand_status",
-  "logo_status", "brand_colors", "design_styles", "inspiration_sites", "disliked_styles", "content_status",
-  "image_status", "image_support", "content_media_details", "domain_status", "domain_name", "hosting_status",
-  "maintenance_interest", "hosting_support", "hosting_maintenance_details", "deadline_date", "deadline_reason",
-  "deadline_details", "priorities", "budget_notes", "additional_notes",
-].join(", ");
 const SNAPSHOT_FIELDS = "id, intake_id, snapshot_contract_version, config_version, config_hash, normalized_evidence, calculation, package_advice, budget_evaluation, package_definition, recurring_services";
 
 type SnapshotVerifier = (snapshot: object, context: string, integrity: unknown) => Promise<boolean>;
@@ -124,7 +112,10 @@ export async function loadSubmittedApplicationOutputForOperator(
 ): Promise<SubmittedApplicationOutputContext | null> {
   if (!isUuid(requestId)) return null;
   const [{ data: intakeData, error: intakeError }, { data: requestData, error: requestError }] = await Promise.all([
-    service.from("quote_request_intakes").select(INTAKE_EVIDENCE_FIELDS).eq("quote_request_id", requestId).maybeSingle(),
+    caller.rpc("get_operator_submitted_application_intake_v1", {
+      p_actor_auth_user_id: actorAuthUserId,
+      p_quote_request_id: requestId,
+    }),
     caller.rpc("get_operator_submitted_application_request_v1", {
       p_actor_auth_user_id: actorAuthUserId,
       p_quote_request_id: requestId,
