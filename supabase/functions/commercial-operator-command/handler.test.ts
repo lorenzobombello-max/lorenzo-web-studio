@@ -1050,10 +1050,10 @@ Deno.test("dossier substance requires one quote request and validates its closed
 });
 
 Deno.test("dossier seen state is actor-bound and accepts only the closed RPC response", async () => {
-  const calls: Array<{ actorAuthUserId: string; quoteRequestId: string }> = [];
+  const calls: Array<{ jwt: string; actorAuthUserId: string; quoteRequestId: string }> = [];
   const harness = dependencies({
-    executeMarkDossierSeen: async (actorAuthUserId: string, quoteRequestId: string) => {
-      calls.push({ actorAuthUserId, quoteRequestId });
+    executeMarkDossierSeen: async (jwt: string, actorAuthUserId: string, quoteRequestId: string) => {
+      calls.push({ jwt, actorAuthUserId, quoteRequestId });
       return { quote_request_id: quoteRequestId, seen_at: "2099-01-02T10:00:00Z" };
     },
   });
@@ -1063,7 +1063,7 @@ Deno.test("dossier seen state is actor-bound and accepts only the closed RPC res
   );
   assertEquals(accepted.status, 200);
   assertEquals(harness.events, ["preflight"]);
-  assertEquals(calls, [{ actorAuthUserId: userId, quoteRequestId: userId }]);
+  assertEquals(calls, [{ jwt, actorAuthUserId: userId, quoteRequestId: userId }]);
 
   for (const body of [
     { action: "mark_dossier_seen" },
@@ -4166,6 +4166,18 @@ Deno.test("dossier substance uses caller JWT instead of service role", async () 
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
   const rpcCallsites = source.match(
     /(?:serviceClient\(\)|clientFor\(jwt\))\.rpc\(\s*"get_operator_dossier_substance_v1"/g,
+  ) || [];
+  assertEquals(rpcCallsites.length, 1);
+  assertEquals(
+    rpcCallsites.every((callsite) => callsite.startsWith("clientFor(jwt)")),
+    true,
+  );
+});
+
+Deno.test("dossier seen mutation uses caller JWT instead of service role", async () => {
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const rpcCallsites = source.match(
+    /(?:serviceClient\(\)|clientFor\(jwt\))\.rpc\(\s*"mark_operator_dossier_seen_v1"/g,
   ) || [];
   assertEquals(rpcCallsites.length, 1);
   assertEquals(

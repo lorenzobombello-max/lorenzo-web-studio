@@ -1175,10 +1175,11 @@ if (import.meta.main) {
           return data;
         },
         executeMarkDossierSeen: async (
+          jwt: string,
           actorAuthUserId: string,
           quoteRequestId: string,
         ) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "mark_operator_dossier_seen_v1",
             {
               p_actor_auth_user_id: actorAuthUserId,

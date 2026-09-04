@@ -12,8 +12,8 @@ select ok(
   'seen state enforces RLS'
 );
 select ok(
-  has_function_privilege('service_role', 'public.mark_operator_dossier_seen_v1(uuid,uuid)', 'execute')
-  and not has_function_privilege('authenticated', 'public.mark_operator_dossier_seen_v1(uuid,uuid)', 'execute')
+  has_function_privilege('authenticated', 'public.mark_operator_dossier_seen_v1(uuid,uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.mark_operator_dossier_seen_v1(uuid,uuid)', 'execute')
   and not has_function_privilege('anon', 'public.mark_operator_dossier_seen_v1(uuid,uuid)', 'execute')
   and not has_table_privilege('service_role', 'lws_internal.operator_dossier_seen_states', 'select,insert,update,delete')
   and not has_table_privilege('authenticated', 'lws_internal.operator_dossier_seen_states', 'select,insert,update,delete'),
@@ -26,9 +26,9 @@ select is(
   'c', 'permanent dossier deletion cascades mutable seen state'
 );
 select ok(
-  pg_get_functiondef('public.mark_operator_dossier_seen_v1(uuid,uuid)'::regprocedure)
+  pg_get_functiondef('lws_internal.mark_operator_dossier_seen_v1_core(uuid,uuid)'::regprocedure)
     like '%assert_operator_application_actor_v2(p_actor_auth_user_id)%',
-  'seen write revalidates the server-derived human actor'
+  'seen write core preserves the existing server-side authority check'
 );
 select ok(
   pg_get_functiondef('public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamptz,uuid,integer)'::regprocedure)
@@ -90,13 +90,17 @@ select is(
   (select count(*)::integer from lws_internal.operator_dossier_seen_states),
   0, 'list and refresh calls never create seen state'
 );
-set local role service_role;
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000003', true);
+set local role authenticated;
 select throws_ok(
   $$select public.mark_operator_dossier_seen_v1(
     'db100000-0000-4000-8000-000000000003', 'db120000-0000-4000-8000-000000000001'
   )$$,
   '42501', 'APPLICATION_SCOPE_DENIED', 'unauthorized operator cannot write seen state'
 );
+reset role;
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select throws_ok(
   $$select public.mark_operator_dossier_seen_v1(
     'db100000-0000-4000-8000-000000000001', 'db120000-0000-4000-8000-000000000099'
@@ -135,7 +139,8 @@ select is(
   null, 'second owner still sees the same dossier as new'
 );
 
-set local role service_role;
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000002', true);
+set local role authenticated;
 select lives_ok(
   $$select public.mark_operator_dossier_seen_v1(
     'db100000-0000-4000-8000-000000000002', 'db120000-0000-4000-8000-000000000001'
@@ -156,7 +161,8 @@ from lws_internal.operator_dossier_seen_states
 where quote_request_id = 'db120000-0000-4000-8000-000000000001'
   and operator_id = 'db110000-0000-4000-8000-000000000001';
 
-set local role service_role;
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select lives_ok(
   $$select public.mark_operator_dossier_seen_v1(
     'db100000-0000-4000-8000-000000000001', 'db120000-0000-4000-8000-000000000001'

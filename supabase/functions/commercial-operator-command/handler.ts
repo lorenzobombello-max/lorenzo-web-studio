@@ -419,6 +419,7 @@ type CommercialOperatorDependencies = Readonly<{
     quoteRequestId: string,
   ): PromiseLike<unknown>;
   executeMarkDossierSeen(
+    jwt: string,
     actorAuthUserId: string,
     quoteRequestId: string,
   ): PromiseLike<unknown>;
@@ -2485,6 +2486,7 @@ export async function handleCommercialOperator(
       }
       if (input.action === "mark_dossier_seen") {
         const result = await deps.executeMarkDossierSeen(
+          jwt,
           user.id,
           String(input.quote_request_id),
         );
