@@ -2,12 +2,41 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, storage, extensions;
-select plan(30);
+select plan(35);
 
 select has_function(
   'public', 'get_operator_dossier_document_manifest_v1', array['uuid','uuid'],
   'manifest RPC exists'
 );
+select has_function(
+  'public', 'get_operator_dossier_document_manifest_authenticated_v1', array['uuid'],
+  'authenticated manifest wrapper has no actor UUID parameter'
+);
+select is(
+  pg_get_function_arguments('public.get_operator_dossier_document_manifest_authenticated_v1(uuid)'::regprocedure),
+  'p_quote_request_id uuid',
+  'authenticated manifest wrapper accepts only the dossier identifier'
+);
+select is(
+  pg_get_function_result('public.get_operator_dossier_document_manifest_authenticated_v1(uuid)'::regprocedure),
+  pg_get_function_result('public.get_operator_dossier_document_manifest_v1(uuid,uuid)'::regprocedure),
+  'authenticated manifest wrapper preserves the exact manifest DTO'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.get_operator_dossier_document_manifest_authenticated_v1(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.get_operator_dossier_document_manifest_authenticated_v1(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.get_operator_dossier_document_manifest_authenticated_v1(uuid)', 'execute')
+  and not has_function_privilege('public', 'public.get_operator_dossier_document_manifest_authenticated_v1(uuid)', 'execute'),
+  'only authenticated callers can execute the auth.uid-bound manifest wrapper'
+);
+select set_config('request.jwt.claim.sub', '', true);
+set local role authenticated;
+select throws_ok(
+  $$select * from public.get_operator_dossier_document_manifest_authenticated_v1('d2100000-0000-4000-8000-000000000001')$$,
+  '42501', 'HUMAN_JWT_REQUIRED',
+  'authenticated manifest transport without auth.uid is rejected'
+);
+reset role;
 select has_function(
   'public', 'authorize_operator_dossier_document_download_v1', array['uuid','uuid','text','uuid'],
   'exact download authorization RPC exists'

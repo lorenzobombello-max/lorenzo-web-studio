@@ -2332,16 +2332,14 @@ function validateDossierDocumentManifest(
 
 export async function executeDossierDocumentManifestTransport(
   client: DossierAssignmentRpcClient,
-  actorAuthUserId: string,
   input: Extract<
     DossierDocumentActionInput,
     { action: "get_dossier_document_manifest" }
   >,
 ): Promise<unknown> {
   const { data, error } = await client.rpc(
-    "get_operator_dossier_document_manifest_v1",
+    "get_operator_dossier_document_manifest_authenticated_v1",
     {
-      p_actor_auth_user_id: actorAuthUserId,
       p_quote_request_id: input.quote_request_id,
     },
   );

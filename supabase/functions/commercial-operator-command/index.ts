@@ -363,19 +363,26 @@ export async function executeCallerJwtWorkforceCalendarAction(
   );
 }
 
+export async function executeCallerJwtDossierDocumentManifestAction(
+  jwt: string,
+  input: Extract<
+    DossierDocumentActionInput,
+    { action: "get_dossier_document_manifest" }
+  >,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeDossierDocumentManifestTransport(clientFor(jwt), input);
+}
+
 export async function executeServiceRoleDossierDocumentAction(
   actorAuthUserId: string,
-  input: DossierDocumentActionInput,
+  input: Extract<
+    DossierDocumentActionInput,
+    { action: "create_dossier_document_access" }
+  >,
   client: DossierDocumentServiceClient,
   now: () => number = () => Date.now(),
 ): Promise<unknown> {
-  if (input.action === "get_dossier_document_manifest") {
-    return await executeDossierDocumentManifestTransport(
-      client,
-      actorAuthUserId,
-      input,
-    );
-  }
   return await executeDossierDocumentAccessTransport(
     client,
     actorAuthUserId,
@@ -1375,13 +1382,23 @@ if (import.meta.main) {
               limit: input.limit,
             }, clientFor);
           }
-          if (
-            input.action === "get_dossier_document_manifest" ||
-            input.action === "create_dossier_document_access"
-          ) {
+          if (input.action === "get_dossier_document_manifest") {
+            return await executeCallerJwtDossierDocumentManifestAction(
+              jwt,
+              input as Extract<
+                DossierDocumentActionInput,
+                { action: "get_dossier_document_manifest" }
+              >,
+              clientFor,
+            );
+          }
+          if (input.action === "create_dossier_document_access") {
             return await executeServiceRoleDossierDocumentAction(
               actorAuthUserId,
-              input as DossierDocumentActionInput,
+              input as unknown as Extract<
+                DossierDocumentActionInput,
+                { action: "create_dossier_document_access" }
+              >,
               serviceClient(),
             );
           }

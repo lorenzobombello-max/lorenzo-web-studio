@@ -28,6 +28,7 @@ import {
   executeCallerJwtCustomerRequestSmokeFixtureAction,
   executeCallerJwtCustomerRequestUploadAction,
   executeCallerJwtDossierAssignmentAction,
+  executeCallerJwtDossierDocumentManifestAction,
   executeCallerJwtInternalE2EAcceptedFileCleanupAction,
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
@@ -4571,7 +4572,6 @@ Deno.test("dossier document manifest transport validates and exposes only the ap
         return { data: [row], error: null };
       },
     },
-    userId,
     {
       action: "get_dossier_document_manifest",
       quote_request_id: quoteRequestId,
@@ -4579,9 +4579,8 @@ Deno.test("dossier document manifest transport validates and exposes only the ap
   );
   assertEquals(result, [row]);
   assertEquals(calls, [{
-    name: "get_operator_dossier_document_manifest_v1",
+    name: "get_operator_dossier_document_manifest_authenticated_v1",
     args: {
-      p_actor_auth_user_id: userId,
       p_quote_request_id: quoteRequestId,
     },
   }]);
@@ -4595,7 +4594,6 @@ Deno.test("dossier document manifest transport validates and exposes only the ap
               error: null,
             }),
         },
-        userId,
         {
           action: "get_dossier_document_manifest",
           quote_request_id: quoteRequestId,
@@ -4604,6 +4602,30 @@ Deno.test("dossier document manifest transport validates and exposes only the ap
     Error,
     "INVALID_DOSSIER_DOCUMENT_MANIFEST_RESPONSE",
   );
+});
+
+Deno.test("dossier document manifest index dispatch constructs only a caller JWT client", async () => {
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000093";
+  const calls: Array<Record<string, unknown>> = [];
+  const result = await executeCallerJwtDossierDocumentManifestAction(
+    jwt,
+    {
+      action: "get_dossier_document_manifest",
+      quote_request_id: quoteRequestId,
+    },
+    (receivedJwt) => ({
+      rpc: async (name, args) => {
+        calls.push({ receivedJwt, name, args });
+        return { data: [], error: null };
+      },
+    }),
+  );
+  assertEquals(result, []);
+  assertEquals(calls, [{
+    receivedJwt: jwt,
+    name: "get_operator_dossier_document_manifest_authenticated_v1",
+    args: { p_quote_request_id: quoteRequestId },
+  }]);
 });
 
 Deno.test("dossier document access signs only an exact authorized locator and returns no locator", async () => {
