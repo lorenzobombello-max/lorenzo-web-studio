@@ -2144,11 +2144,9 @@ export async function executeAssignmentOperatorRosterTransport(
 
 export async function executeWorkforceCalendarTransport(
   client: DossierAssignmentRpcClient,
-  actorAuthUserId: string,
   input: WorkforceCalendarActionInput,
 ): Promise<unknown> {
-  const { data, error } = await client.rpc("list_workforce_calendar_v1", {
-    p_actor_id: actorAuthUserId,
+  const { data, error } = await client.rpc("get_operator_calendar_v1", {
     p_start_date: input.start_date,
     p_end_date: input.end_date,
   });

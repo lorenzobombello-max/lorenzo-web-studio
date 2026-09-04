@@ -32,12 +32,12 @@ import {
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
   executeCallerJwtSdfM1InvoicePreparationAction,
+  executeCallerJwtWorkforceCalendarAction,
   executeApplicationDetailRead,
   executeCustomerRequestUploadInboxPromotionAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
   executeServiceRoleDossierDocumentAction,
-  executeServiceRoleWorkforceCalendarAction,
   normalizePendingSeenStateItems,
   normalizeWebsitePendingItems,
   verifySupabaseAuthUser,
@@ -4853,31 +4853,35 @@ Deno.test("workforce calendar accepts only exact bounded dates without client ac
   assertEquals((await forgedActor.json()).code, "IDENTITY_FIELD_FORBIDDEN");
 });
 
-Deno.test("workforce calendar transport calls only the service RPC with server actor and accepts empty authority", async () => {
+Deno.test("workforce calendar transport uses caller JWT without actor authority and accepts empty authority", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const observedJwts: string[] = [];
   const input = {
     action: "list_workforce_calendar" as const,
     start_date: "2026-08-24",
     end_date: "2026-08-30",
   };
-  const result = await executeServiceRoleWorkforceCalendarAction(
-    userId,
+  const result = await executeCallerJwtWorkforceCalendarAction(
+    jwt,
     input,
-    {
-      rpc: (name: string, args: Record<string, unknown>) => {
-        calls.push({ name, args });
-        return Promise.resolve({
-          data: workforceCalendarResult(),
-          error: null,
-        });
-      },
+    (callerJwt) => {
+      observedJwts.push(callerJwt);
+      return {
+        rpc: (name: string, args: Record<string, unknown>) => {
+          calls.push({ name, args });
+          return Promise.resolve({
+            data: workforceCalendarResult(),
+            error: null,
+          });
+        },
+      };
     },
   );
   assertEquals(result, workforceCalendarResult());
+  assertEquals(observedJwts, [jwt]);
   assertEquals(calls, [{
-    name: "list_workforce_calendar_v1",
+    name: "get_operator_calendar_v1",
     args: {
-      p_actor_id: userId,
       p_start_date: "2026-08-24",
       p_end_date: "2026-08-30",
     },
@@ -4910,7 +4914,6 @@ Deno.test("workforce calendar transport accepts the exact employee DTO and all s
     {
       rpc: () => Promise.resolve({ data, error: null }),
     },
-    userId,
     {
       action: "list_workforce_calendar",
       start_date: "2026-08-24",
@@ -4960,13 +4963,35 @@ Deno.test("workforce calendar response validator rejects drift and unknown statu
           {
             rpc: () => Promise.resolve({ data: invalid, error: null }),
           },
-          userId,
           input,
         ),
       Error,
       "INVALID_WORKFORCE_CALENDAR_RESPONSE",
     );
   }
+});
+
+Deno.test("workforce calendar caller wrapper preserves authority and closed-table contract", async () => {
+  const foundation = await Deno.readTextFile(new URL(
+    "../../migrations/20260830170000_add_hr_workforce_authority_foundation_v1.sql",
+    import.meta.url,
+  ));
+  const wrapper = await Deno.readTextFile(new URL(
+    "../../migrations/20260902200000_add_operator_calendar_multiscreen_v1.sql",
+    import.meta.url,
+  ));
+
+  assertEquals(/v_actor\.role not in \('owner', 'admin', 'operations_manager'\)/.test(foundation), true);
+  assertEquals(/if p_end_date - p_start_date > 365 then/.test(foundation), true);
+  assertEquals(/alter table public\.workforce_employees force row level security/.test(foundation), true);
+  assertEquals(/alter table public\.workforce_calendar_entries force row level security/.test(foundation), true);
+  assertEquals(/revoke all privileges on table public\.workforce_employees from public, anon, authenticated, service_role/.test(foundation), true);
+  assertEquals(/revoke all privileges on table public\.workforce_calendar_entries from public, anon, authenticated, service_role/.test(foundation), true);
+  assertEquals(/grant execute on function public\.list_workforce_calendar_v1\(uuid, date, date\)\s+to service_role/.test(foundation), true);
+  assertEquals(/v_subject uuid := auth\.uid\(\)/.test(wrapper), true);
+  assertEquals(/return public\.list_workforce_calendar_v1\(v_subject, p_start_date, p_end_date\)/.test(wrapper), true);
+  assertEquals(/revoke all on function public\.get_operator_calendar_v1\(date,date\)\s+from public, anon, authenticated, service_role/.test(wrapper), true);
+  assertEquals(/grant execute on function public\.get_operator_calendar_v1\(date,date\) to authenticated/.test(wrapper), true);
 });
 
 Deno.test("workforce calendar failures use stable authorization and internal envelopes", async () => {

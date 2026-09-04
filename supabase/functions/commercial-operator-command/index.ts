@@ -355,14 +355,13 @@ export async function executeCallerJwtSdfM1InvoicePreparationAction(
   return await executeSdfM1InvoicePreparationTransport(clientFor(jwt), input);
 }
 
-export async function executeServiceRoleWorkforceCalendarAction(
-  actorAuthUserId: string,
+export async function executeCallerJwtWorkforceCalendarAction(
+  jwt: string,
   input: WorkforceCalendarActionInput,
-  client: DossierAssignmentClient,
+  clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeWorkforceCalendarTransport(
-    client,
-    actorAuthUserId,
+    clientFor(jwt),
     input,
   );
 }
@@ -1270,10 +1269,10 @@ if (import.meta.main) {
             return await executeCallerJwtAssignmentRosterAction(jwt, clientFor);
           }
           if (input.action === "list_workforce_calendar") {
-            return await executeServiceRoleWorkforceCalendarAction(
-              actorAuthUserId,
+            return await executeCallerJwtWorkforceCalendarAction(
+              jwt,
               input as WorkforceCalendarActionInput,
-              serviceClient(),
+              clientFor,
             );
           }
           if (
