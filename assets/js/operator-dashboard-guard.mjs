@@ -4,6 +4,7 @@ import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financ
 import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260903-multiscreen-ux-r1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";
+import { createOperatorMfaDialog, isMfaOperatorSubject, mountOperatorMfaButton } from "./operator-mfa.mjs?v=20260904-aal2-r1";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -15,6 +16,7 @@ const presentWorkspaceStatus = createOperatorWorkspaceStatusPresenter(document.q
 let moduleNavigation = null;
 let financeNavigation = null;
 let workspaceMaster = null;
+let mfaController = null;
 
 function disposeDossiers() {
   const workspace = document.querySelector("[data-dossiers-workspace]");
@@ -69,10 +71,18 @@ try {
   activeLogout?.addEventListener("click", logoutOperator);
   if (access.status === "unauthorized") logout.hidden = false;
   else if (access.status === "authorized") {
+    if (isMfaOperatorSubject(access.session.user.id)) {
+      mfaController = createOperatorMfaDialog({ client });
+      mountOperatorMfaButton({ controller: mfaController });
+    }
+    const requireAal2 = mfaController
+      ? ()=>mfaController.stepUp()
+      : async ()=>{ throw new Error("MFA_OPERATOR_NOT_ELIGIBLE"); };
     const functionsBaseUrl = `${config.supabaseUrl}/functions/v1`;
     const identity = await startOperatorDashboard({
       client,
       functionsBaseUrl,
+      requireAal2,
       onIdentityReady: (verifiedIdentity)=>{
         financeNavigation = createOperatorFinanceNavigation({
           identity: verifiedIdentity,
@@ -96,6 +106,7 @@ try {
     if (identity.role === "owner") {
       workspaceMaster = await createOperatorWorkspaceMaster({
         client,
+        requireAal2,
         resumeHint: readOperatorWorkspaceResumeHint(window.history),
         onAvailabilityChange: presentWorkspaceStatus,
         onInvalidate: (moduleKey)=>{
@@ -140,6 +151,7 @@ try {
         await startOperatorDashboard({
           client,
           functionsBaseUrl,
+          requireAal2,
           verifiedIdentity: context.identity,
           isCurrent: context.isCurrent,
           onAuthorizationFailure: redirectToLogin,

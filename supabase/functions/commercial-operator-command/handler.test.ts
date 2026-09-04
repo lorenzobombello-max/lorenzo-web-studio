@@ -53,6 +53,18 @@ const jwt = createUnsignedTestJwt({
   role: "authenticated",
   exp: 4102444800,
 });
+const ownerAal1Jwt = createUnsignedTestJwt({
+  sub: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  role: "authenticated",
+  aal: "aal1",
+  exp: 4102444800,
+});
+const ownerAal2Jwt = createUnsignedTestJwt({
+  sub: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  role: "authenticated",
+  aal: "aal2",
+  exp: 4102444800,
+});
 const cursorSecret = "ERERERERERERERERERERERERERERERERERERERERERE";
 const workforceEmployeeId = "a1800000-0000-4000-8000-000000000080";
 
@@ -4255,7 +4267,9 @@ Deno.test("pending-intake list and retention actions use fixed validated state",
 });
 
 Deno.test("pending permanent delete requires exact identifiers and explicit reason", async () => {
-  const harness = dependencies();
+  const harness = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+  });
   const response = await handleCommercialOperator(
     request({
       action: "permanently_delete_pending_intake",
@@ -4263,7 +4277,7 @@ Deno.test("pending permanent delete requires exact identifiers and explicit reas
       quote_request_id: "a1800000-0000-4000-8000-000000000091",
       idempotency_key: "a1800000-0000-4000-8000-000000000094",
       reason: "Confirmed disposable pre-submission record",
-    }),
+    }, ownerAal2Jwt),
     harness.deps,
   );
   assertEquals(response.status, 200);
@@ -4282,11 +4296,42 @@ Deno.test("pending permanent delete requires exact identifiers and explicit reas
         intake_id: "a1800000-0000-4000-8000-000000000092",
         quote_request_id: "a1800000-0000-4000-8000-000000000091",
         idempotency_key: "a1800000-0000-4000-8000-000000000094",
-      }),
-      dependencies().deps,
+      }, ownerAal2Jwt),
+      dependencies({
+        verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+      }).deps,
     )).status,
     400,
   );
+});
+
+Deno.test("pending permanent delete requires OP-01 or OP-02 AAL2", async () => {
+  const input = {
+    action: "permanently_delete_pending_intake",
+    intake_id: "a1800000-0000-4000-8000-000000000092",
+    quote_request_id: "a1800000-0000-4000-8000-000000000091",
+    idempotency_key: "a1800000-0000-4000-8000-000000000094",
+    reason: "Confirmed disposable pre-submission record",
+  };
+  const aal1Harness = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+  });
+  const aal1Response = await handleCommercialOperator(
+    request(input, ownerAal1Jwt),
+    aal1Harness.deps,
+  );
+  assertEquals(aal1Response.status, 403);
+  assertEquals((await aal1Response.json()).code, "AAL2_REQUIRED");
+  assertEquals(aal1Harness.calls, []);
+
+  const ineligibleHarness = dependencies();
+  const ineligibleResponse = await handleCommercialOperator(
+    request(input),
+    ineligibleHarness.deps,
+  );
+  assertEquals(ineligibleResponse.status, 403);
+  assertEquals((await ineligibleResponse.json()).code, "MFA_OPERATOR_NOT_ELIGIBLE");
+  assertEquals(ineligibleHarness.calls, []);
 });
 
 Deno.test("pending workspace mutations expose safe conflict envelopes", async () => {

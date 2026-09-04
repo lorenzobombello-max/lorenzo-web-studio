@@ -1,0 +1,118 @@
+.topbar__mfa {
+  min-height: 32px;
+  padding: .35rem .7rem;
+  border: 1px solid #6f858f;
+  border-radius: 3px;
+  color: #dffcff;
+  background: transparent;
+  font: 700 .7rem/1 inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.topbar__mfa:hover,
+.topbar__mfa:focus-visible {
+  border-color: var(--signal);
+  color: var(--white);
+}
+
+.operator-mfa {
+  width: min(calc(100% - 2rem), 34rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--white);
+  box-shadow: 0 30px 90px rgba(4, 15, 22, .32);
+}
+
+.operator-mfa::backdrop {
+  background: rgba(4, 15, 22, .72);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.operator-mfa__panel {
+  padding: clamp(1.4rem, 5vw, 2.5rem);
+  display: grid;
+  gap: .9rem;
+}
+
+.operator-mfa__signal {
+  width: 3.5rem;
+  height: 4px;
+  background: var(--signal-deep);
+}
+
+.operator-mfa h2 {
+  max-width: 15ch;
+  margin: 0;
+  font: 700 clamp(1.8rem, 5vw, 2.8rem)/1 "Segoe UI", Arial, sans-serif;
+  letter-spacing: 0;
+}
+
+.operator-mfa__intro {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.operator-mfa__qr {
+  width: min(100%, 15rem);
+  aspect-ratio: 1;
+  margin: .35rem auto;
+  padding: .8rem;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.operator-mfa__qr img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.operator-mfa__label {
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.operator-mfa input {
+  width: 100%;
+  min-height: 52px;
+  padding: .7rem .85rem;
+  border: 1px solid #8ea0aa;
+  border-radius: 3px;
+  font: 700 1.2rem/1 monospace;
+  letter-spacing: .18rem;
+}
+
+.operator-mfa__message {
+  min-height: 1.5rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: .86rem;
+}
+
+.operator-mfa__message[data-state="error"] { color: #a1261c; }
+.operator-mfa__message[data-state="success"] { color: #176647; }
+
+.operator-mfa__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .65rem;
+  margin-top: .25rem;
+}
+
+.operator-mfa__actions .button { cursor: pointer; }
+
+@media (max-width: 34rem) {
+  .operator-mfa__actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .operator-mfa__actions .button { width: 100%; }
+}

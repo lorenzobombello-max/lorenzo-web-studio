@@ -2219,6 +2219,7 @@ export async function startOperatorDashboard({
   client,
   functionsBaseUrl,
   callOperator = callCommercialOperator,
+  requireAal2 = async ()=>true,
   verifiedIdentity = null,
   isCurrent = ()=>true,
   onIdentityReady = ()=>{},
@@ -3509,6 +3510,7 @@ export async function startOperatorDashboard({
       setPendingWorkspaceBusy(true);
       try {
         if (command.type === "delete_sdf") {
+          await requireAal2();
           const input = pendingSdfDossierPurgeRequest(command.item, command.eligibility, pendingIntakeCommandReason.value, crypto.randomUUID());
           const { data, error } = await client.rpc("purge_sdf_dossier_v1", input);
           if (error || data?.quote_request_id !== command.item.quote_request_id
@@ -3516,6 +3518,7 @@ export async function startOperatorDashboard({
             throw new Error(error?.message || "SDF_DOSSIER_PURGE_FAILED");
           }
         } else if (command.type === "delete") {
+          await requireAal2();
           await invoke(buildPendingIntakeDeleteCommand(command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
         } else {
           await invoke(buildPendingIntakeRetentionCommand(command.type === "archive" ? "archive_pending_intake" : "restore_pending_intake", command.item, pendingIntakeCommandReason.value, crypto.randomUUID()));
@@ -4729,6 +4732,7 @@ export async function startOperatorDashboard({
     dossierPurgeConfirm.disabled = true;
     dossierLifecycleMessage.textContent = "Dossier wordt permanent verwijderd.";
     try {
+      await requireAal2();
       const { data, error } = await client.rpc("purge_dossier_v1", input);
       if (error
           || data?.quote_request_id !== command.detail.quote_request_id
@@ -4789,6 +4793,7 @@ export async function startOperatorDashboard({
     sdfDossierPurgeConfirm.disabled = true;
     sdfDossierPurgeMessage.textContent = "Dossier wordt definitief verwijderd.";
     try {
+      await requireAal2();
       const { data, error } = await client.rpc("purge_sdf_dossier_v1", input);
       if (error
           || data?.quote_request_id !== command.detail.quote_request_id

@@ -497,6 +497,19 @@ function decodeClaims(jwt: string): Record<string, unknown> {
     throw new RequestError(401, "INVALID_JWT");
   }
 }
+
+const MFA_OPERATOR_SUBJECTS = new Set([
+  "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  "bd2ab636-0d42-4069-88a9-60bd97f2b335",
+]);
+
+function requireOperatorAal2(claims: Record<string, unknown>, subject: string) {
+  if (!MFA_OPERATOR_SUBJECTS.has(subject)) {
+    throw new RequestError(403, "MFA_OPERATOR_NOT_ELIGIBLE");
+  }
+  if (claims.aal !== "aal2") throw new RequestError(403, "AAL2_REQUIRED");
+}
+
 async function body(request: Request): Promise<UnvalidatedInput> {
   if (
     (request.headers.get("content-type") || "").split(";", 1)[0].trim()
@@ -2438,6 +2451,9 @@ export async function handleCommercialOperator(
         await deps.authorizeApplicationReader(jwt);
       }
       const input = validateApplicationAction(parsed);
+      if (input.action === "permanently_delete_pending_intake") {
+        requireOperatorAal2(claims, sub);
+      }
       if (input.action === "list_pending_intakes") {
         const result = validatePendingIntakesResult(
           await deps.executePendingIntakes(

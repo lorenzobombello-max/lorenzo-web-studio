@@ -60,6 +60,7 @@ export async function createOperatorWorkspaceMaster({
   onInvalidate = ()=>{},
   onInvalidWorkspace = ()=>{},
   onAvailabilityChange = ()=>{},
+  requireAal2 = async ()=>true,
   resumeHint = null,
 } = {}) {
   const localLock = await requestLocalMasterLock(navigatorObject);
@@ -233,6 +234,11 @@ export async function createOperatorWorkspaceMaster({
 
   async function shutdownWorkspace() {
     if (!active) return;
+    try {
+      await requireAal2();
+    } catch {
+      return false;
+    }
     const revocation = client.rpc("revoke_operator_workspace_v1", {
       p_workspace_id: memory.workspaceId,
       p_epoch: memory.epoch,
