@@ -129,10 +129,19 @@ Deno.test("worker discovers all four lifecycle phases for Website and SDF", asyn
   const fixture = harness([
     candidate({ reminder_phase: "REMINDER_1" }),
     candidate({ reminder_phase: "REMINDER_2" }),
-    candidate({ reminder_phase: "FINAL_WARNING", request_kind: "slimme_documentenflow" }),
-    candidate({ reminder_phase: "EXPIRY", request_kind: "slimme_documentenflow" }),
+    candidate({
+      reminder_phase: "FINAL_WARNING",
+      request_kind: "slimme_documentenflow",
+    }),
+    candidate({
+      reminder_phase: "EXPIRY",
+      request_kind: "slimme_documentenflow",
+    }),
   ]);
-  const result = await runReminderWorker({ dryRun: true }, fixture.dependencies);
+  const result = await runReminderWorker(
+    { dryRun: true },
+    fixture.dependencies,
+  );
   assertEquals(result.candidates.map((item) => item.reminder_phase), [
     "REMINDER_1",
     "REMINDER_2",
@@ -148,14 +157,21 @@ Deno.test("worker discovers all four lifecycle phases for Website and SDF", asyn
 });
 
 Deno.test("expiry sends without decrypting or rebuilding an active capability link", async () => {
-  const value = candidate({ reminder_phase: "EXPIRY", request_kind: "slimme_documentenflow" });
+  const value = candidate({
+    reminder_phase: "EXPIRY",
+    request_kind: "slimme_documentenflow",
+  });
   const fixture = harness([value]);
   fixture.dependencies.database.getCapability = () => Promise.resolve(null);
-  fixture.dependencies.database.getDelivery = () => Promise.resolve({
-    ...context(value),
-    encrypted_token: null,
-  });
-  const result = await runReminderWorker({ dryRun: false, phase: "EXPIRY" }, fixture.dependencies);
+  fixture.dependencies.database.getDelivery = () =>
+    Promise.resolve({
+      ...context(value),
+      encrypted_token: null,
+    });
+  const result = await runReminderWorker(
+    { dryRun: false, phase: "EXPIRY" },
+    fixture.dependencies,
+  );
   assertEquals(result.sent_mocked, 1);
   assertEquals(fixture.calls.decrypt, 0);
   assertEquals(fixture.calls.capability, 0);
@@ -181,10 +197,12 @@ async function withWorkerEnvironment(run: () => Promise<void>): Promise<void> {
   const previous = {
     secret: Deno.env.get("INTAKE_REMINDER_AUTOMATION_SECRET"),
     url: Deno.env.get("SUPABASE_URL"),
-    key: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    secretKeys: Deno.env.get("SUPABASE_SECRET_KEYS"),
+    legacyKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
   };
   Deno.env.set("INTAKE_REMINDER_AUTOMATION_SECRET", secret);
   Deno.env.delete("SUPABASE_URL");
+  Deno.env.delete("SUPABASE_SECRET_KEYS");
   Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
   try {
     await run();
@@ -193,7 +211,8 @@ async function withWorkerEnvironment(run: () => Promise<void>): Promise<void> {
       const [name, value] of [
         ["INTAKE_REMINDER_AUTOMATION_SECRET", previous.secret],
         ["SUPABASE_URL", previous.url],
-        ["SUPABASE_SERVICE_ROLE_KEY", previous.key],
+        ["SUPABASE_SECRET_KEYS", previous.secretKeys],
+        ["SUPABASE_SERVICE_ROLE_KEY", previous.legacyKey],
       ] as const
     ) {
       if (value === undefined) Deno.env.delete(name);
@@ -229,6 +248,86 @@ Deno.test("endpoint rejects a wrong automation secret", async () => {
 
 Deno.test("endpoint accepts the correct secret before server configuration", async () => {
   await withWorkerEnvironment(async () => {
+    const response = await handleRequest(
+      new Request("https://worker.test", {
+        method: "POST",
+        headers: { "x-lws-automation-secret": secret },
+        body: JSON.stringify({ dry_run: true }),
+      }),
+    );
+    assertEquals(response.status, 500);
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "SERVER_CONFIGURATION_ERROR",
+    });
+  });
+});
+
+Deno.test("endpoint builds its client from a valid modern secret binding", async () => {
+  await withWorkerEnvironment(async () => {
+    Deno.env.set("SUPABASE_URL", "https://worker-project.supabase.co");
+    Deno.env.set(
+      "SUPABASE_SECRET_KEYS",
+      JSON.stringify({ default: "sb_secret_worker_test_value" }),
+    );
+    const originalFetch = globalThis.fetch;
+    const rpcNames: string[] = [];
+    globalThis.fetch = (input, init) => {
+      const request = new Request(input, init);
+      rpcNames.push(new URL(request.url).pathname.split("/").at(-1) || "");
+      assertEquals(
+        request.headers.get("apikey"),
+        "sb_secret_worker_test_value",
+      );
+      return Promise.resolve(Response.json([]));
+    };
+    try {
+      const response = await handleRequest(
+        new Request("https://worker.test", {
+          method: "POST",
+          headers: { "x-lws-automation-secret": secret },
+          body: JSON.stringify({ dry_run: true }),
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertEquals(rpcNames, [
+        "list_intake_lifecycle_candidates_v2",
+        "list_intake_lifecycle_candidates_v2",
+        "list_intake_lifecycle_candidates_v2",
+        "list_intake_lifecycle_candidates_v2",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+Deno.test("endpoint rejects a missing modern binding even with a legacy key", async () => {
+  await withWorkerEnvironment(async () => {
+    Deno.env.set("SUPABASE_URL", "https://worker-project.supabase.co");
+    Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "legacy-key-is-not-used");
+    const response = await handleRequest(
+      new Request("https://worker.test", {
+        method: "POST",
+        headers: { "x-lws-automation-secret": secret },
+        body: JSON.stringify({ dry_run: true }),
+      }),
+    );
+    assertEquals(response.status, 500);
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "SERVER_CONFIGURATION_ERROR",
+    });
+  });
+});
+
+Deno.test("endpoint rejects an invalid modern secret binding", async () => {
+  await withWorkerEnvironment(async () => {
+    Deno.env.set("SUPABASE_URL", "https://worker-project.supabase.co");
+    Deno.env.set(
+      "SUPABASE_SECRET_KEYS",
+      JSON.stringify({ default: "not-a-modern-secret" }),
+    );
     const response = await handleRequest(
       new Request("https://worker.test", {
         method: "POST",
@@ -285,7 +384,9 @@ Deno.test("dry-run selects R2", async () => {
   assertEquals(result.candidates[0].reminder_phase, "REMINDER_2");
 });
 
-for (const reminder_phase of ["REMINDER_1", "REMINDER_2", "FINAL_WARNING"] as const) {
+for (
+  const reminder_phase of ["REMINDER_1", "REMINDER_2", "FINAL_WARNING"] as const
+) {
   for (const progress_status of ["invited", "in_progress"] as const) {
     Deno.test(`${reminder_phase} ${progress_status} claims, prepares, rechecks and sends mocked`, async () => {
       const fixture = harness([candidate({ reminder_phase, progress_status })]);

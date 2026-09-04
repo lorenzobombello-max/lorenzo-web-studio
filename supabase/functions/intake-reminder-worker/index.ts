@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildIntakeReminderEmail } from "../_shared/email-templates.ts";
 import { deliverIntakeLifecycleEmail } from "../_shared/intake-lifecycle-email-delivery.ts";
 import { decryptIntakeInvitationToken } from "../_shared/security.ts";
+import { getSupabaseServerSecretKey } from "../_shared/supabase-key-bindings.ts";
 import {
   automationSecretMatches,
   isReminderPhase,
@@ -22,7 +23,10 @@ function first<T>(data: T[] | T | null): T | null {
   return Array.isArray(data) ? data[0] ?? null : data;
 }
 
-function intakeUrl(rawToken: string, requestKind: "website" | "slimme_documentenflow"): string {
+function intakeUrl(
+  rawToken: string,
+  requestKind: "website" | "slimme_documentenflow",
+): string {
   const url = new URL(
     requestKind === "slimme_documentenflow"
       ? "/pages/sdf-qualification-intake.html"
@@ -63,11 +67,16 @@ export async function handleRequest(request: Request): Promise<Response> {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl) {
     return json(500, { ok: false, code: "SERVER_CONFIGURATION_ERROR" });
   }
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  let serverSecretKey;
+  try {
+    serverSecretKey = getSupabaseServerSecretKey("default");
+  } catch {
+    return json(500, { ok: false, code: "SERVER_CONFIGURATION_ERROR" });
+  }
+  const supabase = createClient(supabaseUrl, serverSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -84,12 +93,15 @@ export async function handleRequest(request: Request): Promise<Response> {
       return (data || []) as ReminderCandidate[];
     },
     async claim(candidate) {
-      const { data, error } = await supabase.rpc("claim_intake_lifecycle_reminder_v2", {
-        p_request_kind: candidate.request_kind,
-        p_intake_id: candidate.intake_id,
-        p_access_cycle: candidate.access_cycle,
-        p_reminder_phase: candidate.reminder_phase,
-      });
+      const { data, error } = await supabase.rpc(
+        "claim_intake_lifecycle_reminder_v2",
+        {
+          p_request_kind: candidate.request_kind,
+          p_intake_id: candidate.intake_id,
+          p_access_cycle: candidate.access_cycle,
+          p_reminder_phase: candidate.reminder_phase,
+        },
+      );
       if (error) throw new Error("REMINDER_CLAIM_FAILED");
       return first(data);
     },
