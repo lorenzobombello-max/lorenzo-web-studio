@@ -4,11 +4,30 @@ import { deliverEmailJob } from "../_shared/email-delivery.ts";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { computeTokenExpiry, createApprovalTokenForIdempotencyKey, extractClientIp, hashApprovalToken, hashClientIp } from "../_shared/security.ts";
 import { isRateLimited } from "../_shared/rate-limit.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 import { InputValidationError, sanitizeAndValidateSubmitPayload } from "../_shared/validation.ts";
 import { blockedBusinessVatSubmission, validateVatWithVies, type VatValidationResult } from "../_shared/vat-validation.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const IDEMPOTENCY_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function resolveSubmitQuoteRequestConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): { url: string; serviceRoleKey: string } | null {
+  const url = environment.get("SUPABASE_URL");
+  if (!url) return null;
+  try {
+    return {
+      url,
+      serviceRoleKey: getSupabaseServerSecretKey("default", environment),
+    };
+  } catch {
+    return null;
+  }
+}
 
 class RequestError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -95,14 +114,13 @@ export async function handleSubmitQuoteRequest(request: Request): Promise<Respon
     return jsonResponse(405, { ok: false, message: "Method not allowed." }, origin);
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const configuration = resolveSubmitQuoteRequestConfiguration();
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const adminEmail = Deno.env.get("ADMIN_EMAIL") || "";
   const fromEmail = Deno.env.get("FROM_EMAIL") || "";
   const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!configuration) {
     return jsonResponse(500, {
       ok: false,
       code: "SERVER_CONFIGURATION_ERROR",
@@ -176,7 +194,7 @@ export async function handleSubmitQuoteRequest(request: Request): Promise<Respon
     privacy_consent: sanitized.privacy_consent,
   });
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient(configuration.url, configuration.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 

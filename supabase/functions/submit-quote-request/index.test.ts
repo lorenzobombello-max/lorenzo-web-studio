@@ -1,5 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { handleSubmitQuoteRequest } from "./index.ts";
+import {
+  handleSubmitQuoteRequest,
+  resolveSubmitQuoteRequestConfiguration,
+} from "./index.ts";
 
 const payload = {
   request_kind: "website",
@@ -28,16 +31,66 @@ function soapResponse(valid: boolean): string {
   return `<?xml version="1.0"?><soap:Envelope><soap:Body><checkVatResponse><valid>${valid}</valid></checkVatResponse></soap:Body></soap:Envelope>`;
 }
 
+function environment(values: Record<string, string | undefined>) {
+  return { get: (name: string) => values[name] };
+}
+
 Deno.test({
-  name: "invalid and unavailable VAT stop before request creation and email",
+  name: "modern binding fails closed and invalid VAT stops before request creation and email",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
+    const serverKey = ["sb", "secret", "submitQuoteRequest", "test"].join("_");
+    assertEquals(
+      resolveSubmitQuoteRequestConfiguration(environment({
+        SUPABASE_URL: "https://supabase.test",
+        SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+      })),
+      { url: "https://supabase.test", serviceRoleKey: serverKey },
+    );
+    for (const serverBinding of [
+      undefined,
+      "not-json",
+      JSON.stringify({ default: "legacy-service-role-key" }),
+    ]) {
+      assertEquals(
+        resolveSubmitQuoteRequestConfiguration(environment({
+          SUPABASE_URL: "https://supabase.test",
+          SUPABASE_SERVICE_ROLE_KEY: "must-not-be-read",
+          SUPABASE_SECRET_KEYS: serverBinding,
+        })),
+        null,
+      );
+    }
+    assertEquals(
+      resolveSubmitQuoteRequestConfiguration(environment({
+        SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+      })),
+      null,
+    );
+
+    const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+    assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
+    assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
+    assertEquals(source.match(/createClient\(/g)?.length, 1);
+    assertEquals(source.match(/\.from\("quote_requests"\)/g)?.length, 1);
+    assertEquals(source.match(/\.rpc\(/g)?.length, 2);
+    for (const expectedRpc of ["create_quote_request_idempotent", "requeue_quote_request_email_job"]) {
+      assertEquals(source.includes(expectedRpc), true);
+    }
+    for (const forbidden of [
+      "SUPABASE_ANON_KEY",
+      "getSupabasePublishableKey",
+      "auth.getUser",
+      "auth.admin",
+      ".storage.",
+    ]) assertEquals(source.includes(forbidden), false);
+
     const originalFetch = globalThis.fetch;
     const previousEnvironment = new Map<string, string | undefined>();
     for (const [name, value] of [
       ["SUPABASE_URL", "https://supabase.test"],
-      ["SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key"],
+      ["SUPABASE_SECRET_KEYS", JSON.stringify({ default: serverKey })],
       ["RESEND_API_KEY", "resend-test-key"],
       ["ADMIN_EMAIL", "admin@example.com"],
       ["FROM_EMAIL", "sender@example.com"],
