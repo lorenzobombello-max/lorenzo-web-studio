@@ -832,15 +832,15 @@ Deno.test("commercial operator command disables its legacy gateway JWT check", a
   );
 });
 
-Deno.test("commercial operator command uses only the modern service binding", async () => {
+Deno.test("commercial operator command uses only modern key bindings", async () => {
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
   assertEquals(source.includes('getSupabaseServerSecretKey("default")'), true);
   assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
   assertEquals(
     source.match(/Deno\.env\.get\("SUPABASE_ANON_KEY"\)/g)?.length,
-    1,
+    undefined,
   );
-  assertEquals(source.includes("getSupabasePublishableKey"), false);
+  assertEquals(source.includes('getSupabasePublishableKey("default")'), true);
   assertEquals(source.includes("auth.admin"), false);
   assertEquals(
     [...source.matchAll(/\.storage\.from\(([^)]+)\)\.(download|upload|remove|createSignedUrl)/g)]

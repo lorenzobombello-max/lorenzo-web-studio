@@ -73,7 +73,10 @@ import {
   type QuotationApprovalIntegrityRoot,
   verifyQuotationApprovalIntegrity,
 } from "../_shared/quotation-approval-integrity.ts";
-import { getSupabaseServerSecretKey } from "../_shared/supabase-key-bindings.ts";
+import {
+  getSupabasePublishableKey,
+  getSupabaseServerSecretKey,
+} from "../_shared/supabase-key-bindings.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1037,10 +1040,9 @@ export function normalizeWebsitePendingItems(data: unknown): Record<string, unkn
 if (import.meta.main) {
   Deno.serve((request) =>
     withCommercialOperatorCors(request, () => {
-      const url = Deno.env.get("SUPABASE_URL"),
-        anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-      if (!url || !anonKey) {
-        return new Response(
+      const url = Deno.env.get("SUPABASE_URL");
+      const configurationError = () =>
+        new Response(
           JSON.stringify({
             ok: false,
             code: "SERVER_CONFIGURATION_ERROR",
@@ -1053,9 +1055,15 @@ if (import.meta.main) {
             },
           },
         );
+      if (!url) return configurationError();
+      let publishableKey: ReturnType<typeof getSupabasePublishableKey>;
+      try {
+        publishableKey = getSupabasePublishableKey("default");
+      } catch {
+        return configurationError();
       }
       const clientFor = (jwt: string) =>
-        createClient(url, anonKey, {
+        createClient(url, publishableKey, {
           global: {
             headers: {
               Authorization: `Bearer ${jwt}`,
