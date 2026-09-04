@@ -1147,7 +1147,7 @@ if (import.meta.main) {
           return { items: [...websiteItems, ...sdfItems].sort((left, right) => String((right as Record<string, unknown>).last_activity_at).localeCompare(String((left as Record<string, unknown>).last_activity_at))) };
         },
         executePendingIntakeCount: async (jwt: string, actorAuthUserId: string) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "count_operator_active_pending_intakes_v1",
             { p_actor_auth_user_id: actorAuthUserId },
           );
