@@ -5,7 +5,7 @@ import type {
   ResendTransportResult,
 } from "../_shared/resend-transport.ts";
 import { sendEmailViaResend } from "../_shared/resend-transport.ts";
-import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, sdfInvitationOutcome, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
+import { handleApplicationIntakeAutomation, hasCanonicalSdfConfirmationTemplate, sdfInvitationOutcome, type AutomationClaim, type AutomationDependencies, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
 
 const sdfClaim: AutomationClaim = {
   work_id: 2,
@@ -29,13 +29,13 @@ interface TestSdfDependencies {
 
 async function sdfExecutorFactory() {
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
-  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
+  Deno.env.set("SUPABASE_SECRET_KEYS", JSON.stringify({ default: "sb_secret_test_server_key" }));
   return (await import("./index.ts")).createSdfConfirmationExecutor;
 }
 
 async function sdfInvitationExecutorFactory() {
   Deno.env.set("SUPABASE_URL", "https://example.supabase.co");
-  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
+  Deno.env.set("SUPABASE_SECRET_KEYS", JSON.stringify({ default: "sb_secret_test_server_key" }));
   return (await import("./index.ts")).createSdfInvitationExecutor;
 }
 
@@ -154,7 +154,88 @@ Deno.test("stateless transport sends without Supabase client or RPC dependency",
 Deno.test("worker rejects invalid secret", async () => {
   const fixture = dependencies([]);
   const invalid = request(); invalid.headers.set("x-lws-automation-secret", "wrong");
-  assertEquals((await handleApplicationIntakeAutomation(invalid, fixture.value)).status, 401);
+  const response = await handleApplicationIntakeAutomation(invalid, fixture.value);
+  assertEquals(response.status, 401);
+  assertEquals(await response.json(), {
+    ok: false,
+    claimed: 0,
+    completed: 0,
+    retry_scheduled: 0,
+    manual_review: 0,
+  });
+});
+
+Deno.test("worker reports missing or invalid internal configuration without secret leakage", async () => {
+  for (const workerSecret of [undefined, "invalid-configuration-secret-marker"]) {
+    const fixture = dependencies([]);
+    const configuration: AutomationDependencies = fixture.value;
+    configuration.configurationReady = false;
+    configuration.workerSecret = workerSecret;
+    const response = await handleApplicationIntakeAutomation(request(), configuration);
+    const rawBody = await response.text();
+    assertEquals(response.status, 401);
+    assertEquals(JSON.parse(rawBody), {
+      ok: false,
+      claimed: 0,
+      completed: 0,
+      retry_scheduled: 0,
+      manual_review: 0,
+      code: "SERVER_CONFIGURATION_ERROR",
+    });
+    assertEquals(rawBody.includes("invalid-configuration-secret-marker"), false);
+  }
+});
+
+Deno.test("worker uses only the modern server-secret binding and preserves its RPC surface", async () => {
+  const { resolveApplicationIntakeAutomationServerKey } = await import("./index.ts");
+  const environment = (values: Record<string, string | undefined>) => ({
+    get: (name: string) => values[name],
+  });
+  assertEquals(
+    resolveApplicationIntakeAutomationServerKey(environment({
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: "sb_secret_modern_binding" }),
+      SUPABASE_SERVICE_ROLE_KEY: "legacy-key-must-not-be-used",
+    })),
+    "sb_secret_modern_binding",
+  );
+  assertEquals(resolveApplicationIntakeAutomationServerKey(environment({})), "");
+  assertEquals(
+    resolveApplicationIntakeAutomationServerKey(environment({
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: "invalid-binding-secret-marker" }),
+      SUPABASE_SERVICE_ROLE_KEY: "legacy-key-must-not-be-used",
+    })),
+    "",
+  );
+
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const handlerSource = await Deno.readTextFile(new URL("./handler.ts", import.meta.url));
+  const rpcNames = [...`${source}\n${handlerSource}`.matchAll(/(?:dependencies\.)?rpc\(\s*"([^"]+)"/g)]
+    .map((match) => match[1]);
+  assertEquals(rpcNames, [
+    "execute_application_intake_automation_approval_v1",
+    "execute_application_intake_automation_intake_v1",
+    "resolve_sdf_support_reference_v1",
+    "prepare_sdf_initial_confirmation_v2",
+    "claim_sdf_initial_confirmation_email_job_v1",
+    "validate_sdf_initial_confirmation_email_delivery_v1",
+    "complete_sdf_initial_confirmation_email_job_v1",
+    "execute_application_intake_automation_sdf_intake_v1",
+    "claim_sdf_qualification_email_job_v1",
+    "validate_sdf_qualification_email_delivery_v1",
+    "complete_sdf_qualification_email_job_v1",
+    "claim_next_sdf_qualification_email_job_v1",
+    "validate_sdf_qualification_email_delivery_v1",
+    "complete_sdf_qualification_email_job_v1",
+    "claim_application_intake_automation_work_by_id_v1",
+    "claim_application_intake_automation_work_v1",
+    "fail_application_intake_automation_work_v1",
+  ]);
+  assertEquals(rpcNames.length + Number(source.includes("supabase.rpc(name, parameters)")), 18);
+  assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
+  assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
+  assertEquals(source.includes("supabase.from("), false);
+  assertEquals(source.includes("supabase.storage"), false);
+  assertEquals(source.includes("supabase.auth.admin"), false);
 });
 
 Deno.test("worker dispatches Website and SDF phases without fallback", async () => {

@@ -100,7 +100,10 @@ export async function handleApplicationIntakeAutomation(request: Request, depend
   if (request.method !== "POST" || new URL(request.url).search) return response(400, rejected);
   const workerRequestBody = await workerRequest(request);
   if (!workerRequestBody) return response(400, rejected);
-  if (!dependencies.configurationReady || !await secretMatches(request.headers.get("x-lws-automation-secret"), dependencies.workerSecret, dependencies.digest)) return response(401, rejected);
+  if (!dependencies.configurationReady) {
+    return response(401, { ...rejected, code: "SERVER_CONFIGURATION_ERROR" });
+  }
+  if (!await secretMatches(request.headers.get("x-lws-automation-secret"), dependencies.workerSecret, dependencies.digest)) return response(401, rejected);
   const workerId = dependencies.randomUUID();
   if (!UUID.test(workerId)) return response(500, rejected);
   const targeted = workerRequestBody.workId !== null;

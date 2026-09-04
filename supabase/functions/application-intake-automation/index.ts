@@ -10,10 +10,19 @@ import {
   buildSdfQualificationInvitationEmail, buildSdfQualificationMoreInformationEmail, buildSdfRequestReceivedEmail,
 } from "../_shared/email-templates.ts";
 import { createRawIntakeToken, decryptIntakeInvitationToken, encryptIntakeInvitationToken, hashIntakeToken } from "../_shared/security.ts";
+import { getSupabaseServerSecretKey, type SupabaseKeyBindingEnvironment } from "../_shared/supabase-key-bindings.ts";
 import { handleApplicationIntakeAutomation, sdfInvitationOutcome, type AutomationClaim, websiteIntakeOutcome, websiteTypeOrNull } from "./handler.ts";
 
+export function resolveApplicationIntakeAutomationServerKey(environment: SupabaseKeyBindingEnvironment = Deno.env): string {
+  try {
+    return getSupabaseServerSecretKey("default", environment);
+  } catch {
+    return "";
+  }
+}
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const serverSecretKey = resolveApplicationIntakeAutomationServerKey();
 const workerSecret = Deno.env.get("APPLICATION_INTAKE_AUTOMATION_WORKER_SECRET") || "";
 const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
 const fromEmail = Deno.env.get("FROM_EMAIL") || "";
@@ -21,7 +30,7 @@ const siteUrl = Deno.env.get("SITE_URL") || "https://lorenzowebsolutions.be";
 const sdfInitialConfirmationAuthorityMode = Deno.env.get(
   "SDF_INITIAL_CONFIRMATION_AUTHORITY_MODE",
 );
-const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+const supabase = createClient(supabaseUrl || "http://127.0.0.1", serverSecretKey || "sb_secret_invalid_configuration", { auth: { persistSession: false, autoRefreshToken: false } });
 
 async function rpc(name: string, parameters: Record<string, unknown>) { return await supabase.rpc(name, parameters); }
 function row(data: unknown): Record<string, unknown> | null { const value = Array.isArray(data) ? data[0] : data; return value && typeof value === "object" ? value as Record<string, unknown> : null; }
@@ -309,7 +318,7 @@ async function executeQueuedSdfEmail(): Promise<EmailDeliveryResult | null> {
 }
 
 if (import.meta.main) Deno.serve((request) => handleApplicationIntakeAutomation(request, {
-  configurationReady: Boolean(supabaseUrl && serviceRoleKey && workerSecret && resendApiKey && fromEmail), workerSecret,
+  configurationReady: Boolean(supabaseUrl && serverSecretKey && workerSecret && resendApiKey && fromEmail), workerSecret,
   randomUUID: () => crypto.randomUUID(), digest: async (data) => await crypto.subtle.digest("SHA-256", Uint8Array.from(data)), rpc,
   executeWebsite, executeSdfConfirmation, executeSdfInvitation, executeQueuedSdfEmail,
 }));
