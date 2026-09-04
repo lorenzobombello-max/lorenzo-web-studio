@@ -81,6 +81,13 @@ select status, access_state, access_token_expires_at, lifecycle_revision
 from public.quote_request_intakes
 where id = 'fb200000-0000-4000-8000-000000000001';
 
+select set_config(
+  'test.pending_support_reference',
+  (select support_reference from public.quote_requests where id = 'fb100006-0000-4000-8000-000000000006'),
+  true
+);
+select set_config('request.jwt.claim.sub', 'fb000000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select is(
   (public.list_operator_pending_intakes_v1('fb000000-0000-4000-8000-000000000001', 'ACTIVE')->'items'->0 ? 'retention_state'),
   true,
@@ -88,9 +95,11 @@ select is(
 );
 select is(
   public.list_operator_pending_intakes_v1('fb000000-0000-4000-8000-000000000001', 'ACTIVE')->'items'->0->>'support_reference',
-  (select support_reference from public.quote_requests where id = 'fb100006-0000-4000-8000-000000000006'),
+  current_setting('test.pending_support_reference'),
   'Website pending operator projection exposes its own canonical public dossier reference'
 );
+reset role;
+
 select is(
   public.execute_operator_pending_intake_retention_v1(
     'fb000000-0000-4000-8000-000000000001',
@@ -100,6 +109,9 @@ select is(
   'ARCHIVED',
   'owner archives one pending intake'
 );
+
+select set_config('request.jwt.claim.sub', 'fb000000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select is(
   jsonb_array_length(public.list_operator_pending_intakes_v1('fb000000-0000-4000-8000-000000000001', 'ACTIVE')->'items'),
   4,
@@ -115,6 +127,8 @@ select is(
   1,
   'archived intake appears in archived workspace'
 );
+reset role;
+
 select is(
   (select row(status, access_state, access_token_expires_at, lifecycle_revision)::text
    from public.quote_request_intakes where id = 'fb200000-0000-4000-8000-000000000001'),

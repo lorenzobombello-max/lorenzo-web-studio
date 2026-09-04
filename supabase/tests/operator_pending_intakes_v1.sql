@@ -9,10 +9,10 @@ select has_function(
   'pending-intake list RPC exists'
 );
 select ok(
-  has_function_privilege('service_role', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
-  and not has_function_privilege('authenticated', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
+  has_function_privilege('authenticated', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
+  and not has_function_privilege('service_role', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute')
   and not has_function_privilege('anon', 'public.list_operator_pending_intakes_v1(uuid, text)', 'execute'),
-  'only service_role can enter the pending-intake transport'
+  'only authenticated callers can enter the pending-intake transport'
 );
 select ok(
   not has_table_privilege('authenticated', 'lws_internal.operator_pending_intakes_v1', 'select')
@@ -57,16 +57,26 @@ insert into public.quote_request_intakes (
   ('f7300000-0000-4000-8000-000000000004', 'f7200004-0000-4000-8000-000000000004', 'reviewed', repeat('4',64), '2099-08-30T12:00:00Z', 'ACTIVE', 0, '2099-08-24T12:00:00Z', '2099-08-25T12:00:00Z', '2099-08-26T12:00:00Z', true, '2099-08-23T15:00:00Z'),
   ('f7300000-0000-4000-8000-000000000005', 'f7200005-0000-4000-8000-000000000005', 'invited', repeat('5',64), '2020-01-01T00:00:00Z', 'ACTIVE', 0, null, null, null, false, '2019-12-25T00:00:00Z');
 
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select is(
   jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'),
   3,
   'owner sees invited and in-progress intakes only'
 );
+reset role;
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000002', true);
+set local role authenticated;
 select is(
   jsonb_array_length(public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000002', 'ACTIVE')->'items'),
   3,
   'ACTIVE admin can read pending intakes'
 );
+reset role;
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select ok(
   public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000001', 'ACTIVE')->'items'
     @> '[{"quote_request_id":"f7200001-0000-4000-8000-000000000001","intake_status":"invited"}]'::jsonb,
@@ -82,6 +92,8 @@ select ok(
     @> '[{"quote_request_id":"f7200005-0000-4000-8000-000000000005","effective_access":"EXPIRED"}]'::jsonb,
   'expired access is derived by the authoritative resolver'
 );
+reset role;
+
 select is(
   (select count(*)::integer from lws_internal.operator_pending_intakes_v1 where intake_status in ('submitted', 'reviewed')),
   0,
@@ -112,18 +124,33 @@ select is(
   0,
   'pending and dossier readmodels are mutually exclusive'
 );
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000003', true);
+set local role authenticated;
 select throws_ok(
   $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000003', 'ACTIVE')$$,
   '42501', 'APPLICATION_SCOPE_DENIED', 'non-owner/admin operator is rejected'
 );
+reset role;
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000004', true);
+set local role authenticated;
 select throws_ok(
   $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000004', 'ACTIVE')$$,
   '42501', 'OPERATOR_DISABLED', 'disabled admin is rejected'
 );
+reset role;
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000005', true);
+set local role authenticated;
 select throws_ok(
   $$select public.list_operator_pending_intakes_v1('f7100000-0000-4000-8000-000000000005', 'ACTIVE')$$,
   '42501', 'UNKNOWN_OPERATOR', 'unknown identity is rejected'
 );
+reset role;
+
+select set_config('request.jwt.claim.sub', 'f7100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select ok(
   not exists (
     select 1
@@ -138,6 +165,7 @@ select ok(
   ),
   'pending DTO contains no token or secret fields'
 );
+reset role;
 
 update public.quote_request_intakes
 set status = 'submitted',

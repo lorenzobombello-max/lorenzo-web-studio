@@ -1129,7 +1129,7 @@ if (import.meta.main) {
           actorAuthUserId: string,
           retentionState: string,
         ) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "list_operator_pending_intakes_v1",
             {
               p_actor_auth_user_id: actorAuthUserId,

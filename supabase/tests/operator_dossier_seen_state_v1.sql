@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(24);
+select plan(26);
 
 select has_table('lws_internal', 'operator_dossier_seen_states', 'private per-operator dossier seen state exists');
 select has_function('public', 'mark_operator_dossier_seen_v1', array['uuid','uuid'], 'seen write RPC exists');
@@ -68,12 +68,23 @@ insert into public.quote_requests (
 
 set local role service_role;
 select lives_ok(
-  $$select public.list_operator_applications_v2('db100000-0000-4000-8000-000000000001');
-    select public.list_operator_pending_intakes_v1('db100000-0000-4000-8000-000000000001', 'ACTIVE');
-    select public.list_operator_pending_sdf_intakes_v1('db100000-0000-4000-8000-000000000001')$$,
-  'Dossiers list and refresh projections are read-only'
+  $$select public.list_operator_applications_v2('db100000-0000-4000-8000-000000000001')$$,
+  'submitted Dossiers list is read-only through service transport'
 );
 reset role;
+
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
+select lives_ok(
+  $$select public.list_operator_pending_intakes_v1('db100000-0000-4000-8000-000000000001', 'ACTIVE')$$,
+  'Website pending list is read-only through caller JWT'
+);
+select lives_ok(
+  $$select public.list_operator_pending_sdf_intakes_v1('db100000-0000-4000-8000-000000000001')$$,
+  'SDF pending list is read-only through caller JWT'
+);
+reset role;
+
 select is(
   (select count(*)::integer from lws_internal.operator_dossier_seen_states),
   0, 'list and refresh calls never create seen state'
@@ -179,7 +190,7 @@ select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000001
 set local role authenticated;
 select is(
   public.can_purge_dossier_v1('db120000-0000-4000-8000-000000000001')->>'reason',
-  'DOSSIER_STATE_NOT_PURGEABLE', 'current-main Trash-first delete authority remains intact'
+  'DOSSIER_NOT_TRASHED', 'current-main Trash-first delete authority remains intact'
 );
 reset role;
 

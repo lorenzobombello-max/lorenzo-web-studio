@@ -61,12 +61,12 @@ select ok(
 );
 
 select ok(
-  position('''dossier_state'', pending.dossier_state' in pg_get_functiondef('public.list_operator_pending_intakes_v1(uuid,text)'::regprocedure)::text) > 0,
+  position('''dossier_state'', pending.dossier_state' in pg_get_functiondef('public.list_operator_pending_intakes_v1_pre_dos_r1_current_seen(uuid,text)'::regprocedure)::text) > 0,
   'Website Pending DTO exposes canonical dossier state'
 );
 
 select ok(
-  position('''dossier_revision'', pending.dossier_revision' in pg_get_functiondef('public.list_operator_pending_intakes_v1(uuid,text)'::regprocedure)::text) > 0,
+  position('''dossier_revision'', pending.dossier_revision' in pg_get_functiondef('public.list_operator_pending_intakes_v1_pre_dos_r1_current_seen(uuid,text)'::regprocedure)::text) > 0,
   'Website Pending DTO exposes canonical dossier revision'
 );
 
