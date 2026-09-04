@@ -73,6 +73,7 @@ import {
   type QuotationApprovalIntegrityRoot,
   verifyQuotationApprovalIntegrity,
 } from "../_shared/quotation-approval-integrity.ts";
+import { getSupabaseServerSecretKey } from "../_shared/supabase-key-bindings.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1066,8 +1067,7 @@ if (import.meta.main) {
           },
         });
       const serviceClient = () => {
-        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        if (!serviceRoleKey) throw new Error("SERVER_CONFIGURATION_ERROR");
+        const serviceRoleKey = getSupabaseServerSecretKey("default");
         return createClient(url, serviceRoleKey, {
           auth: { persistSession: false, autoRefreshToken: false },
         });
