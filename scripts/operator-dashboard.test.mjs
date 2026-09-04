@@ -12,6 +12,7 @@ import { createSdfDocumentWorkspaceController, sdfDocumentCustomerRequest, sdfDo
 import { shortTechnicalReference } from "../assets/js/operator-dashboard.js";
 import { presentSdfDossierPurge, presentWebsiteDossierPurge, sdfDossierPurgePresentation, sdfDossierPurgeRequest } from "../assets/js/operator-dashboard.js";
 import { createVisibilityRefreshController } from "../assets/js/operator-dashboard.js";
+import { mountInternalSmokeB } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -2376,6 +2377,93 @@ test("internal Smoke A trigger stays one-shot after partial-state failure", asyn
   assert.equal(fixtureCalls, 2);
   assert.equal(uploadLinkCalls, 1);
   assert.equal(button.disabled, true);
+});
+
+function smokeBMountFixture() {
+  let click = null;
+  return {
+    panel: { hidden: false },
+    button: {
+      disabled: false,
+      addEventListener(type, listener) {
+        assert.equal(type, "click");
+        click = listener;
+      },
+    },
+    statusElement: { textContent: "" },
+    resultElement: { textContent: "" },
+    click: ()=>click,
+  };
+}
+
+test("internal Smoke B stays unmounted for the normal dossiers route and non-owner", () => {
+  const owner = { role: "owner", status: "ACTIVE" };
+  for (const [url, identity] of [
+    ["https://operator.example/operator/dashboard/?module=dossiers", owner],
+    ["https://operator.example/operator/dashboard/?module=dossiers&internalSmoke=1", { role: "operator", status: "ACTIVE" }],
+  ]) {
+    const fixture = smokeBMountFixture();
+    assert.equal(mountInternalSmokeB({
+      ...fixture,
+      url,
+      identity,
+      requireAal2: async ()=>{},
+      confirmSmoke: ()=>true,
+      runSmoke: async ()=>assert.fail("Smoke B must not run"),
+    }), false);
+    assert.equal(fixture.panel.hidden, true);
+    assert.equal(fixture.click(), null);
+  }
+});
+
+test("internal Smoke B blocks before fixture creation when AAL2 fails", async () => {
+  const fixture = smokeBMountFixture();
+  let runnerCalls = 0;
+  assert.equal(mountInternalSmokeB({
+    ...fixture,
+    url: "https://operator.example/operator/dashboard/?module=dossiers&internalSmoke=1",
+    identity: { role: "owner", status: "ACTIVE" },
+    requireAal2: async ()=>{ throw new Error("AAL2_REQUIRED"); },
+    confirmSmoke: ()=>true,
+    runSmoke: async ()=>{ runnerCalls += 1; },
+  }), true);
+  assert.equal(fixture.panel.hidden, false);
+  assert.equal((await fixture.click()()).SMOKE_STATUS, "FAILED: AUTH");
+  assert.equal(runnerCalls, 0);
+  assert.equal(fixture.button.disabled, true);
+  assert.doesNotMatch(fixture.resultElement.textContent, /AAL2_REQUIRED/);
+});
+
+test("internal Smoke B mounts in the dedicated owner route and remains one-shot after AAL2", async () => {
+  const fixture = smokeBMountFixture();
+  let aal2Calls = 0;
+  let runnerCalls = 0;
+  assert.equal(mountInternalSmokeB({
+    ...fixture,
+    url: "https://operator.example/operator/dashboard/?module=dossiers&internalSmoke=1",
+    identity: { role: "owner", status: "ACTIVE" },
+    requireAal2: async ()=>{ aal2Calls += 1; },
+    confirmSmoke: ()=>true,
+    runSmoke: async ()=>{ runnerCalls += 1; return { SMOKE_STATUS: "PASS" }; },
+  }), true);
+  assert.equal(fixture.panel.hidden, false);
+  assert.equal((await fixture.click()()).SMOKE_STATUS, "PASS");
+  assert.equal(await fixture.click()(), null);
+  assert.equal(aal2Calls, 1);
+  assert.equal(runnerCalls, 1);
+  assert.equal(fixture.button.disabled, true);
+  assert.equal(fixture.statusElement.textContent, "Test voltooid.");
+  assert.equal(JSON.parse(fixture.resultElement.textContent).SMOKE_STATUS, "PASS");
+});
+
+test("dedicated dossiers dispatcher mounts Smoke B before returning without entering legacy flow", async () => {
+  const script = await read("assets/js/operator-dashboard.js");
+  const dedicated = script.split('if (activeModule === "dossiers") {')[1]?.split('if (activeModule === "finance") {')[0] || "";
+  assert.match(dedicated, /initializeOperatorDossiers\(document, client, currentIdentity/);
+  assert.match(dedicated, /mountInternalSmokeB\(/);
+  assert.ok(dedicated.indexOf("initializeOperatorDossiers(") < dedicated.indexOf("mountInternalSmokeB("));
+  assert.ok(dedicated.indexOf("mountInternalSmokeB(") < dedicated.indexOf("return currentIdentity"));
+  assert.doesNotMatch(dedicated, /personalQueueWorkspace\.hidden = false|managerWorkspace\.hidden = false/);
 });
 
 test("internal Smoke A runtime blocks a non-owner before fixture creation", async () => {

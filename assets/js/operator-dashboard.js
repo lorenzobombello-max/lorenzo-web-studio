@@ -1779,6 +1779,44 @@ export function createInternalSmokeOneShotTrigger({ button, confirmSmoke, runSmo
   };
 }
 
+export function mountInternalSmokeB({
+  panel,
+  button,
+  statusElement,
+  resultElement,
+  url,
+  identity,
+  requireAal2,
+  confirmSmoke,
+  runSmoke,
+}) {
+  if (panel) panel.hidden = true;
+  if (!panel || !button || !statusElement || !resultElement || !internalSmokeAvailable(url, identity)) return false;
+  panel.hidden = false;
+  const trigger = createInternalSmokeOneShotTrigger({
+    button,
+    confirmSmoke,
+    runSmoke: async ()=>{
+      statusElement.textContent = "Test wordt uitgevoerd…";
+      resultElement.textContent = "";
+      try {
+        await requireAal2();
+      } catch {
+        const result = { SMOKE_STATUS: "FAILED: AUTH" };
+        statusElement.textContent = "Test gestopt.";
+        resultElement.textContent = JSON.stringify(result, null, 2);
+        return result;
+      }
+      const result = await runSmoke();
+      statusElement.textContent = result.SMOKE_STATUS === "PASS" ? "Test voltooid." : "Test gestopt.";
+      resultElement.textContent = JSON.stringify(result, null, 2);
+      return result;
+    },
+  });
+  button.addEventListener("click", trigger);
+  return true;
+}
+
 export async function runInternalSmokeA({ client, invoke, resolveCapability, randomUUID = ()=>crypto.randomUUID() }) {
   const result = internalSmokeResult();
   let capability = null;
@@ -2254,6 +2292,51 @@ export async function startOperatorDashboard({
     }
     const controller = initializeOperatorDossiers(document, client, currentIdentity, { onAuthorizationFailure });
     document.querySelector("[data-dossiers-workspace]").operatorDossiersController = controller;
+    mountInternalSmokeB({
+      panel: document.getElementById("internalSmokeBPanel"),
+      button: document.getElementById("internalSmokeBRun"),
+      statusElement: document.getElementById("internalSmokeBStatus"),
+      resultElement: document.getElementById("internalSmokeBResult"),
+      url: window.location.href,
+      identity: currentIdentity,
+      requireAal2,
+      confirmSmoke: ()=>window.confirm("Smoke B uitvoeren?\nEr wordt exact één synthetic PNG via één tijdelijke Upload Link geüpload en daarna aantoonbaar verwijderd. Er wordt geen echte klantdata gebruikt."),
+      runSmoke: ()=>{
+        const endpoint = `${functionsBaseUrl.replace(/\/$/, "")}/customer-request-upload`;
+        return runInternalSmokeB({
+          client,
+          invoke,
+          uploadRequest: async (capability, request) => {
+            const isRead = request.method === "GET";
+            const response = await fetch(endpoint, {
+              method: isRead ? "GET" : "POST",
+              headers: isRead
+                ? { Authorization: `Bearer ${capability}`, Accept: "application/json" }
+                : {
+                  Authorization: `Bearer ${capability}`,
+                  "Content-Type": "application/json",
+                  "Idempotency-Key": request.idempotencyKey,
+                },
+              body: isRead ? undefined : JSON.stringify({ action: request.action, ...request.payload }),
+              cache: "no-store",
+              referrerPolicy: "no-referrer",
+            });
+            const body = await response.json().catch(()=>null);
+            if (!response.ok || !body?.ok) throw new Error("UPLOAD_REQUEST_FAILED");
+            return body;
+          },
+          putSignedBlob: async (url, blob) => {
+            const response = await fetch(url, {
+              method: "PUT",
+              headers: { "Content-Type": blob.type, "x-upsert": "false" },
+              body: blob,
+              referrerPolicy: "no-referrer",
+            });
+            if (!response.ok) throw new Error("UPLOAD_FAILED");
+          },
+        });
+      },
+    });
     onDossierRoute("dedicated");
     return currentIdentity;
   }
@@ -3622,55 +3705,6 @@ export async function startOperatorDashboard({
       },
     });
     internalSmokeRun.addEventListener("click", triggerInternalSmoke);
-  }
-  if (internalSmokeBPanel && internalSmokeAvailable(window.location.href, currentIdentity)) {
-    internalSmokeBPanel.hidden = false;
-    const confirmationMessage = "Smoke B uitvoeren?\nEr wordt exact één synthetic PNG via één tijdelijke Upload Link geüpload en daarna aantoonbaar verwijderd. Er wordt geen echte klantdata gebruikt.";
-    const triggerInternalSmokeB = createInternalSmokeOneShotTrigger({
-      button: internalSmokeBRun,
-      confirmSmoke: ()=>window.confirm(confirmationMessage),
-      runSmoke: async ()=>{
-        internalSmokeBStatus.textContent = "Test wordt uitgevoerd…";
-        internalSmokeBResultElement.textContent = "";
-        const endpoint = `${functionsBaseUrl.replace(/\/$/, "")}/customer-request-upload`;
-        const result = await runInternalSmokeB({
-          client,
-          invoke,
-          uploadRequest: async (capability, request) => {
-            const isRead = request.method === "GET";
-            const response = await fetch(endpoint, {
-              method: isRead ? "GET" : "POST",
-              headers: isRead
-                ? { Authorization: `Bearer ${capability}`, Accept: "application/json" }
-                : {
-                  Authorization: `Bearer ${capability}`,
-                  "Content-Type": "application/json",
-                  "Idempotency-Key": request.idempotencyKey,
-                },
-              body: isRead ? undefined : JSON.stringify({ action: request.action, ...request.payload }),
-              cache: "no-store",
-              referrerPolicy: "no-referrer",
-            });
-            const body = await response.json().catch(()=>null);
-            if (!response.ok || !body?.ok) throw new Error("UPLOAD_REQUEST_FAILED");
-            return body;
-          },
-          putSignedBlob: async (url, blob) => {
-            const response = await fetch(url, {
-              method: "PUT",
-              headers: { "Content-Type": blob.type, "x-upsert": "false" },
-              body: blob,
-              referrerPolicy: "no-referrer",
-            });
-            if (!response.ok) throw new Error("UPLOAD_FAILED");
-          },
-        });
-        internalSmokeBStatus.textContent = result.SMOKE_STATUS === "PASS" ? "Test voltooid." : "Test gestopt.";
-        internalSmokeBResultElement.textContent = JSON.stringify(result, null, 2);
-        return result;
-      },
-    });
-    internalSmokeBRun.addEventListener("click", triggerInternalSmokeB);
   }
 
   function renderPersonalQueue(items) {
