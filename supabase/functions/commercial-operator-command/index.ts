@@ -252,13 +252,11 @@ type ApplicationDetailRpcClient = Readonly<{
 
 export async function executeApplicationDetailRead(
   callerClient: ApplicationDetailRpcClient,
-  serviceClient: () => ApplicationDetailRpcClient,
   input: Readonly<{
     quote_request_id: string | null;
     application_reference: string | null;
     support_reference: string | null;
   }>,
-  actorAuthUserId: string,
 ): Promise<
   Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>
 > {
@@ -276,10 +274,9 @@ export async function executeApplicationDetailRead(
   if (
     !input.support_reference || primaryError !== "APPLICATION_NOT_FOUND"
   ) return primary;
-  return await serviceClient().rpc(
-    "get_operator_trashed_website_intake_detail_v1",
+  return await callerClient.rpc(
+    "get_operator_trashed_website_intake_detail_caller_v1",
     {
-      p_actor_auth_user_id: actorAuthUserId,
       p_support_reference: input.support_reference,
     },
   );
@@ -1599,9 +1596,7 @@ if (import.meta.main) {
             : input.action === "get_application_detail"
             ? executeApplicationDetailRead(
               client,
-              serviceClient,
               input,
-              actorAuthUserId,
             )
             : client.rpc("promote_operator_application_v1", {
               p_idempotency_key: input.idempotency_key,
