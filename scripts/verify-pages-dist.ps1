@@ -32,7 +32,9 @@ $requiredPublishedFiles = @(
   "assets/js/application-dossier-copy.js",
   "recruitment/test/index.html",
   "assets/css/recruitment-candidate-test.css",
-  "assets/js/recruitment-candidate-test.mjs"
+  "assets/js/recruitment-candidate-test.mjs",
+  "assets/css/recruitment-open-application.css",
+  "assets/js/recruitment-open-application.mjs"
 )
 
 $forbiddenPublicPaths = @(
@@ -271,6 +273,7 @@ $operatorRequiredPaths = @(
   "assets/js/operator-module-registry.mjs",
   "assets/js/operator-profile.mjs",
   "assets/js/operator-recruitment.mjs",
+  "assets/js/operator-recruitment-applications.mjs",
   "assets/js/operator-recruitment-tests.mjs",
   "assets/js/operator-shell.mjs",
   "assets/js/operator-window-guard.mjs",

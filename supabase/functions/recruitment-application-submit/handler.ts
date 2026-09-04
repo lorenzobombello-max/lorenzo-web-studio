@@ -6,6 +6,10 @@ const MAX_MULTIPART_BYTES = RECRUITMENT_CV_MAX_BYTES + 64 * 1024;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const OPEN_APPLICATION_INTEREST_AREAS = new Set([
+  "Webdesign", "Development", "Security", "SEO", "Content",
+  "Administratie", "Sales", "HR", "Finance", "Anders",
+]);
 const ALLOWED_FIELDS = new Set([
   "vacancy_id",
   "first_name",
@@ -13,6 +17,11 @@ const ALLOWED_FIELDS = new Set([
   "email",
   "phone",
   "motivation",
+  "interest_area",
+  "experience_skills",
+  "portfolio_url",
+  "availability",
+  "privacy_consent",
   "cv",
 ]);
 
@@ -23,12 +32,18 @@ export type RecruitmentCvMimeType =
 
 type ApplicationInput = Readonly<{
   applicationId: string;
-  vacancyId: string;
+  vacancyId: string | null;
+  applicationType: "VACANCY" | "OPEN_SOLLICITATIE";
   firstName: string;
   lastName: string;
   email: string;
   phone: string | null;
   motivation: string;
+  interestArea: string | null;
+  experienceSkills: string | null;
+  portfolioUrl: string | null;
+  availability: string | null;
+  privacyConsent: boolean;
   cvStoragePath: string;
   cvMimeType: RecruitmentCvMimeType;
   cvByteCount: number;
@@ -105,6 +120,17 @@ function textField(
     throw new RequestError(400, `INVALID_${name.toUpperCase()}`);
   }
   return normalized || null;
+}
+
+function portfolioField(form: FormData): string | null {
+  const value = textField(form, "portfolio_url", 500, false);
+  if (!value) return null;
+  let url: URL;
+  try { url = new URL(value); } catch { throw new RequestError(400, "INVALID_PORTFOLIO_URL"); }
+  if (url.protocol !== "https:" || url.username || url.password || ["localhost", "127.0.0.1"].includes(url.hostname)) {
+    throw new RequestError(400, "INVALID_PORTFOLIO_URL");
+  }
+  return url.toString();
 }
 
 function extensionFor(
@@ -246,10 +272,11 @@ export async function handleRecruitmentApplicationSubmit(
       }
     }
 
-    const vacancyId = textField(form, "vacancy_id", 36) as string;
-    if (!UUID_PATTERN.test(vacancyId)) {
+    const vacancyId = textField(form, "vacancy_id", 36, false);
+    if (vacancyId !== null && !UUID_PATTERN.test(vacancyId)) {
       throw new RequestError(400, "INVALID_VACANCY_ID");
     }
+    const applicationType = vacancyId === null ? "OPEN_SOLLICITATIE" : "VACANCY";
     const firstName = textField(form, "first_name", 100) as string;
     const lastName = textField(form, "last_name", 100) as string;
     const email = (textField(form, "email", 254) as string).toLowerCase();
@@ -258,6 +285,17 @@ export async function handleRecruitmentApplicationSubmit(
     }
     const phone = textField(form, "phone", 40, false);
     const motivation = textField(form, "motivation", 5000) as string;
+    const interestArea = textField(form, "interest_area", 40, applicationType === "OPEN_SOLLICITATIE");
+    const experienceSkills = textField(form, "experience_skills", 5000, applicationType === "OPEN_SOLLICITATIE");
+    const portfolioUrl = portfolioField(form);
+    const availability = textField(form, "availability", 1000, applicationType === "OPEN_SOLLICITATIE");
+    const privacyConsent = form.get("privacy_consent") === "accepted";
+    if (applicationType === "OPEN_SOLLICITATIE" && (!interestArea || !OPEN_APPLICATION_INTEREST_AREAS.has(interestArea))) {
+      throw new RequestError(400, "INVALID_INTEREST_AREA");
+    }
+    if (applicationType === "OPEN_SOLLICITATIE" && !privacyConsent) {
+      throw new RequestError(400, "PRIVACY_CONSENT_REQUIRED");
+    }
     const cv = form.get("cv");
     if (!(cv instanceof File) || cv.size === 0) {
       throw new RequestError(400, "CV_REQUIRED");
@@ -289,11 +327,17 @@ export async function handleRecruitmentApplicationSubmit(
     await dependencies.finalizeApplication({
       applicationId,
       vacancyId,
+      applicationType,
       firstName,
       lastName,
       email,
       phone,
       motivation,
+      interestArea,
+      experienceSkills,
+      portfolioUrl,
+      availability,
+      privacyConsent,
       cvStoragePath,
       cvMimeType: mimeType,
       cvByteCount: bytes.byteLength,

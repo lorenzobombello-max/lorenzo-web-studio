@@ -17,10 +17,12 @@
   <meta property="og:image" content="https://lorenzowebsolutions.be/assets/images/branding/social/lws-social-share.jpg" />
   <link rel="stylesheet" href="../assets/css/pages.css" />
   <link rel="stylesheet" href="../assets/css/recruitment-public.css" />
+  <link rel="stylesheet" href="../assets/css/recruitment-open-application.css" />
   <link rel="stylesheet" href="../assets/css/cookie-consent.css" />
   <script defer src="../assets/js/cookie-consent.js"></script>
   <script defer src="../assets/js/pages.js"></script>
   <script type="module" src="../assets/js/recruitment-public.js"></script>
+  <script type="module" src="../assets/js/recruitment-open-application.mjs"></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Ga naar de inhoud</a>
@@ -42,9 +44,31 @@
       <div id="vacancyGroups" class="vacancy-groups" hidden></div>
       <div id="vacancyEmpty" class="vacancy-state vacancy-state--empty" role="status" hidden><strong>Momenteel zijn er geen openstaande vacatures.</strong><p>Nieuwe vacatures verschijnen hier zodra er een functie beschikbaar is.</p></div>
       <div id="vacancyError" class="vacancy-state vacancy-state--error" role="alert" hidden><strong>Vacatures konden momenteel niet worden geladen.</strong><p>Probeer het later opnieuw.</p></div>
+      <aside class="open-application-callout" aria-labelledby="open-application-title"><div><p class="kicker">Spontane kandidatuur</p><h2 id="open-application-title">Open sollicitatie</h2><p>Geen passende vacature gevonden? Vertel waar u iets kunt betekenen voor Lorenzo Web Solutions.</p></div><button id="openApplicationTrigger" class="page-button" type="button">Open sollicitatie indienen</button></aside>
     </div></section>
     </div>
   </main>
+  <dialog id="openApplicationDialog" class="open-application-dialog" aria-labelledby="openApplicationDialogTitle">
+    <form id="openApplicationForm" class="open-application-form" enctype="multipart/form-data">
+      <div class="open-application-form__heading"><p class="kicker">Open sollicitatie</p><h2 id="openApplicationDialogTitle">Spontane kandidatuur</h2><p>Velden met een sterretje zijn verplicht.</p></div>
+      <div class="open-application-form__grid">
+        <label>Voornaam *<input name="first_name" type="text" maxlength="100" autocomplete="given-name" required /></label>
+        <label>Achternaam *<input name="last_name" type="text" maxlength="100" autocomplete="family-name" required /></label>
+        <label>E-mail *<input name="email" type="email" maxlength="254" autocomplete="email" required /></label>
+        <label>Telefoon<input name="phone" type="tel" maxlength="40" autocomplete="tel" /></label>
+        <label>Interessegebied / afdeling *<select name="interest_area" required><option value="">Kies een interessegebied</option><option>Webdesign</option><option>Development</option><option>Security</option><option>SEO</option><option>Content</option><option>Administratie</option><option>Sales</option><option>HR</option><option>Finance</option><option>Anders</option></select></label>
+        <label>Beschikbaarheid *<input name="availability" type="text" maxlength="1000" placeholder="Bijvoorbeeld: vanaf november, 4 dagen per week" required /></label>
+        <label class="open-application-form__wide">Waar denkt u iets te kunnen betekenen voor Lorenzo Web Solutions? *<textarea name="motivation" rows="5" maxlength="5000" required></textarea></label>
+        <label class="open-application-form__wide">Ervaring en vaardigheden *<textarea name="experience_skills" rows="5" maxlength="5000" required></textarea></label>
+        <label>Portfolio, website of GitHub<input name="portfolio_url" type="url" maxlength="500" inputmode="url" placeholder="https://" /></label>
+        <label>CV *<input name="cv" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required /><span>PDF, DOC of DOCX, maximaal 10 MB.</span></label>
+      </div>
+      <label class="open-application-consent"><input name="privacy_consent" type="checkbox" value="accepted" required /><span>Ik geef toestemming om mijn gegevens te verwerken voor deze kandidatuur en heb de <a href="../pages/privacy.html" target="_blank" rel="noopener">privacyverklaring</a> gelezen.</span></label>
+      <p id="openApplicationMessage" class="open-application-message" role="status" aria-live="polite"></p>
+      <div class="open-application-actions"><button id="openApplicationCancel" type="button" class="page-button page-button--secondary">Annuleren</button><button type="submit" class="page-button">Kandidatuur verzenden</button></div>
+    </form>
+    <div id="openApplicationSuccess" class="open-application-success" role="status" hidden><p class="kicker">Ontvangen</p><h2>Uw kandidatuur is verzonden</h2><p>Recruitment bekijkt uw gegevens en neemt contact op wanneer er een passende vervolgstap is.</p><button type="button" class="page-button" onclick="this.closest('dialog').close()">Sluiten</button></div>
+  </dialog>
   <footer class="preview-footer"><div class="shell preview-footer__top"><div class="preview-footer__brand"><p class="brand__name">Lorenzo <strong>Web Solutions</strong></p><p>Professionele websites voor zelfstandigen en kleine ondernemingen.</p></div><div><h2>Diensten</h2><ul><li><a href="../pages/services.html">Alle diensten</a></li><li><a href="../pages/websites-op-maat.html">Websites op maat</a></li><li><a href="../pages/seo.html">SEO &amp; vindbaarheid</a></li></ul></div><div><h2>Ontdek</h2><ul><li><a href="../pages/portfolio.html">Portfolio</a></li><li><a href="../pages/process.html">Aanpak</a></li><li><a href="../pages/about.html">Over Lorenzo</a></li><li><a href="../pages/contact.html">Contact</a></li></ul></div><div><h2>Bedrijf</h2><address>Lorenzo Web Solutions<br />Grote Baan 164 bus 1002<br />9920 Lievegem, België</address><p>BTW BE 0742.361.487</p><p><a href="../pages/privacy.html">Privacy</a> · <a href="../pages/cookies.html">Cookies</a> · <a href="../pages/algemene-voorwaarden.html">Voorwaarden</a></p></div></div><div class="shell preview-footer__bottom"><p>Lorenzo Web Solutions</p><p>© <span data-year>2026</span> Alle rechten voorbehouden.</p></div></footer>
 </body>
 </html>

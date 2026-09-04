@@ -44,9 +44,26 @@ if (import.meta.main) {
         if (error) throw error;
       },
       finalizeApplication: async (input) => {
-        const { data, error } = await serviceClient.rpc(
-          "finalize_recruitment_application_v1",
-          {
+        const rpc = input.applicationType === "OPEN_SOLLICITATIE"
+          ? "finalize_recruitment_open_application_v1"
+          : "finalize_recruitment_application_v1";
+        const parameters = input.applicationType === "OPEN_SOLLICITATIE" ? {
+            p_application_id: input.applicationId,
+            p_first_name: input.firstName,
+            p_last_name: input.lastName,
+            p_email: input.email,
+            p_phone: input.phone,
+            p_motivation: input.motivation,
+            p_interest_area: input.interestArea,
+            p_experience_skills: input.experienceSkills,
+            p_portfolio_url: input.portfolioUrl,
+            p_availability: input.availability,
+            p_privacy_consent: input.privacyConsent,
+            p_cv_storage_path: input.cvStoragePath,
+            p_cv_mime_type: input.cvMimeType,
+            p_cv_byte_count: input.cvByteCount,
+            p_cv_sha256: input.cvSha256,
+          } : {
             p_application_id: input.applicationId,
             p_vacancy_id: input.vacancyId,
             p_first_name: input.firstName,
@@ -58,8 +75,8 @@ if (import.meta.main) {
             p_cv_mime_type: input.cvMimeType,
             p_cv_byte_count: input.cvByteCount,
             p_cv_sha256: input.cvSha256,
-          },
-        );
+          };
+        const { data, error } = await serviceClient.rpc(rpc, parameters);
         if (!finalizationSucceeded(data, error)) {
           throw error || new Error("APPLICATION_FINALIZATION_FAILED");
         }

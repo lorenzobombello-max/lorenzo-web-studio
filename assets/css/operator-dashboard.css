@@ -346,7 +346,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .recruitment-candidate-form label { display:grid; gap:.35rem; color:var(--navy); font-weight:800; }
 .recruitment-candidate-form :is(input,select,textarea) { width:100%; padding:.75rem; border:1px solid var(--line-strong); border-radius:6px; font:inherit; }
 .recruitment-candidate-form__note { margin:0; padding:.75rem; border-left:3px solid var(--turquoise); background:var(--paper); color:var(--muted); font-size:.82rem; line-height:1.5; }
-@media (max-width:800px) { .recruitment-heading,.recruitment-candidate-heading { flex-direction:column; } .recruitment-publication-control { grid-template-columns:1fr; } .recruitment-publication-control__action { justify-content:flex-start; } .recruitment-publication-control > .action-message { grid-column:1; } .recruitment-vacancy-list,.recruitment-candidate-list { grid-template-columns:1fr; } .recruitment-vacancy-fields { grid-template-columns:1fr; } .recruitment-vacancy-field--wide { grid-column:auto; } }
+.recruitment-open-applications { margin-top:2rem; padding-top:2rem; border-top:1px solid var(--line); }
+.recruitment-open-application-list { margin:1rem 0 0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; list-style:none; }
+.recruitment-open-application-item { min-width:0; padding:1.15rem; border:1px solid var(--line); border-left:3px solid var(--turquoise); border-radius:var(--radius); background:var(--white); }
+.recruitment-open-application-item h3 { margin:0; color:var(--navy); }
+.recruitment-open-application-label { margin:.5rem 0; color:var(--turquoise-dark); font-size:.72rem; font-weight:900; }
+.recruitment-open-application-actions { display:flex; flex-wrap:wrap; gap:.55rem; margin-top:1rem; }
+.recruitment-open-application-detail { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+.recruitment-open-application-detail div { padding:.75rem; background:var(--paper); }
+.recruitment-open-application-detail dt { color:var(--muted); font-size:.72rem; font-weight:850; text-transform:uppercase; }
+.recruitment-open-application-detail dd { margin:.35rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+@media (max-width:800px) { .recruitment-heading,.recruitment-candidate-heading { flex-direction:column; } .recruitment-publication-control { grid-template-columns:1fr; } .recruitment-publication-control__action { justify-content:flex-start; } .recruitment-publication-control > .action-message { grid-column:1; } .recruitment-vacancy-list,.recruitment-candidate-list,.recruitment-open-application-list { grid-template-columns:1fr; } .recruitment-vacancy-fields,.recruitment-open-application-detail { grid-template-columns:1fr; } .recruitment-vacancy-field--wide { grid-column:auto; } }
 @media (max-width:540px) { .recruitment-heading__actions { width:100%; } .recruitment-heading__actions :is(.primary-action,.secondary-action) { flex:1 1 auto; } .recruitment-status-filters { width:100%; } .recruitment-status-filters button { flex:1 0 auto; } .recruitment-vacancy-item__heading { align-items:flex-start; } }
 .finance-visual { position:relative; min-height:220px; margin-top:2.2rem; overflow:hidden; border:1px solid rgba(20,124,118,.22); border-radius:var(--radius); background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(232,246,244,.58)); box-shadow:0 18px 45px rgba(17,29,54,.08); }
 .finance-visual__grid { position:absolute; inset:0; background-image:linear-gradient(rgba(27,42,74,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(27,42,74,.055) 1px,transparent 1px); background-size:48px 44px; mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 94%); }

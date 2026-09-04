@@ -133,6 +133,18 @@ function request(
   );
 }
 
+function openApplicationRequest(fields: Record<string, string> = {}): Request {
+  return request(PDF, "application/pdf", "cv.pdf", {
+    vacancy_id: "",
+    interest_area: "Development",
+    experience_skills: "TypeScript, toegankelijke interfaces en API-integraties.",
+    portfolio_url: "https://github.com/example",
+    availability: "Beschikbaar vanaf volgende maand.",
+    privacy_consent: "accepted",
+    ...fields,
+  });
+}
+
 async function body(response: Response): Promise<Record<string, unknown>> {
   return await response.json();
 }
@@ -155,6 +167,33 @@ Deno.test("valid PDF is uploaded to a server-controlled path and finalized", asy
   assertEquals(harness.calls[1].value.email, "ada@example.test");
   assertEquals(harness.calls[1].value.phone, null);
   assertMatch(String(harness.calls[1].value.cvSha256), /^[0-9a-f]{64}$/);
+});
+
+Deno.test("open application is server-classified and finalized with bounded fields", async () => {
+  const harness = dependencies();
+  const response = await handleRecruitmentApplicationSubmit(openApplicationRequest(), harness.value);
+  assertEquals(response.status, 201);
+  assertEquals(harness.calls[1].value.applicationType, "OPEN_SOLLICITATIE");
+  assertEquals(harness.calls[1].value.vacancyId, null);
+  assertEquals(harness.calls[1].value.interestArea, "Development");
+  assertEquals(harness.calls[1].value.portfolioUrl, "https://github.com/example");
+  assertEquals(harness.calls[1].value.privacyConsent, true);
+});
+
+Deno.test("open application requires approved interest, availability, skills, and consent", async () => {
+  const invalidFields: Record<string, string>[] = [
+    { interest_area: "Onbevoegd" },
+    { experience_skills: "" },
+    { availability: "" },
+    { privacy_consent: "" },
+    { portfolio_url: "http://localhost/profile" },
+  ];
+  for (const fields of invalidFields) {
+    const harness = dependencies();
+    const response = await handleRecruitmentApplicationSubmit(openApplicationRequest(fields), harness.value);
+    assertEquals(response.status, 400);
+    assertEquals(harness.calls, []);
+  }
 });
 
 for (

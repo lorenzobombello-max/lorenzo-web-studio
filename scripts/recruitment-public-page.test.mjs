@@ -30,7 +30,10 @@ test("public careers route has the required shell SEO heading and empty states",
   assert.match(html, /Vacatures konden momenteel niet worden geladen\./);
   assert.match(html, /id="careersPublishedContent" hidden/);
   assert.doesNotMatch(html, /careersInactive|Rekrutering is momenteel (?:niet actief|niet beschikbaar)/);
-  assert.doesNotMatch(html, /JobPosting|Solliciteer spontaan|type="file"|<form\b|testkamer/i);
+  assert.doesNotMatch(html, /JobPosting|testkamer/i);
+  assert.match(html, /id="openApplicationTrigger"/);
+  assert.match(html, /id="openApplicationForm"/);
+  assert.match(html, /type="file"/);
   assert.match(sitemap, /<loc>https:\/\/lorenzowebsolutions\.be\/werken-bij\/<\/loc>/);
 });
 
