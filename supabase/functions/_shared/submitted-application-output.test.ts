@@ -92,16 +92,20 @@ for (const [state, tokenState] of [
   ["revoked", { access_token_expires_at: "2026-09-01T00:00:00.000Z", access_token_revoked_at: "2026-08-27T00:00:00.000Z" }],
 ] as const) {
   Deno.test(`operator loads submitted dossier when customer token is ${state}`, async () => {
+    const caller = client({}, {
+      get_operator_submitted_application_request_v1: request,
+    });
     const service = client({
       quote_request_intakes: { ...intake, ...tokenState },
-      quote_requests: request,
       quote_request_pricing_snapshots: snapshot,
     }, {
       get_pricing_snapshot_integrity_for_operator_v1: [integrity],
     });
     const verifiedContexts: string[] = [];
     const result = await loadSubmittedApplicationOutputForOperator(
+      caller as never,
       service as never,
+      requestId,
       requestId,
       async (_snapshot, context) => {
         verifiedContexts.push(context);
@@ -112,6 +116,8 @@ for (const [state, tokenState] of [
     assertEquals(result?.requestId, requestId);
     assertEquals(result?.output.applicationReference, "LWS-AAN-2026-0042");
     assertEquals(verifiedContexts, [intakeId]);
+    assertEquals(caller.calls.includes("rpc:get_operator_submitted_application_request_v1"), true);
+    assertEquals(service.calls.includes("from:quote_requests"), false);
     assertEquals(service.calls.includes("rpc:get_pricing_snapshot_integrity_for_operator_v1"), true);
     assertEquals(service.calls.includes("from:quote_request_pricing_snapshot_integrity"), false);
   });
@@ -127,14 +133,18 @@ Deno.test("customer loader remains bound to token-protected inspection RPCs", as
 });
 
 Deno.test("operator loader remains fail closed when the integrity RPC returns no record", async () => {
+  const caller = client({}, {
+    get_operator_submitted_application_request_v1: request,
+  });
   const service = client({
     quote_request_intakes: intake,
-    quote_requests: request,
     quote_request_pricing_snapshots: snapshot,
   });
   const failures: string[] = [];
   const result = await loadSubmittedApplicationOutputForOperator(
+    caller as never,
     service as never,
+    requestId,
     requestId,
     async () => true,
     (reason) => failures.push(reason),
@@ -145,16 +155,20 @@ Deno.test("operator loader remains fail closed when the integrity RPC returns no
 });
 
 Deno.test("operator loader rejects malformed or tampered integrity and remains fail closed", async () => {
+  const caller = client({}, {
+    get_operator_submitted_application_request_v1: request,
+  });
   const service = client({
     quote_request_intakes: intake,
-    quote_requests: request,
     quote_request_pricing_snapshots: snapshot,
   }, {
     get_pricing_snapshot_integrity_for_operator_v1: [integrity],
   });
   const failures: string[] = [];
   const result = await loadSubmittedApplicationOutputForOperator(
+    caller as never,
     service as never,
+    requestId,
     requestId,
     async () => false,
     (reason) => failures.push(reason),

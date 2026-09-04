@@ -115,7 +115,9 @@ export async function loadSubmittedApplicationOutput(
 }
 
 export async function loadSubmittedApplicationOutputForOperator(
+  caller: SupabaseClient,
   service: SupabaseClient,
+  actorAuthUserId: string,
   requestId: string,
   verifySnapshot: SnapshotVerifier = verifyPricingSnapshotIntegrity,
   reportFailure: FailureReporter = reportOperatorOutputFailure,
@@ -123,7 +125,10 @@ export async function loadSubmittedApplicationOutputForOperator(
   if (!isUuid(requestId)) return null;
   const [{ data: intakeData, error: intakeError }, { data: requestData, error: requestError }] = await Promise.all([
     service.from("quote_request_intakes").select(INTAKE_EVIDENCE_FIELDS).eq("quote_request_id", requestId).maybeSingle(),
-    service.from("quote_requests").select(REQUEST_FIELDS).eq("id", requestId).maybeSingle(),
+    caller.rpc("get_operator_submitted_application_request_v1", {
+      p_actor_auth_user_id: actorAuthUserId,
+      p_quote_request_id: requestId,
+    }),
   ]);
   const intake = record(intakeData);
   const request = record(requestData);

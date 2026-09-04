@@ -1617,7 +1617,9 @@ if (import.meta.main) {
           ) {
             const service = serviceClient();
             const context = await loadSubmittedApplicationOutputForOperator(
+              client,
               service,
+              actorAuthUserId,
               data.quote_request_id,
             );
             return enrichOperatorApplicationDetailWithOutput(data, context);
