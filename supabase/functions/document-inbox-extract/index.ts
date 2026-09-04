@@ -6,8 +6,10 @@ import {
   handleDocumentInboxExtract,
 } from "./handler.ts";
 import {
+  getSupabasePublishableKey,
   getSupabaseServerSecretKey,
   type SupabaseKeyBindingEnvironment,
+  type SupabasePublishableKey,
   type SupabaseServerSecretKey,
 } from "../_shared/supabase-key-bindings.ts";
 
@@ -98,16 +100,15 @@ export function resolveDocumentInboxExtractConfiguration(
   environment: SupabaseKeyBindingEnvironment = Deno.env,
 ): Readonly<{
   url: string;
-  anonKey: string;
+  publishableKey: SupabasePublishableKey;
   serviceRoleKey: SupabaseServerSecretKey;
 }> | null {
   const url = environment.get("SUPABASE_URL");
-  const anonKey = environment.get("SUPABASE_ANON_KEY");
-  if (!url || !anonKey) return null;
+  if (!url) return null;
   try {
     return {
       url,
-      anonKey,
+      publishableKey: getSupabasePublishableKey("default", environment),
       serviceRoleKey: getSupabaseServerSecretKey("default", environment),
     };
   } catch {
@@ -130,10 +131,10 @@ if (import.meta.main) {
         },
       );
     }
-    const { url, anonKey, serviceRoleKey } = configuration;
+    const { url, publishableKey, serviceRoleKey } = configuration;
 
     const clientFor = (jwt: string) =>
-      createClient(url, anonKey, {
+      createClient(url, publishableKey, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       });

@@ -65,19 +65,36 @@ Deno.test("RPC conflicts and state failures map without retry", () => {
 
 Deno.test("runtime adapter exposes no forbidden authority", async () => {
   const serverKey = ["sb", "secret", "documentInboxExtract", "test"].join("_");
+  const publishableKey = ["sb", "publishable", "documentInboxExtract", "test"]
+    .join("_");
   const configuration = resolveDocumentInboxExtractConfiguration(environment({
     SUPABASE_URL: "https://project.supabase.co",
-    SUPABASE_ANON_KEY: "legacy-anon-key",
+    SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: publishableKey }),
     SUPABASE_SECRET_KEYS: JSON.stringify({
       default: serverKey,
     }),
   }));
   assertEquals(configuration, {
     url: "https://project.supabase.co",
-    anonKey: "legacy-anon-key",
+    publishableKey,
     serviceRoleKey: serverKey,
   });
-  for (const value of [
+  for (const publishableBinding of [
+    undefined,
+    "not-json",
+    JSON.stringify({ default: "legacy-anon-key" }),
+  ]) {
+    assertEquals(
+      resolveDocumentInboxExtractConfiguration(environment({
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_ANON_KEY: "must-not-be-read",
+        SUPABASE_PUBLISHABLE_KEYS: publishableBinding,
+        SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+      })),
+      null,
+    );
+  }
+  for (const serverBinding of [
     undefined,
     "not-json",
     JSON.stringify({ default: "legacy-service-role-key" }),
@@ -85,9 +102,8 @@ Deno.test("runtime adapter exposes no forbidden authority", async () => {
     assertEquals(
       resolveDocumentInboxExtractConfiguration(environment({
         SUPABASE_URL: "https://project.supabase.co",
-        SUPABASE_ANON_KEY: "legacy-anon-key",
-        SUPABASE_SERVICE_ROLE_KEY: "must-not-be-read",
-        SUPABASE_SECRET_KEYS: value,
+        SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: publishableKey }),
+        SUPABASE_SECRET_KEYS: serverBinding,
       })),
       null,
     );
@@ -98,10 +114,8 @@ Deno.test("runtime adapter exposes no forbidden authority", async () => {
   assertEquals(source.includes("record_document_inbox_extraction_v1"), true);
   assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
   assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
-  assertEquals(
-    source.match(/environment\.get\("SUPABASE_ANON_KEY"\)/g)?.length,
-    1,
-  );
+  assertEquals(source.includes('getSupabasePublishableKey("default"'), true);
+  assertEquals(source.includes("SUPABASE_ANON_KEY"), false);
   for (
     const forbidden of [
       "confirm_document_inbox_values_v1",
