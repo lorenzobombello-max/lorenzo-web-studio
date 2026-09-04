@@ -1102,11 +1102,12 @@ if (import.meta.main) {
             quoteRequestId: position.quote_request_id,
           }, cursorRequest(input)),
         executeApplicationListV2: async (
+          jwt: string,
           actorAuthUserId: string,
           input: OperatorApplicationListV2Input,
           position: OperatorCursorPosition | null,
         ) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "list_operator_applications_v2",
             {
               p_actor_auth_user_id: actorAuthUserId,

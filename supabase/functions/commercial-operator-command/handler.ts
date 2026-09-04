@@ -399,6 +399,7 @@ type CommercialOperatorDependencies = Readonly<{
     input: Record<string, unknown>,
   ): PromiseLike<unknown>;
   executeApplicationListV2(
+    jwt: string,
     actorAuthUserId: string,
     input: Record<string, unknown>,
     position: unknown,
@@ -2500,6 +2501,7 @@ export async function handleCommercialOperator(
           ? await deps.verifyOperatorCursor(input.cursor, input)
           : null;
         const raw = await deps.executeApplicationListV2(
+          jwt,
           user.id,
           input,
           cursorPosition,

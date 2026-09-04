@@ -66,10 +66,11 @@ insert into public.quote_requests (
   'seen-fixture@example.test', 'Dossiers seen-state fixture.', true, 'approved'
 );
 
-set local role service_role;
+select set_config('request.jwt.claim.sub', 'db100000-0000-4000-8000-000000000001', true);
+set local role authenticated;
 select lives_ok(
   $$select public.list_operator_applications_v2('db100000-0000-4000-8000-000000000001')$$,
-  'submitted Dossiers list is read-only through service transport'
+  'submitted Dossiers list is read-only through caller JWT'
 );
 reset role;
 

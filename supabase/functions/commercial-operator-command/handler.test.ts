@@ -4150,6 +4150,18 @@ Deno.test("dossier facets use caller JWT instead of service role", async () => {
   );
 });
 
+Deno.test("v2 application list uses caller JWT instead of service role", async () => {
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const rpcCallsites = source.match(
+    /(?:serviceClient\(\)|clientFor\(jwt\))\.rpc\(\s*"list_operator_applications_v2"/g,
+  ) || [];
+  assertEquals(rpcCallsites.length, 1);
+  assertEquals(
+    rpcCallsites.every((callsite) => callsite.startsWith("clientFor(jwt)")),
+    true,
+  );
+});
+
 Deno.test("pending-intake list rejects extra input, unauthorized readers, and unsafe database responses", async () => {
   const invalid = dependencies();
   assertEquals(

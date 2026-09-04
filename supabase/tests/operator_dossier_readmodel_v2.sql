@@ -14,10 +14,10 @@ select has_function(
   'v2 dossier facets RPC exists'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamp with time zone,uuid,integer)', 'execute')
+  has_function_privilege('authenticated', 'public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamp with time zone,uuid,integer)', 'execute')
   and not has_function_privilege('anon', 'public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamp with time zone,uuid,integer)', 'execute')
-  and has_function_privilege('service_role', 'public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamp with time zone,uuid,integer)', 'execute'),
-  'only service_role can enter the v2 list transport'
+  and not has_function_privilege('service_role', 'public.list_operator_applications_v2(uuid,text,text,integer,text,text,text,timestamp with time zone,uuid,integer)', 'execute'),
+  'only authenticated can enter the v2 list transport'
 );
 select ok(
   has_function_privilege('authenticated', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute')
@@ -184,14 +184,17 @@ select lives_ok(
   $$select public.authorize_operator_application_reader_v2()$$,
   'active owner passes the authority-only preflight'
 );
+select set_config('request.jwt.claim.sub','b2000000-0000-4000-8000-000000000003',true);
 select throws_ok(
   $$select public.list_operator_applications_v2('b2000000-0000-4000-8000-000000000003')$$,
   '42501','UNKNOWN_OPERATOR','DB transport revalidates the supplied human actor'
 );
+select set_config('request.jwt.claim.sub','b2000000-0000-4000-8000-000000000004',true);
 select throws_ok(
   $$select public.list_operator_applications_v2('b2000000-0000-4000-8000-000000000004')$$,
   '42501','OPERATOR_DISABLED','DB transport rejects an inactive supplied human actor'
 );
+select set_config('request.jwt.claim.sub','b2000000-0000-4000-8000-000000000001',true);
 
 select is(
   public.execute_operator_intake_lifecycle_command_v1(
