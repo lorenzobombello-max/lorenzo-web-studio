@@ -52,6 +52,9 @@ verify_jwt = false
 [functions.sdf-inbound-email]
 verify_jwt = false
 
+[functions.sdf-inbound-email-canary]
+verify_jwt = true
+
 [functions.supplier-document-upload]
 verify_jwt = true
 

@@ -9,6 +9,7 @@ import {
 interface ResendReceivedEvent {
   type: "email.received";
   created_at: string;
+  marker?: string;
   data: {
     email_id: string;
     message_id?: string | null;
@@ -59,6 +60,15 @@ interface HandlerDependencies {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PROVIDER_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+const CANARY = Object.freeze({
+  providerEmailId: "internal_e2e_sdf_inbound_canary_v1",
+  webhookDeliveryId: "internal_e2e_sdf_inbound_delivery_v1",
+  rfcMessageId: "<internal-e2e-sdf-inbound-canary-v1@invalid.local>",
+  senderEmail: "sdf-inbound-canary@invalid.local",
+  recipient: "sdf-inbound-canary@invalid.local",
+  receivedAt: "2000-01-01T00:00:00.000Z",
+  marker: "SDF_INBOUND_SIGNED_CANARY_V1",
+});
 const resend = new Resend("re_webhook_verification_only");
 
 function json(status: number, body: unknown): Response {
@@ -230,25 +240,42 @@ export async function handleRequest(
   if (recipients.some((recipient) => recipient === null)) {
     return json(400, { ok: false, code: "INVALID_WEBHOOK_PAYLOAD" });
   }
-  if (!recipients.includes(configuredRecipient)) {
+  const canaryMatches = [
+    providerEmailId === CANARY.providerEmailId,
+    webhookDeliveryId === CANARY.webhookDeliveryId,
+    rfcMessageId === CANARY.rfcMessageId,
+    senderEmail === CANARY.senderEmail,
+    recipients.length === 1 && recipients[0] === CANARY.recipient,
+    receivedAt === CANARY.receivedAt,
+    event.marker === CANARY.marker,
+  ];
+  const canaryMatchCount = canaryMatches.filter(Boolean).length;
+  if (canaryMatchCount > 0 && canaryMatchCount < canaryMatches.length) {
+    return json(400, { ok: false, code: "INVALID_WEBHOOK_PAYLOAD" });
+  }
+  const isCanary = canaryMatchCount === canaryMatches.length;
+  if (!isCanary && !recipients.includes(configuredRecipient)) {
     return json(202, { ok: true, state: "recipient_not_routed" });
   }
 
-  const canonicalFingerprint = await sha256({
+  const matchedRecipient = isCanary ? CANARY.recipient : configuredRecipient;
+  const fingerprintInput: Record<string, unknown> = {
     provider: "RESEND",
     provider_email_id: providerEmailId,
     rfc_message_id: rfcMessageId,
     sender_email: senderEmail,
-    matched_recipient: configuredRecipient,
+    matched_recipient: matchedRecipient,
     received_at: receivedAt,
-  });
+  };
+  if (isCanary) fingerprintInput.marker = CANARY.marker;
+  const canonicalFingerprint = await sha256(fingerprintInput);
   try {
     const result = await dependencies.register({
       providerEmailId,
       webhookDeliveryId,
       rfcMessageId,
       senderEmail,
-      matchedRecipient: configuredRecipient,
+      matchedRecipient,
       receivedAt,
       canonicalFingerprint,
     });

@@ -9,6 +9,8 @@ import {
 const secret = `whsec_${btoa("local-resend-webhook-secret-material")}`;
 const recipient = "sdf@lorenzowebsolutions.be";
 const receiptId = "f1000000-0000-4000-8000-000000000001";
+const canaryFingerprint =
+  "2962999d3c2a4f05a820c57319af788b77da8bcb53ab209bb8d519f643401d5d";
 
 function event(
   overrides: Record<string, unknown> = {},
@@ -22,6 +24,24 @@ function event(
       from: "Customer@Example.Test",
       to: ["SDF@LorenzoWebSolutions.be"],
       created_at: "2030-01-01T10:00:00.000Z",
+      ...overrides,
+    },
+  };
+}
+
+function canaryEvent(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    type: "email.received",
+    created_at: "2000-01-01T00:00:00.000Z",
+    marker: "SDF_INBOUND_SIGNED_CANARY_V1",
+    data: {
+      email_id: "internal_e2e_sdf_inbound_canary_v1",
+      message_id: "<internal-e2e-sdf-inbound-canary-v1@invalid.local>",
+      from: "sdf-inbound-canary@invalid.local",
+      to: ["sdf-inbound-canary@invalid.local"],
+      created_at: "2000-01-01T00:00:00.000Z",
       ...overrides,
     },
   };
@@ -371,5 +391,82 @@ Deno.test("replayed registration preserves the existing idempotent response", as
       state: "replayed",
       receipt_id: receiptId,
     });
+  });
+});
+
+Deno.test("exact signed canary is accepted with its marker-bound fingerprint", async () => {
+  await withEnvironment(async () => {
+    const harness = registrationHarness();
+    const body = JSON.stringify(canaryEvent());
+    const response = await handleRequest(
+      await signedRequest(body, {
+        id: "internal_e2e_sdf_inbound_delivery_v1",
+      }),
+      { register: harness.register },
+    );
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).state, "received");
+    assertEquals(harness.calls.length, 1);
+    assertEquals(harness.calls[0], {
+      providerEmailId: "internal_e2e_sdf_inbound_canary_v1",
+      webhookDeliveryId: "internal_e2e_sdf_inbound_delivery_v1",
+      rfcMessageId: "<internal-e2e-sdf-inbound-canary-v1@invalid.local>",
+      senderEmail: "sdf-inbound-canary@invalid.local",
+      matchedRecipient: "sdf-inbound-canary@invalid.local",
+      receivedAt: "2000-01-01T00:00:00.000Z",
+      canonicalFingerprint: canaryFingerprint,
+    });
+  });
+});
+
+Deno.test("unsigned canary is denied before persistence", async () => {
+  await withEnvironment(async () => {
+    const harness = registrationHarness();
+    const response = await handleRequest(
+      new Request("https://example.test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(canaryEvent()),
+      }),
+      { register: harness.register },
+    );
+    assertEquals(response.status, 401);
+    assertEquals((await response.json()).code, "WEBHOOK_SIGNATURE_REQUIRED");
+    assertEquals(harness.calls.length, 0);
+  });
+});
+
+Deno.test("partial signed canary spoof fails closed", async () => {
+  await withEnvironment(async () => {
+    const harness = registrationHarness();
+    const body = JSON.stringify(canaryEvent({
+      email_id: "partial_canary_spoof",
+    }));
+    const response = await handleRequest(
+      await signedRequest(body, {
+        id: "internal_e2e_sdf_inbound_delivery_v1",
+      }),
+      { register: harness.register },
+    );
+    assertEquals(response.status, 400);
+    assertEquals((await response.json()).code, "INVALID_WEBHOOK_PAYLOAD");
+    assertEquals(harness.calls.length, 0);
+  });
+});
+
+Deno.test("invalid canary signature is denied before tuple handling", async () => {
+  await withEnvironment(async () => {
+    const harness = registrationHarness();
+    const body = JSON.stringify(canaryEvent());
+    const response = await handleRequest(
+      await signedRequest(body, {
+        id: "internal_e2e_sdf_inbound_delivery_v1",
+        signatureBody: `${body}x`,
+      }),
+      { register: harness.register },
+    );
+    assertEquals(response.status, 401);
+    assertEquals((await response.json()).code, "INVALID_WEBHOOK_SIGNATURE");
+    assertEquals(harness.calls.length, 0);
   });
 });
