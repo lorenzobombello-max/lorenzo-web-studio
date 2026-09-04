@@ -15,6 +15,11 @@ const CANARY = Object.freeze({
   marker: "SDF_INBOUND_SIGNED_CANARY_V1",
 });
 
+const ALLOWED_ORIGIN = "https://lorenzowebsolutions.be";
+const ALLOWED_METHODS = "POST,OPTIONS";
+const ALLOWED_HEADERS = "authorization,apikey,content-type,x-client-info";
+const ALLOWED_HEADER_SET = new Set(ALLOWED_HEADERS.split(","));
+
 export interface CanaryEvidence {
   authorized: true;
   receipt_count: number;
@@ -38,14 +43,36 @@ class CanaryError extends Error {
   }
 }
 
-function json(status: number, body: unknown): Response {
+function corsHeaders(): HeadersInit {
+  return {
+    "access-control-allow-origin": ALLOWED_ORIGIN,
+    "access-control-allow-methods": ALLOWED_METHODS,
+    "access-control-allow-headers": ALLOWED_HEADERS,
+    "vary": "Origin",
+  };
+}
+
+function json(status: number, body: unknown, includeCors = false): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...(includeCors ? corsHeaders() : {}),
     },
   });
+}
+
+function validPreflight(request: Request): boolean {
+  if (request.headers.get("access-control-request-method") !== "POST") {
+    return false;
+  }
+  const requestedHeaders =
+    (request.headers.get("access-control-request-headers") || "")
+      .split(",")
+      .map((header) => header.trim().toLowerCase())
+      .filter(Boolean);
+  return requestedHeaders.every((header) => ALLOWED_HEADER_SET.has(header));
 }
 
 function bearerToken(request: Request): string {
@@ -229,6 +256,18 @@ export async function handleRequest(
   request: Request,
   overrides: Partial<CanaryDependencies> = {},
 ): Promise<Response> {
+  const allowedOrigin = request.headers.get("origin") === ALLOWED_ORIGIN;
+  if (!allowedOrigin) {
+    return json(403, { ok: false, code: "ORIGIN_NOT_ALLOWED" });
+  }
+  if (request.method === "OPTIONS") {
+    if (!validPreflight(request)) {
+      return json(403, { ok: false, code: "CORS_PREFLIGHT_DENIED" }, true);
+    }
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+  const respond = (status: number, body: unknown) => json(status, body, true);
+
   try {
     if (request.method !== "POST") {
       throw new CanaryError(405, "METHOD_NOT_ALLOWED");
@@ -309,7 +348,7 @@ export async function handleRequest(
       throw new CanaryError(502, "CANARY_EVIDENCE_MISMATCH");
     }
 
-    return json(200, {
+    return respond(200, {
       ok: true,
       canary: CANARY.marker,
       first,
@@ -320,14 +359,14 @@ export async function handleRequest(
     });
   } catch (error) {
     if (error instanceof CanaryError) {
-      return json(error.status, { ok: false, code: error.code });
+      return respond(error.status, { ok: false, code: error.code });
     }
     if (
       error instanceof Error && error.message === SUPABASE_KEY_BINDING_ERROR
     ) {
-      return json(500, { ok: false, code: SUPABASE_KEY_BINDING_ERROR });
+      return respond(500, { ok: false, code: SUPABASE_KEY_BINDING_ERROR });
     }
-    return json(500, { ok: false, code: "CANARY_EXECUTION_FAILED" });
+    return respond(500, { ok: false, code: "CANARY_EXECUTION_FAILED" });
   }
 }
 

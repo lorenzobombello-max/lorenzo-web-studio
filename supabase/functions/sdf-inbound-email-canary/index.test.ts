@@ -8,16 +8,32 @@ const url = "https://example.supabase.co";
 
 function request(
   body = "{}",
-  options: { method?: string; authorization?: string | null } = {},
+  options: {
+    method?: string;
+    authorization?: string | null;
+    origin?: string | null;
+    requestedHeaders?: string;
+  } = {},
 ): Request {
   const headers = new Headers({ "content-type": "application/json" });
+  if (options.origin !== null) {
+    headers.set("origin", options.origin ?? "https://lorenzowebsolutions.be");
+  }
   if (options.authorization !== null) {
     headers.set("authorization", options.authorization ?? `Bearer ${jwt}`);
+  }
+  if (options.method === "OPTIONS") {
+    headers.set("access-control-request-method", "POST");
+    headers.set(
+      "access-control-request-headers",
+      options.requestedHeaders ??
+        "apikey,authorization,content-type,x-client-info",
+    );
   }
   return new Request(`${url}/functions/v1/sdf-inbound-email-canary`, {
     method: options.method ?? "POST",
     headers,
-    body: options.method === "GET" ? undefined : body,
+    body: !options.method || options.method === "POST" ? body : undefined,
   });
 }
 
@@ -76,6 +92,76 @@ Deno.test("canary accepts only POST with an exact empty JSON object", async () =
   }
 });
 
+Deno.test("exact production origin receives the minimal preflight contract without authority calls", async () => {
+  let authorizeCalls = 0;
+  const response = await handleRequest(
+    request("{}", { method: "OPTIONS" }),
+    dependencies({
+      authorize: () => {
+        authorizeCalls += 1;
+        return Promise.resolve("allowed");
+      },
+    }),
+  );
+  assertEquals(response.status, 204);
+  assertEquals(
+    response.headers.get("access-control-allow-origin"),
+    "https://lorenzowebsolutions.be",
+  );
+  assertEquals(
+    response.headers.get("access-control-allow-methods"),
+    "POST,OPTIONS",
+  );
+  assertEquals(
+    response.headers.get("access-control-allow-headers"),
+    "authorization,apikey,content-type,x-client-info",
+  );
+  assertEquals(response.headers.get("vary"), "Origin");
+  assertEquals(
+    [...response.headers.values()].some((value) => value.includes("*")),
+    false,
+  );
+  assertEquals(authorizeCalls, 0);
+});
+
+for (
+  const origin of [
+    "https://attacker.test",
+    "null",
+    "https://lorenzowebsolutions.be.attacker.test",
+    "http://lorenzowebsolutions.be",
+  ]
+) {
+  Deno.test(`preflight denies origin ${origin} without permissive ACAO`, async () => {
+    const response = await handleRequest(
+      request("{}", { method: "OPTIONS", origin }),
+      dependencies(),
+    );
+    assertEquals(response.status, 403);
+    assertEquals(response.headers.get("access-control-allow-origin"), null);
+  });
+}
+
+Deno.test("preflight denies unnecessary methods and request headers", async () => {
+  const method = request("{}", { method: "OPTIONS" });
+  method.headers.set("access-control-request-method", "GET");
+  const methodResponse = await handleRequest(method, dependencies());
+  assertEquals(methodResponse.status, 403);
+  assertEquals(
+    methodResponse.headers.get("access-control-allow-origin"),
+    "https://lorenzowebsolutions.be",
+  );
+
+  const headersResponse = await handleRequest(
+    request("{}", {
+      method: "OPTIONS",
+      requestedHeaders: "authorization,x-debug",
+    }),
+    dependencies(),
+  );
+  assertEquals(headersResponse.status, 403);
+});
+
 Deno.test("anonymous caller is denied", async () => {
   const response = await handleRequest(
     request("{}", { authorization: null }),
@@ -83,6 +169,10 @@ Deno.test("anonymous caller is denied", async () => {
   );
   assertEquals(response.status, 401);
   assertEquals((await response.json()).code, "AUTHENTICATION_REQUIRED");
+  assertEquals(
+    response.headers.get("access-control-allow-origin"),
+    "https://lorenzowebsolutions.be",
+  );
 });
 
 for (
@@ -165,6 +255,10 @@ Deno.test("OP-01 AAL2 signs the exact payload and proves first plus replay", asy
   );
 
   assertEquals(response.status, 200);
+  assertEquals(
+    response.headers.get("access-control-allow-origin"),
+    "https://lorenzowebsolutions.be",
+  );
   assertEquals(await response.json(), {
     ok: true,
     canary: "SDF_INBOUND_SIGNED_CANARY_V1",
@@ -227,10 +321,19 @@ Deno.test("secret signature JWT and upstream errors never reach logs or response
       ok: false,
       code: "CANARY_EXECUTION_FAILED",
     });
+    assertEquals(
+      response.headers.get("access-control-allow-origin"),
+      "https://lorenzowebsolutions.be",
+    );
     assertEquals(output, []);
     assertEquals(body.includes(secret), false);
     assertEquals(body.includes(signature), false);
     assertEquals(body.includes(jwt), false);
+    const responseHeaders = JSON.stringify([...response.headers.entries()]);
+    assertEquals(responseHeaders.includes(secret), false);
+    assertEquals(responseHeaders.includes(signature), false);
+    assertEquals(responseHeaders.includes(jwt), false);
+    assertEquals(responseHeaders.includes("*"), false);
     assertMatch(signature, /^v1,[A-Za-z0-9+/=]+$/);
   } finally {
     console.log = original.log;
