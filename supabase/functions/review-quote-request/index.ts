@@ -12,6 +12,10 @@ import {
 import { validateAction, validateToken } from "../_shared/validation.ts";
 import type { ReviewAction } from "../_shared/types.ts";
 import { allowsWebsiteLifecycle } from "../_shared/request-kind.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 
 type ReviewState = "pending" | "approved" | "rejected" | "expired" | "invalid";
 type ReviewRequestDetails = {
@@ -40,6 +44,21 @@ type ReviewRequestDetails = {
   reviewed_at?: string | null;
 };
 const MAX_REVIEW_BODY_BYTES = 4 * 1024;
+
+export function resolveReviewQuoteRequestConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): { url: string; serviceRoleKey: string } | null {
+  const url = environment.get("SUPABASE_URL");
+  if (!url) return null;
+  try {
+    return {
+      url,
+      serviceRoleKey: getSupabaseServerSecretKey("default", environment),
+    };
+  } catch {
+    return null;
+  }
+}
 
 class ReviewRequestError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -143,7 +162,7 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown>>
   }
 }
 
-Deno.serve(async (request) => {
+export async function handleReviewQuoteRequest(request: Request): Promise<Response> {
   const origin = request.headers.get("origin");
 
   if (request.method === "OPTIONS") {
@@ -156,12 +175,11 @@ Deno.serve(async (request) => {
   const blocked = rejectIfOriginNotAllowed(request);
   if (blocked) return blocked;
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const configuration = resolveReviewQuoteRequestConfiguration();
   const resendApiKey = Deno.env.get("RESEND_API_KEY");
   const fromEmail = Deno.env.get("FROM_EMAIL");
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!configuration) {
     return jsonResponse(500, {
       ok: false,
       code: "SERVER_CONFIGURATION_ERROR",
@@ -169,7 +187,7 @@ Deno.serve(async (request) => {
     }, origin);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient(configuration.url, configuration.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -583,4 +601,6 @@ Deno.serve(async (request) => {
   }
 
   return jsonResponse(405, { ok: false, message: "Method not allowed." }, origin);
-});
+}
+
+if (import.meta.main) Deno.serve(handleReviewQuoteRequest);
