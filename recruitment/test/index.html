@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Kandidaattest | Lorenzo Web Solutions</title>
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/assets/css/recruitment-candidate-test.css?v=20260904-r1" />
+  <script type="module" src="/assets/js/recruitment-candidate-test.mjs?v=20260904-r1"></script>
+</head>
+<body>
+  <header class="candidate-header"><div class="candidate-header__inner"><a class="candidate-brand" href="/">Lorenzo <strong>Web Solutions</strong></a><span class="candidate-secure">Persoonlijke testkamer</span></div></header>
+  <main class="candidate-main">
+    <section id="candidateTestLoading" class="candidate-state" role="status"><p class="eyebrow">Beveiligde sessie</p><h1>Test wordt geladen</h1><p>Uw persoonlijke opdracht wordt gecontroleerd.</p></section>
+    <section id="candidateTestUnavailable" class="candidate-state candidate-state--error" hidden><p class="eyebrow">Niet beschikbaar</p><h1>Deze testlink is niet geldig</h1><p>Controleer de persoonlijke link of neem contact op met Recruitment.</p></section>
+    <section id="candidateTestWorkspace" class="candidate-workspace" hidden aria-labelledby="candidateTestTitle">
+      <p class="eyebrow">Kandidaattest · <span id="candidateTestCode"></span></p>
+      <h1 id="candidateTestTitle"></h1>
+      <p>Welkom, <strong id="candidateTestName"></strong>.</p>
+      <div class="candidate-meta"><div><span>Functieprofiel</span><strong id="candidateTestProfile"></strong></div><div><span>Status</span><strong id="candidateTestStatus"></strong></div><div><span>Gegevens</span><strong>Alleen dit assessment</strong></div></div>
+      <p id="candidateTestInstructions" class="candidate-instructions"></p>
+      <form id="candidateTestForm" class="candidate-form">
+        <div id="candidateTestActions" class="candidate-actions"><button id="candidateTestSave" type="button">Tussentijds opslaan</button><button id="candidateTestSubmit" type="submit">Definitief indienen</button></div>
+        <p id="candidateTestMessage" class="candidate-message" role="status" aria-live="polite"></p>
+        <p id="candidateTestLocked" class="candidate-locked" hidden>Deze test is definitief ingediend en kan niet meer worden gewijzigd.</p>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

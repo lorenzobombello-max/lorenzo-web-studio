@@ -59,6 +59,13 @@ export interface SdfQualificationMoreInformationEmailData {
   intakeUrl: string;
 }
 
+export interface RecruitmentCandidateInvitationEmailData {
+  candidateName: string;
+  testProfile: string;
+  selectionCount: number;
+  testUrl: string;
+}
+
 export interface IntakeReminderEmailData {
   clientName: string;
   company: string | null;
@@ -215,6 +222,36 @@ export function buildSdfQualificationInvitationEmail(data: SdfQualificationInvit
     "Met vriendelijke groet,", "Lorenzo Web Solutions",
     ].join("\n"),
   };
+}
+
+export function buildRecruitmentCandidateInvitationEmail(data: RecruitmentCandidateInvitationEmailData) {
+  const candidateName = replaceAsciiControlRunsWithSpace(data.candidateName).trim();
+  const testProfile = replaceAsciiControlRunsWithSpace(data.testProfile).trim();
+  const testUrl = new URL(data.testUrl);
+  if (!candidateName || !testProfile || ![4, 5].includes(data.selectionCount)
+    || testUrl.origin !== "https://lorenzowebsolutions.be"
+    || testUrl.pathname !== "/recruitment/test/"
+    || testUrl.search
+    || !/^#token=[0-9a-f]{64}$/.test(testUrl.hash)) throw new Error("Invalid recruitment invitation email data");
+  const subject = `Uw persoonlijke kandidaatassessment voor ${testProfile}`;
+  const safeName = escapeHtml(candidateName);
+  const safeProfile = escapeHtml(testProfile);
+  const safeUrl = escapeHtml(data.testUrl);
+  return buildCustomerEmailFrame(subject, "Uw kandidaatassessment staat klaar", `
+          <p style="margin:0 0 16px;">Beste ${safeName},</p>
+          <p style="margin:0 0 16px;">U bent uitgenodigd voor een kandidaatassessment van Lorenzo Web Solutions voor het functieprofiel <strong>${safeProfile}</strong>.</p>
+          <p style="margin:0 0 20px;">Het assessment bevat ${data.selectionCount} zorgvuldig geselecteerde praktijktests. U kunt tussentijds opslaan en dient de volledige set één keer definitief in.</p>
+          <p style="margin:0 0 20px;"><a href="${safeUrl}" style="${CUSTOMER_EMAIL_CTA_STYLE}background:#0ed8e6;">Persoonlijke testkamer openen</a></p>
+          <p style="margin:0 0 16px;overflow-wrap:anywhere;word-break:break-word;">Werkt de knop niet? Open deze persoonlijke link:<br><a href="${safeUrl}" style="color:#12346b;">${safeUrl}</a></p>
+          <p style="margin:0 0 16px;"><strong>Beveiliging:</strong> deel deze persoonlijke link niet. De link geeft uitsluitend toegang tot uw eigen assessment.</p>
+          <p style="margin:24px 0 0;">Met vriendelijke groet,<br><strong>Lorenzo Web Solutions</strong></p>`, [
+    `Beste ${candidateName},`, "",
+    `U bent uitgenodigd voor het kandidaatassessment ${testProfile} van Lorenzo Web Solutions.`, "",
+    `Het assessment bevat ${data.selectionCount} praktijktests. U kunt tussentijds opslaan en dient de volledige set één keer definitief in.`, "",
+    "Open uw persoonlijke testkamer:", data.testUrl, "",
+    "Deel deze persoonlijke link niet. De link geeft uitsluitend toegang tot uw eigen assessment.", "",
+    "Met vriendelijke groet,", "Lorenzo Web Solutions",
+  ].join("\n"), "Uw persoonlijke kandidaatassessment staat klaar.");
 }
 
 export function buildSdfQualificationMoreInformationEmail(data: SdfQualificationMoreInformationEmailData) {

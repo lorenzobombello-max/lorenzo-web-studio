@@ -37,6 +37,9 @@ verify_jwt = false
 [functions.recruitment-application-submit]
 verify_jwt = false
 
+[functions.recruitment-candidate-invitation]
+verify_jwt = false
+
 [functions.intake-reminder-worker]
 verify_jwt = false
 

@@ -29,7 +29,10 @@ $requiredRootEntries = @(
 
 $requiredPublishedFiles = @(
   "assets/css/application-dossier-print.css",
-  "assets/js/application-dossier-copy.js"
+  "assets/js/application-dossier-copy.js",
+  "recruitment/test/index.html",
+  "assets/css/recruitment-candidate-test.css",
+  "assets/js/recruitment-candidate-test.mjs"
 )
 
 $forbiddenPublicPaths = @(
@@ -268,6 +271,7 @@ $operatorRequiredPaths = @(
   "assets/js/operator-module-registry.mjs",
   "assets/js/operator-profile.mjs",
   "assets/js/operator-recruitment.mjs",
+  "assets/js/operator-recruitment-tests.mjs",
   "assets/js/operator-shell.mjs",
   "assets/js/operator-window-guard.mjs",
   "assets/js/operator-window-host.mjs",

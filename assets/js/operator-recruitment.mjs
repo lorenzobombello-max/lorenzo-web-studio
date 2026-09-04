@@ -1,5 +1,6 @@
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
 import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
+import { initializeRecruitmentCandidateTests } from "./operator-recruitment-tests.mjs?v=20260904-r1";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VACANCY_FIELDS = Object.freeze(["title", "department", "location", "employment_type", "summary", "description", "requirements"]);
@@ -300,13 +301,14 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
 
   controller = createRecruitmentVacancyController({ execute, onChange: render });
   publicationController = createRecruitmentPublicationController({ execute, onChange: renderPublication });
+  const candidateTests = initializeRecruitmentCandidateTests(root, client, { onAuthorizationFailure });
   const panel = list.closest?.("[data-module-panel]");
   const heartbeat = createOperatorRefreshHeartbeat({ root, moduleKey: "recruitment", titleElement: root.getElementById("recruitmentModuleTitle") });
   const autoRefresh = createOperatorAutoRefresh({
     moduleKey: "recruitment",
-    refresh: async (options)=>(await Promise.all([controller.refresh(options), publicationController.refresh(options)])).every(Boolean),
+    refresh: async (options)=>(await Promise.all([controller.refresh(options), publicationController.refresh(options), candidateTests?.refresh()])).every((result)=>result !== false),
     isActive: ()=>!panel?.hidden,
-    isBlocked: ()=>[workDialog, statusDialog, publicationDialog].some((dialog)=>dialog.open)
+    isBlocked: ()=>[workDialog, statusDialog, publicationDialog, root.getElementById("recruitmentCandidateDialog"), root.getElementById("recruitmentAssignmentDialog"), root.getElementById("recruitmentReviewDialog")].some((dialog)=>dialog?.open)
       || controller.state.mutating || publicationController.state.mutating,
     documentTarget: root,
     windowTarget: root.defaultView,
@@ -359,7 +361,7 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
   void controller.refresh();
   return Object.freeze({
     get state() { return controller.state; },
-    refresh: (options)=>Promise.all([controller.refresh(options), publicationController.refresh(options)]),
+    refresh: (options)=>Promise.all([controller.refresh(options), publicationController.refresh(options), candidateTests?.refresh()]),
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -368,6 +370,7 @@ export function initializeOperatorRecruitment(root, client, identity, { onAuthor
       listenerController.abort();
       controller.dispose();
       publicationController.dispose();
+      candidateTests?.dispose();
       for (const dialog of [workDialog, statusDialog, publicationDialog]) if (dialog.open) dialog.close();
     },
   });

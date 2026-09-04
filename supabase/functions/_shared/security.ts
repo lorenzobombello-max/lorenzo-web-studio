@@ -40,6 +40,16 @@ async function quotationDeliveryEncryptionKey(): Promise<CryptoKey> {
   return await crypto.subtle.importKey("raw", keyMaterial, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+async function recruitmentInvitationEncryptionKey(): Promise<CryptoKey> {
+  const secret = Deno.env.get("APPROVAL_TOKEN_SECRET");
+  if (!secret) throw new Error("Missing APPROVAL_TOKEN_SECRET");
+  const keyMaterial = await crypto.subtle.digest(
+    "SHA-256",
+    textEncoder.encode(`recruitment-invitation-encryption:v1:${secret}`),
+  );
+  return await crypto.subtle.importKey("raw", keyMaterial, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
 function intakeInvitationAdditionalData(accessTokenHash: string): Uint8Array<ArrayBuffer> {
   return textEncoder.encode(`intake-invitation:v1:${accessTokenHash}`);
 }
@@ -172,6 +182,42 @@ export function createRawApprovalToken(): string {
 
 export function createRawIntakeToken(): string {
   return createRawCapabilityToken();
+}
+
+export function createRawRecruitmentCandidateToken(): string {
+  return toHex(crypto.getRandomValues(new Uint8Array(32)).buffer);
+}
+
+export async function hashRecruitmentCandidateToken(rawToken: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(rawToken)) throw new Error("Invalid recruitment candidate token");
+  return toHex(await crypto.subtle.digest("SHA-256", textEncoder.encode(rawToken)));
+}
+
+export async function encryptRecruitmentCandidateToken(rawToken: string, tokenDigest: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(rawToken) || !/^[0-9a-f]{64}$/.test(tokenDigest)) throw new Error("Invalid recruitment candidate token");
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: textEncoder.encode(`recruitment-invitation:v1:${tokenDigest}`) },
+    await recruitmentInvitationEncryptionKey(),
+    textEncoder.encode(rawToken),
+  );
+  return `v1.${toBase64Url(iv.buffer)}.${toBase64Url(ciphertext)}`;
+}
+
+export async function decryptRecruitmentCandidateToken(encryptedToken: string, tokenDigest: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(tokenDigest)) throw new Error("Invalid recruitment candidate token");
+  const parts = encryptedToken.split(".");
+  if (parts.length !== 3 || parts[0] !== "v1") throw new Error("Invalid encrypted recruitment token");
+  const iv = fromBase64Url(parts[1]);
+  if (iv.byteLength !== 12) throw new Error("Invalid encrypted recruitment token");
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv, additionalData: textEncoder.encode(`recruitment-invitation:v1:${tokenDigest}`) },
+    await recruitmentInvitationEncryptionKey(),
+    fromBase64Url(parts[2]),
+  );
+  const token = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+  if (!/^[0-9a-f]{64}$/.test(token)) throw new Error("Invalid encrypted recruitment token");
+  return token;
 }
 
 export async function createApprovalTokenForIdempotencyKey(idempotencyKey: string): Promise<string> {
