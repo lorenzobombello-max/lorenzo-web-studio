@@ -1187,10 +1187,11 @@ if (import.meta.main) {
           return data;
         },
         executeApplicationFacetsV2: async (
+          jwt: string,
           actorAuthUserId: string,
           input: OperatorApplicationFacetsV2Input,
         ) => {
-          const { data, error } = await serviceClient().rpc(
+          const { data, error } = await clientFor(jwt).rpc(
             "get_operator_dossier_facets_v2",
             {
               p_actor_auth_user_id: actorAuthUserId,

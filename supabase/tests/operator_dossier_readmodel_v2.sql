@@ -20,10 +20,10 @@ select ok(
   'only service_role can enter the v2 list transport'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute')
+  has_function_privilege('authenticated', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute')
   and not has_function_privilege('anon', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute')
-  and has_function_privilege('service_role', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute'),
-  'only service_role can enter the v2 facets transport'
+  and not has_function_privilege('service_role', 'public.get_operator_dossier_facets_v2(uuid,text,text,text,text)', 'execute'),
+  'only authenticated can enter the v2 facets transport'
 );
 select ok(
   has_function_privilege('authenticated', 'public.authorize_operator_application_reader_v2()', 'execute')

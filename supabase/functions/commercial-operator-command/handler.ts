@@ -425,6 +425,7 @@ type CommercialOperatorDependencies = Readonly<{
     input: Record<string, unknown>,
   ): PromiseLike<string>;
   executeApplicationFacetsV2(
+    jwt: string,
     actorAuthUserId: string,
     input: Record<string, unknown>,
   ): PromiseLike<unknown>;
@@ -2521,7 +2522,7 @@ export async function handleCommercialOperator(
         });
       }
       if (input.action === "get_application_facets_v2") {
-        const result = await deps.executeApplicationFacetsV2(user.id, input);
+        const result = await deps.executeApplicationFacetsV2(jwt, user.id, input);
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
       const result = await deps.executeApplicationAction(jwt, input, user.id);
