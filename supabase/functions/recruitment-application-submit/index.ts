@@ -1,5 +1,24 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 import { handleRecruitmentApplicationSubmit } from "./handler.ts";
+
+export function resolveRecruitmentApplicationSubmitConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): { url: string; serviceRoleKey: string } | null {
+  const url = environment.get("SUPABASE_URL");
+  if (!url) return null;
+  try {
+    return {
+      url,
+      serviceRoleKey: getSupabaseServerSecretKey("default", environment),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function finalizationSucceeded(data: unknown, error: unknown): boolean {
   if (error || !data || typeof data !== "object" || Array.isArray(data)) {
@@ -11,9 +30,8 @@ export function finalizationSucceeded(data: unknown, error: unknown): boolean {
 
 if (import.meta.main) {
   Deno.serve((request) => {
-    const url = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!url || !serviceRoleKey) {
+    const configuration = resolveRecruitmentApplicationSubmitConfiguration();
+    if (!configuration) {
       return new Response(
         JSON.stringify({ ok: false, code: "SERVER_CONFIGURATION_ERROR" }),
         {
@@ -25,9 +43,13 @@ if (import.meta.main) {
         },
       );
     }
-    const serviceClient = createClient(url, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const serviceClient = createClient(
+      configuration.url,
+      configuration.serviceRoleKey,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    );
 
     return handleRecruitmentApplicationSubmit(request, {
       createApplicationId: () => crypto.randomUUID(),
