@@ -5,6 +5,11 @@ import {
   type DocumentInboxExtractionItem,
   handleDocumentInboxExtract,
 } from "./handler.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+  type SupabaseServerSecretKey,
+} from "../_shared/supabase-key-bindings.ts";
 
 type RpcError = Readonly<{ code?: string; message?: string }>;
 
@@ -89,12 +94,31 @@ const coreOnlyProvider: DocumentExtractionProvider = {
     }),
 };
 
+export function resolveDocumentInboxExtractConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): Readonly<{
+  url: string;
+  anonKey: string;
+  serviceRoleKey: SupabaseServerSecretKey;
+}> | null {
+  const url = environment.get("SUPABASE_URL");
+  const anonKey = environment.get("SUPABASE_ANON_KEY");
+  if (!url || !anonKey) return null;
+  try {
+    return {
+      url,
+      anonKey,
+      serviceRoleKey: getSupabaseServerSecretKey("default", environment),
+    };
+  } catch {
+    return null;
+  }
+}
+
 if (import.meta.main) {
   Deno.serve((request) => {
-    const url = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!url || !anonKey || !serviceRoleKey) {
+    const configuration = resolveDocumentInboxExtractConfiguration();
+    if (!configuration) {
       return new Response(
         JSON.stringify({ ok: false, code: "SERVER_CONFIGURATION_ERROR" }),
         {
@@ -106,6 +130,7 @@ if (import.meta.main) {
         },
       );
     }
+    const { url, anonKey, serviceRoleKey } = configuration;
 
     const clientFor = (jwt: string) =>
       createClient(url, anonKey, {

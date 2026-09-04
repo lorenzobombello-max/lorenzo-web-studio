@@ -2,10 +2,15 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   extractionRpcError,
   isActiveOwnerIdentity,
+  resolveDocumentInboxExtractConfiguration,
   selectInboxItem,
 } from "./index.ts";
 
 const ITEM_ID = "fa020000-0000-4000-8000-000000000001";
+
+function environment(values: Record<string, string | undefined>) {
+  return { get: (name: string) => values[name] };
+}
 
 Deno.test("only ACTIVE owner identity is authorized", () => {
   assertEquals(
@@ -59,10 +64,44 @@ Deno.test("RPC conflicts and state failures map without retry", () => {
 });
 
 Deno.test("runtime adapter exposes no forbidden authority", async () => {
+  const serverKey = ["sb", "secret", "documentInboxExtract", "test"].join("_");
+  const configuration = resolveDocumentInboxExtractConfiguration(environment({
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_ANON_KEY: "legacy-anon-key",
+    SUPABASE_SECRET_KEYS: JSON.stringify({
+      default: serverKey,
+    }),
+  }));
+  assertEquals(configuration, {
+    url: "https://project.supabase.co",
+    anonKey: "legacy-anon-key",
+    serviceRoleKey: serverKey,
+  });
+  for (const value of [
+    undefined,
+    "not-json",
+    JSON.stringify({ default: "legacy-service-role-key" }),
+  ]) {
+    assertEquals(
+      resolveDocumentInboxExtractConfiguration(environment({
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_ANON_KEY: "legacy-anon-key",
+        SUPABASE_SERVICE_ROLE_KEY: "must-not-be-read",
+        SUPABASE_SECRET_KEYS: value,
+      })),
+      null,
+    );
+  }
   const source = await Deno.readTextFile(
     new URL("./index.ts", import.meta.url),
   );
   assertEquals(source.includes("record_document_inbox_extraction_v1"), true);
+  assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
+  assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
+  assertEquals(
+    source.match(/environment\.get\("SUPABASE_ANON_KEY"\)/g)?.length,
+    1,
+  );
   for (
     const forbidden of [
       "confirm_document_inbox_values_v1",
