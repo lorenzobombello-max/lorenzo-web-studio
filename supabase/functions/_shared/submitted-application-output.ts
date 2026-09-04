@@ -31,7 +31,6 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 const REQUEST_FIELDS = "id, record_classification, application_reference, name, company, email, phone, website_type, budget, timing";
-const SNAPSHOT_FIELDS = "id, intake_id, snapshot_contract_version, config_version, config_hash, normalized_evidence, calculation, package_advice, budget_evaluation, package_definition, recurring_services";
 
 type SnapshotVerifier = (snapshot: object, context: string, integrity: unknown) => Promise<boolean>;
 type FailureReporter = (reason: string) => void;
@@ -127,11 +126,14 @@ export async function loadSubmittedApplicationOutputForOperator(
       intake.quote_request_id !== requestId || !isUuid(intake.id) ||
       !["submitted", "reviewed"].includes(String(intake.status)) || typeof intake.submitted_at !== "string") return null;
 
-  const { data: snapshotData, error: snapshotError } = await service
-    .from("quote_request_pricing_snapshots")
-    .select(SNAPSHOT_FIELDS)
-    .eq("intake_id", intake.id)
-    .maybeSingle();
+  const { data: snapshotData, error: snapshotError } = await caller.rpc(
+    "get_operator_submitted_application_pricing_snapshot_v1",
+    {
+      p_actor_auth_user_id: actorAuthUserId,
+      p_quote_request_id: requestId,
+      p_intake_id: intake.id,
+    },
+  );
   const snapshot = record(snapshotData);
   if (snapshotError || !snapshot || !isUuid(snapshot.id) || snapshot.intake_id !== intake.id) {
     reportFailure("snapshot_record_unavailable");
