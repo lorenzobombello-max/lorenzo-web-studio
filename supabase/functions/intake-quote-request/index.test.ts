@@ -1,7 +1,49 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { handleIntakeQuoteRequest } from "./index.ts";
+import {
+  handleIntakeQuoteRequest,
+  resolveIntakeQuoteRequestConfiguration,
+} from "./index.ts";
 
 const token = "A".repeat(43);
+const serverKey = ["sb", "secret", "intakeQuoteRequest", "test"].join("_");
+
+function environment(values: Record<string, string | undefined>) {
+  return { get: (name: string) => values[name] };
+}
+
+async function withInvalidBindingResponse(
+  serverBinding: string | undefined,
+): Promise<Response> {
+  const previousEnvironment = new Map<string, string | undefined>();
+  for (const [name, value] of [
+    ["SUPABASE_URL", "https://supabase.test"],
+    ["SUPABASE_SERVICE_ROLE_KEY", "must-not-be-read"],
+    ["SUPABASE_SECRET_KEYS", serverBinding],
+    [
+      "APPROVAL_TOKEN_SECRET",
+      "approval-token-secret-with-sufficient-test-entropy",
+    ],
+  ] as const) {
+    previousEnvironment.set(name, Deno.env.get(name));
+    if (value === undefined) Deno.env.delete(name);
+    else Deno.env.set(name, value);
+  }
+
+  try {
+    return await handleIntakeQuoteRequest(
+      new Request("https://functions.test/intake-quote-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "inspect", token }),
+      }),
+    );
+  } finally {
+    for (const [name, value] of previousEnvironment) {
+      if (value === undefined) Deno.env.delete(name);
+      else Deno.env.set(name, value);
+    }
+  }
+}
 
 async function withLifecycleResponse(
   effectiveAccess: string | null,
@@ -13,7 +55,7 @@ async function withLifecycleResponse(
   for (
     const [name, value] of [
       ["SUPABASE_URL", "https://supabase.test"],
-      ["SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key"],
+      ["SUPABASE_SECRET_KEYS", JSON.stringify({ default: serverKey })],
       [
         "APPROVAL_TOKEN_SECRET",
         "approval-token-secret-with-sufficient-test-entropy",
@@ -63,6 +105,55 @@ async function withLifecycleResponse(
 }
 
 Deno.test("customer lifecycle states map to machine-readable Edge errors", async () => {
+  assertEquals(
+    resolveIntakeQuoteRequestConfiguration(environment({
+      SUPABASE_URL: "https://supabase.test",
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+    })),
+    { url: "https://supabase.test", serviceRoleKey: serverKey },
+  );
+  for (const serverBinding of [
+    undefined,
+    "not-json",
+    JSON.stringify({ default: "legacy-service-role-key" }),
+  ]) {
+    assertEquals(
+      resolveIntakeQuoteRequestConfiguration(environment({
+        SUPABASE_URL: "https://supabase.test",
+        SUPABASE_SERVICE_ROLE_KEY: "must-not-be-read",
+        SUPABASE_SECRET_KEYS: serverBinding,
+      })),
+      null,
+    );
+    const response = await withInvalidBindingResponse(serverBinding);
+    assertEquals(response.status, 500);
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "SERVER_CONFIGURATION_ERROR",
+      message: "Server configuration is incomplete.",
+    });
+  }
+  assertEquals(
+    resolveIntakeQuoteRequestConfiguration(environment({
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+    })),
+    null,
+  );
+
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
+  assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
+  assertEquals(source.match(/createClient\(/g)?.length, 1);
+  assertEquals(source.match(/\.from\(/g)?.length, 5);
+  assertEquals(source.match(/\.rpc\(/g)?.length, 11);
+  for (const forbidden of [
+    "SUPABASE_ANON_KEY",
+    "getSupabasePublishableKey",
+    "auth.getUser",
+    "auth.admin",
+    ".storage.",
+  ]) assertEquals(source.includes(forbidden), false);
+
   for (
     const [state, status, code] of [
       ["INTERRUPTED", 403, "INTAKE_ACCESS_INTERRUPTED"],
@@ -110,7 +201,7 @@ async function withDatabaseErrorAfterActivePreflight(
   for (
     const [name, value] of [
       ["SUPABASE_URL", "https://supabase.test"],
-      ["SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key"],
+      ["SUPABASE_SECRET_KEYS", JSON.stringify({ default: serverKey })],
       [
         "APPROVAL_TOKEN_SECRET",
         "approval-token-secret-with-sufficient-test-entropy",

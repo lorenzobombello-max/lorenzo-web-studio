@@ -25,6 +25,10 @@ import {
   hashApprovalToken,
   hashIntakeToken,
 } from "../_shared/security.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 import type {
   EmailJobStatus,
   IntakeAction,
@@ -38,6 +42,21 @@ import {
 } from "../_shared/validation.ts";
 
 const MAX_INTAKE_BODY_BYTES = 32 * 1024;
+
+export function resolveIntakeQuoteRequestConfiguration(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): { url: string; serviceRoleKey: string } | null {
+  const url = environment.get("SUPABASE_URL");
+  if (!url) return null;
+  try {
+    return {
+      url,
+      serviceRoleKey: getSupabaseServerSecretKey("default", environment),
+    };
+  } catch {
+    return null;
+  }
+}
 
 class IntakeRequestError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -509,10 +528,9 @@ export async function handleIntakeQuoteRequest(
     }, origin);
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const configuration = resolveIntakeQuoteRequestConfiguration();
   if (
-    !supabaseUrl || !serviceRoleKey || !Deno.env.get("APPROVAL_TOKEN_SECRET")
+    !configuration || !Deno.env.get("APPROVAL_TOKEN_SECRET")
   ) {
     return jsonResponse(500, {
       ok: false,
@@ -553,7 +571,7 @@ export async function handleIntakeQuoteRequest(
     }, origin);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient(configuration.url, configuration.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
