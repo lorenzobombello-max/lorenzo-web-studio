@@ -8,10 +8,24 @@ import {
   encryptRecruitmentCandidateToken,
   hashRecruitmentCandidateToken,
 } from "../_shared/security.ts";
+import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
 
 const PROFILES = new Set(["Webdesign", "Development", "Security", "SEO", "Content"]);
 const EMAIL = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
 const RECRUITMENT_PUBLIC_SITE_URL = "https://lorenzowebsolutions.be";
+
+export function resolveRecruitmentCandidateInvitationServiceKey(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): string | null {
+  try {
+    return getSupabaseServerSecretKey("default", environment);
+  } catch {
+    return null;
+  }
+}
 
 function json(origin: string | null, status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(origin), "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -44,7 +58,7 @@ export async function handleRecruitmentCandidateInvitation(request: Request): Pr
   if (request.method !== "POST") return json(origin, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const serviceRoleKey = resolveRecruitmentCandidateInvitationServiceKey();
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("FROM_EMAIL") || "";
   const jwt = bearer(request);

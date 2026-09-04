@@ -6,7 +6,100 @@ import {
   encryptRecruitmentCandidateToken,
   hashRecruitmentCandidateToken,
 } from "../_shared/security.ts";
-import { handleRecruitmentCandidateInvitation } from "./index.ts";
+import {
+  handleRecruitmentCandidateInvitation,
+  resolveRecruitmentCandidateInvitationServiceKey,
+} from "./index.ts";
+
+const serverKey = ["sb", "secret", "recruitmentInvitation", "test"].join("_");
+
+function environment(values: Record<string, string | undefined>) {
+  return { get: (name: string) => values[name] };
+}
+
+async function withConfigurationResponse(
+  serverBinding: string | undefined,
+  anonBinding: string | undefined,
+  legacyServiceBinding: string | undefined = "must-not-be-read",
+): Promise<Response> {
+  const previousEnvironment = new Map<string, string | undefined>();
+  for (const [name, value] of [
+    ["SUPABASE_URL", "https://supabase.test"],
+    ["SUPABASE_ANON_KEY", anonBinding],
+    ["SUPABASE_SERVICE_ROLE_KEY", legacyServiceBinding],
+    ["SUPABASE_SECRET_KEYS", serverBinding],
+  ] as const) {
+    previousEnvironment.set(name, Deno.env.get(name));
+    if (value === undefined) Deno.env.delete(name);
+    else Deno.env.set(name, value);
+  }
+
+  try {
+    return await handleRecruitmentCandidateInvitation(new Request("https://functions.test/recruitment-candidate-invitation", {
+      method: "POST",
+      headers: { authorization: "Bearer owner-jwt", "content-type": "application/json" },
+      body: JSON.stringify({ name: "Sophie", email: "sophie@example.invalid", test_profile: "Development" }),
+    }));
+  } finally {
+    for (const [name, value] of previousEnvironment) {
+      if (value === undefined) Deno.env.delete(name);
+      else Deno.env.set(name, value);
+    }
+  }
+}
+
+Deno.test("Recruitment invitation Phase A uses only the modern service binding", async () => {
+  assertEquals(
+    resolveRecruitmentCandidateInvitationServiceKey(environment({
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
+    })),
+    serverKey,
+  );
+
+  for (const [serverBinding, legacyServiceBinding] of [
+    [undefined, undefined],
+    ["not-json", "must-not-be-read"],
+    [JSON.stringify({ default: "legacy-service-role-key" }), "must-not-be-read"],
+  ] as const) {
+    assertEquals(
+      resolveRecruitmentCandidateInvitationServiceKey(environment({
+        SUPABASE_SERVICE_ROLE_KEY: "must-not-be-read",
+        SUPABASE_SECRET_KEYS: serverBinding,
+      })),
+      null,
+    );
+    const response = await withConfigurationResponse(serverBinding, "legacy-anon-key", legacyServiceBinding);
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+  }
+
+  const legacyOnlyResponse = await withConfigurationResponse(undefined, "legacy-anon-key", "legacy-only-service-key");
+  assertEquals(legacyOnlyResponse.status, 401);
+  assertEquals(await legacyOnlyResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+
+  const missingAnonResponse = await withConfigurationResponse(
+    JSON.stringify({ default: serverKey }),
+    undefined,
+  );
+  assertEquals(missingAnonResponse.status, 401);
+  assertEquals(await missingAnonResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  assert(source.includes('getSupabaseServerSecretKey("default"'));
+  assert(!source.includes("SUPABASE_SERVICE_ROLE_KEY"));
+  assert(source.includes('Deno.env.get("SUPABASE_ANON_KEY")'));
+  assert(!source.includes("getSupabasePublishableKey"));
+  assertEquals(source.match(/createClient\(/g)?.length, 2);
+  assertEquals(source.match(/auth\.getUser\(jwt\)/g)?.length, 1);
+  assertEquals(source.match(/\.rpc\(/g)?.length, 3);
+  assertEquals(source.match(/\.from\(/g)?.length ?? 0, 0);
+  assertEquals(source.match(/\.storage\./g)?.length ?? 0, 0);
+  for (const expectedRpc of [
+    "create_recruitment_candidate_invitation_v2",
+    "claim_recruitment_candidate_invitation_email_v2",
+    "complete_recruitment_candidate_invitation_email_v2",
+  ]) assert(source.includes(expectedRpc));
+});
 
 Deno.test("Recruitment capability is random, hashed, encrypted, and bound to its digest", async () => {
   const previous = Deno.env.get("APPROVAL_TOKEN_SECRET");
