@@ -225,9 +225,11 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(css, /@media \(max-width:540px\)[\s\S]*\.calendar-employee-detail__summary \{ grid-template-columns:repeat\(2,minmax\(0,1fr\)\); \}/);
   assert.match(css, /\.calendar-payroll-preview__table-viewport \{[^}]*overflow:auto/);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto[^}]*overflow-y:auto/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 4\.8s ease-in-out infinite/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
-  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 4\.8s ease-in-out infinite/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s ease-in-out infinite alternate/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^{]*\{[^}]*animation:calendar-selected-day-light-sweep 9s \.6s ease-in-out infinite/);
+  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s ease-in-out infinite alternate/);
+  assert.match(css, /@keyframes calendar-selected-day-heartbeat \{ from \{[^}]+\} to \{[^}]+\} \}/);
+  assert.match(css, /@keyframes calendar-selected-day-light-sweep \{ 0%,8% \{ opacity:0;[\s\S]*?92%,100% \{ opacity:0;/);
 });
 
 test("calendar selection release identity reaches dashboard and standalone windows", async ()=>{
@@ -242,10 +244,10 @@ test("calendar selection release identity reaches dashboard and standalone windo
   ]);
   assert.ok(dashboard.includes(`operator-calendar.mjs?v=${release}`));
   assert.ok(dashboardGuard.includes(`calendar=${release}`));
-  assert.ok(dashboardHtml.includes(`calendar-selection=20260905-r1`));
+  assert.ok(dashboardHtml.includes(`calendar-selection=20260905-r2`));
   assert.ok(registry.includes(`operator-calendar.mjs?v=${release}`));
   assert.ok(windowGuard.includes(`calendar=${release}`));
-  assert.ok(windowHtml.includes(`calendar-selection=20260905-r1`));
+  assert.ok(windowHtml.includes(`calendar-selection=20260905-r2`));
 });
 
 test("calendar controller returns dispose and ignores pending work after disposal", async ()=>{
