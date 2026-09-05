@@ -17,6 +17,7 @@ import { mountInternalSmokeB } from "../assets/js/operator-dashboard.js";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r3";
+const OPERATOR_PROFILE_PULSE_RELEASE = "20260905-r1";
 const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_RUNTIME_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
@@ -205,7 +206,7 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
-    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
+    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}`,
     `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_RUNTIME_RELEASE}`,
     `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}`,
   ]);
@@ -216,6 +217,7 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   }
   assert.match(guardUrl, /^\/assets\/js\/operator-dashboard-guard\.mjs\?v=/);
   assert.match(dashboardUrl, /^\.\/operator-dashboard\.js\?v=/);
+  assert.equal(new URL(cssUrl, "https://operator.example/").searchParams.get("pulse"), OPERATOR_PROFILE_PULSE_RELEASE);
   assert.equal(new URL(dashboardUrl, "https://operator.example/").searchParams.get("patch"), OPERATOR_RUNTIME_RELEASE);
   assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
@@ -3216,8 +3218,14 @@ test("module motion remains decorative, finite, and reduced-motion safe", async 
   assert.match(css, /@keyframes finance-line-draw/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]*animation:none!important/);
+  assert.match(css, /\.operator-profile__avatar \{[^}]*operator-profile-avatar-heartbeat 4\.8s[^}]*infinite/);
   assert.match(css, /\.operator-profile__avatar::before[^}]*dossier-card-light-sweep 9s[^}]*infinite/);
-  assert.doesNotMatch(css.replace(/\.operator-profile__avatar::before \{[^}]*\}/, ""), /infinite/);
+  assert.doesNotMatch(
+    css
+      .replace(/\.operator-profile__avatar \{[^}]*\}/, "")
+      .replace(/\.operator-profile__avatar::before \{[^}]*\}/, ""),
+    /infinite/
+  );
 });
 
 test("finance tab routing is closed, persistent, and cannot override application deeplinks", () => {
