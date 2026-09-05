@@ -100,6 +100,53 @@ async function payload(response: Response): Promise<Record<string, unknown>> {
   return await response.json();
 }
 
+function authTrackedDependencies(
+  overrides: Partial<DocumentInboxExtractDependencies> = {},
+) {
+  const calls = {
+    verifyUser: 0,
+    authorizeOwner: 0,
+    getInboxItem: 0,
+    readBinary: 0,
+    provider: 0,
+    recordExtraction: 0,
+  };
+  const base = dependencies().value;
+  const value: DocumentInboxExtractDependencies = {
+    verifyUser: async (jwt) => {
+      calls.verifyUser++;
+      return await (overrides.verifyUser || base.verifyUser)(jwt);
+    },
+    authorizeOwner: async (jwt) => {
+      calls.authorizeOwner++;
+      return await (overrides.authorizeOwner || base.authorizeOwner)(jwt);
+    },
+    getInboxItem: async (jwt, itemId) => {
+      calls.getInboxItem++;
+      return await (overrides.getInboxItem || base.getInboxItem)(jwt, itemId);
+    },
+    readBinary: async (input) => {
+      calls.readBinary++;
+      return await (overrides.readBinary || base.readBinary)(input);
+    },
+    provider: {
+      ...(overrides.provider || base.provider),
+      extract: async (input) => {
+        calls.provider++;
+        return await (overrides.provider || base.provider).extract(input);
+      },
+    },
+    recordExtraction: async (jwt, input) => {
+      calls.recordExtraction++;
+      return await (overrides.recordExtraction || base.recordExtraction)(
+        jwt,
+        input,
+      );
+    },
+  };
+  return { value, calls };
+}
+
 Deno.test("unauthenticated and unauthorized requests are rejected before item or storage access", async () => {
   let itemReads = 0;
   let binaryReads = 0;
@@ -124,6 +171,134 @@ Deno.test("unauthenticated and unauthorized requests are rejected before item or
   );
   assertEquals(itemReads, 0);
   assertEquals(binaryReads, 0);
+});
+
+Deno.test("failed JWT verification stops before owner and extraction authority", async () => {
+  const deps = authTrackedDependencies({
+    verifyUser: () => Promise.resolve(false),
+  });
+  const response = await handleDocumentInboxExtract(request(), deps.value);
+  assertEquals(response.status, 403);
+  assertEquals(
+    (await payload(response)).code,
+    "DOCUMENT_INBOX_EXTRACT_OWNER_REQUIRED",
+  );
+  assertEquals(deps.calls.verifyUser, 1);
+  assertEquals(deps.calls.authorizeOwner, 0);
+  assertEquals(deps.calls.getInboxItem, 0);
+  assertEquals(deps.calls.readBinary, 0);
+  assertEquals(deps.calls.provider, 0);
+  assertEquals(deps.calls.recordExtraction, 0);
+});
+
+Deno.test("malformed bearer is rejected with the authentication contract", async () => {
+  const deps = authTrackedDependencies();
+  const malformed = new Request(
+    "https://project.supabase.co/functions/v1/document-inbox-extract",
+    {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        "content-type": "application/json",
+        authorization: "Bearer token with spaces",
+      },
+      body: "{}",
+    },
+  );
+  const response = await handleDocumentInboxExtract(malformed, deps.value);
+  assertEquals(response.status, 401);
+  assertEquals((await payload(response)).code, "AUTHENTICATION_REQUIRED");
+  assertEquals(deps.calls.verifyUser, 0);
+  assertEquals(deps.calls.authorizeOwner, 0);
+});
+
+Deno.test("invalid or expired JWT model preserves the owner-required response", async () => {
+  for (const jwtState of ["invalid", "expired"]) {
+    const deps = authTrackedDependencies({
+      verifyUser: () => Promise.resolve(false),
+    });
+    const response = await handleDocumentInboxExtract(request(), deps.value);
+    assertEquals(response.status, 403, jwtState);
+    assertEquals(
+      (await payload(response)).code,
+      "DOCUMENT_INBOX_EXTRACT_OWNER_REQUIRED",
+      jwtState,
+    );
+    assertEquals(deps.calls.verifyUser, 1, jwtState);
+    assertEquals(deps.calls.authorizeOwner, 0, jwtState);
+    assertEquals(deps.calls.getInboxItem, 0, jwtState);
+  }
+});
+
+Deno.test("JWT verifier exceptions fail closed before downstream authority", async () => {
+  const deps = authTrackedDependencies({
+    verifyUser: () => Promise.reject(new Error("verification unavailable")),
+  });
+  const response = await handleDocumentInboxExtract(request(), deps.value);
+  assertEquals(response.status, 503);
+  assertEquals(
+    (await payload(response)).code,
+    "DOCUMENT_INBOX_EXTRACTION_NOT_AVAILABLE",
+  );
+  assertEquals(deps.calls.verifyUser, 1);
+  assertEquals(deps.calls.authorizeOwner, 0);
+  assertEquals(deps.calls.getInboxItem, 0);
+  assertEquals(deps.calls.readBinary, 0);
+  assertEquals(deps.calls.recordExtraction, 0);
+});
+
+Deno.test("owner authority exceptions fail closed before item access", async () => {
+  const deps = authTrackedDependencies({
+    authorizeOwner: () => Promise.reject(new Error("authority unavailable")),
+  });
+  const response = await handleDocumentInboxExtract(request(), deps.value);
+  assertEquals(response.status, 503);
+  assertEquals(
+    (await payload(response)).code,
+    "DOCUMENT_INBOX_EXTRACTION_NOT_AVAILABLE",
+  );
+  assertEquals(deps.calls.verifyUser, 1);
+  assertEquals(deps.calls.getInboxItem, 0);
+  assertEquals(deps.calls.readBinary, 0);
+  assertEquals(deps.calls.recordExtraction, 0);
+});
+
+Deno.test("preflight and disallowed origins never invoke authentication", async () => {
+  const preflight = authTrackedDependencies();
+  const preflightResponse = await handleDocumentInboxExtract(
+    new Request(
+      "https://project.supabase.co/functions/v1/document-inbox-extract",
+      { method: "OPTIONS", headers: { origin: ORIGIN } },
+    ),
+    preflight.value,
+  );
+  assertEquals(preflightResponse.status, 204);
+  assertEquals(preflight.calls.verifyUser, 0);
+  assertEquals(preflight.calls.authorizeOwner, 0);
+  assertEquals(preflight.calls.getInboxItem, 0);
+
+  const blocked = authTrackedDependencies();
+  const blockedResponse = await handleDocumentInboxExtract(
+    new Request(
+      "https://project.supabase.co/functions/v1/document-inbox-extract",
+      {
+        method: "POST",
+        headers: {
+          origin: "https://attacker.example",
+          "content-type": "application/json",
+          authorization: "Bearer owner-jwt",
+        },
+        body: "{}",
+      },
+    ),
+    blocked.value,
+  );
+  assertEquals(blockedResponse.status, 403);
+  assertEquals(blocked.calls.verifyUser, 0);
+  assertEquals(blocked.calls.authorizeOwner, 0);
+  assertEquals(blocked.calls.getInboxItem, 0);
+  assertEquals(blocked.calls.readBinary, 0);
+  assertEquals(blocked.calls.recordExtraction, 0);
 });
 
 Deno.test("invalid and unknown inbox items are rejected", async () => {

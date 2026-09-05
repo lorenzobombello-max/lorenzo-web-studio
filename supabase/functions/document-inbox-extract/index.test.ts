@@ -111,11 +111,27 @@ Deno.test("runtime adapter exposes no forbidden authority", async () => {
   const source = await Deno.readTextFile(
     new URL("./index.ts", import.meta.url),
   );
+  const config = await Deno.readTextFile(
+    new URL("../../config.toml", import.meta.url),
+  );
   assertEquals(source.includes("record_document_inbox_extraction_v1"), true);
   assertEquals(source.includes('getSupabaseServerSecretKey("default"'), true);
   assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
   assertEquals(source.includes('getSupabasePublishableKey("default"'), true);
   assertEquals(source.includes("SUPABASE_ANON_KEY"), false);
+  assertEquals(source.match(/createClient\(/g)?.length, 2);
+  assertEquals(source.match(/auth\.getUser\(jwt\)/g)?.length, 1);
+  assertEquals(source.match(/\.rpc\(/g)?.length, 3);
+  assertEquals(source.match(/storage\.from\(/g)?.length, 1);
+  assertEquals(source.match(/\.download\(/g)?.length, 1);
+  assertEquals(source.match(/(?<!storage)\.from\(/g)?.length ?? 0, 0);
+  assertEquals(source.match(/get_current_operator_identity_v1/g)?.length, 1);
+  assertEquals(
+    /\[functions\.document-inbox-extract\]\r?\nverify_jwt = false/.test(
+      config,
+    ),
+    true,
+  );
   for (
     const forbidden of [
       "confirm_document_inbox_values_v1",
