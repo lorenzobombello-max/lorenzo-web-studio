@@ -16,9 +16,9 @@ import { mountInternalSmokeB } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260905-profile-avatar-sweep-r1";
-const OPERATOR_PROFILE_RELEASE = "20260903-operator-profiles-r1";
-const OPERATOR_RUNTIME_RELEASE = "20260905-dossiers-purge-aal2-r1";
+const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r2";
+const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
+const OPERATOR_RUNTIME_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-dossiers-seen-state-r1";
@@ -3174,7 +3174,7 @@ test("dashboard and managed window CSP permit only the project Realtime websocke
 });
 
 test("module routing defaults and fails safe to dossiers", () => {
-  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "owner"), "dossiers");
+  assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/", "owner"), "profile");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=finance", "owner"), "finance");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=workforce", "owner"), "workforce");
   assert.equal(operatorModuleFromUrl("https://operator.example/operator/dashboard/?module=recruitment", "owner"), "recruitment");

@@ -355,9 +355,9 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
   const dossierCacheIdentity = "20260905-dossiers-purge-aal2-r1";
   const dossierCssCacheIdentity = "20260903-dossiers-seen-state-r1";
-  const profileCacheIdentity = "20260903-operator-profiles-r1";
-  const profileCssCacheIdentity = "20260905-profile-avatar-sweep-r1";
-  const runtimeCacheIdentity = "20260905-dossiers-purge-aal2-r1";
+  const profileCacheIdentity = "20260905-profile-welcome-r2";
+  const profileCssCacheIdentity = "20260905-profile-welcome-r2";
+  const runtimeCacheIdentity = "20260905-profile-welcome-r2";
   assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${runtimeCacheIdentity}`));
   assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${profileCacheIdentity}&patch=${runtimeCacheIdentity}`));
   assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));

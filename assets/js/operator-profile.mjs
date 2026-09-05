@@ -27,10 +27,26 @@ export function operatorProfilePresentation(profile) {
   });
 }
 
+export function operatorProfileNameParts(displayName) {
+  const [givenName, ...familyNames] = String(displayName || "").trim().split(/\s+/);
+  return Object.freeze({ givenName, familyName: familyNames.join(" ") });
+}
+
 export function presentOperatorProfile(root, profile) {
   const presentation = operatorProfilePresentation(profile);
+  const name = root.getElementById("operatorProfileName");
+  const nameParts = operatorProfileNameParts(presentation.displayName);
   root.getElementById("operatorProfileCode").textContent = presentation.code;
-  root.getElementById("operatorProfileName").textContent = presentation.displayName;
+  name.replaceChildren();
+  name.setAttribute("aria-label", presentation.displayName);
+  for (const [part, modifier] of [[nameParts.givenName, "given"], [nameParts.familyName, "family"]]) {
+    if (!part) continue;
+    const span = root.createElement("span");
+    span.className = `operator-profile__name-part operator-profile__name-part--${modifier}`;
+    span.setAttribute("aria-hidden", "true");
+    span.textContent = part;
+    name.append(span);
+  }
   root.getElementById("operatorProfileEmail").textContent = presentation.email;
   root.getElementById("operatorProfileRole").textContent = presentation.roleLabel;
   root.getElementById("operatorProfileInitials").textContent = presentation.displayName

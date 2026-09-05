@@ -14,7 +14,7 @@ import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=2026
 import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260905-dossiers-purge-aal2-r1";
-import { initializeOperatorProfile } from "./operator-profile.mjs?v=20260903-operator-profiles-r1";
+import { initializeOperatorProfile } from "./operator-profile.mjs?v=20260905-profile-welcome-r2";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
 const SUPPORT_REFERENCE = /^#?[0-9A-F]{8}$/i;
@@ -49,7 +49,7 @@ function localDateInputValue(date = new Date()) {
 
 export function operatorModuleFromUrl(url, role) {
   const parsed = new URL(url, "https://operator.invalid");
-  const module = parsed.searchParams.get("module") || (role === "profile_only" ? "profile" : "dossiers");
+  const module = parsed.searchParams.get("module") || "profile";
   if (module === "profile") return module;
   if (parsed.searchParams.has("application") || parsed.searchParams.has("request") || parsed.searchParams.has("support")) {
     return "dossiers";

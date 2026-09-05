@@ -11,10 +11,10 @@
   <link rel="stylesheet" href="/assets/css/pages.css" />
   <link rel="stylesheet" href="/assets/css/operator-auth.css" />
   <link rel="stylesheet" href="/assets/css/operator-mfa.css?v=20260904-aal2-r1" />
-  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260905-profile-avatar-sweep-r1" />
+  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260905-profile-welcome-r2" />
   <link rel="stylesheet" href="/assets/css/operator-messages.css?v=20260902-phase1" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js" integrity="sha384-l8ah+VgaWtk1mvOe9VC+OirC6qHFF4yH7l7mKRidV9MSti3E9F463bMp6ZVN4kuC" crossorigin="anonymous"></script>
-  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260905-dossiers-purge-aal2-r1"></script>
+  <script type="module" src="/assets/js/operator-dashboard-guard.mjs?v=20260905-profile-welcome-r2"></script>
 </head>
 <body>
   <main id="operatorDashboardGate" class="operator-auth-main"><section class="operator-auth-panel operator-auth-panel--center" role="status"><span class="operator-auth-spinner" aria-hidden="true"></span><h1 id="operatorDashboardGateTitle">Autorisatie wordt gecontroleerd</h1><p id="operatorDashboardGateMessage" class="operator-auth-message">Even geduld.</p><button id="operatorDashboardLogout" class="button button--dark" type="button" hidden>Afmelden</button></section></main>
@@ -30,7 +30,7 @@
         <div id="operatorProfileContent" class="operator-profile__content" hidden>
           <header class="operator-profile__heading">
             <span class="operator-profile__avatar" aria-hidden="true"><span id="operatorProfileInitials" class="operator-profile__initials"></span></span>
-            <div><span id="operatorProfileCode" class="operator-profile__code"></span><h1 id="operatorProfileName" class="module-shell__title"></h1><p id="operatorProfileRole" class="operator-profile__role"></p></div>
+            <div class="operator-profile__identity"><span id="operatorProfileCode" class="operator-profile__code"></span><h1 id="operatorProfileName" class="module-shell__title"></h1><p id="operatorProfileRole" class="operator-profile__role"></p></div>
           </header>
           <dl class="operator-profile__details"><div><dt>E-mailadres</dt><dd id="operatorProfileEmail"></dd></div><div><dt>Status</dt><dd><span class="operator-profile__active">Actief</span></dd></div></dl>
         </div>

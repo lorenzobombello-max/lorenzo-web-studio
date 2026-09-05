@@ -148,7 +148,7 @@ export function createOperatorLoginController({
       retainedEmail = "";
       if (cooldownTimer !== null) clearTimer(cooldownTimer);
       cooldownTimer = null;
-      navigate(OPERATOR_ROUTES.home);
+      navigate(OPERATOR_ROUTES.profile);
       return true;
     } catch (error) {
       lastError = classifyAuthError(error);
@@ -235,7 +235,7 @@ export function createOperatorLoginBootstrap({
       const { client } = await getClient();
       const access = await requireAccess(client);
       if (access.status === "authorized") {
-        navigate(OPERATOR_ROUTES.home);
+        navigate(OPERATOR_ROUTES.profile);
         return null;
       }
       return mountController(client, access);

@@ -3,6 +3,7 @@ export const OPERATOR_ROUTES = Object.freeze({
   callback: "/operator/auth/callback/",
   home: "/operator/",
   dashboard: "/operator/dashboard/",
+  profile: "/operator/dashboard/?module=profile",
 });
 
 const AUTH_PARAMETER_NAMES = new Set([

@@ -13,7 +13,7 @@ try {
   });
   if (!result.ok) throw new Error(result.code);
   message.textContent = "Sessie bevestigd. De operatoromgeving wordt geopend.";
-  window.location.replace(OPERATOR_ROUTES.home);
+  window.location.replace(OPERATOR_ROUTES.profile);
 } catch (error) {
   window.history.replaceState(window.history.state, "", OPERATOR_ROUTES.callback);
   message.textContent = safeAuthMessage(error.message);
