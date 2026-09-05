@@ -356,6 +356,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   const dossierCacheIdentity = "20260905-dossiers-purge-aal2-r1";
   const dossierCssCacheIdentity = "20260903-dossiers-seen-state-r1";
   const profileCacheIdentity = "20260903-operator-profiles-r1";
+  const profileCssCacheIdentity = "20260905-profile-avatar-sweep-r1";
   const runtimeCacheIdentity = "20260905-dossiers-purge-aal2-r1";
   assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${runtimeCacheIdentity}`));
   assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${profileCacheIdentity}&patch=${runtimeCacheIdentity}`));
@@ -363,7 +364,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.ok(childHtml.includes(`operator-window-guard.mjs?v=${dossierCacheIdentity}`));
   assert.ok(windowGuard.includes(`operator-module-registry.mjs?v=${dossierCacheIdentity}`));
   assert.ok(registry.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
-  assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${profileCacheIdentity}`));
+  assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${profileCssCacheIdentity}`));
   assert.ok(childHtml.includes(`operator-dashboard.css?v=${dossierCssCacheIdentity}`));
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);

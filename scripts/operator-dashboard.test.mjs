@@ -16,7 +16,7 @@ import { mountInternalSmokeB } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260903-operator-profiles-r1";
+const OPERATOR_ASSET_RELEASE = "20260905-profile-avatar-sweep-r1";
 const OPERATOR_PROFILE_RELEASE = "20260903-operator-profiles-r1";
 const OPERATOR_RUNTIME_RELEASE = "20260905-dossiers-purge-aal2-r1";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
