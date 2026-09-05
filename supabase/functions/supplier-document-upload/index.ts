@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  getSupabaseServerSecretKey,
+  type SupabaseKeyBindingEnvironment,
+} from "../_shared/supabase-key-bindings.ts";
+import {
   handleSupplierDocumentUpload,
   type SupplierDocumentUploadResult,
 } from "./handler.ts";
@@ -24,6 +28,16 @@ export function isActiveOwnerIdentity(data: unknown): boolean {
   return identity.role === "owner" && identity.status === "ACTIVE";
 }
 
+export function resolveSupplierDocumentUploadServiceKey(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): string | null {
+  try {
+    return getSupabaseServerSecretKey("default", environment);
+  } catch {
+    return null;
+  }
+}
+
 async function sha256(bytes: Uint8Array): Promise<string> {
   const ownedBytes = new Uint8Array(bytes);
   const digest = await crypto.subtle.digest("SHA-256", ownedBytes.buffer);
@@ -36,7 +50,7 @@ if (import.meta.main) {
   Deno.serve((request) => {
     const url = Deno.env.get("SUPABASE_URL");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRoleKey = resolveSupplierDocumentUploadServiceKey();
     if (!url || !anonKey || !serviceRoleKey) {
       return new Response(
         JSON.stringify({ ok: false, code: "SERVER_CONFIGURATION_ERROR" }),
