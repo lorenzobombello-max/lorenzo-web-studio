@@ -20,6 +20,7 @@ const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r3";
 const OPERATOR_PROFILE_PULSE_RELEASE = "20260905-r1";
 const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_RUNTIME_RELEASE = "20260905-profile-welcome-r2";
+const OPERATOR_GUARD_RELEASE = "20260906-stale-claim-r1";
 const OPERATOR_CALENDAR_SELECTION_RELEASE = "20260905-calendar-selection-r5";
 const OPERATOR_CALENDAR_CSS_RELEASE = "20260905-r5";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
@@ -209,10 +210,10 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_RUNTIME_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_GUARD_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
     `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}&calendar=${OPERATOR_CALENDAR_SELECTION_RELEASE}`,
   ]);
-  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_RUNTIME_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
+  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_GUARD_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
@@ -419,7 +420,7 @@ test("dashboard guard intercepts local module links and supports browser history
   assert.match(guard, /window\.history\.pushState\(window\.history\.state, "", url\)/);
   assert.match(guard, /window\.addEventListener\("popstate", \(\)=>void navigateModule\(window\.location\.href, \{ push: false \}\)\)/);
   assert.match(guard, /verifiedIdentity: context\.identity/);
-  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*workspaceMaster\?\.lockWorkspace\("AUTH_SIGNED_OUT"\);\s*window\.location\.replace/);
+  assert.match(guard, /moduleNavigation\?\.invalidateIdentity\(\);\s*financeNavigation\?\.invalidateIdentity\(\);\s*workspaceRecovery\?\.dispose\(\);\s*workspaceRecovery = null;\s*workspaceMaster\?\.lockWorkspace\("AUTH_SIGNED_OUT"\);\s*window\.location\.replace/);
   assert.equal((guard.match(/requireAuthorizedOperator\(client\)/g) || []).length, 1);
   assert.equal((guard.match(/gate\.hidden = true/g) || []).length, 1);
   assert.doesNotMatch(guard, /gate\.hidden = false/);

@@ -1,7 +1,7 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260905-profile-welcome-r2&patch=20260905-profile-welcome-r2&calendar=20260905-calendar-selection-r5";
-import { createOperatorWorkspaceMaster } from "./operator-workspace-master.mjs?v=20260903-multiscreen-ux-r1";
+import { createOperatorWorkspaceMaster, createOperatorWorkspaceRecovery } from "./operator-workspace-master.mjs?v=20260906-stale-claim-r1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";
 import { createOperatorMfaDialog, isMfaOperatorSubject, mountOperatorMfaButton } from "./operator-mfa.mjs?v=20260904-aal2-r1";
@@ -16,6 +16,7 @@ const presentWorkspaceStatus = createOperatorWorkspaceStatusPresenter(document.q
 let moduleNavigation = null;
 let financeNavigation = null;
 let workspaceMaster = null;
+let workspaceRecovery = null;
 let mfaController = null;
 
 function disposeDossiers() {
@@ -30,6 +31,8 @@ function redirectToLogin() {
   disposeDossiers();
   moduleNavigation?.invalidateIdentity();
   financeNavigation?.invalidateIdentity();
+  workspaceRecovery?.dispose();
+  workspaceRecovery = null;
   workspaceMaster?.lockWorkspace("AUTH_SIGNED_OUT");
   window.location.replace(OPERATOR_ROUTES.login);
 }
@@ -104,21 +107,32 @@ try {
       onAuthorizationFailure: redirectToLogin,
     });
     if (identity.role === "owner") {
-      workspaceMaster = await createOperatorWorkspaceMaster({
+      const acquireWorkspaceMaster = (resumeHint = null)=>createOperatorWorkspaceMaster({
         client,
         requireAal2,
-        resumeHint: readOperatorWorkspaceResumeHint(window.history),
+        resumeHint,
         onAvailabilityChange: presentWorkspaceStatus,
         onInvalidate: (moduleKey)=>{
           if (moduleKey === "messages") document.getElementById("messagesWorkspace")?.operatorMessagesController?.refresh();
         },
       });
-      if (workspaceMaster.active) {
-        writeOperatorWorkspaceResumeHint(window.history, workspaceMaster.resumeHint);
+      const activateWorkspaceMaster = (master)=>{
+        workspaceMaster = master;
+        if (!master.active) return;
+        writeOperatorWorkspaceResumeHint(window.history, master.resumeHint);
         for (const button of document.querySelectorAll("[data-operator-window-module]")) {
-          workspaceMaster.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
+          master.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
         }
-        document.getElementById("messagesWorkspace")?.operatorMessagesController?.setInvalidationPublisher((moduleKey)=>workspaceMaster.invalidate(moduleKey));
+        document.getElementById("messagesWorkspace")?.operatorMessagesController?.setInvalidationPublisher((moduleKey)=>master.invalidate(moduleKey));
+      };
+      workspaceMaster = await acquireWorkspaceMaster(readOperatorWorkspaceResumeHint(window.history));
+      activateWorkspaceMaster(workspaceMaster);
+      if (!workspaceMaster.active && workspaceMaster.reason === "SERVER_MASTER_EXISTS") {
+        workspaceRecovery = createOperatorWorkspaceRecovery({
+          acquire: acquireWorkspaceMaster,
+          onMaster: activateWorkspaceMaster,
+        });
+        void workspaceRecovery.start();
       }
     }
     gate.hidden = true;
@@ -192,6 +206,7 @@ try {
   }
   window.addEventListener("pagehide", stopWatching, { once: true });
   window.addEventListener("pagehide", disposeDossiers, { once: true });
+  window.addEventListener("pagehide", ()=>workspaceRecovery?.dispose(), { once: true });
   window.addEventListener("pagehide", ()=>workspaceMaster?.dispose(), { once: true });
 } catch {
   redirectToLogin();

@@ -18,7 +18,7 @@ import {
   writeOperatorWorkspaceResumeHint,
 } from "../assets/js/operator-workspace-protocol.mjs";
 import { createOperatorWorkspaceChild } from "../assets/js/operator-workspace-child.mjs";
-import { createOperatorWorkspaceMaster } from "../assets/js/operator-workspace-master.mjs";
+import { createOperatorWorkspaceMaster, createOperatorWorkspaceRecovery } from "../assets/js/operator-workspace-master.mjs";
 import { watchOperatorSession } from "../assets/js/operator-auth-core.mjs";
 import {
   OPERATOR_MODULE_DESCRIPTORS,
@@ -255,8 +255,11 @@ test("generic child shell mounts registered modules only after independent autho
   assert.match(guard, /onAuthorizationFailure: \(\)=>childCoordinator\.lock\("WORKSPACE_MODULE_NOT_AUTHORIZED"\)/);
   assert.match(guard, /p_slot_key/);
   assert.match(dashboardGuard, /createOperatorWorkspaceMaster/);
+  assert.match(dashboardGuard, /createOperatorWorkspaceRecovery/);
+  assert.match(dashboardGuard, /workspaceMaster\.reason === "SERVER_MASTER_EXISTS"/);
   assert.match(dashboardGuard, /shutdownWorkspace/);
   assert.match(dashboardGuard, /pushState\(window\.history\.state/);
+  assert.match(dashboardGuard, /pagehide", \(\)=>workspaceRecovery\?\.dispose\(\)/);
   assert.match(dashboardGuard, /pagehide", \(\)=>workspaceMaster\?\.dispose\(\)/);
   assert.doesNotMatch(dashboardGuard, /pagehide[^\n]*shutdownWorkspace/);
   assert.match(dashboardGuard, /clearOperatorWorkspaceResumeHint\(window\.history\)[\s\S]*shutdownWorkspace/);
@@ -712,6 +715,37 @@ test("normal occupied to acquired transition clears status and preserves launche
   assert.equal(button.hidden, false);
   assert.equal(button.disabled, false);
   assert.equal(listeners.length, 1);
+});
+
+test("server-occupied workspace recovery keeps retrying until the expired claim can be acquired", async ()=>{
+  const scheduled = [];
+  const observed = [];
+  const inactiveMaster = { active: false, reason: "SERVER_MASTER_EXISTS", dispose() {} };
+  const activeMaster = { active: true, dispose() { this.disposed = true; } };
+  let acquisitions = 0;
+  const recovery = createOperatorWorkspaceRecovery({
+    acquire: async ()=>++acquisitions < 3 ? inactiveMaster : activeMaster,
+    onMaster: (master)=>observed.push(master),
+    setTimeoutFn: (callback, delay)=>{
+      const timer = { callback, delay, cleared: false };
+      scheduled.push(timer);
+      return timer;
+    },
+    clearTimeoutFn: (timer)=>{ timer.cleared = true; },
+  });
+
+  await recovery.start();
+  assert.equal(acquisitions, 1);
+  assert.equal(scheduled.shift().delay, 100);
+  await recovery.retry();
+  assert.equal(acquisitions, 2);
+  assert.equal(scheduled.shift().delay, 100);
+  await recovery.retry();
+  assert.equal(acquisitions, 3);
+  assert.deepEqual(observed, [inactiveMaster, inactiveMaster, activeMaster]);
+  assert.equal(scheduled.length, 0);
+  recovery.dispose();
+  assert.equal(activeMaster.disposed, undefined);
 });
 
 test("technical acquisition failure never presents another-window occupancy", async ()=>{

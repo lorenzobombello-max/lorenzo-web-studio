@@ -49,6 +49,59 @@ function inactiveWorkspaceMaster(reason) {
   });
 }
 
+export function createOperatorWorkspaceRecovery({
+  acquire,
+  onMaster = ()=>{},
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+  retryDelayMs = 100,
+} = {}) {
+  if (typeof acquire !== "function") throw new Error("OPERATOR_WORKSPACE_RECOVERY_ACQUIRE_REQUIRED");
+  let disposed = false;
+  let pending = false;
+  let retryTimer = null;
+  let currentMaster = null;
+
+  async function retry() {
+    if (disposed || pending || currentMaster?.active) return currentMaster;
+    if (retryTimer) {
+      clearTimeoutFn(retryTimer);
+      retryTimer = null;
+    }
+    pending = true;
+    let candidate;
+    try {
+      candidate = await acquire();
+    } finally {
+      pending = false;
+    }
+    if (disposed) {
+      candidate?.dispose();
+      return candidate;
+    }
+    currentMaster = candidate;
+    onMaster(candidate);
+    if (!candidate?.active && candidate?.reason === "SERVER_MASTER_EXISTS") {
+      retryTimer = setTimeoutFn(()=>{
+        retryTimer = null;
+        void retry();
+      }, retryDelayMs);
+    }
+    return candidate;
+  }
+
+  return {
+    start: retry,
+    retry,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      if (retryTimer) clearTimeoutFn(retryTimer);
+      retryTimer = null;
+    },
+  };
+}
+
 export async function createOperatorWorkspaceMaster({
   client,
   windowObject = window,
