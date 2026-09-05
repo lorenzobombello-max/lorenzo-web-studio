@@ -61,6 +61,18 @@ async function payload(response: Response): Promise<Record<string, unknown>> {
   return await response.json();
 }
 
+function assertNoStorageOrFinalizer(
+  deps: ReturnType<typeof dependencies>,
+): void {
+  assertEquals(deps.puts.length, 0, "upload calls");
+  assertEquals(
+    deps.puts.length,
+    0,
+    "collision-download calls: putObject boundary was not entered",
+  );
+  assertEquals(deps.finalizations.length, 0, "finalizer calls");
+}
+
 Deno.test("active owner uploads PDF with server-derived canonical metadata", async () => {
   const deps = dependencies();
   const result = await handleSupplierDocumentUpload(
@@ -123,7 +135,11 @@ for (
       deps.value,
     );
     assertEquals(result.status, 403);
-    assertEquals(deps.puts.length, 0);
+    assertEquals(await payload(result), {
+      ok: false,
+      code: "SUPPLIER_DOCUMENT_UPLOAD_OWNER_REQUIRED",
+    });
+    assertNoStorageOrFinalizer(deps);
   });
 }
 
@@ -141,7 +157,109 @@ Deno.test("missing bearer token is denied", async () => {
     deps.value,
   );
   assertEquals(result.status, 401);
-  assertEquals(deps.puts.length, 0);
+  assertEquals(await payload(result), {
+    ok: false,
+    code: "AUTHENTICATION_REQUIRED",
+  });
+  assertNoStorageOrFinalizer(deps);
+});
+
+for (
+  const authorization of [
+    "",
+    "Bearer",
+    "Basic token",
+    "Bearer token extra",
+  ]
+) {
+  Deno.test(`malformed bearer ${JSON.stringify(authorization)} is denied before side effects`, async () => {
+    let verifyCalls = 0;
+    let authorityCalls = 0;
+    const deps = dependencies({
+      verifyUser: () => {
+        verifyCalls += 1;
+        return Promise.resolve(true);
+      },
+      authorizeOwner: () => {
+        authorityCalls += 1;
+        return Promise.resolve(true);
+      },
+    });
+    const result = await handleSupplierDocumentUpload(
+      request(PDF, "application/pdf", { authorization }),
+      deps.value,
+    );
+    assertEquals(result.status, 401);
+    assertEquals(await payload(result), {
+      ok: false,
+      code: "AUTHENTICATION_REQUIRED",
+    });
+    assertEquals(verifyCalls, 0);
+    assertEquals(authorityCalls, 0);
+    assertNoStorageOrFinalizer(deps);
+  });
+}
+
+for (const tokenState of ["invalid", "expired"]) {
+  Deno.test(`${tokenState} JWT is denied before authority or side effects`, async () => {
+    let authorityCalls = 0;
+    const deps = dependencies({
+      verifyUser: () => Promise.resolve(false),
+      authorizeOwner: () => {
+        authorityCalls += 1;
+        return Promise.resolve(true);
+      },
+    });
+    const result = await handleSupplierDocumentUpload(
+      request(PDF, "application/pdf"),
+      deps.value,
+    );
+    assertEquals(result.status, 403);
+    assertEquals(await payload(result), {
+      ok: false,
+      code: "SUPPLIER_DOCUMENT_UPLOAD_OWNER_REQUIRED",
+    });
+    assertEquals(authorityCalls, 0);
+    assertNoStorageOrFinalizer(deps);
+  });
+}
+
+Deno.test("verifier exception fails closed before authority or side effects", async () => {
+  let authorityCalls = 0;
+  const deps = dependencies({
+    verifyUser: () => Promise.reject(new Error("verifier unavailable")),
+    authorizeOwner: () => {
+      authorityCalls += 1;
+      return Promise.resolve(true);
+    },
+  });
+  const result = await handleSupplierDocumentUpload(
+    request(PDF, "application/pdf"),
+    deps.value,
+  );
+  assertEquals(result.status, 503);
+  assertEquals(await payload(result), {
+    ok: false,
+    code: "UPLOAD_NOT_AVAILABLE",
+  });
+  assertEquals(authorityCalls, 0);
+  assertNoStorageOrFinalizer(deps);
+});
+
+Deno.test("authority exception fails closed before storage or finalizer", async () => {
+  const deps = dependencies({
+    authorizeOwner: () => Promise.reject(new Error("authority unavailable")),
+  });
+  const result = await handleSupplierDocumentUpload(
+    request(PDF, "application/pdf"),
+    deps.value,
+  );
+  assertEquals(result.status, 503);
+  assertEquals(await payload(result), {
+    ok: false,
+    code: "UPLOAD_NOT_AVAILABLE",
+  });
+  assertNoStorageOrFinalizer(deps);
 });
 
 Deno.test("unsupported declared MIME is rejected", async () => {
@@ -328,8 +446,13 @@ Deno.test("response exposes no credential or download authority", async () => {
 });
 
 Deno.test("allowed-origin preflight performs no authorization or upload", async () => {
+  let verified = false;
   let authorized = false;
   const deps = dependencies({
+    verifyUser: () => {
+      verified = true;
+      return Promise.resolve(true);
+    },
     authorizeOwner: () => {
       authorized = true;
       return Promise.resolve(true);
@@ -346,6 +469,7 @@ Deno.test("allowed-origin preflight performs no authorization or upload", async 
     deps.value,
   );
   assertEquals(result.status, 204);
+  assertEquals(verified, false);
   assertEquals(authorized, false);
-  assertEquals(deps.puts.length, 0);
+  assertNoStorageOrFinalizer(deps);
 });

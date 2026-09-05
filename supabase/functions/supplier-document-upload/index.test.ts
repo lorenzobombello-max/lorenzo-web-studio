@@ -69,6 +69,9 @@ Deno.test("supplier upload Phase B uses only the modern publishable binding", as
   );
 
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const handler = await Deno.readTextFile(
+    new URL("./handler.ts", import.meta.url),
+  );
   const config = await Deno.readTextFile(new URL("../../config.toml", import.meta.url));
   assert(source.includes('getSupabaseServerSecretKey("default"'));
   assert(!source.includes("SUPABASE_SERVICE_ROLE_KEY"));
@@ -87,7 +90,26 @@ Deno.test("supplier upload Phase B uses only the modern publishable binding", as
   assert(source.includes('"get_current_operator_identity_v1"'));
   assert(source.includes('"finalize_supplier_document_upload_object_v1"'));
   assert(!source.match(/createSigned|signedUrl|\.move\(|\.copy\(|\.remove\(/));
-  assert(/\[functions\.supplier-document-upload\]\r?\nverify_jwt = true/.test(config));
+  assert(handler.includes('/^Bearer\\s+([^\\s]+)$/i'));
+  assert(handler.includes('SUPPLIER_DOCUMENT_BUCKET = "supplier-documents"'));
+  assert(
+    handler.indexOf("await dependencies.putObject") <
+      handler.indexOf("await dependencies.finalizeObjectMetadata"),
+  );
+  assert(
+    source.indexOf("storage.from(input.bucket).upload(") <
+      source.indexOf("storage.from(input.bucket).download("),
+  );
+  assert(
+    source.includes(
+      'identity.role === "owner" && identity.status === "ACTIVE"',
+    ),
+  );
+  assert(
+    /\[functions\.supplier-document-upload\]\r?\nverify_jwt = false/.test(
+      config,
+    ),
+  );
 });
 
 Deno.test("only ACTIVE owner identity is authorized", () => {
