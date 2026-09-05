@@ -42,7 +42,13 @@ After recovery, local work only:
 - preserved the inert candidate and activation `NO-GO` contract;
 - documented and tested the integrated decision.
 
-No live read was repeated.
+At that recovery-integration point, no live read was repeated. A later, separately scoped authority closure used the official Management API read-only query endpoint as described below.
+
+### READ_ONLY_AUTHORITY_CLOSURE
+
+On `2026-09-05`, the official `POST /v1/projects/{ref}/database/query/read-only` route was validated before the catalog inventory. The probe returned HTTP `201`, `current_user = supabase_read_only_user`, `session_user = supabase_read_only_user`, and `transaction_read_only = on`. The route requires `database:read` / `database_read` and is distinct from the CLI login-role endpoint. No login role or other database object was created.
+
+One fixed, schema-qualified catalog query then returned the complete role, membership, `storage` schema ACL, `storage.objects` table and column ACL, relation owner/RLS flags, and policy inventory. The sanitized result is retained in `scripts/security/storage-inventory-production-preactivation/evidence.local.json`; it contains no bearer, cookie, password, connection string, Auth UUID, email address, or object data.
 
 The ignored artifact is the sole source of recovered facts. The evaluator reads no project, inventory, collision, schema, MODEL A, Auth-state or production-safety claim from caller input. Artifact integrity must pass before any recovered fact is evaluated. Changing one fact changes the canonical digest and makes the artifact `NO-GO` until a separately reviewed tracked trust anchor is updated.
 
@@ -69,13 +75,24 @@ The only observed relevant policy was:
 
 Its predicate allows reads from bucket `recruitment-cvs` when `auth.uid()` maps to an active commercial operator with role `owner`.
 
-PostgreSQL permissive policies OR-compose. Therefore this policy cannot be ignored when the future backup policy is added. Because the dedicated Auth identity and exact UUID do not exist yet:
+PostgreSQL permissive policies OR-compose. Therefore this policy cannot be ignored when the future backup policy is added.
+
+The authority closure proves:
+
+- `authenticated` has direct schema `USAGE` and direct relation `SELECT`;
+- `authenticated` has no parent-role membership, is not superuser, has no `BYPASSRLS`, and is not relation owner;
+- `storage.objects` has RLS enabled and `FORCE RLS` disabled, so `authenticated` is governed by RLS;
+- `service_role` has direct `SELECT` and `BYPASSRLS`;
+- `supabase_storage_admin` owns `storage.objects`; because `FORCE RLS` is disabled, its owner bypass is active;
+- no column-level ACL adds another SELECT path.
+
+Therefore the database-role inheritance question for the future ordinary `authenticated` session is closed: `ROLE_INHERITED_SELECT_SAFE = ja`. The existing permissive policy remains an identity-dependent branch. Because the dedicated Auth identity and exact UUID do not exist yet, its future commercial-owner mapping cannot yet be evaluated:
 
 - `INHERITED_SELECT_SAFE = unproven`;
-- `CURRENT_INHERITED_AUTHORITY_SAFE = unproven`;
+- `CURRENT_ROLE_INHERITANCE_AUTHORITY_SAFE = ja`;
 - `BACKUP_IDENTITY_COULD_INHERIT_RECRUITMENT_OWNER_READ = unproven`.
 
-No optimistic upgrade to `SAFE` or `nee` is made.
+No optimistic upgrade of the future UUID-dependent policy result to `SAFE` or `nee` is made.
 
 ## 5. Write Isolation
 
@@ -135,6 +152,7 @@ The identity-dependent SELECT is allowed only for proposing the separately appro
 - exact Auth UUID capture: `OPEN`;
 - exact UUID owner-mapping collision exclusion: `OPEN`;
 - fresh complete policy inventory at activation: `OPEN`;
+- fresh ACL, membership, role-attribute, ownership and RLS-flag inventory at activation: `OPEN`;
 - production SELECT-only LIST+GET policy apply: `OPEN`;
 - production policy verification: `OPEN`;
 - runtime secret creation: `OPEN`;
@@ -191,11 +209,18 @@ LIVE_SCHEMA_COMPATIBLE_WITH_6B_POLICY ja
 MODEL_A_LIVE_PRECONDITIONS_COMPATIBLE ja
 
 INHERITED_AUTHORITY_LIVE_AUDIT_COMPLETE ja
+ROLE_INHERITED_SELECT_SAFE ja
+EFFECTIVE_SELECT_AUTHORITY_AUTHENTICATED DIRECT_SELECT_RLS_ENFORCED
+EFFECTIVE_SELECT_AUTHORITY_SERVICE_ROLE DIRECT_SELECT_BYPASSRLS
+EFFECTIVE_SELECT_AUTHORITY_SUPABASE_STORAGE_ADMIN OWNER_SELECT_OWNER_BYPASS
+FORCE_RLS_STATUS DISABLED
+OWNER_BYPASS_STATUS ACTIVE_FOR_SUPABASE_STORAGE_ADMIN
 INHERITED_SELECT_SAFE unproven
 INHERITED_INSERT_SAFE ja
 INHERITED_UPDATE_SAFE ja
 INHERITED_DELETE_SAFE ja
 
+RECRUITMENT_OWNER_READ_FOR_FUTURE_BACKUP_UUID unproven
 BACKUP_IDENTITY_COULD_INHERIT_RECRUITMENT_OWNER_READ unproven
 BACKUP_IDENTITY_WRITE_ISOLATION ja
 
