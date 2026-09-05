@@ -257,6 +257,11 @@ test("calendar selection release identity reaches dashboard and standalone windo
   assert.ok(windowHtml.includes(`calendar-selection=${cssRelease}`));
 });
 
+test("standalone calendar template provides the module panel required by its initializer", async ()=>{
+  const windowHtml = await readFile(new URL("../operator/window/index.html", import.meta.url), "utf8");
+  assert.match(windowHtml, /<template id="operatorModuleTemplate-calendar">\s*<section[^>]*data-module-panel="calendar"/);
+});
+
 test("calendar controller returns dispose and ignores pending work after disposal", async ()=>{
   let resolveLoad;
   let renders = 0;
