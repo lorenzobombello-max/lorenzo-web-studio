@@ -233,13 +233,14 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(source, /selectedDateAnimationStartedAt = Date\.now\(\)/);
   assert.match(source, /--calendar-selected-heartbeat-delay[^\n]+-elapsed/);
   assert.match(source, /--calendar-selected-sweep-delay[^\n]+600 - elapsed/);
-  assert.match(source, /function scrollEmployeeCalendarToDate\(date\)[\s\S]*calendar-date-trigger\[data-calendar-date=[\s\S]*centeredLeft[\s\S]*viewport\.scrollTo\(\{ left: Math\.max\(0, centeredLeft\), behavior: "smooth" \}\)/);
+  assert.match(source, /function scrollEmployeeCalendarToDate\(date, \{ behavior = "smooth", onlyIfHidden = false \} = \{\}\)[\s\S]*onlyIfHidden[^\n]+dateBounds[^\n]+return;[\s\S]*viewport\.scrollTo\(\{ left: Math\.max\(0, centeredLeft\), behavior \}\)/);
   assert.equal((source.match(/renderDayDetail\(state, date, \{ scrollEmployeeCalendar: true \}\)/g) || []).length, 2);
+  assert.match(source, /const viewportScrollLeft = viewport\.scrollLeft;[\s\S]*viewport\.replaceChildren\(\);[\s\S]*viewport\.append\(table\);\s*viewport\.scrollLeft = viewportScrollLeft;\s*if \(selectedDate\) scrollEmployeeCalendarToDate\(selectedDate, \{ behavior: "auto", onlyIfHidden: true \}\)/);
 });
 
 test("calendar selection release identity reaches dashboard and standalone windows", async ()=>{
-  const release = "20260905-calendar-selection-r4";
-  const cssRelease = "20260905-r4";
+  const release = "20260905-calendar-selection-r5";
+  const cssRelease = "20260905-r5";
   const [dashboard, dashboardGuard, dashboardHtml, registry, windowGuard, windowHtml] = await Promise.all([
     readFile(new URL("../assets/js/operator-dashboard.js", import.meta.url), "utf8"),
     readFile(new URL("../assets/js/operator-dashboard-guard.mjs", import.meta.url), "utf8"),

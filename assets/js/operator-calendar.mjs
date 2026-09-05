@@ -395,14 +395,17 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     }
   }
 
-  function scrollEmployeeCalendarToDate(date) {
+  function scrollEmployeeCalendarToDate(date, { behavior = "smooth", onlyIfHidden = false } = {}) {
     const trigger = viewport.querySelector(`.calendar-date-trigger[data-calendar-date="${date}"]`);
     const dateHeader = trigger?.closest("th");
     if (!dateHeader) return;
+    const viewportBounds = viewport.getBoundingClientRect();
+    const dateBounds = dateHeader.getBoundingClientRect();
+    if (onlyIfHidden && dateBounds.left >= viewportBounds.left && dateBounds.right <= viewportBounds.right) return;
     const employeeHeaderWidth = viewport.querySelector("thead th:first-child")?.getBoundingClientRect().width || 0;
     const availableWidth = Math.max(0, viewport.clientWidth - employeeHeaderWidth);
     const centeredLeft = dateHeader.offsetLeft - employeeHeaderWidth - Math.max(0, (availableWidth - dateHeader.offsetWidth) / 2);
-    viewport.scrollTo({ left: Math.max(0, centeredLeft), behavior: "smooth" });
+    viewport.scrollTo({ left: Math.max(0, centeredLeft), behavior });
   }
 
   function renderSummary(state) {
@@ -825,6 +828,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     leaveManagement?.render(state.leaveQueue);
     if (selectedDate) renderDayDetail(state, selectedDate);
     if (selectedEmployeeId) renderEmployeeDetail(state, selectedEmployeeId);
+    const viewportScrollLeft = viewport.scrollLeft;
     viewport.replaceChildren();
     const table = root.createElement("table");
     const head = root.createElement("thead");
@@ -888,6 +892,8 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     }
     table.append(body);
     viewport.append(table);
+    viewport.scrollLeft = viewportScrollLeft;
+    if (selectedDate) scrollEmployeeCalendarToDate(selectedDate, { behavior: "auto", onlyIfHidden: true });
   }
 
   const load = async (range)=>{
