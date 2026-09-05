@@ -1,0 +1,56 @@
+{
+  "$id": "urn:lws:local-encrypted-database-backup-package:1",
+  "title": "LWS local encrypted database backup manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "backup_id",
+    "backup_type",
+    "source_environment",
+    "source_project_reference",
+    "captured_at",
+    "database_export_filename",
+    "database_export_sha256",
+    "encrypted_artifact_filename",
+    "encrypted_artifact_sha256",
+    "manifest_sha256",
+    "encryption_algorithm",
+    "encryption_key_reference",
+    "retention_until",
+    "created_by_tool_version",
+    "schema_migration_reference",
+    "verification_status"
+  ],
+  "properties": {
+    "backup_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$" },
+    "backup_type": { "type": "string", "const": "FULL_LOGICAL" },
+    "source_environment": { "type": "string", "enum": ["LOCAL", "TEST"] },
+    "source_project_reference": { "type": "string", "pattern": "^(local|test)(-[a-z0-9]+){1,7}$" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "database_export_filename": { "type": "string" },
+    "database_export_sha256": { "$ref": "#/$defs/sha256" },
+    "encrypted_artifact_filename": { "type": "string" },
+    "encrypted_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "encryption_algorithm": { "type": "string", "const": "AES-256-GCM" },
+    "encryption_key_reference": { "type": "string" },
+    "retention_until": { "type": "string", "format": "date-time" },
+    "created_by_tool_version": { "type": "string", "const": "lws-local-backup-foundation/1.0.0" },
+    "schema_migration_reference": { "type": "string" },
+    "verification_status": { "type": "string", "enum": ["ENCRYPTED_UNVERIFIED", "VERIFIED_LOCAL_SYNTHETIC"] },
+    "verified_at": { "type": "string", "format": "date-time" },
+    "verification_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["restore_environment", "schema_count", "object_count"],
+      "properties": {
+        "restore_environment": { "type": "string", "const": "TEST" },
+        "schema_count": { "type": "integer", "minimum": 1 },
+        "object_count": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

@@ -25,6 +25,9 @@ supabase/functions/.env
 supabase/.temp/
 
 backup/
+!scripts/security/backup/
+!scripts/security/backup/**
+.local-backups/
 
 # Temporary audit artifacts (Lighthouse reports, screenshots)
 .tmp/
