@@ -53,7 +53,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.sdf-inbound-email-canary]
-verify_jwt = true
+verify_jwt = false
 
 [functions.supplier-document-upload]
 verify_jwt = true

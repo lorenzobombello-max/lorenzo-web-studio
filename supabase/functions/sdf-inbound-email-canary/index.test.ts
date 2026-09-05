@@ -175,6 +175,111 @@ Deno.test("anonymous caller is denied", async () => {
   );
 });
 
+Deno.test("malformed bearer is denied before authority or invocation", async () => {
+  let readEvidenceCalls = 0;
+  let invokeCalls = 0;
+  const response = await handleRequest(
+    request("{}", { authorization: "Basic malformed" }),
+    dependencies({
+      readEvidence: () => {
+        readEvidenceCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+      invoke: () => {
+        invokeCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+    }),
+  );
+  assertEquals(response.status, 401);
+  assertEquals(await response.json(), {
+    ok: false,
+    code: "AUTHENTICATION_REQUIRED",
+  });
+  assertEquals(readEvidenceCalls, 0);
+  assertEquals(invokeCalls, 0);
+});
+
+for (const tokenState of ["invalid", "expired"]) {
+  Deno.test(`${tokenState} JWT is denied before evidence or invocation`, async () => {
+    let readEvidenceCalls = 0;
+    let invokeCalls = 0;
+    const response = await handleRequest(
+      request(),
+      dependencies({
+        authorize: () => Promise.resolve("unauthenticated"),
+        readEvidence: () => {
+          readEvidenceCalls += 1;
+          return Promise.reject(new Error("must not run"));
+        },
+        invoke: () => {
+          invokeCalls += 1;
+          return Promise.reject(new Error("must not run"));
+        },
+      }),
+    );
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "AUTHENTICATION_REQUIRED",
+    });
+    assertEquals(readEvidenceCalls, 0);
+    assertEquals(invokeCalls, 0);
+  });
+}
+
+Deno.test("verifier exception fails closed before evidence or invocation", async () => {
+  let readEvidenceCalls = 0;
+  let invokeCalls = 0;
+  const response = await handleRequest(
+    request(),
+    dependencies({
+      authorize: () => Promise.resolve("forbidden"),
+      readEvidence: () => {
+        readEvidenceCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+      invoke: () => {
+        invokeCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+    }),
+  );
+  assertEquals(response.status, 403);
+  assertEquals(await response.json(), {
+    ok: false,
+    code: "AUTHORIZATION_DENIED",
+  });
+  assertEquals(readEvidenceCalls, 0);
+  assertEquals(invokeCalls, 0);
+});
+
+Deno.test("authority exception fails closed before evidence or invocation", async () => {
+  let readEvidenceCalls = 0;
+  let invokeCalls = 0;
+  const response = await handleRequest(
+    request(),
+    dependencies({
+      authorize: () => Promise.reject(new Error("authority unavailable")),
+      readEvidence: () => {
+        readEvidenceCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+      invoke: () => {
+        invokeCalls += 1;
+        return Promise.reject(new Error("must not run"));
+      },
+    }),
+  );
+  assertEquals(response.status, 500);
+  assertEquals(await response.json(), {
+    ok: false,
+    code: "CANARY_EXECUTION_FAILED",
+  });
+  assertEquals(readEvidenceCalls, 0);
+  assertEquals(invokeCalls, 0);
+});
+
 for (
   const caller of [
     "ordinary authenticated",
@@ -360,4 +465,31 @@ Deno.test("unexpected first or replay state fails closed", async () => {
   );
   assertEquals(response.status, 502);
   assertEquals((await response.json()).code, "CANARY_RESULT_MISMATCH");
+});
+
+Deno.test("runtime source preserves the modern JWT authority surface", async () => {
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const config = await Deno.readTextFile(
+    new URL("../../config.toml", import.meta.url),
+  );
+
+  assertEquals(source.includes('getSupabasePublishableKey("default"'), true);
+  assertEquals(source.includes("SUPABASE_ANON_KEY"), false);
+  assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
+  assertEquals(source.match(/auth\.getUser\(jwt\)/g)?.length, 1);
+  assertEquals(
+    source.match(/get_sdf_inbound_signed_canary_evidence_v1/g)?.length,
+    1,
+  );
+  assertEquals(source.match(/\bclient\.from\(/g)?.length ?? 0, 0);
+  assertEquals(source.includes("storage.from("), false);
+  assertEquals(
+    /\[functions\.sdf-inbound-email-canary\]\r?\nverify_jwt = false(?:\r?\n|$)/
+      .test(config),
+    true,
+  );
+  assertEquals(
+    config.match(/\[functions\.sdf-inbound-email-canary\]/g)?.length,
+    1,
+  );
 });
