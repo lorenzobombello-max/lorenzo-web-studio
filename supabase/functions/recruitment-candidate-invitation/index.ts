@@ -9,6 +9,7 @@ import {
   hashRecruitmentCandidateToken,
 } from "../_shared/security.ts";
 import {
+  getSupabasePublishableKey,
   getSupabaseServerSecretKey,
   type SupabaseKeyBindingEnvironment,
 } from "../_shared/supabase-key-bindings.ts";
@@ -22,6 +23,16 @@ export function resolveRecruitmentCandidateInvitationServiceKey(
 ): string | null {
   try {
     return getSupabaseServerSecretKey("default", environment);
+  } catch {
+    return null;
+  }
+}
+
+export function resolveRecruitmentCandidateInvitationPublishableKey(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): string | null {
+  try {
+    return getSupabasePublishableKey("default", environment);
   } catch {
     return null;
   }
@@ -57,7 +68,7 @@ export async function handleRecruitmentCandidateInvitation(request: Request): Pr
   if (originFailure) return originFailure;
   if (request.method !== "POST") return json(origin, 405, { ok: false, code: "METHOD_NOT_ALLOWED" });
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const anonKey = resolveRecruitmentCandidateInvitationPublishableKey();
   const serviceRoleKey = resolveRecruitmentCandidateInvitationServiceKey();
   const resendApiKey = Deno.env.get("RESEND_API_KEY") || "";
   const fromEmail = Deno.env.get("FROM_EMAIL") || "";

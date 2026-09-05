@@ -8,10 +8,12 @@ import {
 } from "../_shared/security.ts";
 import {
   handleRecruitmentCandidateInvitation,
+  resolveRecruitmentCandidateInvitationPublishableKey,
   resolveRecruitmentCandidateInvitationServiceKey,
 } from "./index.ts";
 
 const serverKey = ["sb", "secret", "recruitmentInvitation", "test"].join("_");
+const publishableKey = ["sb", "publishable", "recruitmentInvitation", "test"].join("_");
 
 function environment(values: Record<string, string | undefined>) {
   return { get: (name: string) => values[name] };
@@ -19,15 +21,17 @@ function environment(values: Record<string, string | undefined>) {
 
 async function withConfigurationResponse(
   serverBinding: string | undefined,
-  anonBinding: string | undefined,
+  publishableBinding: string | undefined,
   legacyServiceBinding: string | undefined = "must-not-be-read",
+  legacyAnonBinding: string | undefined = "must-not-be-read",
 ): Promise<Response> {
   const previousEnvironment = new Map<string, string | undefined>();
   for (const [name, value] of [
     ["SUPABASE_URL", "https://supabase.test"],
-    ["SUPABASE_ANON_KEY", anonBinding],
+    ["SUPABASE_ANON_KEY", legacyAnonBinding],
     ["SUPABASE_SERVICE_ROLE_KEY", legacyServiceBinding],
     ["SUPABASE_SECRET_KEYS", serverBinding],
+    ["SUPABASE_PUBLISHABLE_KEYS", publishableBinding],
   ] as const) {
     previousEnvironment.set(name, Deno.env.get(name));
     if (value === undefined) Deno.env.delete(name);
@@ -48,7 +52,7 @@ async function withConfigurationResponse(
   }
 }
 
-Deno.test("Recruitment invitation Phase A uses only the modern service binding", async () => {
+Deno.test("Recruitment invitation uses separate modern service and publishable bindings", async () => {
   assertEquals(
     resolveRecruitmentCandidateInvitationServiceKey(environment({
       SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
@@ -68,27 +72,66 @@ Deno.test("Recruitment invitation Phase A uses only the modern service binding",
       })),
       null,
     );
-    const response = await withConfigurationResponse(serverBinding, "legacy-anon-key", legacyServiceBinding);
+    const response = await withConfigurationResponse(
+      serverBinding,
+      JSON.stringify({ default: publishableKey }),
+      legacyServiceBinding,
+    );
     assertEquals(response.status, 401);
     assertEquals(await response.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
   }
 
-  const legacyOnlyResponse = await withConfigurationResponse(undefined, "legacy-anon-key", "legacy-only-service-key");
-  assertEquals(legacyOnlyResponse.status, 401);
-  assertEquals(await legacyOnlyResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+  const legacyServiceOnlyResponse = await withConfigurationResponse(
+    undefined,
+    JSON.stringify({ default: publishableKey }),
+    "legacy-only-service-key",
+  );
+  assertEquals(legacyServiceOnlyResponse.status, 401);
+  assertEquals(await legacyServiceOnlyResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
 
-  const missingAnonResponse = await withConfigurationResponse(
+  assertEquals(
+    resolveRecruitmentCandidateInvitationPublishableKey(environment({
+      SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: publishableKey }),
+    })),
+    publishableKey,
+  );
+
+  for (const [publishableBinding, legacyAnonBinding] of [
+    [undefined, undefined],
+    ["not-json", "must-not-be-read"],
+    [JSON.stringify({ default: "legacy-anon-key" }), "must-not-be-read"],
+  ] as const) {
+    assertEquals(
+      resolveRecruitmentCandidateInvitationPublishableKey(environment({
+        SUPABASE_ANON_KEY: "must-not-be-read",
+        SUPABASE_PUBLISHABLE_KEYS: publishableBinding,
+      })),
+      null,
+    );
+    const response = await withConfigurationResponse(
+      JSON.stringify({ default: serverKey }),
+      publishableBinding,
+      "must-not-be-read",
+      legacyAnonBinding,
+    );
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+  }
+
+  const legacyAnonOnlyResponse = await withConfigurationResponse(
     JSON.stringify({ default: serverKey }),
     undefined,
+    "must-not-be-read",
+    "legacy-only-anon-key",
   );
-  assertEquals(missingAnonResponse.status, 401);
-  assertEquals(await missingAnonResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
+  assertEquals(legacyAnonOnlyResponse.status, 401);
+  assertEquals(await legacyAnonOnlyResponse.json(), { ok: false, code: "RECRUITMENT_OWNER_REQUIRED" });
 
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
   assert(source.includes('getSupabaseServerSecretKey("default"'));
   assert(!source.includes("SUPABASE_SERVICE_ROLE_KEY"));
-  assert(source.includes('Deno.env.get("SUPABASE_ANON_KEY")'));
-  assert(!source.includes("getSupabasePublishableKey"));
+  assert(source.includes('getSupabasePublishableKey("default"'));
+  assert(!source.includes("SUPABASE_ANON_KEY"));
   assertEquals(source.match(/createClient\(/g)?.length, 2);
   assertEquals(source.match(/auth\.getUser\(jwt\)/g)?.length, 1);
   assertEquals(source.match(/\.rpc\(/g)?.length, 3);
