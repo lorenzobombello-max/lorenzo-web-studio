@@ -395,6 +395,16 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     }
   }
 
+  function scrollEmployeeCalendarToDate(date) {
+    const trigger = viewport.querySelector(`.calendar-date-trigger[data-calendar-date="${date}"]`);
+    const dateHeader = trigger?.closest("th");
+    if (!dateHeader) return;
+    const employeeHeaderWidth = viewport.querySelector("thead th:first-child")?.getBoundingClientRect().width || 0;
+    const availableWidth = Math.max(0, viewport.clientWidth - employeeHeaderWidth);
+    const centeredLeft = dateHeader.offsetLeft - employeeHeaderWidth - Math.max(0, (availableWidth - dateHeader.offsetWidth) / 2);
+    viewport.scrollTo({ left: Math.max(0, centeredLeft), behavior: "smooth" });
+  }
+
   function renderSummary(state) {
     summarySection.dataset.calendarSummaryView = state.view;
     summaryHeading.lastElementChild.textContent = state.view === "year" ? "Alleen eerste dag per maand" : "Zichtbare medewerker-dagen";
@@ -414,7 +424,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     }
   }
 
-  function renderDayDetail(state, date) {
+  function renderDayDetail(state, date, { scrollEmployeeCalendar = false } = {}) {
     const dateIndex = state.dates.indexOf(date);
     if (dateIndex < 0 || state.view === "year") {
       selectedDate = null;
@@ -426,6 +436,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     if (selectedDate !== date) selectedDateAnimationStartedAt = Date.now();
     selectedDate = date;
     renderSelectedDate();
+    if (scrollEmployeeCalendar) scrollEmployeeCalendarToDate(date);
     const capacity = state.dailyCapacity[dateIndex];
     const title = root.createElement("div");
     const eyebrow = root.createElement("p");
@@ -794,7 +805,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         absence.textContent = `${capacity.leave} verlof · ${capacity.sick} ziek`;
         noData.textContent = `${capacity.otherAbsence} ander · ${capacity.noData} geen data`;
         button.append(label, worked, absence, noData);
-        button.addEventListener("click", ()=>renderDayDetail(state, date));
+        button.addEventListener("click", ()=>renderDayDetail(state, date, { scrollEmployeeCalendar: true }));
         if (state.view === "month" && index === 0) button.style.gridColumnStart = String(((calendarDate(date).getUTCDay() + 6) % 7) + 1);
       }
       capacityGrid.append(button);
@@ -837,7 +848,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         button.textContent = dateLabel;
         button.setAttribute("aria-label", `Dagdetail openen voor ${dateLabel}`);
         applySelectedDateState(button, date);
-        button.addEventListener("click", ()=>renderDayDetail(state, date));
+        button.addEventListener("click", ()=>renderDayDetail(state, date, { scrollEmployeeCalendar: true }));
         header.append(button);
       }
       headerRow.append(header);

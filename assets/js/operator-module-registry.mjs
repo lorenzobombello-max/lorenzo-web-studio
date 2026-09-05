@@ -131,7 +131,7 @@ const standaloneInitializers = new Map([
     };
   }],
   ["calendar", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260905-calendar-selection-r3");
+    const { initializeOperatorCalendar } = await import("./operator-calendar.mjs?v=20260905-calendar-selection-r4");
     const controller = initializeOperatorCalendar(root, client, identity, { onAuthorizationFailure });
     return {
       dispose: ()=>controller.dispose(),
