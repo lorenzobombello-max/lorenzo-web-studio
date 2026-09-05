@@ -657,13 +657,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 [data-dossiers-workspace] { width:100%; max-width:none; }
 .dossiers-heading__actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.55rem; }
 .dossiers-status-overview { margin:0 0 1rem; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.7rem; }
-.dossiers-status-overview button { min-width:0; min-height:106px; padding:.9rem 1rem; display:grid; align-content:start; gap:.15rem; color:var(--text); border:1px solid var(--line); border-top:4px solid var(--line-strong); border-radius:7px; background:var(--white); text-align:left; box-shadow:0 8px 22px rgba(27,42,74,.06); }
-.dossiers-status-overview button:nth-child(1) { border-top-color:#c79828; }
-.dossiers-status-overview button:nth-child(2) { border-top-color:var(--turquoise); }
-.dossiers-status-overview button:nth-child(3) { border-top-color:var(--green); }
-.dossiers-status-overview button:nth-child(4) { border-top-color:var(--red); }
+.dossiers-status-overview button { position:relative; min-width:0; min-height:106px; padding:.9rem 1rem; display:grid; align-content:start; gap:.15rem; overflow:hidden; isolation:isolate; color:var(--text); border:1px solid var(--line); border-top:4px solid var(--dossiers-zone-accent,var(--line-strong)); border-radius:7px; background:var(--white); text-align:left; box-shadow:0 8px 22px rgba(27,42,74,.06); }
+.dossiers-status-overview button:nth-child(1) { --dossiers-zone-accent:#c79828; --dossiers-zone-soft:#fff8e6; --dossiers-zone-soft-peak:#ffedba; --dossiers-zone-glow:rgba(199,152,40,.24); }
+.dossiers-status-overview button:nth-child(2) { --dossiers-zone-accent:var(--turquoise); --dossiers-zone-soft:var(--turquoise-soft); --dossiers-zone-soft-peak:#cef0ec; --dossiers-zone-glow:rgba(42,169,160,.24); }
+.dossiers-status-overview button:nth-child(3) { --dossiers-zone-accent:var(--green); --dossiers-zone-soft:#edf7f1; --dossiers-zone-soft-peak:#d9efe2; --dossiers-zone-glow:rgba(37,115,87,.24); }
+.dossiers-status-overview button:nth-child(4) { --dossiers-zone-accent:var(--red); --dossiers-zone-soft:#fff0f0; --dossiers-zone-soft-peak:#f8dada; --dossiers-zone-glow:rgba(157,69,69,.24); }
 .dossiers-status-overview button:hover { border-color:var(--turquoise); }
-.dossiers-status-overview button[aria-current="true"] { border-color:var(--turquoise); background:var(--turquoise-soft); box-shadow:inset 0 0 0 1px var(--turquoise),0 10px 24px rgba(20,124,118,.12); }
+.dossiers-status-overview button[aria-current="true"] { border-color:var(--dossiers-zone-accent); background:var(--dossiers-zone-soft); animation:dossiers-zone-heartbeat 4.8s ease-in-out infinite; will-change:background-color,box-shadow; }
+.dossiers-status-overview button[aria-current="true"]::before { position:absolute; top:-25%; bottom:-25%; left:-30%; z-index:0; width:18%; content:""; pointer-events:none; opacity:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.28) 22%,rgba(255,255,255,.9) 50%,rgba(255,255,255,.28) 78%,transparent); filter:blur(.5px); transform:translateX(-200%) skewX(-16deg); animation:dossier-card-light-sweep 9s .6s cubic-bezier(.72,0,.24,1) infinite; will-change:transform,opacity; }
+.dossiers-status-overview button > * { position:relative; z-index:1; }
+@keyframes dossiers-zone-heartbeat { 0%,100% { background-color:var(--dossiers-zone-soft); box-shadow:inset 0 0 0 1px var(--dossiers-zone-accent),0 10px 24px var(--dossiers-zone-glow); } 50% { background-color:var(--dossiers-zone-soft-peak); box-shadow:inset 0 0 0 2px var(--dossiers-zone-accent),0 14px 30px var(--dossiers-zone-glow); } }
 .dossiers-status-overview button > span { color:var(--navy); font-size:.72rem; font-weight:900; text-transform:uppercase; }
 .dossiers-status-overview strong { color:var(--navy); font-size:1.55rem; line-height:1.1; }
 .dossiers-status-overview small { color:var(--muted); overflow-wrap:anywhere; }

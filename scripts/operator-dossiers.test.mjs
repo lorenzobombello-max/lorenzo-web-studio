@@ -509,8 +509,18 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
     idempotency_key: idempotencyKey, reason: "Testrecord",
   });
   assert.throws(()=>pendingDossierTrashRequest({ ...item, dossier_state: "TRASHED" }, "Nee", idempotencyKey), /INVALID_PENDING_DOSSIER_TRASH_COMMAND/);
-  const source = await read("assets/js/operator-dossiers.mjs");
+  const [source, css, html] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("assets/css/operator-dashboard.css"),
+    read("operator/dashboard/index.html"),
+  ]);
   assert.match(source, />Actief<\/button><button[^>]+>Gearchiveerd<\/button>/);
+  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r3&pulse=20260905-r1&dossier-zones=20260905-r1/);
+  assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\][^{]*\{[^}]*animation:dossiers-zone-heartbeat 4\.8s ease-in-out infinite/);
+  assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
+  for (const accent of ["#c79828", "var(--turquoise)", "var(--green)", "var(--red)"]) {
+    assert.match(css, new RegExp(`--dossiers-zone-accent:${accent.replace(/[()]/g, "\\$&")}`));
+  }
   assert.match(source, />Dossieracties<\/h2>/);
   assert.match(source, /data-dossiers-copy-actions hidden/);
   assert.match(source, /data-dossiers-copy="view">Preview<\/button>/);
