@@ -1,6 +1,7 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260903-dossiers-seen-state-r1";
+import { createOperatorMfaDialog, isMfaOperatorSubject } from "./operator-mfa.mjs?v=20260904-aal2-r1";
+import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260905-dossiers-purge-aal2-r1";
 import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";
@@ -25,6 +26,10 @@ try {
 
   const { data: identity, error: identityError } = await client.rpc("get_current_operator_identity_v1");
   if (identityError || identity?.status !== "ACTIVE") throw new Error("WORKSPACE_MODULE_NOT_AUTHORIZED");
+  const mfaController = isMfaOperatorSubject(access.session.user.id) ? createOperatorMfaDialog({ client }) : null;
+  const requireAal2 = mfaController
+    ? ()=>mfaController.stepUp()
+    : async ()=>{ throw new Error("MFA_OPERATOR_NOT_ELIGIBLE"); };
   const descriptor = resolveStandaloneOperatorModule(bootstrap.moduleKey);
   if (!descriptor) throw new Error("WORKSPACE_MODULE_NOT_ENABLED");
 
@@ -52,6 +57,7 @@ try {
     root: document,
     client,
     identity,
+    requireAal2,
     onInvalidate: (moduleKey)=>childCoordinator.invalidate(moduleKey),
     onAuthorizationFailure: ()=>childCoordinator.lock("WORKSPACE_MODULE_NOT_AUTHORIZED"),
   });

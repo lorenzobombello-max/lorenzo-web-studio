@@ -13,7 +13,7 @@ import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260903-a
 import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";
-import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260903-dossiers-seen-state-r1";
+import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260905-dossiers-purge-aal2-r1";
 import { initializeOperatorProfile } from "./operator-profile.mjs?v=20260903-operator-profiles-r1";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;
@@ -2290,7 +2290,7 @@ export async function startOperatorDashboard({
       const legacyWorkspace = document.getElementById(id);
       if (legacyWorkspace) legacyWorkspace.hidden = true;
     }
-    const controller = initializeOperatorDossiers(document, client, currentIdentity, { onAuthorizationFailure });
+    const controller = initializeOperatorDossiers(document, client, currentIdentity, { onAuthorizationFailure, requireAal2 });
     document.querySelector("[data-dossiers-workspace]").operatorDossiersController = controller;
     mountInternalSmokeB({
       panel: document.getElementById("internalSmokeBPanel"),

@@ -240,7 +240,7 @@ test("Dossier authority permits only bounded contracts and fast-locks authorizat
 });
 
 test("permanent deletion is product-aware, owner-presented, and exact RPC-bound", async () => {
-  const { dossierPurgeEligibilityRequest, dossierPurgeRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const { dossierPurgeEligibilityRequest, dossierPurgeRequest, executeDossierPurge } = await import("../assets/js/operator-dossiers.mjs");
   const quoteRequestId = "f4100000-0000-4000-8000-000000000001";
   const idempotencyKey = "f4100000-0000-4000-8000-000000000002";
   const website = dossierPurgeRequest({
@@ -265,6 +265,24 @@ test("permanent deletion is product-aware, owner-presented, and exact RPC-bound"
     request_kind: "website",
     dossier_lifecycle: { state: "ARCHIVED" },
   }, "Niet toegestaan", idempotencyKey), /INVALID_DOSSIER_PURGE_COMMAND/);
+  const dispatchOrder = [];
+  const authority = {
+    async rpc(name, parameters) {
+      dispatchOrder.push("rpc");
+      assert.equal(name, website.name);
+      assert.equal(parameters, website.parameters);
+      return { quote_request_id: quoteRequestId };
+    },
+  };
+  await executeDossierPurge(authority, website, async ()=>{ dispatchOrder.push("aal2"); });
+  assert.deepEqual(dispatchOrder, ["aal2", "rpc"]);
+  await assert.rejects(
+    executeDossierPurge(authority, website, async ()=>{ throw new Error("AAL2_REQUIRED"); }),
+    /AAL2_REQUIRED/,
+  );
+  assert.deepEqual(dispatchOrder, ["aal2", "rpc"]);
+  await assert.rejects(executeDossierPurge(authority, website), /AAL2_REQUIRED/);
+  assert.deepEqual(dispatchOrder, ["aal2", "rpc"]);
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-command-dialog/);
   assert.match(source, /class="operator-modal--action-confirm dossiers-command-dialog"/);
@@ -335,16 +353,18 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const dossierCacheIdentity = "20260903-dossiers-seen-state-r1";
+  const dossierCacheIdentity = "20260905-dossiers-purge-aal2-r1";
+  const dossierCssCacheIdentity = "20260903-dossiers-seen-state-r1";
   const profileCacheIdentity = "20260903-operator-profiles-r1";
-  assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${profileCacheIdentity}`));
-  assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${profileCacheIdentity}`));
+  const runtimeCacheIdentity = "20260905-dossiers-purge-aal2-r1";
+  assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${runtimeCacheIdentity}`));
+  assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${profileCacheIdentity}&patch=${runtimeCacheIdentity}`));
   assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
   assert.ok(childHtml.includes(`operator-window-guard.mjs?v=${dossierCacheIdentity}`));
   assert.ok(windowGuard.includes(`operator-module-registry.mjs?v=${dossierCacheIdentity}`));
   assert.ok(registry.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
   assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${profileCacheIdentity}`));
-  assert.ok(childHtml.includes(`operator-dashboard.css?v=${dossierCacheIdentity}`));
+  assert.ok(childHtml.includes(`operator-dashboard.css?v=${dossierCssCacheIdentity}`));
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
   assert.match(source, /Nieuwe aanvragen/);

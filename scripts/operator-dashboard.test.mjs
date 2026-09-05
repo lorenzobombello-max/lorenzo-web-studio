@@ -18,6 +18,7 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const OPERATOR_ASSET_RELEASE = "20260903-operator-profiles-r1";
 const OPERATOR_PROFILE_RELEASE = "20260903-operator-profiles-r1";
+const OPERATOR_RUNTIME_RELEASE = "20260905-dossiers-purge-aal2-r1";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-dossiers-seen-state-r1";
@@ -205,16 +206,17 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_PROFILE_RELEASE}`,
-    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_RUNTIME_RELEASE}`,
+    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}`,
   ]);
-  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_PROFILE_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
+  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_RUNTIME_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
   }
   assert.match(guardUrl, /^\/assets\/js\/operator-dashboard-guard\.mjs\?v=/);
   assert.match(dashboardUrl, /^\.\/operator-dashboard\.js\?v=/);
+  assert.equal(new URL(dashboardUrl, "https://operator.example/").searchParams.get("patch"), OPERATOR_RUNTIME_RELEASE);
   assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard\.js"/);

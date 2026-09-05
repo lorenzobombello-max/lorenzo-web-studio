@@ -112,9 +112,9 @@ const descriptors = [
 export const OPERATOR_MODULE_DESCRIPTORS = Object.freeze(descriptors.map((descriptor)=>Object.freeze(descriptor)));
 const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descriptor.moduleKey, descriptor]));
 const standaloneInitializers = new Map([
-  ["dossiers", async ({ root, client, identity, onAuthorizationFailure })=>{
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260903-dossiers-seen-state-r1");
-    const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure });
+  ["dossiers", async ({ root, client, identity, onAuthorizationFailure, requireAal2 })=>{
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260905-dossiers-purge-aal2-r1");
+    const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure, requireAal2 });
     return {
       dispose: ()=>controller.dispose(),
       refresh: ()=>controller.refresh(),
@@ -185,7 +185,7 @@ export function resolveStandaloneOperatorModule(moduleKey) {
   return descriptor?.standaloneAllowed && descriptor.multiScreenAllowed ? descriptor : null;
 }
 
-export async function mountStandaloneOperatorModule({ moduleKey, root, client, identity, onInvalidate = ()=>{}, onAuthorizationFailure = ()=>{} }) {
+export async function mountStandaloneOperatorModule({ moduleKey, root, client, identity, onInvalidate = ()=>{}, onAuthorizationFailure = ()=>{}, requireAal2 }) {
   const descriptor = resolveStandaloneOperatorModule(moduleKey);
   if (!descriptor) throw new Error("OPERATOR_MODULE_STANDALONE_DISABLED");
   const template = root.getElementById(`operatorModuleTemplate-${moduleKey}`);
@@ -196,7 +196,7 @@ export async function mountStandaloneOperatorModule({ moduleKey, root, client, i
   const initialize = standaloneInitializers.get(moduleKey);
   if (!initialize) throw new Error("OPERATOR_MODULE_INITIALIZER_MISSING");
   try {
-    return Object.freeze({ descriptor, ...await initialize({ root, client, identity, onInvalidate, onAuthorizationFailure }) });
+    return Object.freeze({ descriptor, ...await initialize({ root, client, identity, onInvalidate, onAuthorizationFailure, requireAal2 }) });
   } catch (error) {
     host.replaceChildren();
     throw error;

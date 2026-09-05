@@ -327,6 +327,12 @@ export function dossierPurgeRequest(detail, reason, idempotencyKey) {
   };
 }
 
+export async function executeDossierPurge(authority, request, requireAal2) {
+  if (typeof requireAal2 !== "function") throw new Error("AAL2_REQUIRED");
+  await requireAal2();
+  return authority.rpc(request.name, request.parameters);
+}
+
 export function customerRequestCommand(status) {
   if (status === "TRIAGED") return "START";
   if (status === "IN_PROGRESS") return "REQUIRE_CUSTOMER_RESPONSE";
@@ -1422,7 +1428,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       } else {
         const request = dossierPurgeRequest(state.detail, reason, crypto.randomUUID());
         status.textContent = "Dossier wordt permanent verwijderd.";
-        void authority.rpc(request.name, request.parameters).then(async ()=>{
+        void executeDossierPurge(authority, request, options.requireAal2).then(async ()=>{
           if (controller.disposed) return;
           state.selected = null;
           state.detail = null;
