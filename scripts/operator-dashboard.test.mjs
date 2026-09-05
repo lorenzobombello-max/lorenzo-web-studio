@@ -16,7 +16,7 @@ import { mountInternalSmokeB } from "../assets/js/operator-dashboard.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r2";
+const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r3";
 const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_RUNTIME_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
@@ -3216,7 +3216,8 @@ test("module motion remains decorative, finite, and reduced-motion safe", async 
   assert.match(css, /@keyframes finance-line-draw/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]*animation:none!important/);
-  assert.doesNotMatch(css, /infinite/);
+  assert.match(css, /\.operator-profile__avatar::before[^}]*dossier-card-light-sweep 9s[^}]*infinite/);
+  assert.doesNotMatch(css.replace(/\.operator-profile__avatar::before \{[^}]*\}/, ""), /infinite/);
 });
 
 test("finance tab routing is closed, persistent, and cannot override application deeplinks", () => {

@@ -23,10 +23,11 @@ test("profile welcome presentation is prominent and cache-versioned", async () =
     read("operator/dashboard/index.html"),
     read("assets/css/operator-dashboard.css"),
   ]);
-  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r2/);
+  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r3/);
   assert.match(css, /width:min\(100%,96rem\)/);
   assert.match(css, /grid-template-columns:clamp\(13rem,24vw,21rem\)/);
   assert.match(css, /font-size:clamp\(4\.25rem,9vw,8\.5rem\)/);
+  assert.match(css, /dossier-card-light-sweep 9s[^;}]*infinite/);
 });
 
 test("magic-link completion opens the profile welcome route", async () => {
