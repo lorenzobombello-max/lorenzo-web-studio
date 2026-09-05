@@ -327,6 +327,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   const detailContent = root.createElement("div");
   const detailClose = root.createElement("button");
   let selectedDate = null;
+  let selectedDateAnimationStartedAt = null;
   let selectedEmployeeId = null;
   let payrollPreviewOpen = false;
   let leaveManagement = null;
@@ -379,9 +380,18 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     });
   }
 
+  function applySelectedDateState(button, date) {
+    const selected = selectedDate !== null && date === selectedDate;
+    button.setAttribute("aria-pressed", String(selected));
+    if (!selected) return;
+    const elapsed = Math.max(0, Date.now() - selectedDateAnimationStartedAt);
+    button.style.setProperty("--calendar-selected-heartbeat-delay", `${-elapsed}ms`);
+    button.style.setProperty("--calendar-selected-sweep-delay", `${600 - elapsed}ms`);
+  }
+
   function renderSelectedDate() {
     for (const button of root.querySelectorAll("[data-calendar-date]")) {
-      button.setAttribute("aria-pressed", String(selectedDate !== null && button.dataset.calendarDate === selectedDate));
+      applySelectedDateState(button, button.dataset.calendarDate);
     }
   }
 
@@ -408,10 +418,12 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     const dateIndex = state.dates.indexOf(date);
     if (dateIndex < 0 || state.view === "year") {
       selectedDate = null;
+      selectedDateAnimationStartedAt = null;
       renderSelectedDate();
       detailSection.hidden = true;
       return;
     }
+    if (selectedDate !== date) selectedDateAnimationStartedAt = Date.now();
     selectedDate = date;
     renderSelectedDate();
     const capacity = state.dailyCapacity[dateIndex];
@@ -769,10 +781,10 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         const hint = root.createElement("span");
         hint.textContent = "Open maand";
         button.append(label, hint);
-        button.addEventListener("click", ()=>{ selectedDate = null; void controller.openMonth(date); });
+        button.addEventListener("click", ()=>{ selectedDate = null; selectedDateAnimationStartedAt = null; void controller.openMonth(date); });
       } else {
         button.dataset.calendarDate = date;
-        button.setAttribute("aria-pressed", String(date === selectedDate));
+        applySelectedDateState(button, date);
         label.textContent = new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", timeZone: "UTC" }).format(calendarDate(date));
         button.setAttribute("aria-label", `Dagdetail openen voor ${label.textContent}`);
         const worked = root.createElement("span");
@@ -824,7 +836,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         button.dataset.calendarDate = date;
         button.textContent = dateLabel;
         button.setAttribute("aria-label", `Dagdetail openen voor ${dateLabel}`);
-        button.setAttribute("aria-pressed", String(date === selectedDate));
+        applySelectedDateState(button, date);
         button.addEventListener("click", ()=>renderDayDetail(state, date));
         header.append(button);
       }
@@ -898,7 +910,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   root.getElementById("calendarPrevious").addEventListener("click", ()=>{ void controller.navigate(-1); }, { signal });
   root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); }, { signal });
   root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); }, { signal });
-  detailClose.addEventListener("click", ()=>{ selectedDate = null; renderSelectedDate(); detailSection.hidden = true; }, { signal });
+  detailClose.addEventListener("click", ()=>{ selectedDate = null; selectedDateAnimationStartedAt = null; renderSelectedDate(); detailSection.hidden = true; }, { signal });
   root.addEventListener("keydown", (event)=>{
     if (event.key !== "Escape" || employeeDetailSection.hidden) return;
     if (payrollPreviewOpen) {

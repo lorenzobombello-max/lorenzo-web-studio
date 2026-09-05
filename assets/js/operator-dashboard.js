@@ -9,7 +9,7 @@ import {
   renderSdfQualificationReview,
 } from "./sdf-qualification-review.mjs?v=20260831-operator-parity";
 import { initializeOperatorMessages } from "./operator-messages.mjs?v=20260903-auto-refresh-8s";
-import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260905-calendar-selection-r1";
+import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260905-calendar-selection-r3";
 import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";

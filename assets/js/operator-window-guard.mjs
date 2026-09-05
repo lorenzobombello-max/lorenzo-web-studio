@@ -1,7 +1,7 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 import { createOperatorMfaDialog, isMfaOperatorSubject } from "./operator-mfa.mjs?v=20260904-aal2-r1";
-import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260905-dossiers-purge-aal2-r1&calendar=20260905-calendar-selection-r1";
+import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260905-dossiers-purge-aal2-r1&calendar=20260905-calendar-selection-r3";
 import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";

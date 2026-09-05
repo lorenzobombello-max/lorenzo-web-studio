@@ -201,7 +201,7 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(source, /function renderSelectedDate\(\)[\s\S]*data-calendar-date[\s\S]*aria-pressed/);
   assert.equal((source.match(/button\.dataset\.calendarDate = date/g) || []).length, 2);
   assert.match(source, /selectedDate = date;\s*renderSelectedDate\(\)/);
-  assert.match(source, /selectedDate = null; renderSelectedDate\(\); detailSection\.hidden = true/);
+  assert.match(source, /selectedDate = null; selectedDateAnimationStartedAt = null; renderSelectedDate\(\); detailSection\.hidden = true/);
   assert.match(source, /calendar-employee-trigger/);
   assert.match(source, /calendar-employee-detail/);
   assert.match(source, /Gewerkte uren:<\/strong> nog niet beschikbaar/);
@@ -225,15 +225,19 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(css, /@media \(max-width:540px\)[\s\S]*\.calendar-employee-detail__summary \{ grid-template-columns:repeat\(2,minmax\(0,1fr\)\); \}/);
   assert.match(css, /\.calendar-payroll-preview__table-viewport \{[^}]*overflow:auto/);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto[^}]*overflow-y:auto/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s ease-in-out infinite alternate/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^{]*\{[^}]*animation:calendar-selected-day-light-sweep 9s \.6s ease-in-out infinite/);
-  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s ease-in-out infinite alternate/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s var\(--calendar-selected-heartbeat-delay,0s\) ease-in-out infinite alternate/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^{]*\{[^}]*animation:calendar-selected-day-light-sweep 9s var\(--calendar-selected-sweep-delay,\.6s\) ease-in-out infinite/);
+  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 2\.4s var\(--calendar-selected-heartbeat-delay,0s\) ease-in-out infinite alternate/);
   assert.match(css, /@keyframes calendar-selected-day-heartbeat \{ from \{[^}]+\} to \{[^}]+\} \}/);
   assert.match(css, /@keyframes calendar-selected-day-light-sweep \{ 0%,8% \{ opacity:0;[\s\S]*?92%,100% \{ opacity:0;/);
+  assert.match(source, /selectedDateAnimationStartedAt = Date\.now\(\)/);
+  assert.match(source, /--calendar-selected-heartbeat-delay[^\n]+-elapsed/);
+  assert.match(source, /--calendar-selected-sweep-delay[^\n]+600 - elapsed/);
 });
 
 test("calendar selection release identity reaches dashboard and standalone windows", async ()=>{
-  const release = "20260905-calendar-selection-r1";
+  const release = "20260905-calendar-selection-r3";
+  const cssRelease = "20260905-r3";
   const [dashboard, dashboardGuard, dashboardHtml, registry, windowGuard, windowHtml] = await Promise.all([
     readFile(new URL("../assets/js/operator-dashboard.js", import.meta.url), "utf8"),
     readFile(new URL("../assets/js/operator-dashboard-guard.mjs", import.meta.url), "utf8"),
@@ -244,10 +248,10 @@ test("calendar selection release identity reaches dashboard and standalone windo
   ]);
   assert.ok(dashboard.includes(`operator-calendar.mjs?v=${release}`));
   assert.ok(dashboardGuard.includes(`calendar=${release}`));
-  assert.ok(dashboardHtml.includes(`calendar-selection=20260905-r2`));
+  assert.ok(dashboardHtml.includes(`calendar-selection=${cssRelease}`));
   assert.ok(registry.includes(`operator-calendar.mjs?v=${release}`));
   assert.ok(windowGuard.includes(`calendar=${release}`));
-  assert.ok(windowHtml.includes(`calendar-selection=20260905-r2`));
+  assert.ok(windowHtml.includes(`calendar-selection=${cssRelease}`));
 });
 
 test("calendar controller returns dispose and ignores pending work after disposal", async ()=>{

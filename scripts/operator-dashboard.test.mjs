@@ -20,7 +20,8 @@ const OPERATOR_ASSET_RELEASE = "20260905-profile-welcome-r3";
 const OPERATOR_PROFILE_PULSE_RELEASE = "20260905-r1";
 const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
 const OPERATOR_RUNTIME_RELEASE = "20260905-profile-welcome-r2";
-const OPERATOR_CALENDAR_SELECTION_RELEASE = "20260905-calendar-selection-r1";
+const OPERATOR_CALENDAR_SELECTION_RELEASE = "20260905-calendar-selection-r3";
+const OPERATOR_CALENDAR_CSS_RELEASE = "20260905-r3";
 const OPERATOR_FRAMEWORK_RELEASE = "20260902-login-stability";
 const FINANCE_ASSET_RELEASE = "20260903-auto-refresh-8s";
 const DOSSIERS_ASSET_RELEASE = "20260903-dossiers-seen-state-r1";
@@ -207,8 +208,8 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
-    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=20260905-r2`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_RUNTIME_RELEASE}&calendar-selection=20260905-r1`,
+    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_RUNTIME_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
     `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}&calendar=${OPERATOR_CALENDAR_SELECTION_RELEASE}`,
   ]);
   for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_RUNTIME_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
@@ -3223,9 +3224,9 @@ test("module motion remains decorative, finite, and reduced-motion safe", async 
   assert.match(css, /\.operator-profile__avatar::before[^}]*dossier-card-light-sweep 9s[^}]*infinite/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\] \{[^}]*dossiers-zone-heartbeat 4\.8s[^}]*infinite/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\]::before[^}]*dossier-card-light-sweep 9s[^}]*infinite/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\] \{[^}]*calendar-selected-day-heartbeat 2\.4s[^}]*infinite alternate/);
-  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^}]*calendar-selected-day-light-sweep 9s[^}]*infinite/);
-  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\] \{[^}]*calendar-selected-day-heartbeat 2\.4s[^}]*infinite alternate/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\] \{[^}]*calendar-selected-day-heartbeat 2\.4s var\(--calendar-selected-heartbeat-delay,0s\)[^}]*infinite alternate/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^}]*calendar-selected-day-light-sweep 9s var\(--calendar-selected-sweep-delay,\.6s\)[^}]*infinite/);
+  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\] \{[^}]*calendar-selected-day-heartbeat 2\.4s var\(--calendar-selected-heartbeat-delay,0s\)[^}]*infinite alternate/);
   assert.doesNotMatch(
     css
       .replace(/\.operator-profile__avatar \{[^}]*\}/, "")
