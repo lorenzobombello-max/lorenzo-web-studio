@@ -379,6 +379,12 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     });
   }
 
+  function renderSelectedDate() {
+    for (const button of root.querySelectorAll("[data-calendar-date]")) {
+      button.setAttribute("aria-pressed", String(selectedDate !== null && button.dataset.calendarDate === selectedDate));
+    }
+  }
+
   function renderSummary(state) {
     summarySection.dataset.calendarSummaryView = state.view;
     summaryHeading.lastElementChild.textContent = state.view === "year" ? "Alleen eerste dag per maand" : "Zichtbare medewerker-dagen";
@@ -402,10 +408,12 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
     const dateIndex = state.dates.indexOf(date);
     if (dateIndex < 0 || state.view === "year") {
       selectedDate = null;
+      renderSelectedDate();
       detailSection.hidden = true;
       return;
     }
     selectedDate = date;
+    renderSelectedDate();
     const capacity = state.dailyCapacity[dateIndex];
     const title = root.createElement("div");
     const eyebrow = root.createElement("p");
@@ -763,6 +771,8 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         button.append(label, hint);
         button.addEventListener("click", ()=>{ selectedDate = null; void controller.openMonth(date); });
       } else {
+        button.dataset.calendarDate = date;
+        button.setAttribute("aria-pressed", String(date === selectedDate));
         label.textContent = new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", timeZone: "UTC" }).format(calendarDate(date));
         button.setAttribute("aria-label", `Dagdetail openen voor ${label.textContent}`);
         const worked = root.createElement("span");
@@ -811,8 +821,10 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
         const button = root.createElement("button");
         button.type = "button";
         button.className = "calendar-date-trigger";
+        button.dataset.calendarDate = date;
         button.textContent = dateLabel;
         button.setAttribute("aria-label", `Dagdetail openen voor ${dateLabel}`);
+        button.setAttribute("aria-pressed", String(date === selectedDate));
         button.addEventListener("click", ()=>renderDayDetail(state, date));
         header.append(button);
       }
@@ -886,7 +898,7 @@ export function initializeOperatorCalendar(root, client, identity, { onAuthoriza
   root.getElementById("calendarPrevious").addEventListener("click", ()=>{ void controller.navigate(-1); }, { signal });
   root.getElementById("calendarNext").addEventListener("click", ()=>{ void controller.navigate(1); }, { signal });
   root.getElementById("calendarToday").addEventListener("click", ()=>{ void controller.goToday(); }, { signal });
-  detailClose.addEventListener("click", ()=>{ selectedDate = null; detailSection.hidden = true; }, { signal });
+  detailClose.addEventListener("click", ()=>{ selectedDate = null; renderSelectedDate(); detailSection.hidden = true; }, { signal });
   root.addEventListener("keydown", (event)=>{
     if (event.key !== "Escape" || employeeDetailSection.hidden) return;
     if (payrollPreviewOpen) {

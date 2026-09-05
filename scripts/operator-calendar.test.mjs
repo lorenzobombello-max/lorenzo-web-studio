@@ -198,6 +198,10 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(source, /calendar-summary-grid/);
   assert.match(source, /calendar-capacity-grid/);
   assert.match(source, /calendar-day-detail/);
+  assert.match(source, /function renderSelectedDate\(\)[\s\S]*data-calendar-date[\s\S]*aria-pressed/);
+  assert.equal((source.match(/button\.dataset\.calendarDate = date/g) || []).length, 2);
+  assert.match(source, /selectedDate = date;\s*renderSelectedDate\(\)/);
+  assert.match(source, /selectedDate = null; renderSelectedDate\(\); detailSection\.hidden = true/);
   assert.match(source, /calendar-employee-trigger/);
   assert.match(source, /calendar-employee-detail/);
   assert.match(source, /Gewerkte uren:<\/strong> nog niet beschikbaar/);
@@ -221,6 +225,27 @@ test("calendar source preserves one read endpoint and exposes no mutation contro
   assert.match(css, /@media \(max-width:540px\)[\s\S]*\.calendar-employee-detail__summary \{ grid-template-columns:repeat\(2,minmax\(0,1fr\)\); \}/);
   assert.match(css, /\.calendar-payroll-preview__table-viewport \{[^}]*overflow:auto/);
   assert.match(css, /\.calendar-viewport \{[^}]*overflow-x:auto[^}]*overflow-y:auto/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 4\.8s ease-in-out infinite/);
+  assert.match(css, /\.calendar-capacity-day\[aria-pressed="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
+  assert.match(css, /\.calendar-date-trigger\[aria-pressed="true"\][^{]*\{[^}]*animation:calendar-selected-day-heartbeat 4\.8s ease-in-out infinite/);
+});
+
+test("calendar selection release identity reaches dashboard and standalone windows", async ()=>{
+  const release = "20260905-calendar-selection-r1";
+  const [dashboard, dashboardGuard, dashboardHtml, registry, windowGuard, windowHtml] = await Promise.all([
+    readFile(new URL("../assets/js/operator-dashboard.js", import.meta.url), "utf8"),
+    readFile(new URL("../assets/js/operator-dashboard-guard.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../operator/dashboard/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../assets/js/operator-module-registry.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../assets/js/operator-window-guard.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../operator/window/index.html", import.meta.url), "utf8"),
+  ]);
+  assert.ok(dashboard.includes(`operator-calendar.mjs?v=${release}`));
+  assert.ok(dashboardGuard.includes(`calendar=${release}`));
+  assert.ok(dashboardHtml.includes(`calendar-selection=20260905-r1`));
+  assert.ok(registry.includes(`operator-calendar.mjs?v=${release}`));
+  assert.ok(windowGuard.includes(`calendar=${release}`));
+  assert.ok(windowHtml.includes(`calendar-selection=20260905-r1`));
 });
 
 test("calendar controller returns dispose and ignores pending work after disposal", async ()=>{
