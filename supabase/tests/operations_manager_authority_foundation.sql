@@ -73,6 +73,12 @@ insert into auth.users(id, email) values
   ('e7000000-0000-4000-8000-000000000005', 'operations-disabled@example.test'),
   ('e7000000-0000-4000-8000-000000000006', 'operations-revoked@example.test');
 
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","aal":"aal2"}',
+  true
+);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
 insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status, revoked_at) values
   ('e7010000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000001', 'Operations Owner', 'owner', 'ACTIVE', null),
   ('e7010000-0000-4000-8000-000000000002', 'e7000000-0000-4000-8000-000000000002', 'Operations Admin', 'admin', 'ACTIVE', null),
@@ -123,16 +129,17 @@ select throws_ok(
   $$select public.appoint_operations_manager_v1('e7010000-0000-4000-8000-000000000003', 'Unauthenticated appointment.')$$,
   '42501', 'HUMAN_JWT_REQUIRED', 'unauthenticated appointment is denied'
 );
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000002', true);
+select set_config('request.jwt.claim.sub', 'bd2ab636-0d42-4069-88a9-60bd97f2b335', true);
 select throws_ok(
   $$select public.appoint_operations_manager_v1('e7010000-0000-4000-8000-000000000003', 'Admin appointment.')$$,
-  '42501', 'OWNER_REQUIRED', 'admin cannot appoint an Operations Manager'
+  '42501', 'OWNER_REQUIRED', 'non-owner cannot appoint an Operations Manager'
 );
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000003', true);
+select set_config('request.jwt.claim.sub', 'bd2ab636-0d42-4069-88a9-60bd97f2b335', true);
 select throws_ok(
   $$select public.appoint_operations_manager_v1('e7010000-0000-4000-8000-000000000004', 'Operator appointment.')$$,
-  '42501', 'OWNER_REQUIRED', 'operator cannot appoint an Operations Manager'
+  '42501', 'OWNER_REQUIRED', 'non-owner remains unable to appoint an Operations Manager'
 );
+select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000003', true);
 select is(
   (select operator_id::text from public.resolve_commercial_operator_authorization_v1(
     'e7100000-0000-4000-8000-000000000001', 'READ_PROJECT', false
@@ -140,7 +147,7 @@ select is(
   'e7010000-0000-4000-8000-000000000003',
   'active retained project grant authorizes project read before appointment'
 );
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
 select throws_ok(
   $$select public.appoint_operations_manager_v1('e7010000-0000-4000-8000-000000000001', 'Owner target.')$$,
   '42501', 'OWNER_ROLE_IMMUTABLE', 'owner role cannot be changed by appointment'
@@ -183,7 +190,7 @@ select ok(
   exists (
     select 1 from lws_internal.operations_manager_role_events
     where target_operator_id = 'e7010000-0000-4000-8000-000000000003'
-      and actor_auth_user_id = 'e7000000-0000-4000-8000-000000000001'
+      and actor_auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'
       and previous_role = 'operator'
       and new_role = 'operations_manager'
       and event_type = 'APPOINTED'
@@ -283,12 +290,12 @@ select throws_ok(
   '42501', 'OPERATOR_REVOKED', 'probe rejects revoked operator'
 );
 
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000002', true);
+select set_config('request.jwt.claim.sub', 'bd2ab636-0d42-4069-88a9-60bd97f2b335', true);
 select throws_ok(
   $$select public.revoke_operations_manager_v1('e7010000-0000-4000-8000-000000000003', 'Admin revocation.')$$,
   '42501', 'OWNER_REQUIRED', 'non-Owner cannot revoke an Operations Manager'
 );
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
 select throws_ok(
   $$select public.revoke_operations_manager_v1('e7010000-0000-4000-8000-000000000003', 'Invalid owner fallback.', 'owner')$$,
   '22023', 'INVALID_OPERATIONS_MANAGER_FALLBACK_ROLE', 'owner fallback is denied'
@@ -319,7 +326,7 @@ select ok(
   exists (
     select 1 from lws_internal.operations_manager_role_events
     where target_operator_id = 'e7010000-0000-4000-8000-000000000003'
-      and actor_auth_user_id = 'e7000000-0000-4000-8000-000000000001'
+      and actor_auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'
       and previous_role = 'operations_manager'
       and new_role = 'operator'
       and event_type = 'REVOKED'
@@ -355,7 +362,7 @@ select throws_ok(
   $$select public.get_operations_manager_session_v1()$$,
   '42501', 'OPERATIONS_MANAGER_REQUIRED', 'reviewer fallback removes management probe authority'
 );
-select set_config('request.jwt.claim.sub', 'e7000000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
 select public.appoint_operations_manager_v1(
   'e7010000-0000-4000-8000-000000000004',
   'Owner reappoints reviewer for read-only fallback proof.'
@@ -408,6 +415,7 @@ select lives_ok(
         ('e8000000-0000-4000-8000-000000000001', 'om-concurrency-owner@example.test'),
         ('e8000000-0000-4000-8000-000000000002', 'om-concurrency-target-a@example.test'),
         ('e8000000-0000-4000-8000-000000000003', 'om-concurrency-target-b@example.test');
+      set request.jwt.claims = '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}';
       insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
         ('e8010000-0000-4000-8000-000000000001', 'e8000000-0000-4000-8000-000000000001', 'Concurrency Owner', 'owner', 'ACTIVE'),
         ('e8010000-0000-4000-8000-000000000002', 'e8000000-0000-4000-8000-000000000002', 'Concurrency Target A', 'operator', 'ACTIVE'),
@@ -431,7 +439,7 @@ create temporary table om_concurrency_pids(connection_name text primary key, bac
 insert into om_concurrency_pids
 select 'scenario_a_grant', backend_pid
 from extensions.dblink('om_scenario_a_grant', 'select pg_backend_pid()') as connection(backend_pid integer);
-select is(extensions.dblink_exec('om_scenario_a_appointment', 'begin; set request.jwt.claim.sub = ''e8000000-0000-4000-8000-000000000001'''), 'SET', 'Scenario A appointment transaction starts');
+select is(extensions.dblink_exec('om_scenario_a_appointment', 'begin; set request.jwt.claims = ''{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}'''), 'SET', 'Scenario A appointment transaction starts with owner AAL2');
 select is(
   (select result->>'role' from extensions.dblink(
     'om_scenario_a_appointment',
@@ -473,7 +481,7 @@ select is(
   'e8010000-0000-4000-8000-000000000003',
   'Scenario B active grant is inserted while retaining the parent lock'
 );
-select is(extensions.dblink_exec('om_scenario_b_appointment', 'set request.jwt.claim.sub = ''e8000000-0000-4000-8000-000000000001'''), 'SET', 'Scenario B appointment identity is configured');
+select is(extensions.dblink_exec('om_scenario_b_appointment', 'set request.jwt.claims = ''{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}'''), 'SET', 'Scenario B appointment identity is configured with owner AAL2');
 select ok(
   extensions.dblink_send_query(
     'om_scenario_b_appointment',
