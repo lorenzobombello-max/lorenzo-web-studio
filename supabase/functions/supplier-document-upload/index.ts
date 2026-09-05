@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  getSupabasePublishableKey,
   getSupabaseServerSecretKey,
   type SupabaseKeyBindingEnvironment,
 } from "../_shared/supabase-key-bindings.ts";
@@ -38,6 +39,16 @@ export function resolveSupplierDocumentUploadServiceKey(
   }
 }
 
+export function resolveSupplierDocumentUploadPublishableKey(
+  environment: SupabaseKeyBindingEnvironment = Deno.env,
+): string | null {
+  try {
+    return getSupabasePublishableKey("default", environment);
+  } catch {
+    return null;
+  }
+}
+
 async function sha256(bytes: Uint8Array): Promise<string> {
   const ownedBytes = new Uint8Array(bytes);
   const digest = await crypto.subtle.digest("SHA-256", ownedBytes.buffer);
@@ -49,9 +60,9 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 if (import.meta.main) {
   Deno.serve((request) => {
     const url = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const publishableKey = resolveSupplierDocumentUploadPublishableKey();
     const serviceRoleKey = resolveSupplierDocumentUploadServiceKey();
-    if (!url || !anonKey || !serviceRoleKey) {
+    if (!url || !publishableKey || !serviceRoleKey) {
       return new Response(
         JSON.stringify({ ok: false, code: "SERVER_CONFIGURATION_ERROR" }),
         {
@@ -65,7 +76,7 @@ if (import.meta.main) {
     }
 
     const clientFor = (jwt: string) =>
-      createClient(url, anonKey, {
+      createClient(url, publishableKey, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       });

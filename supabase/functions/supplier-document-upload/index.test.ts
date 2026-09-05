@@ -2,16 +2,18 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   isActiveOwnerIdentity,
   isStorageDuplicateError,
+  resolveSupplierDocumentUploadPublishableKey,
   resolveSupplierDocumentUploadServiceKey,
 } from "./index.ts";
 
 const serverKey = ["sb", "secret", "supplierDocumentUpload", "test"].join("_");
+const publishableKey = ["sb", "publishable", "supplierDocumentUpload", "test"].join("_");
 
 function environment(values: Record<string, string | undefined>) {
   return { get: (name: string) => values[name] };
 }
 
-Deno.test("supplier upload Phase A uses only the modern service binding", async () => {
+Deno.test("supplier upload Phase A keeps the modern service binding", () => {
   assertEquals(
     resolveSupplierDocumentUploadServiceKey(environment({
       SUPABASE_SECRET_KEYS: JSON.stringify({ default: serverKey }),
@@ -37,13 +39,41 @@ Deno.test("supplier upload Phase A uses only the modern service binding", async 
     })),
     null,
   );
+});
+
+Deno.test("supplier upload Phase B uses only the modern publishable binding", async () => {
+  assertEquals(
+    resolveSupplierDocumentUploadPublishableKey(environment({
+      SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: publishableKey }),
+    })),
+    publishableKey,
+  );
+  for (const publishableBinding of [
+    undefined,
+    "not-json",
+    JSON.stringify({ default: "legacy-anon-key" }),
+  ]) {
+    assertEquals(
+      resolveSupplierDocumentUploadPublishableKey(environment({
+        SUPABASE_PUBLISHABLE_KEYS: publishableBinding,
+        SUPABASE_ANON_KEY: "must-not-be-read",
+      })),
+      null,
+    );
+  }
+  assertEquals(
+    resolveSupplierDocumentUploadPublishableKey(environment({
+      SUPABASE_ANON_KEY: "legacy-only-anon-key",
+    })),
+    null,
+  );
 
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
   const config = await Deno.readTextFile(new URL("../../config.toml", import.meta.url));
   assert(source.includes('getSupabaseServerSecretKey("default"'));
   assert(!source.includes("SUPABASE_SERVICE_ROLE_KEY"));
-  assert(source.includes('Deno.env.get("SUPABASE_ANON_KEY")'));
-  assert(!source.includes("getSupabasePublishableKey"));
+  assert(source.includes('getSupabasePublishableKey("default"'));
+  assert(!source.includes("SUPABASE_ANON_KEY"));
   assert(source.includes('code: "SERVER_CONFIGURATION_ERROR"'));
   assert(source.includes("status: 500"));
   assertEquals(source.match(/createClient\(/g)?.length, 2);
