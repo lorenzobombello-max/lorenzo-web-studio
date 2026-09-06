@@ -186,6 +186,13 @@ select is(
   'action is bound to its policy domain'
 );
 
+select set_config('lws_test.original_timezone', current_setting('TimeZone'), true);
+select set_config(
+  'TimeZone',
+  (select (case when hours >= 0 then '+' else '-' end) || lpad(abs(hours)::text, 2, '0') || ':00'
+   from (select 12 - extract(hour from clock_timestamp() at time zone 'UTC')::integer as hours) as offset_value),
+  true
+);
 update lws_internal.security_action_policy
 set max_per_hour = 1, max_per_day = 1, cooldown_seconds = 0
 where action_code = 'archive_project';
@@ -194,7 +201,15 @@ insert into lws_internal.security_action_velocity (
   object_reference_fingerprint, idempotency_fingerprint, consumed_at
 ) values (
   'f5000000-0000-4000-8000-000000000001', 'archive_project', 'FINANCE_FINALIZATION',
-  repeat('e', 64), repeat('5', 64), date_trunc('day', clock_timestamp())
+  repeat('e', 64), repeat('5', 64), date_trunc('hour', clock_timestamp()) - interval '1 second'
+);
+select ok(
+  (select consumed_at >= date_trunc('day', clock_timestamp())
+     and consumed_at < date_trunc('hour', clock_timestamp())
+   from lws_internal.security_action_velocity
+   where actor_auth_user_id = 'f5000000-0000-4000-8000-000000000001'
+     and action_code = 'archive_project'),
+  'daily-limit fixture is inside the current day and outside the current hour'
 );
 select is(
   (select reason_code from lws_internal.consume_security_action_velocity_v1(
@@ -273,7 +288,7 @@ insert into lws_internal.security_action_velocity (
   object_reference_fingerprint, idempotency_fingerprint, consumed_at
 ) values (
   'f5000000-0000-4000-8000-000000000001', 'confirm_payment', 'FINANCE_FINALIZATION',
-  repeat('5', 64), repeat('b', 64), date_trunc('day', clock_timestamp())
+  repeat('5', 64), repeat('b', 64), date_trunc('hour', clock_timestamp()) - interval '1 second'
 );
 select is(
   (select reason_code from lws_internal.consume_security_action_velocity_v1(
@@ -316,6 +331,7 @@ select ok(
   ),
   'threshold denial and automatic breaker activation emit safe audit events'
 );
+select set_config('TimeZone', current_setting('lws_test.original_timezone'), true);
 select throws_ok(
   $$update lws_internal.security_control_events set metadata = '{}'::jsonb where event_type in ('VELOCITY_BLOCKED', 'VELOCITY_CONSUMED')$$,
   '55000', 'SECURITY_CONTROL_EVENT_APPEND_ONLY', 'velocity audit events remain append-only'
