@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Aldara Atelier presents a considered edit of enduring dresses, tailoring and accessories." />
+  <meta name="robots" content="noindex, follow" />
+  <title>New Arrivals | Aldara Atelier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=Italiana&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../assets/css/demos/aldara-atelier.css" />
+  <script defer src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script defer src="../../../assets/js/demos/aldara-atelier.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#catalog">Skip to collection</a>
+
+  <div class="announcement">
+    <p>Complimentary express delivery on orders over €250</p>
+    <button type="button" data-close-announcement aria-label="Dismiss announcement"><i data-lucide="x"></i></button>
+  </div>
+
+  <header class="site-header">
+    <div class="utility-bar" aria-label="Utility navigation">
+      <a href="#journal">Journal</a>
+      <a href="#stores">Stores</a>
+      <button type="button" data-open-account>Sign in</button>
+      <button type="button" data-open-search aria-label="Search"><i data-lucide="search"></i></button>
+    </div>
+    <div class="main-nav">
+      <button class="menu-button" type="button" data-menu-toggle aria-label="Menu" aria-expanded="false" aria-controls="primaryNav">
+        <i data-lucide="menu"></i><span>Menu</span>
+      </button>
+      <a class="wordmark" href="#top" aria-label="Aldara Atelier home">Aldara</a>
+      <nav id="primaryNav" aria-label="Primary navigation">
+        <a href="#new" class="is-active">New In</a>
+        <a href="#catalog" data-filter-link="clothing">Clothing</a>
+        <a href="#catalog" data-filter-link="dresses">Dresses</a>
+        <a href="#catalog" data-filter-link="tailoring">Tailoring</a>
+        <a href="#catalog" data-filter-link="accessories">Accessories</a>
+        <a href="#journal">Stories</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" data-open-search aria-label="Search collection"><i data-lucide="search"></i></button>
+        <button type="button" data-open-wishlist aria-label="Open wishlist"><i data-lucide="heart"></i><span data-wishlist-count>0</span></button>
+        <button type="button" data-open-cart aria-label="Open shopping bag"><i data-lucide="shopping-bag"></i><span data-cart-count>0</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="collection-intro" id="new" aria-labelledby="collection-title">
+      <div class="collection-intro__color" aria-hidden="true"></div>
+      <div class="collection-intro__content">
+        <p class="eyebrow">The September edit · 2026</p>
+        <h1 id="collection-title">New arrivals</h1>
+        <p>Shapes that soften structure. Natural fibres, tactile surfaces and a restrained palette designed to live beyond the season.</p>
+        <a href="#catalog" class="text-link">Shop the edit <i data-lucide="arrow-down-right"></i></a>
+      </div>
+      <p class="collection-intro__note">Edition 06<br />Antwerp, Belgium</p>
+    </section>
+
+    <section class="catalog" id="catalog" aria-labelledby="catalog-title">
+      <div class="catalog-heading">
+        <div>
+          <p class="eyebrow">Just landed</p>
+          <h2 id="catalog-title">The latest pieces</h2>
+        </div>
+        <p><span data-result-count>6</span> pieces</p>
+      </div>
+
+      <div class="catalog-tools">
+        <div class="filters" role="group" aria-label="Filter products">
+          <button class="is-selected" type="button" data-filter="all">All</button>
+          <button type="button" data-filter="dresses">Dresses</button>
+          <button type="button" data-filter="tailoring">Tailoring</button>
+          <button type="button" data-filter="accessories">Accessories</button>
+        </div>
+        <label class="sort-control">Sort
+          <select data-sort aria-label="Sort products">
+            <option value="featured">Featured</option>
+            <option value="low">Price, low to high</option>
+            <option value="high">Price, high to low</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="product-grid" data-product-grid>
+        <article class="product-card" data-product data-category="dresses" data-price="325" data-name="Marlowe column dress">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Marlowe column dress">
+            <img src="https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Model wearing a flowing neutral dress" width="1000" height="1333" />
+            <span class="product-card__index">01</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Marlowe column dress</h3><p>Raw silk · Clay</p></div><p>€325</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Marlowe column dress"><i data-lucide="heart"></i></button>
+        </article>
+
+        <article class="product-card" data-product data-category="tailoring" data-price="420" data-name="Sera draped suit">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Sera draped suit">
+            <img src="https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Editorial model wearing sculptural tailoring" width="1000" height="1333" loading="lazy" />
+            <span class="product-card__index">02</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Sera draped suit</h3><p>Wool crepe · Moss</p></div><p>€420</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Sera draped suit"><i data-lucide="heart"></i></button>
+        </article>
+
+        <article class="product-card" data-product data-category="clothing" data-price="245" data-name="Ione gathered blouse">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Ione gathered blouse">
+            <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Model in a tonal editorial look" width="1000" height="1333" loading="lazy" />
+            <span class="product-card__index">03</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Ione gathered blouse</h3><p>Silk voile · Bone</p></div><p>€245</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Ione gathered blouse"><i data-lucide="heart"></i></button>
+        </article>
+
+        <article class="product-card" data-product data-category="dresses" data-price="365" data-name="Vela bias dress">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Vela bias dress">
+            <img src="https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Model in a contemporary evening dress" width="1000" height="1333" loading="lazy" />
+            <span class="product-card__index">04</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Vela bias dress</h3><p>Washed satin · Ink</p></div><p>€365</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Vela bias dress"><i data-lucide="heart"></i></button>
+        </article>
+
+        <article class="product-card" data-product data-category="accessories" data-price="280" data-name="Olea frame bag">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Olea frame bag">
+            <img src="https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Structured leather bag in a warm neutral finish" width="1000" height="1333" loading="lazy" />
+            <span class="product-card__index">05</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Olea frame bag</h3><p>Calf leather · Umber</p></div><p>€280</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Olea frame bag"><i data-lucide="heart"></i></button>
+        </article>
+
+        <article class="product-card" data-product data-category="tailoring" data-price="295" data-name="Tala relaxed jacket">
+          <button class="product-card__image" type="button" data-quick-view aria-label="View Tala relaxed jacket">
+            <img src="https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="A considered edit of neutral tailored garments" width="1000" height="1333" loading="lazy" />
+            <span class="product-card__index">06</span><span class="product-card__view">Quick view</span>
+          </button>
+          <div class="product-card__details"><div><h3>Tala relaxed jacket</h3><p>Linen twill · Oat</p></div><p>€295</p></div>
+          <button class="save-button" type="button" data-wishlist aria-label="Save Tala relaxed jacket"><i data-lucide="heart"></i></button>
+        </article>
+      </div>
+      <p class="empty-state" data-empty-state hidden>No pieces match this edit.</p>
+    </section>
+
+    <section class="editorial" id="journal" aria-labelledby="journal-title">
+      <div class="editorial__copy">
+        <p class="eyebrow">Atelier notes · 06</p>
+        <h2 id="journal-title">Designed slowly.<br /><em>Worn often.</em></h2>
+        <p>Every Aldara piece begins with movement: how fabric falls, how a shoulder settles, how a garment changes with its wearer.</p>
+        <a href="#catalog" class="text-link">Explore the collection <i data-lucide="arrow-up-right"></i></a>
+      </div>
+      <figure><img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&amp;fit=crop&amp;w=1400&amp;q=85" alt="A curated rail of neutral garments in the Aldara atelier" width="1400" height="1000" loading="lazy" /></figure>
+    </section>
+  </main>
+
+  <footer id="stores">
+    <a class="wordmark" href="#top">Aldara</a>
+    <p>Quiet forms for considered lives.</p>
+    <div><a href="mailto:atelier@example.com">Client services</a><a href="#journal">Journal</a><a href="#stores">Antwerp atelier</a></div>
+    <p>Concept demo by Lorenzo Web Solutions</p>
+  </footer>
+
+  <dialog class="panel" data-panel>
+    <button class="panel__close" type="button" data-close-panel aria-label="Close"><i data-lucide="x"></i></button>
+    <div data-panel-content></div>
+  </dialog>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+</body>
+</html>
