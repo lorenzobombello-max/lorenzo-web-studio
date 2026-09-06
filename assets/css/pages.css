@@ -119,7 +119,7 @@ address { font-style:normal; }
 .demo-page { position:relative; display:block; flex:0 0 100%; min-width:0; min-height:clamp(680px,62vw,810px); perspective:1400px; isolation:isolate; }
 .demo-page::before { content:""; position:absolute; width:64%; aspect-ratio:1; top:6%; right:8%; z-index:-1; border-radius:50%; background:rgba(14,216,230,.12); filter:blur(90px); pointer-events:none; }
 .demo-page > div { display:contents; }
-.demo-card { position:absolute; display:block; overflow:hidden; padding-top:30px; border:1px solid rgba(255,255,255,.18); border-radius:var(--radius); background:#111820; box-shadow:0 34px 90px rgba(0,0,0,.48); transform-origin:center; transition:box-shadow 300ms ease,filter 300ms ease; }
+.demo-card { position:absolute; display:block; height:max-content; overflow:hidden; padding-top:30px; border:1px solid rgba(255,255,255,.18); border-radius:var(--radius); background:#111820; box-shadow:0 34px 90px rgba(0,0,0,.48); transform-origin:center; transition:box-shadow 300ms ease,filter 300ms ease; }
 .demo-card::before { content:"●  ●  ●"; position:absolute; inset:0 0 auto; height:30px; padding:0 .75rem; display:flex; align-items:center; color:#3c4a55; background:#151e26; font-size:.55rem; letter-spacing:.18em; }
 .demo-card::after { content:"LWS / " attr(data-project); position:absolute; top:0; left:4.6rem; right:.7rem; height:30px; overflow:hidden; display:flex; align-items:center; color:#87939d; font:500 .55rem "Segoe UI",Arial,sans-serif; letter-spacing:.06em; white-space:nowrap; text-overflow:ellipsis; }
 .demo-page > .demo-card { left:1%; top:5%; z-index:1; width:72%; transform:perspective(1300px) rotateY(-6deg) rotateX(1.5deg); }

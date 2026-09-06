@@ -526,6 +526,12 @@
 .section-head {
   display: grid;
   gap: 0.55rem;
+  min-width: 0;
+}
+
+.section-head > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .incident-module__head h2,
@@ -534,10 +540,6 @@
   font-size: clamp(1.8rem, 4vw, 3rem);
   text-transform: uppercase;
   letter-spacing: 0.01em;
-}
-
-.service-matrix .section-head h2 {
-  overflow-wrap: anywhere;
 }
 
 .incident-module__head p,
@@ -1251,6 +1253,10 @@
 }
 
 @media (max-width: 640px) {
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
   .maintenance-track,
   .shutdown-line,
   .capacity-grid,

@@ -833,6 +833,12 @@ img {
   .pps-theme-toggle { padding: 0.28rem 0.44rem; font-size: 0.64rem; }
 }
 
+@media (max-width: 360px) {
+  .pps-theme-toggle span { display: none; }
+  [data-theme="dark"] .pps-theme-toggle span:last-child,
+  [data-theme="light"] .pps-theme-toggle span:first-child { display: inline; }
+}
+
 /* Prevent intrinsic media width from expanding the contact grid on small screens. */
 .pps-contact > * { min-width: 0; }
 .pps-contact > img { width: 100%; height: auto; }

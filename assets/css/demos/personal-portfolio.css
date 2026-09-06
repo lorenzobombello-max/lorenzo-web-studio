@@ -17,6 +17,7 @@
   --space-section: clamp(2.8rem, 4.8vw, 4.4rem);
   --container: 1180px;
   --transition: 220ms ease;
+  margin: 0;
   background:
     radial-gradient(circle at 82% 0%, rgba(47, 111, 178, 0.18), transparent 28%),
     radial-gradient(circle at 5% 16%, rgba(102, 164, 230, 0.12), transparent 30%),
@@ -106,6 +107,7 @@
 
 .demo--personal-portfolio .section-heading {
   max-width: 760px;
+  min-width: 0;
   margin-bottom: 2rem;
 }
 
@@ -113,6 +115,7 @@
 .demo--personal-portfolio .section-heading h2 {
   font-family: "Newsreader", Georgia, serif;
   line-height: 1.16;
+  overflow-wrap: anywhere;
 }
 
 .demo--personal-portfolio .section-heading h2 {
@@ -1165,5 +1168,13 @@
     right: 1rem;
     justify-content: center;
     text-align: center;
+  }
+}
+
+@media (max-width: 360px) {
+  .demo--personal-portfolio .theme-toggle {
+    gap: 0.3rem;
+    padding-inline: 0.42rem;
+    font-size: 0.7rem;
   }
 }

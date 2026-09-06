@@ -1,5 +1,9 @@
 {
+  "scripts": {
+    "test:page-end": "node --test scripts/page-end-footer.test.mjs"
+  },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@xmldom/xmldom": "0.9.12",
     "docx": "^9.7.1",
     "docxtemplater": "^3.69.3",
