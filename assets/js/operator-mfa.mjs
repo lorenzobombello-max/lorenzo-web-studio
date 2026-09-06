@@ -82,6 +82,7 @@ export function createOperatorMfaService(client) {
   }
 
   async function startStepUp() {
+    challenge = null;
     const level = await assurance();
     if (level.currentLevel === "aal2") return { status: "aal2" };
     const [factor] = await verifiedTotpFactors();
@@ -96,9 +97,9 @@ export function createOperatorMfaService(client) {
   }
 
   async function verifyStepUp(code) {
-    if (!challenge || !validTotp(code)) throw new Error("MFA_CODE_INVALID");
     const activeChallenge = challenge;
     challenge = null;
+    if (!activeChallenge || !validTotp(code)) throw new Error("MFA_CODE_INVALID");
     assertResult(await client.auth.mfa.verify({
       factorId: activeChallenge.factorId,
       challengeId: activeChallenge.challengeId,
@@ -109,9 +110,14 @@ export function createOperatorMfaService(client) {
     return level;
   }
 
+  function cancelStepUp() {
+    challenge = null;
+  }
+
   return {
     assurance,
     cancelEnrollment,
+    cancelStepUp,
     startEnrollment,
     startStepUp,
     verifiedTotpFactors,
@@ -157,6 +163,7 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
   let mode = null;
   let pending = null;
   let activePromise = null;
+  let stepUpActive = false;
 
   function showMessage(text, state = "info") {
     message.textContent = text;
@@ -165,9 +172,11 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
 
   function settle(value, error) {
     const active = pending;
+    const activeMode = mode;
     pending = null;
     activePromise = null;
     mode = null;
+    if (activeMode === "step-up" || activeMode === "verify-only") service.cancelStepUp();
     qr.removeAttribute("src");
     qrWrap.hidden = true;
     code.value = "";
@@ -208,22 +217,57 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
   }
 
   async function stepUp() {
-    if (pending) throw new Error("MFA_FLOW_ACTIVE");
-    const state = await service.startStepUp();
-    if (state.status === "aal2") return true;
-    if (state.status === "enrollment_required") {
-      await enroll();
-      return true;
+    if (pending || stepUpActive) throw new Error("MFA_FLOW_ACTIVE");
+    stepUpActive = true;
+    try {
+      const state = await service.startStepUp();
+      if (state.status === "aal2") return true;
+      if (state.status === "enrollment_required") {
+        stepUpActive = false;
+        await enroll();
+        return true;
+      }
+      mode = "step-up";
+      title.textContent = "Bevestig kritieke actie";
+      description.textContent = "Deze actie vereist een extra verificatie. Open je authenticator-app en voer de actuele code in.";
+      submit.textContent = "Actie vrijgeven";
+      showMessage("De server wacht op je tweede factor.");
+      dialog.showModal();
+      const completion = waitForDialog();
+      code.focus();
+      return await completion;
+    } finally {
+      stepUpActive = false;
     }
-    mode = "step-up";
-    title.textContent = "Bevestig kritieke actie";
-    description.textContent = "Deze actie vereist een extra verificatie. Open je authenticator-app en voer de actuele code in.";
-    submit.textContent = "Actie vrijgeven";
-    showMessage("De server wacht op je tweede factor.");
-    dialog.showModal();
-    const completion = waitForDialog();
-    code.focus();
-    return completion;
+  }
+
+  async function verifyAal2Only() {
+    if (pending || stepUpActive) throw new Error("MFA_FLOW_ACTIVE");
+    stepUpActive = true;
+    try {
+      const state = await service.startStepUp();
+      if (state.status === "enrollment_required") throw new Error("MFA_VERIFIED_FACTOR_REQUIRED");
+      if (state.status === "challenge") {
+        mode = "verify-only";
+        title.textContent = "AAL2 verifiëren";
+        description.textContent = "Open je authenticator-app en voer de actuele code in.";
+        submit.textContent = "Verifiëren";
+        showMessage("De server wacht op je tweede factor.");
+        dialog.showModal();
+        const completion = waitForDialog();
+        code.focus();
+        await completion;
+      }
+      const level = await service.assurance();
+      if (level.currentLevel !== "aal2") throw new Error("AAL2_REQUIRED");
+      return true;
+    } catch (error) {
+      service.cancelStepUp();
+      if (mode === "verify-only" && pending) settle(false, error);
+      throw error;
+    } finally {
+      stepUpActive = false;
+    }
   }
 
   form.addEventListener("submit", async (event)=>{
@@ -239,8 +283,8 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
     } catch (error) {
       code.value = "";
       showMessage("De code kon niet worden geverifieerd. Probeer opnieuw.", "error");
-      code.focus();
-      if (error?.message === "MFA_OPERATOR_NOT_ELIGIBLE") settle(false, error);
+      if (mode === "step-up" || mode === "verify-only" || error?.message === "MFA_OPERATOR_NOT_ELIGIBLE") settle(false, error);
+      else code.focus();
     } finally {
       submit.disabled = false;
       cancel.disabled = false;
@@ -251,6 +295,7 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
     cancel.disabled = true;
     try {
       if (mode === "enroll") await service.cancelEnrollment();
+      else service.cancelStepUp();
       settle(false, new Error("MFA_CANCELLED"));
     } catch (error) {
       showMessage("MFA-cleanup is niet bevestigd. Meld je af en neem contact op met beheer.", "error");
@@ -263,7 +308,7 @@ export function createOperatorMfaDialog({ client, documentObject = document } = 
     cancel.click();
   });
 
-  return { dialog, enroll, service, stepUp };
+  return { dialog, enroll, service, stepUp, verifyAal2Only };
 }
 
 export function mountOperatorMfaButton({ controller, documentObject = document } = {}) {
@@ -275,6 +320,32 @@ export function mountOperatorMfaButton({ controller, documentObject = document }
   button.dataset.operatorMfaEnroll = "";
   button.textContent = "MFA instellen";
   button.addEventListener("click", ()=>void controller.enroll().catch(()=>{}));
+  status.prepend(button);
+  return button;
+}
+
+export function mountOperatorAal2VerificationButton({ controller, documentObject = document } = {}) {
+  const status = documentObject.querySelector(".topbar__status");
+  if (!status || status.querySelector("[data-operator-mfa-verify]")) return null;
+  const button = documentObject.createElement("button");
+  button.type = "button";
+  button.className = "topbar__mfa";
+  button.dataset.operatorMfaVerify = "";
+  button.textContent = "AAL2 verifiëren";
+  let active = false;
+  button.addEventListener("click", async ()=>{
+    if (active) return;
+    active = true;
+    button.disabled = true;
+    try {
+      if (await controller.verifyAal2Only()) button.textContent = "AAL2 actief";
+    } catch {
+      button.textContent = "AAL2 verifiëren";
+    } finally {
+      active = false;
+      button.disabled = false;
+    }
+  });
   status.prepend(button);
   return button;
 }

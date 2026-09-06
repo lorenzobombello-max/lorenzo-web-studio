@@ -4,7 +4,7 @@ import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financ
 import { createOperatorWorkspaceMaster, createOperatorWorkspaceRecovery } from "./operator-workspace-master.mjs?v=20260906-stale-claim-r1";
 import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
 import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";
-import { createOperatorMfaDialog, isMfaOperatorSubject, mountOperatorMfaButton } from "./operator-mfa.mjs?v=20260904-aal2-r1";
+import { createOperatorMfaDialog, isMfaOperatorSubject, mountOperatorAal2VerificationButton, mountOperatorMfaButton } from "./operator-mfa.mjs?v=20260906-aal2-standalone-r1";
 
 const gate = document.querySelector("#operatorDashboardGate");
 const gateTitle = document.querySelector("#operatorDashboardGateTitle");
@@ -77,6 +77,7 @@ try {
     if (isMfaOperatorSubject(access.session.user.id)) {
       mfaController = createOperatorMfaDialog({ client });
       mountOperatorMfaButton({ controller: mfaController });
+      mountOperatorAal2VerificationButton({ controller: mfaController });
     }
     const requireAal2 = mfaController
       ? ()=>mfaController.stepUp()
