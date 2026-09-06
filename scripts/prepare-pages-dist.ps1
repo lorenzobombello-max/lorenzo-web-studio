@@ -168,6 +168,7 @@ $requiredDirectories = @(
   "pages/demos/personal-portfolio",
   "pages/demos/pulse-performance",
   "pages/demos/restaurant",
+  "pages/demos/vesper-systems",
   "assets/images/home/showcase",
   "assets/images/demos/aurelis-architecture",
   "assets/images/demos/cafe",
