@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "test:page-end": "node --test scripts/page-end-footer.test.mjs"
+    "test:page-end": "node --test scripts/page-end-footer.test.mjs",
+    "test:visual-contract": "node --test scripts/public-visual-contract.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

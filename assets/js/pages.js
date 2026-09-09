@@ -380,11 +380,11 @@
       privacyNote.textContent = isPrivacyRequest
         ? "Je privacyverzoek wordt afzonderlijk en vertrouwelijk verwerkt. Vraag hier geen identiteitsbewijs mee te sturen."
         : isDocumentenflowRequest
-        ? "Je aanvraag voor Slimme Documentenflow wordt afzonderlijk herkend en persoonlijk nagekeken."
+        ? "Je aanvraag voor Slimme Documenten-flow wordt afzonderlijk herkend en persoonlijk nagekeken."
         : "Je aanvraag wordt veilig verwerkt en persoonlijk nagekeken.";
       submit.textContent = isPrivacyRequest
         ? "Verstuur privacyverzoek"
-        : isDocumentenflowRequest ? "Verstuur Documentenflow-aanvraag" : "Verstuur aanvraag";
+        : isDocumentenflowRequest ? "Verstuur Documenten-flow-aanvraag" : "Verstuur aanvraag";
       if (packageInterest && !isDocumentenflowRequest) packageInterest.hidden = true;
       setMessage("", null);
       idempotencyKey = "";
@@ -489,7 +489,7 @@
         submit.removeAttribute("aria-busy");
         submit.textContent = requestKind?.value === "privacy"
           ? "Verstuur privacyverzoek"
-          : requestKind?.value === "slimme_documentenflow" ? "Verstuur Documentenflow-aanvraag" : "Verstuur aanvraag";
+          : requestKind?.value === "slimme_documentenflow" ? "Verstuur Documenten-flow-aanvraag" : "Verstuur aanvraag";
       }
     });
     form.addEventListener("input", () => {

@@ -1,3 +1,6 @@
+.careers-page { min-height:100vh; min-height:100svh; display:flex; flex-direction:column; }
+.careers-page > main { flex:1 0 auto; }
+.careers-page > .preview-footer { flex:0 0 auto; }
 .careers-hero { min-height:680px; }
 .careers-hero::before,.careers-hero::after { display:none; }
 .careers-hero__image,.careers-hero__veil { position:absolute; inset:0; width:100%; height:100%; }

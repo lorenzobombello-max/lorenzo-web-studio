@@ -1,16 +1,33 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { extname, join, resolve, sep } from "node:path";
+import { extname, join, relative, resolve, sep } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const demoRoot = join(root, "pages", "demos");
-const routes = [
+const publicRoutes = [
   "/index.html",
+  "/pages/websites-op-maat.html",
+  "/pages/webshops.html",
+  "/pages/seo.html",
+  "/pages/services.html",
+  "/pages/contact.html",
+  "/pages/hosting-onderhoud.html",
+  "/pages/integraties-automatisering.html",
+  "/pages/slimme-documentenflow.html",
+  "/pages/klanten-ledenomgevingen.html",
   "/pages/portfolio.html",
+  "/pages/about.html",
+  "/pages/process.html",
+  "/pages/faq.html",
+  "/pages/multimedia-social.html",
+  "/pages/pricing.html",
+  "/werken-bij/index.html",
+];
+const demoRoutes = [
   "/pages/demos/aldara-atelier/index.html",
   "/pages/demos/aurelis-architecture/index.html",
   "/pages/demos/cafe/index.html",
@@ -24,6 +41,7 @@ const routes = [
   "/pages/demos/restaurant/index.html",
   "/pages/demos/vesper-systems/index.html",
 ];
+const routes = [...publicRoutes, ...demoRoutes];
 const viewports = [
   { name: "desktop", width: 1440, height: 900 },
   { name: "mobile-390", width: 390, height: 844 },
@@ -71,12 +89,17 @@ after(async () => {
 });
 
 test("page-end baseline includes every source demo", async () => {
-  const demoRoutes = (await readdir(demoRoot, { withFileTypes: true }))
+  const sourceDemoRoutes = (await readdir(demoRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => `/pages/demos/${entry.name}/index.html`)
     .sort();
-  await Promise.all(demoRoutes.map((route) => stat(join(root, route.slice(1)))));
-  assert.deepEqual(routes.filter((route) => route.startsWith("/pages/demos/")).sort(), demoRoutes);
+  await Promise.all(sourceDemoRoutes.map((route) => stat(join(root, route.slice(1)))));
+  assert.deepEqual(demoRoutes.toSorted(), sourceDemoRoutes);
+});
+
+test("page-end baseline includes all 17 public routes", () => {
+  assert.equal(publicRoutes.length, 17);
+  assert.equal(new Set(publicRoutes).size, 17);
 });
 
 for (const motion of ["no-preference", "reduce"]) {
