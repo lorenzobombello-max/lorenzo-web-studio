@@ -213,51 +213,51 @@
     };
   }
 
-  function activateAnalytics() {
-    if (analyticsActive) return;
+  function initializeGoogleTag() {
+    if (analyticsInitialized) return;
 
-    window[GA_DISABLE_KEY] = false;
+    window[GA_DISABLE_KEY] = true;
     ensureGtag();
-    window.gtag("consent", analyticsInitialized ? "update" : "default", {
-      analytics_storage: "granted",
+    window.gtag("consent", "default", {
+      analytics_storage: "denied",
       ad_storage: "denied",
       ad_user_data: "denied",
       ad_personalization: "denied",
+      wait_for_update: 500,
     });
 
-    if (!analyticsInitialized) {
-      analyticsInitialized = true;
-      window.gtag("js", new Date());
-      window.gtag("config", GA_MEASUREMENT_ID);
+    analyticsInitialized = true;
+    window.gtag("js", new Date());
+    window.gtag("config", GA_MEASUREMENT_ID, { send_page_view: false });
 
-      if (!document.getElementById(GA_SCRIPT_ID)) {
-        const script = document.createElement("script");
-        script.id = GA_SCRIPT_ID;
-        script.async = true;
-        script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}`;
-        document.head.append(script);
-      }
-    } else {
+    if (!document.getElementById(GA_SCRIPT_ID)) {
+      const script = document.createElement("script");
+      script.id = GA_SCRIPT_ID;
+      script.async = true;
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}`;
+      document.head.append(script);
+    }
+  }
+
+  function updateGoogleConsent(analyticsAllowed, marketingAllowed) {
+    initializeGoogleTag();
+    window[GA_DISABLE_KEY] = !analyticsAllowed;
+    window.gtag("consent", "update", {
+      analytics_storage: analyticsAllowed ? "granted" : "denied",
+      ad_storage: marketingAllowed ? "granted" : "denied",
+      ad_user_data: marketingAllowed ? "granted" : "denied",
+      ad_personalization: marketingAllowed ? "granted" : "denied",
+    });
+
+    if (analyticsAllowed && !analyticsActive) {
       window.gtag("event", "page_view", {
         page_location: window.location.href,
         page_title: document.title,
       });
     }
 
-    analyticsActive = true;
-  }
-
-  function deactivateAnalytics() {
-    window[GA_DISABLE_KEY] = true;
-
-    if (analyticsInitialized && typeof window.gtag === "function") {
-      window.gtag("consent", "update", {
-        analytics_storage: "denied",
-      });
-    }
-
-    analyticsActive = false;
-    clearAnalyticsStorage();
+    analyticsActive = analyticsAllowed;
+    if (!analyticsAllowed) clearAnalyticsStorage();
   }
 
   function applyConsent(consent) {
@@ -273,11 +273,7 @@
       clearFunctionalStorage();
     }
 
-    if (analyticsAllowed) {
-      activateAnalytics();
-    } else {
-      deactivateAnalytics();
-    }
+    updateGoogleConsent(analyticsAllowed, marketingAllowed);
   }
 
   function createBanner() {
@@ -371,6 +367,7 @@
     }
   }
 
+  initializeGoogleTag();
   let state = readConsent();
 
   enhanceMainFooter();
