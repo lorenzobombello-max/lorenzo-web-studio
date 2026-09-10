@@ -61,13 +61,7 @@ export async function loadPublicVacancies(fetchImpl = fetch) {
   return publicVacanciesResponse(await response.json());
 }
 
-export function redirectUnavailablePublicRecruitmentRoute(location) {
-  if (location?.pathname !== "/werken-bij/" && location?.pathname !== "/werken-bij") return false;
-  location.replace("/");
-  return true;
-}
-
-export function createPublicRecruitmentController({ loadState, load, redirect = ()=>{}, onChange = ()=>{} }) {
+export function createPublicRecruitmentController({ loadState, load, onChange = ()=>{} }) {
   let state = { status: "idle", groups: [] };
   const update = (next)=>{ state = next; onChange(state); };
   return {
@@ -78,13 +72,11 @@ export function createPublicRecruitmentController({ loadState, load, redirect = 
       try {
         publication = await loadState();
       } catch {
-        update({ status: "redirecting", groups: [] });
-        redirect();
+        update({ status: "error", groups: [] });
         return false;
       }
       if (!publication.enabled) {
-        update({ status: "redirecting", groups: [] });
-        redirect();
+        update({ status: "empty", groups: [] });
         return false;
       }
       update({ status: "loading", groups: [] });
@@ -106,7 +98,7 @@ export function renderPublicRecruitment(root, state) {
   const empty = root.getElementById("vacancyEmpty");
   const error = root.getElementById("vacancyError");
   const groups = root.getElementById("vacancyGroups");
-  published.hidden = ["checking", "redirecting"].includes(state.status);
+  published.hidden = state.status === "checking";
   loading.hidden = state.status !== "loading";
   empty.hidden = state.status !== "empty";
   error.hidden = state.status !== "error";
@@ -163,7 +155,6 @@ if (typeof document !== "undefined" && document.getElementById("vacancyGroups"))
   controller = createPublicRecruitmentController({
     loadState: ()=>loadSharedPublicRecruitmentPublicationState(),
     load: ()=>loadPublicVacancies(),
-    redirect: ()=>redirectUnavailablePublicRecruitmentRoute(window.location),
     onChange: (state)=>renderPublicRecruitment(document, state),
   });
   void controller.start();
