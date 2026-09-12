@@ -972,14 +972,52 @@ select has_function(
   'Website work projection exists'
 );
 select has_function(
-  'public', 'start_website_concept_v1', array['uuid', 'bigint', 'uuid'],
-  'Website concept start command exists'
-);
-select has_function(
-  'public', 'get_website_execution_workspace_v2', array['uuid'],
-  'Website Execution V2 read exists'
+  'lws_internal', 'website_briefing_status_v1', array['uuid'],
+  'Website briefing status helper exists'
 );
 
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.get_operator_website_work_v1(uuid)',
+    'execute'
+  )
+  and not has_function_privilege(
+    'anon',
+    'public.get_operator_website_work_v1(uuid)',
+    'execute'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'public.get_operator_website_work_v1(uuid)',
+    'execute'
+  ),
+  'Website work projection is executable only by authenticated callers'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'lws_internal.website_briefing_status_v1(uuid)',
+    'execute'
+  ),
+  'browser roles cannot execute the internal briefing helper'
+);
+select is(
+  pg_temp.get_website_work_v1('c1110001-0000-4000-8000-000000000001'),
+  jsonb_build_object(
+    'state', 'NONE',
+    'quote_request_id', 'c1110001-0000-4000-8000-000000000001',
+    'concept_id', null,
+    'project_id', null,
+    'website_work_context_id', null,
+    'mode', null,
+    'briefing_status', null,
+    'commercially_released', false,
+    'revision', 1,
+    'permitted_actions', jsonb_build_array('CAN_START_WEBSITE_CONCEPT')
+  ),
+  'eligible AAL2 owner receives the exact closed NONE Website work object'
+);
 select ok(
   pg_temp.get_website_work_v1('c1110001-0000-4000-8000-000000000001')
     ->'permitted_actions' ? 'CAN_START_WEBSITE_CONCEPT',
@@ -990,6 +1028,171 @@ select ok(
     'c1110001-0000-4000-8000-000000000001', null
   )->'website_work'->'permitted_actions' ? 'CAN_START_WEBSITE_CONCEPT',
   'eligible dossier detail contains CAN_START_WEBSITE_CONCEPT'
+);
+
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000001', 'aal1'
+);
+select is(
+  pg_temp.get_website_work_v1('c1110001-0000-4000-8000-000000000001')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'AAL1 owner receives no Website concept start action'
+);
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000002', 'aal2'
+);
+select is(
+  pg_temp.get_website_work_v1('c1110001-0000-4000-8000-000000000001')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'admin receives no Website concept start action'
+);
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000003', 'aal2'
+);
+select throws_ok(
+  $$select public.get_operator_website_work_v1(
+    'c1110001-0000-4000-8000-000000000001'
+  )$$,
+  '42501', 'APPLICATION_SCOPE_DENIED',
+  'operations manager remains outside existing dossier detail read authority'
+);
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000004', 'aal2'
+);
+select throws_ok(
+  $$select public.get_operator_website_work_v1(
+    'c1110001-0000-4000-8000-000000000001'
+  )$$,
+  '42501', 'APPLICATION_SCOPE_DENIED',
+  'operator remains outside existing dossier detail read authority'
+);
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000001', 'aal2'
+);
+select is(
+  pg_temp.get_website_work_v1('c1130003-0000-4000-8000-000000000003')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'non-Website dossier receives no Website concept start action'
+);
+select is(
+  pg_temp.get_website_work_v1('c1140004-0000-4000-8000-000000000004')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'trashed Website dossier receives no Website concept start action'
+);
+select is(
+  pg_temp.get_website_work_v1('c1199999-0000-4000-8000-000000000099')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'absent or purged dossier receives no Website concept start action'
+);
+update lws_internal.operator_dossier_states
+set state = 'ARCHIVED', revision = revision + 1, updated_at = clock_timestamp()
+where quote_request_id = 'c1120002-0000-4000-8000-000000000002';
+select is(
+  pg_temp.get_website_work_v1('c1120002-0000-4000-8000-000000000002')
+    ->'permitted_actions',
+  '[]'::jsonb,
+  'archived Website dossier receives no Website concept start action'
+);
+update lws_internal.operator_dossier_states
+set state = 'ACTIVE', revision = revision + 1, updated_at = clock_timestamp()
+where quote_request_id = 'c1120002-0000-4000-8000-000000000002';
+
+set local session_replication_role = replica;
+insert into public.website_concepts(
+  concept_id, quote_request_id, mode, briefing_status, concept_status,
+  revision, created_by
+) values (
+  'c1b00000-0000-4000-8000-000000000002',
+  'c1120002-0000-4000-8000-000000000002',
+  'PRE_PROJECT', 'LIMITED', 'ACTIVE', 1,
+  'c1010000-0000-4000-8000-000000000001'
+);
+insert into public.website_work_contexts(
+  website_work_context_id, quote_request_id, concept_id, project_id, phase, revision
+) values (
+  'c1c00000-0000-4000-8000-000000000002',
+  'c1140004-0000-4000-8000-000000000004',
+  'c1b00000-0000-4000-8000-000000000002', null, 'PRE_PROJECT', 1
+);
+set local session_replication_role = origin;
+select throws_ok(
+  $$select public.get_operator_website_work_v1(
+    'c1120002-0000-4000-8000-000000000002'
+  )$$,
+  'P0001', 'WEBSITE_WORK_CONTEXT_BINDING_MISMATCH',
+  'binding inconsistency raises instead of degrading to NONE'
+);
+set local session_replication_role = replica;
+update public.website_work_contexts
+set quote_request_id = 'c1120002-0000-4000-8000-000000000002'
+where website_work_context_id = 'c1c00000-0000-4000-8000-000000000002';
+set local session_replication_role = origin;
+
+select is(
+  pg_temp.get_website_work_v1('c1120002-0000-4000-8000-000000000002'),
+  jsonb_build_object(
+    'state', 'PRE_PROJECT',
+    'quote_request_id', 'c1120002-0000-4000-8000-000000000002',
+    'concept_id', 'c1b00000-0000-4000-8000-000000000002',
+    'project_id', null,
+    'website_work_context_id', 'c1c00000-0000-4000-8000-000000000002',
+    'mode', 'PRE_PROJECT',
+    'briefing_status', 'LIMITED',
+    'commercially_released', false,
+    'revision', 1,
+    'permitted_actions', jsonb_build_array('OPEN_WEBSITE')
+  ),
+  'readable concept receives the exact closed PRE_PROJECT Website work object'
+);
+select is(
+  lws_internal.website_briefing_status_v1(
+    'c1110001-0000-4000-8000-000000000001'
+  ),
+  'COMPLETE',
+  'submitted intake with submitted_at derives COMPLETE briefing'
+);
+select is(
+  lws_internal.website_briefing_status_v1(
+    'c1120002-0000-4000-8000-000000000002'
+  ),
+  'LIMITED',
+  'missing submitted intake derives LIMITED briefing'
+);
+select is(
+  pg_temp.get_website_work_v1('c1150005-0000-4000-8000-000000000005'),
+  jsonb_build_object(
+    'state', 'OFFICIAL_PROJECT',
+    'quote_request_id', 'c1150005-0000-4000-8000-000000000005',
+    'concept_id', null,
+    'project_id', 'c1900000-0000-4000-8000-000000000005',
+    'website_work_context_id', null,
+    'mode', 'OFFICIAL_PROJECT',
+    'briefing_status', 'COMPLETE',
+    'commercially_released', false,
+    'revision', 1,
+    'permitted_actions', jsonb_build_array('OPEN_WEBSITE')
+  ),
+  'eligible official Website receives the exact closed OFFICIAL_PROJECT object'
+);
+
+\if :{?task3_projection_only}
+select * from finish();
+rollback;
+\quit
+\endif
+
+select has_function(
+  'public', 'start_website_concept_v1', array['uuid', 'bigint', 'uuid'],
+  'Website concept start command exists'
+);
+select has_function(
+  'public', 'get_website_execution_workspace_v2', array['uuid'],
+  'Website Execution V2 read exists'
 );
 
 create temporary table concept_start_result as
