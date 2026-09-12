@@ -1,6 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
+create extension if not exists dblink with schema extensions;
 set local search_path = public, lws_internal, extensions;
 
 select no_plan();
@@ -127,7 +128,10 @@ insert into public.quote_requests(
    'Meer dan EUR 6.000', 'flexible', 'Synthetic trashed Website dossier fixture.', true, 'approved'),
   ('c1150005-0000-4000-8000-000000000005', 'LWS-AAN-2099-9105', 'production', 'website', null,
    '2099-01-01T05:00:00Z', 'Official Website project', 'concept-official@example.test', 'business',
-   'Meer dan EUR 6.000', 'flexible', 'Synthetic accepted official Website project fixture.', true, 'approved');
+    'Meer dan EUR 6.000', 'flexible', 'Synthetic accepted official Website project fixture.', true, 'approved'),
+    ('c1160006-0000-4000-8000-000000000006', 'LWS-AAN-2099-9106', 'production', 'website', null,
+    '2099-01-01T04:00:00Z', 'Concept rollback target', 'concept-rollback@example.test', 'business',
+    'Meer dan EUR 6.000', 'flexible', 'Synthetic Website concept rollback fixture.', true, 'approved');
 
 insert into public.quote_request_intakes(
   id, quote_request_id, status, access_token_hash, access_token_expires_at,
@@ -1190,21 +1194,165 @@ select has_function(
   'public', 'start_website_concept_v1', array['uuid', 'bigint', 'uuid'],
   'Website concept start command exists'
 );
-select has_function(
-  'public', 'get_website_execution_workspace_v2', array['uuid'],
-  'Website Execution V2 read exists'
+select is(
+  (select count(*)
+   from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname = 'start_website_concept_v1'),
+  1::bigint,
+  'browser command exposes only the bounded uuid, bigint, uuid signature'
 );
+select ok(
+  has_function_privilege(
+    'authenticated',
+    to_regprocedure('public.start_website_concept_v1(uuid,bigint,uuid)'),
+    'execute'
+  )
+  and not has_function_privilege(
+    'anon',
+    to_regprocedure('public.start_website_concept_v1(uuid,bigint,uuid)'),
+    'execute'
+  )
+  and not has_function_privilege(
+    'service_role',
+    to_regprocedure('public.start_website_concept_v1(uuid,bigint,uuid)'),
+    'execute'
+  ),
+  'only authenticated callers can execute the Website concept start command'
+);
+select ok(
+  coalesce((
+    select prosecdef
+      and proconfig @> array['search_path=public, lws_internal, auth, extensions, pg_catalog']
+    from pg_proc
+    where oid = to_regprocedure(
+      'public.start_website_concept_v1(uuid,bigint,uuid)'
+    )
+  ), false),
+  'start command is security definer with a fixed trusted search path'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'lws_internal.assert_operator_aal2_v1()', 'execute'
+  )
+  and not has_function_privilege(
+    'authenticated', 'lws_internal.website_briefing_status_v1(uuid)', 'execute'
+  )
+  and not has_function_privilege(
+    'authenticated', 'lws_internal.guard_website_concept_root_write_v1()', 'execute'
+  ),
+  'authenticated callers receive no direct internal Website concept authority'
+);
+select pg_temp.set_concept_claims_v1(
+  'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal1'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1110001-0000-4000-8000-000000000001', 1,
+    'c1a00000-0000-4000-8000-000000000021'
+  )$$,
+  '42501', 'AAL2_REQUIRED',
+  'AAL1 owner cannot start a Website concept'
+);
+reset role;
 
+select pg_temp.set_concept_claims_v1(
+  'bd2ab636-0d42-4069-88a9-60bd97f2b335', 'aal2'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1110001-0000-4000-8000-000000000001', 1,
+    'c1a00000-0000-4000-8000-000000000022'
+  )$$,
+  '42501', 'WEBSITE_CONCEPT_OWNER_REQUIRED',
+  'non-owner AAL2 operator cannot start a Website concept'
+);
+reset role;
+
+select pg_temp.set_concept_claims_v1(
+  'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal2'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1199999-0000-4000-8000-000000000099', 1,
+    'c1a00000-0000-4000-8000-000000000023'
+  )$$,
+  '23503', 'WEBSITE_CONCEPT_DOSSIER_NOT_FOUND',
+  'unknown request cannot start a Website concept'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1130003-0000-4000-8000-000000000003', 1,
+    'c1a00000-0000-4000-8000-000000000024'
+  )$$,
+  'P0001', 'WEBSITE_CONCEPT_NOT_ELIGIBLE',
+  'non-Website request cannot start a Website concept'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1140004-0000-4000-8000-000000000004', 1,
+    'c1a00000-0000-4000-8000-000000000025'
+  )$$,
+  'P0001', 'WEBSITE_CONCEPT_NOT_ELIGIBLE',
+  'trashed Website dossier cannot start a Website concept'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1150005-0000-4000-8000-000000000005', 1,
+    'c1a00000-0000-4000-8000-000000000026'
+  )$$,
+  'P0001', 'WEBSITE_CONCEPT_ALREADY_EXISTS',
+  'official Website project blocks concept creation'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1110001-0000-4000-8000-000000000001', 2,
+    'c1a00000-0000-4000-8000-000000000027'
+  )$$,
+  '40001', 'CONCURRENT_MODIFICATION',
+  'stale Website work revision is rejected'
+);
+reset role;
+
+set local role authenticated;
 create temporary table concept_start_result as
-select pg_temp.start_website_concept_v1(
+select public.start_website_concept_v1(
   'c1110001-0000-4000-8000-000000000001', 1,
   'c1a00000-0000-4000-8000-000000000001'
 ) as result;
+reset role;
+
+select is(
+  (select array_agg(key order by key)
+   from concept_start_result
+   cross join lateral jsonb_object_keys(result) as keys(key)),
+  array[
+    'briefing_status','commercially_released','concept_id','mode',
+    'permitted_actions','project_id','quote_request_id','replayed','revision',
+    'state','website_work_context_id'
+  ],
+  'start returns the exact complete Website work snapshot plus replayed'
+);
 
 select is(
   (select result->>'state' from concept_start_result),
   'PRE_PROJECT',
   'start returns PRE_PROJECT'
+);
+select is(
+  (select result->>'replayed' from concept_start_result),
+  'false',
+  'first start is not marked as a replay'
+);
+select is(
+  (select result - 'replayed' from concept_start_result),
+  public.get_operator_website_work_v1(
+    'c1110001-0000-4000-8000-000000000001'
+  ),
+  'start returns the complete authoritative post-command Website work snapshot'
 );
 select is(
   pg_temp.feature_row_count_v1(
@@ -1226,6 +1374,337 @@ select ok(
   )->'website_work'->'permitted_actions' ? 'OPEN_WEBSITE',
   'started dossier detail contains OPEN_WEBSITE'
 );
+select is(
+  (select jsonb_build_array(
+    (select count(*) from public.website_concept_events
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_concept_idempotency_ledger
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001')
+  )),
+  '[1,1]'::jsonb,
+  'start creates exactly one immutable event and one replay ledger row'
+);
+select is(
+  (select request_fingerprint
+   from public.website_concept_idempotency_ledger
+   where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+  encode(extensions.digest(convert_to(jsonb_build_object(
+    'authority_version', 'website_concept_start_v1',
+    'actor_id', (select operator_id from public.commercial_operators
+                 where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'),
+    'command_type', 'START_WEBSITE_CONCEPT',
+    'quote_request_id', 'c1110001-0000-4000-8000-000000000001'::uuid,
+    'expected_website_work_revision', 1
+  )::text, 'UTF8'), 'sha256'), 'hex')::character(64),
+  'ledger fingerprint covers only authority version, server actor, command, request, and expected revision'
+);
+
+set local role authenticated;
+create temporary table concept_replay_result as
+select public.start_website_concept_v1(
+  'c1110001-0000-4000-8000-000000000001', 1,
+  'c1a00000-0000-4000-8000-000000000001'
+) as result;
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1120002-0000-4000-8000-000000000002', 1,
+    'c1a00000-0000-4000-8000-000000000001'
+  )$$,
+  'P0001', 'IDEMPOTENCY_CONFLICT',
+  'same actor and key with a changed request is rejected'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1110001-0000-4000-8000-000000000001', 2,
+    'c1a00000-0000-4000-8000-000000000001'
+  )$$,
+  'P0001', 'IDEMPOTENCY_CONFLICT',
+  'same actor and key with a changed expected revision is rejected'
+);
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1110001-0000-4000-8000-000000000001', 1,
+    'c1a00000-0000-4000-8000-000000000002'
+  )$$,
+  'P0001', 'WEBSITE_CONCEPT_ALREADY_EXISTS',
+  'different key after concept creation cannot create a second root'
+);
+reset role;
+select is(
+  (select result - 'replayed' from concept_replay_result),
+  (select result - 'replayed' from concept_start_result),
+  'exact replay preserves the same complete concept and context snapshot'
+);
+select is(
+  (select result->>'replayed' from concept_replay_result),
+  'true',
+  'exact replay is explicitly marked replayed'
+);
+select is(
+  (select jsonb_build_array(
+    (select count(*) from public.website_concepts
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_work_contexts
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_concept_events
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_concept_idempotency_ledger
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001')
+  )),
+  '[1,1,1,1]'::jsonb,
+  'replay and conflict attempts leave exactly one command result'
+);
+
+select is(
+  extensions.dblink_connect(
+    'concept_start_setup',
+    'host=' || host(inet_server_addr()) || ' port=' || current_setting('port')
+      || ' dbname=' || current_database()
+      || ' user=postgres password=postgres application_name=concept_start_setup'
+  ),
+  'OK',
+  'concept concurrency setup connection opens'
+);
+select lives_ok(
+  $test$select extensions.dblink_exec(
+    'concept_start_setup',
+    $setup$
+      set session_replication_role = replica;
+      delete from public.website_concept_idempotency_ledger
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_concept_events
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_work_contexts
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_concepts
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from lws_internal.operator_dossier_states
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.quote_requests
+      where id = 'c1170007-0000-4000-8000-000000000007';
+      insert into public.quote_requests(
+        id, application_reference, record_classification, request_kind,
+        created_at, name, email, website_type, budget, timing, description,
+        privacy_consent, status
+      ) values (
+        'c1170007-0000-4000-8000-000000000007', 'LWS-AAN-2099-9107',
+        'production', 'website', '2099-01-01T03:00:00Z',
+        'Concurrent concept target', 'concept-race@example.test', 'business',
+        'Meer dan EUR 6.000', 'flexible',
+        'Synthetic concurrent Website concept fixture.', true, 'approved'
+      );
+      insert into lws_internal.operator_dossier_states(
+        quote_request_id, state, revision
+      ) values (
+        'c1170007-0000-4000-8000-000000000007', 'ACTIVE', 0
+      );
+      set session_replication_role = origin;
+    $setup$
+  )$test$,
+  'committed concurrent Website dossier is created outside the pgTAP transaction'
+);
+select is(
+  extensions.dblink_connect(
+    'concept_start_a',
+    'host=' || host(inet_server_addr()) || ' port=' || current_setting('port')
+      || ' dbname=' || current_database()
+      || ' user=postgres password=postgres application_name=concept_start_a'
+  ),
+  'OK',
+  'first concept race connection opens'
+);
+select is(
+  extensions.dblink_connect(
+    'concept_start_b',
+    'host=' || host(inet_server_addr()) || ' port=' || current_setting('port')
+      || ' dbname=' || current_database()
+      || ' user=postgres password=postgres application_name=concept_start_b'
+  ),
+  'OK',
+  'second concept race connection opens'
+);
+select is(
+  extensions.dblink_exec(
+    'concept_start_a',
+    $$begin;
+      select set_config('request.jwt.claims',
+        '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+        false);
+      set local role authenticated$$
+  ),
+  'SET',
+  'first concept race transaction and caller context start'
+);
+create temporary table concept_race_first_result as
+select result
+from extensions.dblink(
+  'concept_start_a',
+  $$select public.start_website_concept_v1(
+    'c1170007-0000-4000-8000-000000000007', 1,
+    'c1a00000-0000-4000-8000-000000000031'
+  )$$
+) as command(result jsonb);
+select ok(
+  extensions.dblink_exec(
+    'concept_start_b',
+    $$begin;
+      select set_config('request.jwt.claims',
+        '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+        false);
+      set local role authenticated$$
+  ) = 'SET',
+  'second concept race transaction and caller context start'
+);
+select ok(
+  extensions.dblink_send_query(
+    'concept_start_b',
+    $$select public.start_website_concept_v1(
+      'c1170007-0000-4000-8000-000000000007', 1,
+      'c1a00000-0000-4000-8000-000000000032'
+    )$$
+  ) = 1,
+  'second concurrent first-start command begins while the winner holds its lock'
+);
+select is(
+  extensions.dblink_exec('concept_start_a', 'commit'),
+  'COMMIT',
+  'first concurrent start commits'
+);
+select throws_ok(
+  $$select * from extensions.dblink_get_result('concept_start_b')
+    as command(result jsonb)$$,
+  'P0001', 'WEBSITE_CONCEPT_ALREADY_EXISTS',
+  'second concurrent first start resumes and cannot create another root'
+);
+select is(
+  (select jsonb_build_array(
+    (select count(*) from public.website_concepts
+     where quote_request_id = 'c1170007-0000-4000-8000-000000000007'),
+    (select count(*) from public.website_work_contexts
+     where quote_request_id = 'c1170007-0000-4000-8000-000000000007'),
+    (select count(*) from public.website_concept_events
+     where quote_request_id = 'c1170007-0000-4000-8000-000000000007'),
+    (select count(*) from public.website_concept_idempotency_ledger
+     where quote_request_id = 'c1170007-0000-4000-8000-000000000007')
+  )),
+  '[1,1,1,1]'::jsonb,
+  'concurrent first starts leave exactly one concept, context, event, and ledger'
+);
+select is(extensions.dblink_disconnect('concept_start_a'), 'OK', 'first concept race connection closes');
+select is(extensions.dblink_disconnect('concept_start_b'), 'OK', 'second concept race connection closes');
+select lives_ok(
+  $test$select extensions.dblink_exec(
+    'concept_start_setup',
+    $cleanup$
+      set session_replication_role = replica;
+      delete from public.website_concept_idempotency_ledger
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_concept_events
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_work_contexts
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.website_concepts
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from lws_internal.operator_dossier_states
+      where quote_request_id = 'c1170007-0000-4000-8000-000000000007';
+      delete from public.quote_requests
+      where id = 'c1170007-0000-4000-8000-000000000007';
+      insert into public.quote_requests(
+        id, application_reference, record_classification, request_kind,
+        created_at, name, email, website_type, budget, timing, description,
+        privacy_consent, status
+      ) values (
+        'c1180008-0000-4000-8000-000000000008', 'LWS-AAN-2099-9108',
+        'production', 'website', '2099-01-01T02:00:00Z',
+        'Rollback concept target', 'concept-rollback-committed@example.test',
+        'business', 'Meer dan EUR 6.000', 'flexible',
+        'Synthetic committed Website concept rollback fixture.', true, 'approved'
+      );
+      insert into lws_internal.operator_dossier_states(
+        quote_request_id, state, revision
+      ) values (
+        'c1180008-0000-4000-8000-000000000008', 'ACTIVE', 0
+      );
+      set session_replication_role = origin;
+    $cleanup$
+  )$test$,
+  'concurrency fixture is removed and committed rollback fixture is prepared'
+);
+
+create function pg_temp.fail_website_concept_start_event_v1()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.quote_request_id = 'c1180008-0000-4000-8000-000000000008' then
+    raise exception using errcode = 'P0001', message = 'TEST_CONCEPT_EVENT_FAILURE';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger aaa_test_fail_website_concept_start_event
+before insert on public.website_concept_events
+for each row execute function pg_temp.fail_website_concept_start_event_v1();
+alter table public.website_concept_events
+  enable always trigger aaa_test_fail_website_concept_start_event;
+
+set local role authenticated;
+select throws_ok(
+  $$select public.start_website_concept_v1(
+    'c1180008-0000-4000-8000-000000000008', 1,
+    'c1a00000-0000-4000-8000-000000000028'
+  )$$,
+  'P0001', 'TEST_CONCEPT_EVENT_FAILURE',
+  'event failure aborts the complete Website concept command'
+);
+reset role;
+select is(
+  (select jsonb_build_array(
+    (select count(*) from public.website_concepts
+      where quote_request_id = 'c1180008-0000-4000-8000-000000000008'),
+    (select count(*) from public.website_work_contexts
+      where quote_request_id = 'c1180008-0000-4000-8000-000000000008'),
+    (select count(*) from public.website_concept_events
+      where quote_request_id = 'c1180008-0000-4000-8000-000000000008'),
+    (select count(*) from public.website_concept_idempotency_ledger
+      where quote_request_id = 'c1180008-0000-4000-8000-000000000008')
+  )),
+  '[0,0,0,0]'::jsonb,
+  'injected failure rolls concept, context, event, and ledger back together'
+);
+drop trigger aaa_test_fail_website_concept_start_event on public.website_concept_events;
+select lives_ok(
+  $test$select extensions.dblink_exec(
+    'concept_start_setup',
+    $cleanup$
+      set session_replication_role = replica;
+      delete from lws_internal.operator_dossier_states
+      where quote_request_id = 'c1180008-0000-4000-8000-000000000008';
+      delete from public.quote_requests
+      where id = 'c1180008-0000-4000-8000-000000000008';
+      set session_replication_role = origin;
+    $cleanup$
+  )$test$,
+  'committed rollback fixture is removed'
+);
+select is(
+  extensions.dblink_disconnect('concept_start_setup'),
+  'OK',
+  'concept concurrency setup connection closes'
+);
+
+\if :{?task4_command_only}
+select * from finish();
+rollback;
+\quit
+\endif
+
+select has_function(
+  'public', 'get_website_execution_workspace_v2', array['uuid'],
+  'Website Execution V2 read exists'
+);
+
 select is(
   pg_temp.get_website_execution_workspace_v2(
     'c1110001-0000-4000-8000-000000000001'
