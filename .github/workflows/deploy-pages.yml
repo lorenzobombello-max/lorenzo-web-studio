@@ -18,6 +18,7 @@ concurrency:
 jobs:
   continuity-predeploy:
     runs-on: ubuntu-latest
+    environment: production-continuity
 
     steps:
       - name: Checkout
@@ -26,9 +27,10 @@ jobs:
       - name: Require dossier continuity before deploy
         shell: pwsh
         env:
-          LWS_SUPABASE_ANON_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
-          LWS_OPERATOR_JWT: ${{ secrets.LWS_OPERATOR_JWT }}
-        run: ./scripts/invoke-dossier-continuity-release-gate.ps1 -Phase PreDeploy
+          LWS_RELEASE_SMOKE_EMAIL: ${{ secrets.LWS_RELEASE_SMOKE_EMAIL }}
+          LWS_RELEASE_SMOKE_PASSWORD: ${{ secrets.LWS_RELEASE_SMOKE_PASSWORD }}
+          LWS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
+        run: ./scripts/invoke-dossier-continuity-ci-gate.ps1 -Phase PreDeploy
 
       - name: Preserve predeploy dossier counts
         uses: actions/upload-artifact@v4
@@ -76,6 +78,7 @@ jobs:
   continuity-postdeploy:
     runs-on: ubuntu-latest
     needs: deploy
+    environment: production-continuity
 
     steps:
       - name: Checkout
@@ -90,9 +93,10 @@ jobs:
       - name: Require dossier continuity after deploy
         shell: pwsh
         env:
-          LWS_SUPABASE_ANON_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
-          LWS_OPERATOR_JWT: ${{ secrets.LWS_OPERATOR_JWT }}
-        run: ./scripts/invoke-dossier-continuity-release-gate.ps1 -Phase PostDeploy
+          LWS_RELEASE_SMOKE_EMAIL: ${{ secrets.LWS_RELEASE_SMOKE_EMAIL }}
+          LWS_RELEASE_SMOKE_PASSWORD: ${{ secrets.LWS_RELEASE_SMOKE_PASSWORD }}
+          LWS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
+        run: ./scripts/invoke-dossier-continuity-ci-gate.ps1 -Phase PostDeploy
 
       - name: Preserve postdeploy dossier counts
         if: always()

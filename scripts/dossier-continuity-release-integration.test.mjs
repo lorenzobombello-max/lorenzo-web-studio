@@ -14,6 +14,85 @@ import {
 
 const root = new URL("../", import.meta.url);
 const text = (path) => readFile(new URL(path, root), "utf8");
+const psQuote = (value) => `'${String(value).replaceAll("'", "''")}'`;
+
+function ciEnvironment(overrides = {}) {
+  return {
+    ...process.env,
+    LWS_RELEASE_SMOKE_EMAIL: "release-smoke@example.invalid",
+    LWS_RELEASE_SMOKE_PASSWORD: "synthetic-password-never-use",
+    LWS_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_synthetic_public_key",
+    ...overrides,
+  };
+}
+
+test("CI auth wrapper mints only a short-lived caller JWT and fails closed", async () => {
+  const wrapperPath = fileURLToPath(new URL("scripts/invoke-dossier-continuity-ci-gate.ps1", root));
+  const wrapper = await text("scripts/invoke-dossier-continuity-ci-gate.ps1");
+  assert.match(wrapper, /auth\/v1\/token\?grant_type=password/);
+  assert.match(wrapper, /\.access_token/);
+  assert.match(wrapper, /\$env:LWS_OPERATOR_JWT\s*=\s*\$accessToken/);
+  assert.match(wrapper, /invoke-dossier-continuity-release-gate\.ps1/);
+  assert.match(wrapper, /finally\s*\{/);
+  for (const name of [
+    "LWS_OPERATOR_JWT",
+    "LWS_SUPABASE_ANON_KEY",
+    "LWS_RELEASE_SMOKE_EMAIL",
+    "LWS_RELEASE_SMOKE_PASSWORD",
+  ]) assert.match(wrapper, new RegExp(`Remove-Item Env:${name}`));
+  assert.doesNotMatch(wrapper, /refresh_token/i);
+  assert.doesNotMatch(wrapper, /\$env:(?:SUPABASE_)?SERVICE[_-]?ROLE/i);
+  assert.doesNotMatch(wrapper, /Authorization[^\n]*service[_-]?role/i);
+  assert.doesNotMatch(wrapper, /Write-(?:Host|Output)[^\n]*(?:accessToken|LWS_OPERATOR_JWT)/i);
+
+  const missing = spawnSync("pwsh", ["-NoProfile", "-File", wrapperPath, "-Phase", "PreDeploy"], {
+    encoding: "utf8",
+    env: ciEnvironment({ LWS_RELEASE_SMOKE_EMAIL: "" }),
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(`${missing.stdout}\n${missing.stderr}`, /LWS_RELEASE_SMOKE_EMAIL_REQUIRED/);
+
+  const missingPassword = spawnSync("pwsh", ["-NoProfile", "-File", wrapperPath, "-Phase", "PreDeploy"], {
+    encoding: "utf8",
+    env: ciEnvironment({ LWS_RELEASE_SMOKE_PASSWORD: "" }),
+  });
+  assert.notEqual(missingPassword.status, 0);
+  assert.match(`${missingPassword.stdout}\n${missingPassword.stderr}`, /LWS_RELEASE_SMOKE_PASSWORD_REQUIRED/);
+
+  const authFailure = spawnSync("pwsh", ["-NoProfile", "-Command", [
+    "function global:Invoke-RestMethod { param($Method,$Uri,$Headers,$ContentType,$Body) throw 'synthetic rejection' }",
+    `& ${psQuote(wrapperPath)} -Phase PreDeploy`,
+  ].join("; ")], { encoding: "utf8", env: ciEnvironment() });
+  assert.notEqual(authFailure.status, 0);
+  const authFailureOutput = `${authFailure.stdout}\n${authFailure.stderr}`;
+  assert.match(authFailureOutput, /RELEASE_SMOKE_AUTH_FAILED/);
+  assert.doesNotMatch(authFailureOutput, /synthetic-password-never-use/);
+
+  const payload = Buffer.from(JSON.stringify({ exp: 4102444800 })).toString("base64url");
+  const token = `eyJhbGciOiJub25lIn0.${payload}.${"s".repeat(96)}`;
+  const directory = await mkdtemp(join(tmpdir(), "lws-ci-auth-cleanup-"));
+  try {
+    const cleanup = spawnSync("pwsh", ["-NoProfile", "-Command", [
+      "function global:Invoke-RestMethod { param($Method,$Uri,$Headers,$ContentType,$Body) [pscustomobject]@{ access_token = $env:LWS_TEST_ACCESS_TOKEN } }",
+      `try { & ${psQuote(wrapperPath)} -Phase PostDeploy -BeforeSnapshot ${psQuote(join(directory, "missing-before.json"))} } catch { }`,
+      "Write-Output ('JWT_CLEARED=' + [string]::IsNullOrEmpty($env:LWS_OPERATOR_JWT))",
+      "Write-Output ('ANON_CLEARED=' + [string]::IsNullOrEmpty($env:LWS_SUPABASE_ANON_KEY))",
+      "Write-Output ('EMAIL_CLEARED=' + [string]::IsNullOrEmpty($env:LWS_RELEASE_SMOKE_EMAIL))",
+      "Write-Output ('PASSWORD_CLEARED=' + [string]::IsNullOrEmpty($env:LWS_RELEASE_SMOKE_PASSWORD))",
+    ].join("; ")], {
+      encoding: "utf8",
+      env: ciEnvironment({ LWS_TEST_ACCESS_TOKEN: token }),
+    });
+    assert.equal(cleanup.status, 0);
+    assert.match(cleanup.stdout, /JWT_CLEARED=True/);
+    assert.match(cleanup.stdout, /ANON_CLEARED=True/);
+    assert.match(cleanup.stdout, /EMAIL_CLEARED=True/);
+    assert.match(cleanup.stdout, /PASSWORD_CLEARED=True/);
+    assert.doesNotMatch(`${cleanup.stdout}\n${cleanup.stderr}`, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("every mandatory continuity failure blocks production", () => {
   const passing = Object.fromEntries(REQUIRED_RELEASE_CHECKS.map((name) => [name, true]));
@@ -85,17 +164,23 @@ test("the release runner exits non-zero and denies approval when a phase cannot 
   }
 });
 
-test("Pages and Edge releases require the same pre and post continuity gates", async () => {
-  const [pages, edge, runner, preservation] = await Promise.all([
+test("Pages and Edge releases require the same runtime-authenticated pre and post continuity gates", async () => {
+  const [pages, edge, runner, ciRunner, preservation] = await Promise.all([
     text(".github/workflows/deploy-pages.yml"),
     text(".github/workflows/deploy-commercial-operator-command.yml"),
     text("scripts/invoke-dossier-continuity-release-gate.ps1"),
+    text("scripts/invoke-dossier-continuity-ci-gate.ps1"),
     text("scripts/test-production-release.ps1"),
   ]);
 
   for (const workflow of [pages, edge]) {
-    assert.match(workflow, /invoke-dossier-continuity-release-gate\.ps1 -Phase PreDeploy/);
-    assert.match(workflow, /invoke-dossier-continuity-release-gate\.ps1 -Phase PostDeploy/);
+    assert.match(workflow, /invoke-dossier-continuity-ci-gate\.ps1 -Phase PreDeploy/);
+    assert.match(workflow, /invoke-dossier-continuity-ci-gate\.ps1 -Phase PostDeploy/);
+    assert.match(workflow, /environment:\s*production-continuity/g);
+    assert.match(workflow, /secrets\.LWS_RELEASE_SMOKE_EMAIL/);
+    assert.match(workflow, /secrets\.LWS_RELEASE_SMOKE_PASSWORD/);
+    assert.match(workflow, /vars\.LWS_SUPABASE_PUBLISHABLE_KEY/);
+    assert.doesNotMatch(workflow, /LWS_OPERATOR_JWT/);
     assert.match(workflow, /dossier-continuity-before/);
     assert.doesNotMatch(workflow, /continue-on-error\s*:\s*true/i);
   }
@@ -107,5 +192,7 @@ test("Pages and Edge releases require the same pre and post continuity gates", a
   assert.match(runner, /dossier-continuity-regression-gate\.mjs local/);
   assert.match(runner, /dossier-continuity-regression-gate\.mjs snapshot/);
   assert.match(runner, /dossier-continuity-regression-gate\.mjs compare/);
+  assert.match(ciRunner, /invoke-dossier-continuity-release-gate\.ps1/);
+  assert.doesNotMatch(ciRunner, /refresh_token/i);
   assert.match(preservation, /invoke-dossier-continuity-release-gate\.ps1 -Phase Local/);
 });

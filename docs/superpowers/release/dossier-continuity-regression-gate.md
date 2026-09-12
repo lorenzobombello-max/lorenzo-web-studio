@@ -122,11 +122,14 @@ Beide workflows voeren exact dezelfde keten uit:
 
 De before- en after-snapshots worden één dag als workflow-artifact bewaard en bevatten alleen de vier totalen. De benodigde GitHub-configuratie is:
 
-- repository variable `LWS_SUPABASE_PUBLISHABLE_KEY`
-- repository secret `LWS_OPERATOR_JWT`, kortlevend en geldig voor een actieve owner/admin
+- protected environment `production-continuity`, gekoppeld aan beide continuityjobs
+- environment variable `LWS_SUPABASE_PUBLISHABLE_KEY`
+- environment secrets `LWS_RELEASE_SMOKE_EMAIL` en `LWS_RELEASE_SMOKE_PASSWORD` voor één dedicated actieve admin release-smoke identity
 - voor Edge daarnaast repository variable `LWS_SUPABASE_PROJECT_REF` en secret `SUPABASE_ACCESS_TOKEN`
 
-Ontbrekende of verlopen credentials, een ontbrekend artifact, een overgeslagen check, een workflow vanaf een andere branch, een RPC/CORS/detail/sentinel-fout of countdrift stopt de job met non-zero en `PRODUCTION_RELEASE_ALLOWED=NEE`. `continue-on-error`, warning-only afhandeling, een silent skip en handmatige count-override zijn niet toegestaan. Een mislukte postdeploy-gate levert geen releasegoedkeuring op; herstel gebeurt alleen met een nieuwe volledig gecontroleerde forward-only release.
+De CI-wrapper meldt deze dedicated identity bij iedere pre- en postdeployjob opnieuw aan via Supabase Auth password login. Alleen de kortlevende `access_token` wordt process-scoped als caller-JWT aan de officiële gate doorgegeven; de authresponse wordt niet geserialiseerd, een refresh-token wordt niet gebruikt en alle credentialvariabelen worden in `finally` verwijderd. De identity wordt buiten code aangemaakt, bevestigd en via haar Auth UUID als `ACTIVE admin` aan `public.commercial_operators` gekoppeld. De workflow maakt of wijzigt nooit accounts of operatorrollen.
+
+Ontbrekende credentials, een mislukte login, een ongeldige of bijna verlopen access-token, een ontbrekend artifact, een overgeslagen check, een workflow vanaf een andere branch, een RPC/CORS/detail/sentinel-fout of countdrift stopt de job met non-zero en `PRODUCTION_RELEASE_ALLOWED=NEE`. `continue-on-error`, warning-only afhandeling, een silent skip en handmatige count-override zijn niet toegestaan. Een mislukte postdeploy-gate levert geen releasegoedkeuring op; herstel gebeurt alleen met een nieuwe volledig gecontroleerde forward-only release.
 
 ## Verplichte beslissing
 
