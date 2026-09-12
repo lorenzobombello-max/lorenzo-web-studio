@@ -353,18 +353,20 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const dossierCacheIdentity = "20260905-dossiers-purge-aal2-r1";
-  const dossierCssCacheIdentity = "20260903-dossiers-seen-state-r1";
-  const profileCacheIdentity = "20260905-profile-welcome-r2";
-  const profileCssCacheIdentity = "20260905-profile-welcome-r3";
-  const runtimeCacheIdentity = "20260905-profile-welcome-r2";
-  assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${runtimeCacheIdentity}`));
-  assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${profileCacheIdentity}&patch=${runtimeCacheIdentity}`));
+  const dossierCacheIdentity = "20260905-dossiers-purge-aal2-r1&vat-readiness=20260911-vat-readiness-v1";
+  const windowGuardCacheIdentity = "20260905-dossiers-purge-aal2-r1&calendar-selection=20260905-r5";
+  const windowRegistryCacheIdentity = "20260905-dossiers-purge-aal2-r1&calendar=20260905-calendar-selection-r5";
+  const dossierCssCacheIdentity = "20260903-dossiers-seen-state-r1&calendar-selection=20260905-r5";
+  const dashboardGuardCacheIdentity = "20260906-stale-claim-r1&calendar-selection=20260905-r5&vat-readiness=20260911-vat-readiness-v1";
+  const dashboardModuleCacheIdentity = "20260905-profile-welcome-r2&patch=20260905-profile-welcome-r2&calendar=20260905-calendar-selection-r5&vat-readiness=20260911-vat-readiness-v1";
+  const dashboardCssCacheIdentity = "20260905-profile-welcome-r3&pulse=20260905-r1&dossier-zones=20260905-r1&calendar-selection=20260905-r5&vat-readiness=20260911-vat-readiness-v1";
+  assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${dashboardGuardCacheIdentity}`));
+  assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${dashboardModuleCacheIdentity}`));
   assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
-  assert.ok(childHtml.includes(`operator-window-guard.mjs?v=${dossierCacheIdentity}`));
-  assert.ok(windowGuard.includes(`operator-module-registry.mjs?v=${dossierCacheIdentity}`));
+  assert.ok(childHtml.includes(`operator-window-guard.mjs?v=${windowGuardCacheIdentity}`));
+  assert.ok(windowGuard.includes(`operator-module-registry.mjs?v=${windowRegistryCacheIdentity}`));
   assert.ok(registry.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
-  assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${profileCssCacheIdentity}`));
+  assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${dashboardCssCacheIdentity}`));
   assert.ok(childHtml.includes(`operator-dashboard.css?v=${dossierCssCacheIdentity}`));
   const source = await read("assets/js/operator-dossiers.mjs");
   assert.match(source, /data-dossiers-status-overview|dossiers-status-overview/);
@@ -376,7 +378,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(source, /select\[name="zone"\]'\)\.value = state\.query\.zone;\s*renderStatusOverview\(workspace, state\);\s*refreshList\(\);/);
   assert.match(source, /async function selectDossier\(summary, \{ markSeen = false \} = \{\}\)/);
   assert.match(source, /renderPendingDetail\(workspace, summary, substance, state\.copySource\);\s*if \(markSeen\) void markSelectedDossierSeen/);
-  assert.match(source, /renderDetail\(workspace, detail, summary, substance\);\s*if \(markSeen\) void markSelectedDossierSeen/);
+  assert.match(source, /renderDetail\(workspace, detail, summary, substance\);[\s\S]*if \(markSeen\) void markSelectedDossierSeen/);
   assert.match(source, /target\.dataset\.dossiersSelect[^\n]+selectDossier\([^\n]+\{ markSeen: true \}\)/);
   assert.equal(source.match(/\{ markSeen: true \}/g)?.length, 1);
   assert.match(source, /NIEUW \/ NIET GEZIEN/);
@@ -515,7 +517,7 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
     read("operator/dashboard/index.html"),
   ]);
   assert.match(source, />Actief<\/button><button[^>]+>Gearchiveerd<\/button>/);
-  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r3&pulse=20260905-r1&dossier-zones=20260905-r1/);
+  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r3&pulse=20260905-r1&dossier-zones=20260905-r1&calendar-selection=20260905-r5&vat-readiness=20260911-vat-readiness-v1/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\][^{]*\{[^}]*animation:dossiers-zone-heartbeat 4\.8s ease-in-out infinite/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
   for (const accent of ["#c79828", "var(--turquoise)", "var(--green)", "var(--red)"]) {
@@ -597,4 +599,192 @@ test("Dossiers uses the shared quiet refresh lifecycle and preserves dirty assig
   assert.match(source, /assignmentForm\.querySelector\('textarea\[name="reason"\]'\)\.value\.trim\(\)/);
   assert.match(source, /if \(!append && !background\)/);
   assert.match(source, /autoRefresh\.dispose\(\)/);
+});
+
+test("active Dossiers workspace owns the Website pricing decision flow", async () => {
+  const [source, css] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("assets/css/operator-dashboard.css"),
+  ]);
+  for (const action of [
+    "get_website_quotation_pricing_state",
+    "authorize_website_quotation_pricing_decision",
+    "update_quote_request_billing_context",
+    "upsert_quotation_business_draft",
+  ]) assert.match(source, new RegExp(`"${action}"`));
+  assert.match(source, /data-dossiers-website-pricing/);
+  assert.match(source, /data-dossiers-website-quotation-form/);
+  assert.match(source, /data-dossiers-website-billing-form/);
+  assert.match(source, /Facturatiegegevens aanvullen/);
+  assert.match(source, /await options\.requireAal2\(\);\s*await authority\.gateway\(request\)/);
+  assert.match(css, /\.website-pricing-form\[hidden\] \{ display:none; \}/);
+});
+
+test("Website billing context correction request exposes only permitted fields", async () => {
+  const { websiteBillingContextCorrectionRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const pricing = {
+    quote_request_id: "8b130000-0000-4000-8000-000000000001",
+    intake_id: "8b140000-0000-4000-8000-000000000001",
+    quotation_draft_available: false,
+    billing_context_complete: false,
+  };
+  const request = websiteBillingContextCorrectionRequest(pricing, {
+    billingAddress: "",
+    billingPostalCode: "",
+    billingCity: "",
+    billingCountry: "be",
+    billingEmail: "",
+  }, "8b150000-0000-4000-8000-000000000001");
+  assert.deepEqual(request.billing_context, {
+    billing_address: null,
+    billing_postal_code: null,
+    billing_city: null,
+    billing_country: "BE",
+    billing_email: null,
+  });
+  assert.equal("enterprise_number" in request.billing_context, false);
+  assert.equal("vat_number" in request.billing_context, false);
+  assert.throws(
+    () => websiteBillingContextCorrectionRequest(pricing, { billingCountry: "BEL" }, "8b150000-0000-4000-8000-000000000001"),
+    /INVALID_WEBSITE_BILLING_CONTEXT/,
+  );
+});
+
+test("Website pricing remains snapshot-bound and owner-only", async () => {
+  const {
+    websiteQuotationPricingDecisionRequest,
+    websiteQuotationPricingPresentation,
+    websiteQuotationPricingStateRequest,
+  } = await import("../assets/js/operator-dossiers.mjs");
+  const detail = {
+    request_kind: "website",
+    quote_request_id: "7d120000-0000-4000-8000-000000000001",
+    intake_lifecycle: { intake_id: "7d130000-0000-4000-8000-000000000001" },
+    quotation: null,
+    acceptance: null,
+  };
+  const pricing = {
+    quote_request_id: detail.quote_request_id,
+    intake_id: detail.intake_lifecycle.intake_id,
+    pricing_snapshot_id: "7d140000-0000-4000-8000-000000000001",
+    pricing_snapshot_sha256: "a".repeat(64),
+    currency: "EUR",
+    known_minimum_minor: 350000,
+    contains_from_pricing: true,
+    decision_required: true,
+    can_decide: false,
+    resolved: false,
+    quotation_draft_available: false,
+    billing_context_complete: false,
+    billing_context: {},
+  };
+  assert.equal(websiteQuotationPricingPresentation(detail, pricing, { role: "owner", status: "ACTIVE" }).showForm, true);
+  assert.equal(websiteQuotationPricingPresentation(detail, pricing, { role: "admin", status: "ACTIVE" }).showForm, false);
+  assert.deepEqual(websiteQuotationPricingStateRequest(detail), {
+    action: "get_website_quotation_pricing_state",
+    quote_request_id: detail.quote_request_id,
+    intake_id: detail.intake_lifecycle.intake_id,
+  });
+  assert.throws(
+    () => websiteQuotationPricingDecisionRequest(pricing, "3499,99", "Onder minimum", "7d150000-0000-4000-8000-000000000001"),
+    /WEBSITE_PRICING_AMOUNT_BELOW_MINIMUM/,
+  );
+  assert.equal(
+    websiteQuotationPricingDecisionRequest(pricing, "4000,50", "Akkoord", "7d150000-0000-4000-8000-000000000001")
+      .expected_pricing_snapshot_sha256,
+    pricing.pricing_snapshot_sha256,
+  );
+});
+
+test("resolved Website pricing uses the official quotation draft gateway", async () => {
+  const { websiteQuotationBusinessDraftRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const pricing = {
+    intake_id: "7d130000-0000-4000-8000-000000000001",
+    known_minimum_minor: 350000,
+    resolved: true,
+    quotation_draft_available: false,
+    decision: {
+      decision_id: "7d150000-0000-4000-8000-000000000001",
+      resolved_rule_id: "professional_v2_floor",
+      currency: "EUR",
+      owner_final_amount_minor: 400000,
+    },
+  };
+  const request = websiteQuotationBusinessDraftRequest(pricing, {
+    descriptionContext: "Professional website volgens de ingediende intake.",
+    projectTitle: "Website Synthetic 6",
+    scopeSummary: "Professionele website met home- en contactpagina.",
+    requestedLanguages: ["nl"],
+    includedPageCount: 2,
+    features: ["contact_form"],
+    exclusions: [],
+    assumptions: [],
+    validityDays: null,
+  }, "7d160000-0000-4000-8000-000000000001");
+  assert.equal(request.action, "upsert_quotation_business_draft");
+  assert.equal(request.expected_revision, 0);
+  assert.deepEqual(request.input.payment_schedule.milestones.map((item)=>item.percentage), [40, 40, 20]);
+  assert.equal("terms_authority_id" in request.input, false);
+  assert.equal("vat_decision_authority_id" in request.input, false);
+});
+
+test("Dossier quotation gate requires server VAT READY", async () => {
+  const { websiteQuotationCanCompose, websiteQuotationVatReadinessRequest } = await import("../assets/js/operator-dossiers.mjs");
+  const detail = {
+    request_kind: "website",
+    quote_request_id: "7d120000-0000-4000-8000-000000000001",
+    intake_lifecycle: { intake_id: "7d130000-0000-4000-8000-000000000001" },
+    quotation: null,
+    acceptance: null,
+  };
+  assert.deepEqual(websiteQuotationVatReadinessRequest(detail), {
+    action: "evaluate_quotation_vat_readiness",
+    quote_request_id: detail.quote_request_id,
+  });
+  const readiness = {
+    quote_request_id: detail.quote_request_id,
+    intake_id: detail.intake_lifecycle.intake_id,
+    vat_readiness: "READY",
+    classification_status: "READY",
+    turnover_status: "READY",
+    blocking_reason: "VAT_EVIDENCE_READY",
+    policy_version: "classification-v1",
+    context_sha256: "a".repeat(64),
+    resolved_at: "2026-09-11T12:00:00.000Z",
+    can_request_review: false,
+    can_request_turnover_refresh: false,
+  };
+  assert.equal(websiteQuotationCanCompose({ canComposeQuotation: true }, readiness), true);
+  assert.equal(websiteQuotationCanCompose({ canComposeQuotation: true }, {
+    ...readiness,
+    vat_readiness: "REVIEW_REQUIRED",
+    classification_status: "REVIEW_REQUIRED",
+    blocking_reason: "VAT_CLASSIFICATION_REVIEW_REQUIRED",
+    resolved_at: null,
+    can_request_review: true,
+  }), false);
+});
+
+test("Dossiers wires VAT remediation and cache versions without a dashboard duplicate", async () => {
+  const [source, html, guard, dashboard, registry, distScript] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("operator/dashboard/index.html"),
+    read("assets/js/operator-dashboard-guard.mjs"),
+    read("assets/js/operator-dashboard.js"),
+    read("assets/js/operator-module-registry.mjs"),
+    read("scripts/prepare-pages-dist.ps1"),
+  ]);
+  assert.match(source, /operator-vat-readiness\.mjs\?v=20260911-vat-readiness-v1/);
+  assert.match(source, /data-dossiers-vat-readiness/);
+  assert.match(source, /buildVatReadinessAction\(\s*"request_quotation_vat_review"/);
+  assert.match(source, /buildVatReadinessAction\(\s*"request_vat_turnover_refresh"/);
+  assert.match(source, /async function executeVatRemediation[\s\S]*await options\.requireAal2\(\)[\s\S]*await authority\.gateway\(request\)[\s\S]*await refreshWebsiteQuotationAuthorities/);
+  assert.doesNotMatch(source, /approve_quotation_vat_review|governed_turnover_minor\s*:|classification_code\s*:/);
+  assert.match(html, /operator-dashboard\.css\?v=20260905-profile-welcome-r3&pulse=20260905-r1&dossier-zones=20260905-r1&calendar-selection=20260905-r5&vat-readiness=20260911-vat-readiness-v1/);
+  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260906-stale-claim-r1&calendar-selection=20260905-r5&vat-readiness=20260911-vat-readiness-v1/);
+  assert.match(guard, /operator-dashboard\.js\?v=20260905-profile-welcome-r2&patch=20260905-profile-welcome-r2&calendar=20260905-calendar-selection-r5&vat-readiness=20260911-vat-readiness-v1/);
+  assert.match(dashboard, /operator-dossiers\.mjs\?v=20260905-dossiers-purge-aal2-r1&vat-readiness=20260911-vat-readiness-v1/);
+  assert.match(registry, /operator-dossiers\.mjs\?v=20260905-dossiers-purge-aal2-r1&vat-readiness=20260911-vat-readiness-v1/);
+  assert.doesNotMatch(dashboard, /authorize_website_quotation_pricing_decision|websiteQuotationPricingPresentation/);
+  assert.match(distScript, /"assets\/js\/operator-vat-readiness\.mjs"/);
 });

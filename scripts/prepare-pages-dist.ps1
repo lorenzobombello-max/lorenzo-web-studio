@@ -116,6 +116,7 @@ $requiredFiles = @(
   "assets/js/operator-messages.mjs",
   "assets/js/operator-module-registry.mjs",
   "assets/js/operator-profile.mjs",
+  "assets/js/operator-vat-readiness.mjs",
   "assets/js/operator-recruitment.mjs",
   "assets/js/operator-recruitment-applications.mjs",
   "assets/js/operator-recruitment-tests.mjs",

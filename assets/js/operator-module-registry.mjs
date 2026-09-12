@@ -112,8 +112,35 @@ const descriptors = [
 export const OPERATOR_MODULE_DESCRIPTORS = Object.freeze(descriptors.map((descriptor)=>Object.freeze(descriptor)));
 const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descriptor.moduleKey, descriptor]));
 const standaloneInitializers = new Map([
-  ["dossiers", async ({ root, client, identity, onAuthorizationFailure, requireAal2 })=>{
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260905-dossiers-purge-aal2-r1");
+  ["dossiers", async ({ root, client, identity, onInvalidate, onAuthorizationFailure, requireAal2, requestOpen, slotKey })=>{
+    if (String(slotKey || "").startsWith("req-")) {
+      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20260910-requirements-sync-v1");
+      return initializeOperatorProjectRequirements(root, client, identity, {
+        slotKey,
+        onInvalidate,
+        onAuthorizationFailure,
+        requestOpen,
+      });
+    }
+    if (String(slotKey || "").startsWith("website-")) {
+      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260910-requirements-sync-v1");
+      return initializeOperatorWebsiteExecution(root, client, identity, {
+        slotKey,
+        onInvalidate,
+        onAuthorizationFailure,
+        requestOpen,
+      });
+    }
+    if (String(slotKey || "").startsWith("project-")) {
+      const { initializeOperatorProjectWorkspace } = await import("./operator-project-workspace-child.mjs?v=20260910-requirements-sync-v1");
+      return initializeOperatorProjectWorkspace(root, client, identity, {
+        slotKey,
+        onInvalidate,
+        onAuthorizationFailure,
+        requestOpen,
+      });
+    }
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260905-dossiers-purge-aal2-r1&vat-readiness=20260911-vat-readiness-v1");
     const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure, requireAal2 });
     return {
       dispose: ()=>controller.dispose(),

@@ -1,6 +1,12 @@
 import { buildSdfQualificationPresentation } from "./sdf-qualification-review.mjs";
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
 import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
+import {
+  buildVatReadinessAction,
+  canComposeQuotationFromVatReadiness,
+  normalizeVatReadiness,
+  renderVatReadinessPanel,
+} from "./operator-vat-readiness.mjs?v=20260911-vat-readiness-v1";
 
 const DOSSIER_ROLES = new Set(["owner", "admin", "operations_manager", "operator", "reviewer", "read_only"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -14,6 +20,8 @@ const AUTHORIZATION_FAILURES = new Set([
 ]);
 const DOSSIER_GATEWAY_ACTIONS = new Set([
   "list_applications_v2", "list_pending_intakes", "count_pending_intakes", "get_application_facets_v2", "get_application_detail", "get_dossier_substance", "mark_dossier_seen",
+  "get_website_quotation_pricing_state", "authorize_website_quotation_pricing_decision", "update_quote_request_billing_context",
+  "evaluate_quotation_vat_readiness", "request_quotation_vat_review", "request_vat_turnover_refresh", "upsert_quotation_business_draft",
   "get_project_dossier", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
@@ -38,6 +46,170 @@ export function formatOperatorDate(value) {
     hour: "2-digit", minute: "2-digit", hour12: false,
     timeZone: "Europe/Brussels",
   }).format(date).replace(",", " –");
+}
+
+function formatWebsiteMoney(value) {
+  return Number.isSafeInteger(value)
+    ? new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" }).format(value / 100)
+    : "-";
+}
+
+export function websiteQuotationPricingPresentation(detail, pricing, identity) {
+  if (detail?.request_kind !== "website" || detail?.quotation?.issuance_status || detail?.acceptance || !pricing
+    || pricing.quote_request_id !== detail.quote_request_id || !UUID.test(String(pricing.intake_id || ""))
+    || !UUID.test(String(pricing.pricing_snapshot_id || "")) || !/^[0-9a-f]{64}$/.test(String(pricing.pricing_snapshot_sha256 || ""))
+    || pricing.currency !== "EUR" || !Number.isSafeInteger(pricing.known_minimum_minor)
+    || typeof pricing.contains_from_pricing !== "boolean" || typeof pricing.decision_required !== "boolean"
+    || typeof pricing.can_decide !== "boolean" || typeof pricing.resolved !== "boolean"
+    || typeof pricing.quotation_draft_available !== "boolean" || typeof pricing.billing_context_complete !== "boolean"
+    || !pricing.billing_context || typeof pricing.billing_context !== "object" || !pricing.contains_from_pricing) return null;
+  if (pricing.resolved) {
+    const decision = pricing.decision;
+    if (!decision || !UUID.test(String(decision.decision_id || "")) || decision.currency !== "EUR"
+      || !Number.isSafeInteger(decision.owner_final_amount_minor)
+      || decision.owner_final_amount_minor < pricing.known_minimum_minor || !decision.decided_at) return null;
+    return {
+      minimum: formatWebsiteMoney(pricing.known_minimum_minor),
+      finalAmount: formatWebsiteMoney(decision.owner_final_amount_minor),
+      decidedAt: formatOperatorDate(decision.decided_at),
+      showForm: false,
+      showBillingForm: !pricing.billing_context_complete && !pricing.quotation_draft_available
+        && identity?.role === "owner" && identity?.status === "ACTIVE",
+      canComposeQuotation: pricing.billing_context_complete && !pricing.quotation_draft_available,
+    };
+  }
+  return {
+    minimum: formatWebsiteMoney(pricing.known_minimum_minor),
+    finalAmount: null,
+    decidedAt: null,
+    showForm: Boolean(pricing.decision_required && identity?.role === "owner" && identity?.status === "ACTIVE"),
+    showBillingForm: false,
+    canComposeQuotation: false,
+  };
+}
+
+function websitePriceMinor(value) {
+  const normalized = String(value || "").trim().replace(",", ".");
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const [euros, cents = ""] = normalized.split(".");
+  const minor = Number(euros) * 100 + Number(cents.padEnd(2, "0"));
+  return Number.isSafeInteger(minor) ? minor : null;
+}
+
+export function websiteQuotationPricingDecisionRequest(pricing, amount, reason, idempotencyKey) {
+  const amountMinor = websitePriceMinor(amount);
+  if (!pricing || !UUID.test(String(pricing.quote_request_id || "")) || !UUID.test(String(pricing.intake_id || ""))
+    || !UUID.test(String(pricing.pricing_snapshot_id || "")) || !/^[0-9a-f]{64}$/.test(String(pricing.pricing_snapshot_sha256 || ""))
+    || pricing.currency !== "EUR" || !Number.isSafeInteger(pricing.known_minimum_minor) || amountMinor === null
+    || !UUID.test(String(idempotencyKey || ""))) throw new Error("INVALID_WEBSITE_PRICING_DECISION");
+  if (amountMinor < pricing.known_minimum_minor) throw new Error("WEBSITE_PRICING_AMOUNT_BELOW_MINIMUM");
+  const decisionReason = String(reason || "").trim();
+  if (decisionReason.length > 1000) throw new Error("INVALID_WEBSITE_PRICING_DECISION");
+  return {
+    action: "authorize_website_quotation_pricing_decision",
+    quote_request_id: pricing.quote_request_id,
+    intake_id: pricing.intake_id,
+    expected_pricing_snapshot_id: pricing.pricing_snapshot_id,
+    expected_pricing_snapshot_sha256: pricing.pricing_snapshot_sha256,
+    currency: "EUR",
+    owner_final_amount_minor: amountMinor,
+    decision_reason: decisionReason || null,
+    idempotency_key: idempotencyKey,
+  };
+}
+
+export function websiteBillingContextCorrectionRequest(pricing, values, idempotencyKey) {
+  const nullable = (value)=>String(value ?? "").trim() || null;
+  const billingCountry = String(values?.billingCountry || "").trim().toUpperCase();
+  const billingAddress = nullable(values?.billingAddress);
+  const billingPostalCode = nullable(values?.billingPostalCode);
+  const billingCity = nullable(values?.billingCity);
+  const billingEmail = nullable(values?.billingEmail)?.toLowerCase() || null;
+  if (!pricing || !UUID.test(String(pricing.quote_request_id || "")) || !UUID.test(String(pricing.intake_id || ""))
+    || pricing.quotation_draft_available !== false || pricing.billing_context_complete !== false
+    || !UUID.test(String(idempotencyKey || "")) || !/^[A-Z]{2}$/.test(billingCountry)
+    || (billingAddress && (billingAddress.length < 2 || billingAddress.length > 200))
+    || (billingPostalCode && (billingPostalCode.length < 2 || billingPostalCode.length > 20))
+    || (billingCity && (billingCity.length < 2 || billingCity.length > 120))
+    || (billingEmail && (billingEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail)))) {
+    throw new Error("INVALID_WEBSITE_BILLING_CONTEXT");
+  }
+  return {
+    action: "update_quote_request_billing_context",
+    quote_request_id: pricing.quote_request_id,
+    intake_id: pricing.intake_id,
+    billing_context: {
+      billing_address: billingAddress,
+      billing_postal_code: billingPostalCode,
+      billing_city: billingCity,
+      billing_country: billingCountry,
+      billing_email: billingEmail,
+    },
+    idempotency_key: idempotencyKey,
+  };
+}
+
+export function websiteQuotationBusinessDraftRequest(pricing, values, idempotencyKey) {
+  const decision = pricing?.decision;
+  const descriptionContext = String(values?.descriptionContext || "").trim();
+  const projectTitle = String(values?.projectTitle || "").trim();
+  const scopeSummary = String(values?.scopeSummary || "").trim();
+  const requestedLanguages = values?.requestedLanguages;
+  const includedPageCount = values?.includedPageCount;
+  const features = values?.features;
+  const exclusions = values?.exclusions;
+  const assumptions = values?.assumptions;
+  const validityDays = values?.validityDays ?? null;
+  if (!pricing?.resolved || pricing.quotation_draft_available !== false || !UUID.test(String(pricing.intake_id || ""))
+    || !UUID.test(String(decision?.decision_id || "")) || typeof decision?.resolved_rule_id !== "string"
+    || !decision.resolved_rule_id.trim() || decision.currency !== "EUR" || !Number.isSafeInteger(decision.owner_final_amount_minor)
+    || decision.owner_final_amount_minor < pricing.known_minimum_minor || !UUID.test(String(idempotencyKey || ""))
+    || !descriptionContext || descriptionContext.length > 2000 || !projectTitle || !scopeSummary
+    || !Array.isArray(requestedLanguages) || requestedLanguages.length < 1 || requestedLanguages.some((value)=>!String(value).trim())
+    || !Number.isSafeInteger(includedPageCount) || includedPageCount < 0 || !Array.isArray(features)
+    || !Array.isArray(exclusions) || !Array.isArray(assumptions)
+    || (validityDays !== null && (!Number.isSafeInteger(validityDays) || validityDays < 1 || validityDays > 365))) {
+    throw new Error("INVALID_WEBSITE_QUOTATION_DRAFT");
+  }
+  return {
+    action: "upsert_quotation_business_draft",
+    intake_id: pricing.intake_id,
+    expected_revision: 0,
+    idempotency_key: idempotencyKey,
+    input: {
+      commercial_lines: [{ rule_id: decision.resolved_rule_id, quantity: 1, description_context: descriptionContext }],
+      discount: { discount_type: null, discount_value_minor: 0, discount_reason: null },
+      scope: {
+        project_title: projectTitle, project_type: "website", scope_summary: scopeSummary,
+        requested_languages: requestedLanguages.map((value)=>String(value).trim()), included_page_count: includedPageCount,
+        features, copywriting: null, seo: null, hosting: null, maintenance: null, exclusions, assumptions, indicative_timing: null,
+      },
+      payment_schedule: { milestones: [
+        { sequence: 1, label: "Opdrachtbevestiging", percentage: 40, amount_minor: null, trigger: "accepted", due_terms_days: 30, recurring_cycle: null },
+        { sequence: 2, label: "Functionele oplevering", percentage: 40, amount_minor: null, trigger: "functional_delivery", due_terms_days: 30, recurring_cycle: null },
+        { sequence: 3, label: "Definitieve oplevering", percentage: 20, amount_minor: null, trigger: "final_delivery", due_terms_days: 30, recurring_cycle: null },
+      ] },
+      validity_days: validityDays,
+    },
+  };
+}
+
+export function websiteQuotationPricingStateRequest(detail) {
+  const quoteRequestId = String(detail?.quote_request_id || "");
+  const intakeId = String(detail?.intake_lifecycle?.intake_id || "");
+  if (detail?.request_kind !== "website" || detail?.acceptance || detail?.quotation?.issuance_status
+    || !UUID.test(quoteRequestId) || !UUID.test(intakeId)) return null;
+  return { action: "get_website_quotation_pricing_state", quote_request_id: quoteRequestId, intake_id: intakeId };
+}
+
+export function websiteQuotationVatReadinessRequest(detail) {
+  const quoteRequestId = String(detail?.quote_request_id || "");
+  if (detail?.request_kind !== "website" || detail?.acceptance || detail?.quotation?.issuance_status || !UUID.test(quoteRequestId)) return null;
+  return buildVatReadinessAction("evaluate_quotation_vat_readiness", { quote_request_id: quoteRequestId });
+}
+
+export function websiteQuotationCanCompose(pricingPresentation, vatReadiness) {
+  return Boolean(pricingPresentation?.canComposeQuotation && vatReadiness && canComposeQuotationFromVatReadiness(vatReadiness));
 }
 
 function errorCode(error, fallback = "OPERATOR_REQUEST_FAILED") {
@@ -473,6 +645,14 @@ function dossierWorkspaceMarkup() {
         <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow">Dossierreferentie <strong data-dossiers-field="reference"></strong></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
         <section class="panel dossiers-customer" data-dossiers-customer hidden><div class="panel__heading"><div><p class="eyebrow">Relatie</p><h2>Klant</h2></div></div><dl class="application-detail"><div><dt>Naam</dt><dd data-dossiers-field="customer_name"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div></dl></section>
         <section class="panel dossiers-intake" data-dossiers-intake hidden><div class="panel__heading"><div><p class="eyebrow">Klantinput</p><h2>Intake</h2></div><span class="badge" data-dossiers-intake-status></span></div><dl class="application-detail dossiers-intake-meta"><div><dt>Uitnodiging</dt><dd data-dossiers-field="invited_at"></dd></div><div><dt>Gestart</dt><dd data-dossiers-field="started_at"></dd></div><div><dt>Ingediend</dt><dd data-dossiers-field="submitted_at"></dd></div></dl><div class="dossiers-substance-sections" data-dossiers-intake-sections></div></section>
+        <section class="panel website-pricing-decision" data-dossiers-website-pricing hidden>
+          <div class="panel__heading"><div><p class="eyebrow">Pricing</p><h2>Definitieve offerteprijs</h2></div></div>
+          <dl class="application-detail"><div><dt>Minimumprijs</dt><dd data-dossiers-website-pricing-minimum></dd></div><div><dt>Definitief bedrag</dt><dd data-dossiers-website-pricing-final></dd></div><div><dt>Beslist op</dt><dd data-dossiers-website-pricing-decided-at></dd></div></dl>
+          <form class="website-pricing-form" data-dossiers-website-pricing-form hidden><label>Definitieve offerteprijs<input name="amount" type="text" inputmode="decimal" autocomplete="off" required></label><label>Notitie (optioneel)<textarea name="reason" rows="2" maxlength="1000" autocomplete="off"></textarea></label><button type="submit" class="primary-action primary-action--compact">Prijs bepalen</button></form>
+          <div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-website-pricing-compose hidden>Offerte opmaken</button></div>
+          <form class="website-pricing-form" data-dossiers-website-quotation-form hidden><label>Projecttitel<input name="project_title" type="text" maxlength="200" autocomplete="off" required></label><label>Offertelijn<textarea name="description_context" rows="2" maxlength="2000" required></textarea></label><label>Scope<textarea name="scope_summary" rows="3" maxlength="4000" required></textarea></label><label>Talen (komma gescheiden)<input name="requested_languages" type="text" value="nl" maxlength="200" required></label><label>Aantal pagina's<input name="included_page_count" type="number" min="0" step="1" required></label><label>Functionaliteiten (komma gescheiden)<input name="features" type="text" maxlength="1000"></label><label>Uitsluitingen (één per regel)<textarea name="exclusions" rows="2" maxlength="2000"></textarea></label><label>Aannames (één per regel)<textarea name="assumptions" rows="2" maxlength="2000"></textarea></label><label>Geldigheid in dagen (optioneel)<input name="validity_days" type="number" min="1" max="365" step="1"></label><p>Korting: geen. Betalingsschema: 40% bij aanvaarding, 40% bij functionele oplevering en 20% bij definitieve oplevering.</p><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-website-quotation-cancel>Annuleren</button><button type="submit" class="primary-action primary-action--compact">Offerteconcept opslaan</button></div></form>
+          <p class="action-message action-message--dark" data-dossiers-website-pricing-message role="status" aria-live="polite"></p>
+        </section>
         <section class="panel dossiers-document-overview" data-dossiers-document-overview hidden><div class="panel__heading"><div><p class="eyebrow">Gekoppeld aan aanvraag</p><h2>Documenten</h2></div></div><dl class="application-detail"><div><dt>Klantverzoeken</dt><dd data-dossiers-field="customer_request_count"></dd></div><div><dt>Ontvangen documenten</dt><dd data-dossiers-field="uploaded_document_count"></dd></div></dl></section>
         <section class="panel dossiers-copy-actions" data-dossiers-copy-actions hidden><div class="panel__heading"><div><p class="eyebrow">Dossierdocument</p><h2>Dossierkopie</h2></div></div><div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-copy="view">Preview</button><button type="button" class="secondary-action" data-dossiers-copy="download">Download PDF</button><button type="button" class="secondary-action" data-dossiers-copy="print">Afdrukken</button></div></section>
         <section class="panel dossiers-actions" data-dossiers-lifecycle-panel hidden><div class="panel__heading"><div><p class="eyebrow">Dossierbeheer</p><h2>Dossieracties</h2></div><span class="badge" data-dossiers-lifecycle-state></span></div><div class="dossiers-actions__group"><h3>Acties</h3><div class="lifecycle-actions"><button type="button" class="secondary-action" data-dossiers-lifecycle="archive_dossier">Archiveren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="reactivate_dossier">Terug activeren</button><button type="button" class="secondary-action" data-dossiers-lifecycle="restore_dossier">Herstellen uit prullenbak</button></div></div><div class="dossiers-actions__group dossiers-actions__group--danger"><h3>Verwijderen</h3><div class="lifecycle-actions"><button type="button" class="danger-action" data-dossiers-lifecycle="trash_dossier">Naar prullenbak</button><button type="button" class="danger-action" data-dossiers-purge hidden>Definitief verwijderen</button></div><p class="action-message" data-dossiers-purge-message></p></div></section>
@@ -482,6 +662,7 @@ function dossierWorkspaceMarkup() {
         <section class="panel" data-dossiers-requests hidden><div class="panel__heading"><div><p class="eyebrow">Klantverzoeken</p><h2>Requests</h2></div></div><ul class="customer-request-list" data-dossiers-request-list></ul><p class="empty-state" data-dossiers-request-empty></p><article data-dossiers-request-detail hidden><hr /><p class="eyebrow" data-dossiers-request-reference></p><h3 data-dossiers-request-title></h3><p data-dossiers-request-description></p><dl class="application-detail"><div><dt>Status</dt><dd data-dossiers-request-status></dd></div><div><dt>Prioriteit</dt><dd data-dossiers-request-priority></dd></div></dl><div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-request-transition hidden></button><button type="button" class="secondary-action" data-dossiers-upload-create>Uploadlink maken</button><button type="button" class="secondary-action" data-dossiers-upload-copy hidden>Uploadlink kopiëren</button><button type="button" class="danger-action" data-dossiers-upload-revoke hidden>Uploadlink intrekken</button></div><input type="url" readonly data-dossiers-upload-url hidden aria-label="Veilige uploadlink" /><p class="action-message" data-dossiers-request-message></p></article></section>
       </aside></div>
     <dialog class="operator-modal--reading dossier-preview-dialog" data-dossiers-copy-dialog aria-labelledby="dossiersCopyTitle"><div class="dossier-preview-dialog__shell"><header class="dossier-preview-dialog__header"><div><p class="eyebrow">Documentpreview</p><h2 id="dossiersCopyTitle">Historische dossierkopie</h2><p class="empty-state" data-dossiers-copy-reference></p></div><div class="dossier-preview-dialog__actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-copy="download">Download PDF</button><button type="button" class="secondary-action" data-dossiers-copy="print">Afdrukken</button><button type="button" class="secondary-action" data-dossiers-copy-close>Sluiten</button></div></header><div class="dossier-preview-dialog__body"><div class="application-dossier-copy" data-dossiers-copy-content></div></div></div></dialog>
+    <dialog class="operator-modal--compact" data-dossiers-website-pricing-dialog aria-labelledby="dossiersWebsitePricingTitle"><div class="confirmation"><p class="eyebrow eyebrow--red">Expliciete bevestiging vereist</p><h2 id="dossiersWebsitePricingTitle">Definitieve prijs vastleggen</h2><p>Minimumprijs: <strong data-dossiers-website-pricing-confirm-minimum></strong><br>Gekozen eindbedrag: <strong data-dossiers-website-pricing-confirm-amount></strong></p><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-website-pricing-cancel>Annuleren</button><button type="button" class="danger-action" data-dossiers-website-pricing-confirm>Prijs definitief vastleggen</button></div></div></dialog>
     <dialog class="operator-modal--action-confirm dossiers-command-dialog" data-dossiers-command-dialog aria-modal="true" aria-labelledby="dossiersCommandTitle" aria-describedby="dossiersCommandDescription"><form class="confirmation" data-dossiers-command-form><p class="eyebrow" data-dossiers-command-eyebrow>Bevestiging vereist</p><h2 id="dossiersCommandTitle" data-dossiers-command-title>Dossieractie</h2><p id="dossiersCommandDescription" data-dossiers-command-message></p><label class="confirmation__field" for="dossiersCommandReason"><span>Reden</span><textarea id="dossiersCommandReason" name="reason" rows="4" minlength="1" maxlength="500" required></textarea></label><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-command-cancel>Annuleren</button><button type="submit" class="danger-action" data-dossiers-command-confirm>Bevestigen</button></div></form></dialog>`;
 }
 
@@ -497,10 +678,42 @@ function resetDossierCopyPreview(workspace) {
   workspace.querySelector("[data-dossiers-copy-content]").replaceChildren();
 }
 
+function renderWebsiteQuotationPricing(workspace, state, identity) {
+  const panel = workspace.querySelector("[data-dossiers-website-pricing]");
+  const presentation = websiteQuotationPricingPresentation(state.detail, state.websitePricing, identity);
+  let vatPanel = panel.querySelector("[data-dossiers-vat-readiness]");
+  if (!vatPanel) {
+    vatPanel = workspace.ownerDocument.createElement("div");
+    vatPanel.dataset.dossiersVatReadiness = "";
+    panel.insertBefore(vatPanel, panel.querySelector("[data-dossiers-website-pricing-form]"));
+  }
+  vatPanel.hidden = !state.vatReadiness;
+  vatPanel.innerHTML = state.vatReadiness ? renderVatReadinessPanel(state.vatReadiness) : "";
+  panel.hidden = !presentation && !state.vatReadiness;
+  panel.querySelector("[data-dossiers-website-pricing-form]").hidden = !presentation?.showForm;
+  const billingForm = panel.querySelector("[data-dossiers-website-billing-form]");
+  billingForm.hidden = !presentation?.showBillingForm;
+  if (presentation?.showBillingForm) {
+    const billing = state.websitePricing.billing_context;
+    for (const name of ["billing_address", "billing_postal_code", "billing_city", "billing_country", "billing_email"]) {
+      billingForm.elements[name].value = billing[name] || "";
+    }
+  }
+  const canCompose = websiteQuotationCanCompose(presentation, state.vatReadiness);
+  panel.querySelector("[data-dossiers-website-pricing-compose]").hidden = !canCompose || state.websiteQuotationOpen;
+  panel.querySelector("[data-dossiers-website-quotation-form]").hidden = !canCompose || !state.websiteQuotationOpen;
+  panel.querySelector("[data-dossiers-website-pricing-minimum]").textContent = presentation?.minimum || "-";
+  panel.querySelector("[data-dossiers-website-pricing-final]").textContent = presentation?.finalAmount || "Nog niet bepaald";
+  panel.querySelector("[data-dossiers-website-pricing-decided-at]").textContent = presentation?.decidedAt || "-";
+  for (const control of panel.querySelectorAll("input, textarea, button")) control.disabled = state.websitePricingBusy;
+}
+
 function clearDetailSelection(workspace) {
   resetDossierCopyPreview(workspace);
+  const pricingDialog = workspace.querySelector("[data-dossiers-website-pricing-dialog]");
+  if (pricingDialog.open) pricingDialog.close();
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = false;
-  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
+  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-website-pricing], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
     panel.hidden = true;
   }
 }
@@ -961,6 +1174,10 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   }
 
   workspace.innerHTML = dossierWorkspaceMarkup();
+  workspace.querySelector("[data-dossiers-website-pricing]").insertAdjacentHTML(
+    "beforeend",
+    `<form class="website-pricing-form" data-dossiers-website-billing-form hidden><h3>Facturatiegegevens aanvullen</h3><label>Facturatieadres<input name="billing_address" type="text" minlength="2" maxlength="200" autocomplete="street-address"></label><label>Postcode<input name="billing_postal_code" type="text" minlength="2" maxlength="20" autocomplete="postal-code"></label><label>Stad<input name="billing_city" type="text" minlength="2" maxlength="120" autocomplete="address-level2"></label><label>Landcode (ISO)<input name="billing_country" type="text" minlength="2" maxlength="2" pattern="[A-Za-z]{2}" autocomplete="country" required></label><label>Facturatie-e-mail<input name="billing_email" type="email" maxlength="254" autocomplete="email"></label><button type="submit" class="primary-action primary-action--compact">Facturatiegegevens opslaan</button></form>`,
+  );
   const detailColumn = workspace.querySelector(".context-column");
   detailColumn.append(
     workspace.querySelector("[data-dossiers-lifecycle-panel]"),
@@ -983,11 +1200,58 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     requestBusy: false,
     substance: null,
     copySource: null,
+    websitePricing: null,
+    vatReadiness: null,
+    websitePricingBusy: false,
+    pendingWebsitePricingRequest: null,
+    websiteQuotationOpen: false,
     pendingPurgeEligibility: null,
     purgeEligibility: null,
     counters: null,
   };
   const status = workspace.querySelector("[data-dossiers-status]");
+
+  async function refreshWebsiteQuotationAuthorities(selection) {
+    state.vatReadiness = null;
+    const pricingRequest = websiteQuotationPricingStateRequest(state.detail);
+    const vatRequest = websiteQuotationVatReadinessRequest(state.detail);
+    if (!pricingRequest || !vatRequest) {
+      state.websitePricing = null;
+      return;
+    }
+    const [pricing, vatReadiness] = await Promise.all([
+      authority.gateway(pricingRequest),
+      authority.gateway(vatRequest),
+    ]);
+    if (selection !== selectDossier.generation) return;
+    state.websitePricing = pricing;
+    state.vatReadiness = normalizeVatReadiness(vatReadiness);
+  }
+
+  async function executeVatRemediation(request, successMessage) {
+    const selection = selectDossier.generation;
+    state.websitePricingBusy = true;
+    renderWebsiteQuotationPricing(workspace, state, identity);
+    const message = workspace.querySelector("[data-dossiers-website-pricing-message]");
+    try {
+      await options.requireAal2();
+      await authority.gateway(request);
+      if (selection !== selectDossier.generation) return;
+      await refreshWebsiteQuotationAuthorities(selection);
+      if (selection !== selectDossier.generation) return;
+      message.textContent = successMessage;
+    } catch (error) {
+      if (selection !== selectDossier.generation) return;
+      message.textContent = errorCode(error) === "VAT_FINANCE_SOURCE_UNAVAILABLE"
+        ? "De omzetbron is tijdelijk niet beschikbaar. Probeer later opnieuw."
+        : "De BTW-status kon niet veilig worden bijgewerkt.";
+    } finally {
+      if (selection === selectDossier.generation) {
+        state.websitePricingBusy = false;
+        renderWebsiteQuotationPricing(workspace, state, identity);
+      }
+    }
+  }
 
   function revalidateSelection() {
     const visibleSelection = visibleDossierSelection(state.selected, state.items);
@@ -1008,6 +1272,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.uploadUrl = null;
     state.requestBusy = false;
     state.copySource = null;
+    state.websitePricing = null;
+    state.vatReadiness = null;
+    state.websitePricingBusy = false;
+    state.pendingWebsitePricingRequest = null;
+    state.websiteQuotationOpen = false;
     state.purgeEligibility = null;
     clearDetailSelection(workspace);
     return false;
@@ -1141,7 +1410,12 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.request = null;
     state.uploadUrl = null;
     state.requestBusy = false;
+    state.websitePricing = null;
+    state.vatReadiness = null;
+    state.pendingWebsitePricingRequest = null;
+    state.websiteQuotationOpen = false;
     selectCustomerRequest.generation += 1;
+    renderWebsiteQuotationPricing(workspace, state, identity);
     workspace.querySelector("[data-dossiers-request-detail]").hidden = true;
     presentDossierPurgeEligibility(workspace, state.purgeEligibility, { refreshing: Boolean(state.purgeEligibility) });
     renderList(workspace, state.items, summary.reference);
@@ -1208,6 +1482,22 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           renderRequests(workspace, page.items);
         }),
       ];
+      const websiteVatRequest = websiteQuotationVatReadinessRequest(detail);
+      if (websiteVatRequest) {
+        tasks.push(
+          refreshWebsiteQuotationAuthorities(selection).then(()=>{
+            if (selection !== selectDossier.generation) return;
+            renderWebsiteQuotationPricing(workspace, state, identity);
+          }, ()=>{
+            if (selection !== selectDossier.generation) return;
+            const pricingPanel = workspace.querySelector("[data-dossiers-website-pricing]");
+            pricingPanel.hidden = false;
+            pricingPanel.querySelector("[data-dossiers-website-pricing-form]").hidden = true;
+            pricingPanel.querySelector("[data-dossiers-website-pricing-message]").textContent =
+              "De actuele prijs- en BTW-status kon niet worden geladen.";
+          }),
+        );
+      }
       if (["owner", "operations_manager"].includes(identity.role)) {
         tasks.push(Promise.all([
           authority.gateway({ action: "get_dossier_assignment", dossier_reference: reference }),
@@ -1385,6 +1675,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     const destructive = command.kind === "purge" || command.kind === "pending-trash" || command.action === "trash_dossier";
     dialog.querySelector("[data-dossiers-command-eyebrow]").className = destructive ? "eyebrow eyebrow--red" : "eyebrow";
     dialog.querySelector("[data-dossiers-command-title]").textContent = command.kind === "purge" ? "Dossier permanent verwijderen"
+      : command.kind === "vat-review" ? "BTW-beoordeling aanvragen"
       : command.kind === "pending-trash" || command.action === "trash_dossier" ? "Dossier naar prullenbak"
       : command.action === "archive_dossier" ? "Dossier archiveren"
       : command.action === "reactivate_dossier" ? "Dossier opnieuw activeren"
@@ -1393,6 +1684,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       : command.action === "restore_pending_intake" ? "Intake terugzetten naar actief" : "Dossierstatus wijzigen";
     dialog.querySelector("[data-dossiers-command-message]").textContent = command.kind === "purge"
       ? "Deze actie is definitief. Geef een concrete reden om door te gaan."
+      : command.kind === "vat-review" ? "Geef een concrete reden voor de fiscale beoordeling."
       : "Geef een reden voor deze dossieractie.";
     dialog.querySelector("[data-dossiers-command-confirm]").className = destructive ? "danger-action" : "primary-action primary-action--compact";
     dialog.querySelector("textarea").value = "";
@@ -1411,6 +1703,113 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       if (!state.detail || !state.assignment) return;
       const data = new FormData(event.target);
       void mutate(dossierAssignmentRequest(state.detail, state.assignment, data.get("assignee_operator_id"), data.get("reason"), crypto.randomUUID()));
+    } else if (event.target.matches("[data-dossiers-website-pricing-form]")) {
+      event.preventDefault();
+      if (!state.detail || !state.websitePricing) return;
+      const data = new FormData(event.target);
+      const message = workspace.querySelector("[data-dossiers-website-pricing-message]");
+      try {
+        state.pendingWebsitePricingRequest = websiteQuotationPricingDecisionRequest(
+          state.websitePricing,
+          data.get("amount"),
+          data.get("reason"),
+          crypto.randomUUID(),
+        );
+        message.textContent = "";
+        workspace.querySelector("[data-dossiers-website-pricing-confirm-minimum]").textContent =
+          formatWebsiteMoney(state.websitePricing.known_minimum_minor);
+        workspace.querySelector("[data-dossiers-website-pricing-confirm-amount]").textContent =
+          formatWebsiteMoney(state.pendingWebsitePricingRequest.owner_final_amount_minor);
+        workspace.querySelector("[data-dossiers-website-pricing-dialog]").showModal();
+      } catch (error) {
+        message.textContent = errorCode(error) === "WEBSITE_PRICING_AMOUNT_BELOW_MINIMUM"
+          ? `De definitieve prijs moet minstens ${formatWebsiteMoney(state.websitePricing.known_minimum_minor)} zijn.`
+          : "Vul een geldige definitieve offerteprijs in.";
+      }
+    } else if (event.target.matches("[data-dossiers-website-billing-form]")) {
+      event.preventDefault();
+      if (!state.detail || !state.websitePricing || state.websitePricingBusy) return;
+      const data = new FormData(event.target);
+      const message = workspace.querySelector("[data-dossiers-website-pricing-message]");
+      try {
+        const request = websiteBillingContextCorrectionRequest(state.websitePricing, {
+          billingAddress: data.get("billing_address"),
+          billingPostalCode: data.get("billing_postal_code"),
+          billingCity: data.get("billing_city"),
+          billingCountry: data.get("billing_country"),
+          billingEmail: data.get("billing_email"),
+        }, crypto.randomUUID());
+        const selection = selectDossier.generation;
+        state.websitePricingBusy = true;
+        renderWebsiteQuotationPricing(workspace, state, identity);
+        void (async ()=>{
+          try {
+            await options.requireAal2();
+            await authority.gateway(request);
+            if (selection !== selectDossier.generation) return;
+            await refreshWebsiteQuotationAuthorities(selection);
+            if (selection !== selectDossier.generation) return;
+            message.textContent = "De facturatiegegevens zijn server-side opgeslagen.";
+          } catch (error) {
+            if (selection !== selectDossier.generation) return;
+            message.textContent = `De facturatiegegevens konden niet worden opgeslagen (${errorCode(error)}).`;
+          } finally {
+            if (selection === selectDossier.generation) {
+              state.websitePricingBusy = false;
+              renderWebsiteQuotationPricing(workspace, state, identity);
+            }
+          }
+        })();
+      } catch {
+        message.textContent = "Vul geldige facturatiegegevens in.";
+      }
+    } else if (event.target.matches("[data-dossiers-website-quotation-form]")) {
+      event.preventDefault();
+      if (!state.detail || !state.websitePricing || state.websitePricingBusy) return;
+      const presentation = websiteQuotationPricingPresentation(state.detail, state.websitePricing, identity);
+      if (!websiteQuotationCanCompose(presentation, state.vatReadiness)) return;
+      const form = event.target;
+      const data = new FormData(form);
+      const list = (name, separator)=>String(data.get(name) || "").split(separator).map((value)=>value.trim()).filter(Boolean);
+      const validity = String(data.get("validity_days") || "").trim();
+      const message = workspace.querySelector("[data-dossiers-website-pricing-message]");
+      try {
+        const request = websiteQuotationBusinessDraftRequest(state.websitePricing, {
+          descriptionContext: data.get("description_context"),
+          projectTitle: data.get("project_title"),
+          scopeSummary: data.get("scope_summary"),
+          requestedLanguages: list("requested_languages", ","),
+          includedPageCount: Number(data.get("included_page_count")),
+          features: list("features", ","),
+          exclusions: list("exclusions", /\r?\n/),
+          assumptions: list("assumptions", /\r?\n/),
+          validityDays: validity ? Number(validity) : null,
+        }, crypto.randomUUID());
+        const selection = selectDossier.generation;
+        state.websitePricingBusy = true;
+        renderWebsiteQuotationPricing(workspace, state, identity);
+        void (async ()=>{
+          try {
+            await authority.gateway(request);
+            if (selection !== selectDossier.generation) return;
+            await refreshWebsiteQuotationAuthorities(selection);
+            if (selection !== selectDossier.generation) return;
+            state.websiteQuotationOpen = false;
+            form.reset();
+            message.textContent = "Het offerteconcept is server-side opgeslagen.";
+          } catch (error) {
+            if (selection !== selectDossier.generation) return;
+            message.textContent = `Het offerteconcept kon niet worden opgeslagen (${errorCode(error)}).`;
+          } finally {
+            if (selection === selectDossier.generation) {
+              state.websitePricingBusy = false;
+              renderWebsiteQuotationPricing(workspace, state, identity);
+            }
+          }
+        })();
+      } catch {
+        message.textContent = "Vul alle verplichte offertegegevens geldig in.";
+      }
     } else if (event.target.matches("[data-dossiers-command-form]")) {
       event.preventDefault();
       if (!state.command || (!state.detail && !["pending-retention", "pending-trash"].includes(state.command.kind))) return;
@@ -1421,6 +1820,13 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       dialog.close();
       if (command.kind === "lifecycle") {
         void mutate(dossierLifecycleRequest(command.action, state.detail, reason, crypto.randomUUID()));
+      } else if (command.kind === "vat-review") {
+        const request = buildVatReadinessAction("request_quotation_vat_review", {
+          quote_request_id: state.detail.quote_request_id,
+          intake_id: state.vatReadiness?.intake_id,
+          idempotency_key: crypto.randomUUID(),
+        }, reason);
+        void executeVatRemediation(request, "De BTW-beoordeling is aangevraagd.");
       } else if (command.kind === "pending-retention") {
         void mutatePending(pendingIntakeRetentionRequest(command.action, state.selected.raw, reason, crypto.randomUUID()));
       } else if (command.kind === "pending-trash") {
@@ -1472,7 +1878,61 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         if (!controller.disposed) workspace.querySelector("[data-dossiers-request-message]").textContent = "Uploadlink gekopieerd.";
       });
     }
-    else if (target.dataset.dossiersLifecycle) {
+    else if (target.dataset.vatAction === "request_quotation_vat_review") {
+      if (state.vatReadiness?.can_request_review) openCommandDialog({ kind: "vat-review" });
+    } else if (target.dataset.vatAction === "request_vat_turnover_refresh") {
+      if (state.vatReadiness?.can_request_turnover_refresh) {
+        const request = buildVatReadinessAction("request_vat_turnover_refresh", {
+          measurement_date: new Date().toISOString().slice(0, 10),
+          idempotency_key: crypto.randomUUID(),
+        });
+        void executeVatRemediation(request, "Het omzetbewijs is opnieuw aangevraagd.");
+      }
+    } else if (target.hasAttribute("data-dossiers-website-pricing-cancel")) {
+      state.pendingWebsitePricingRequest = null;
+      workspace.querySelector("[data-dossiers-website-pricing-dialog]").close();
+    } else if (target.hasAttribute("data-dossiers-website-pricing-confirm")) {
+      if (!state.pendingWebsitePricingRequest || state.websitePricingBusy) return;
+      const request = state.pendingWebsitePricingRequest;
+      const selection = selectDossier.generation;
+      state.websitePricingBusy = true;
+      renderWebsiteQuotationPricing(workspace, state, identity);
+      void (async ()=>{
+        const message = workspace.querySelector("[data-dossiers-website-pricing-message]");
+        try {
+          await options.requireAal2();
+          await authority.gateway(request);
+          if (selection !== selectDossier.generation) return;
+          state.pendingWebsitePricingRequest = null;
+          workspace.querySelector("[data-dossiers-website-pricing-dialog]").close();
+          workspace.querySelector("[data-dossiers-website-pricing-form]").reset();
+          await refreshWebsiteQuotationAuthorities(selection);
+          if (selection !== selectDossier.generation) return;
+          message.textContent = "De definitieve offerteprijs is vastgelegd.";
+        } catch (error) {
+          if (selection !== selectDossier.generation) return;
+          message.textContent = errorCode(error) === "WEBSITE_PRICING_AMOUNT_BELOW_MINIMUM"
+            ? "De gekozen prijs ligt onder de actuele minimumprijs. Controleer de prijsstatus opnieuw."
+            : "De prijsbeslissing kon niet worden vastgelegd.";
+        } finally {
+          if (selection === selectDossier.generation) {
+            state.websitePricingBusy = false;
+            renderWebsiteQuotationPricing(workspace, state, identity);
+          }
+        }
+      })();
+    } else if (target.hasAttribute("data-dossiers-website-pricing-compose")) {
+      const presentation = websiteQuotationPricingPresentation(state.detail, state.websitePricing, identity);
+      if (!websiteQuotationCanCompose(presentation, state.vatReadiness)) return;
+      state.websiteQuotationOpen = true;
+      renderWebsiteQuotationPricing(workspace, state, identity);
+      workspace.querySelector("[data-dossiers-website-pricing-message]").textContent =
+        "Leg de scope vast voor het offerteconcept.";
+      workspace.querySelector("[data-dossiers-website-quotation-form] input").focus();
+    } else if (target.hasAttribute("data-dossiers-website-quotation-cancel")) {
+      state.websiteQuotationOpen = false;
+      renderWebsiteQuotationPricing(workspace, state, identity);
+    } else if (target.dataset.dossiersLifecycle) {
       openCommandDialog({ kind: "lifecycle", action: target.dataset.dossiersLifecycle });
     } else if (target.dataset.dossiersPendingRetentionAction) {
       openCommandDialog({ kind: "pending-retention", action: target.dataset.dossiersPendingRetentionAction });

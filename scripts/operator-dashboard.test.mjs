@@ -209,9 +209,9 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
-    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_GUARD_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}`,
-    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}&calendar=${OPERATOR_CALENDAR_SELECTION_RELEASE}`,
+    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
+    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_GUARD_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
+    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}&calendar=${OPERATOR_CALENDAR_SELECTION_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
   ]);
   for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_GUARD_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);

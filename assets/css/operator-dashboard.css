@@ -778,6 +778,26 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .assignment-form select,.assignment-form textarea { width:100%; min-width:0; padding:.65rem .7rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:#fbfcfc; }
 .assignment-form textarea { resize:vertical; }
 .assignment-form button { margin:0; }
+.website-pricing-decision { margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--line); }
+.website-pricing-form { display:grid; grid-template-columns:minmax(12rem,1fr) minmax(14rem,2fr) auto; align-items:end; gap:.75rem; }
+.website-pricing-form[hidden] { display:none; }
+.website-pricing-form label { display:grid; gap:.4rem; color:var(--navy); font-weight:800; }
+.website-pricing-form input,.website-pricing-form textarea { width:100%; min-width:0; padding:.65rem .7rem; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:#fbfcfc; }
+.website-pricing-form textarea { resize:vertical; }
+.website-pricing-form button { margin:0; }
+.operator-vat-readiness { margin:1rem 0; padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.operator-vat-readiness h4 { margin:0; color:var(--navy); font-size:1rem; }
+.operator-vat-readiness dl { margin:.75rem 0 0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 1.25rem; }
+.operator-vat-readiness__row { min-width:0; padding:.65rem 0; display:flex; align-items:baseline; justify-content:space-between; gap:.75rem; border-bottom:1px solid #e3e9ec; }
+.operator-vat-readiness__row dt { color:var(--muted); font-size:.72rem; font-weight:800; text-transform:uppercase; }
+.operator-vat-readiness__row dd { margin:0; color:var(--navy); font-weight:800; text-align:right; overflow-wrap:anywhere; }
+.operator-vat-readiness__row[data-state="ready"] dd { color:var(--green); }
+.operator-vat-readiness__row:is([data-state="review"],[data-state="stale"]) dd { color:#835f00; }
+.operator-vat-readiness__row:is([data-state="unsupported"],[data-state="error"]) dd { color:var(--red); }
+.operator-vat-readiness__remediation,.operator-vat-readiness__policy { margin:.75rem 0 0; overflow-wrap:anywhere; }
+.operator-vat-readiness__policy { color:var(--muted); font-size:.82rem; }
+.operator-vat-readiness__actions { margin-top:.8rem; }
+.operator-vat-readiness__actions .secondary-action { margin:0; }
 .blockers article { padding:1rem 0; border-bottom:1px solid var(--line); }
 .blockers article p { margin:.65rem 0 0; }
 .blocked-list { margin:.9rem 0 0; padding-left:1.1rem; color:var(--muted); font-size:.82rem; }
@@ -855,6 +875,8 @@ dialog.dossiers-command-dialog { width:68vw; overflow:auto; }
 .pending-intake-technical dd { margin:.15rem 0 0; overflow-wrap:anywhere; }
 .pending-intake-danger { margin-top:1rem; padding:1rem; border:1px solid #e4baba; border-left:4px solid var(--red); border-radius:6px; background:#fff8f8; }
 @media (max-width:1000px) { .dashboard-grid,.context-column,.personal-request-grid { grid-template-columns:1fr; } .context-column > .panel:first-of-type,.context-column > .action-message,.context-column .branch-panel { grid-column:auto; } }
+@media (max-width:800px) { .website-pricing-form { grid-template-columns:1fr; } }
+@media (max-width:540px) { .operator-vat-readiness dl { grid-template-columns:1fr; } .operator-vat-readiness__row { display:grid; grid-template-columns:1fr; gap:.2rem; } .operator-vat-readiness__row dd { text-align:left; } }
 @media (max-width:1000px) { .dossiers-status-overview { grid-template-columns:repeat(2,minmax(0,1fr)); } .dossiers-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } .dossiers-filters label:first-child { grid-column:1/-1; } }
 @media (max-width:1000px) { .pending-intake-grid { grid-template-columns:1fr; } .pending-intake-grid > .panel { min-height:0; } .pending-intake-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } .pending-intake-filter--search { grid-column:1/-1; } }
 @media (max-width:1100px) { .topbar { padding-block:.65rem; grid-template-columns:1fr auto; } .module-navigation { grid-column:1/-1; grid-row:2; flex-wrap:wrap; } }
