@@ -1,8 +1,8 @@
 import { OPERATOR_ROUTES, requireAuthorizedOperator, signOutOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
-import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260905-profile-welcome-r2&patch=20260905-profile-welcome-r2&calendar=20260905-calendar-selection-r5&vat-readiness=20260911-vat-readiness-v1";
-import { createOperatorWorkspaceMaster, createOperatorWorkspaceRecovery } from "./operator-workspace-master.mjs?v=20260906-stale-claim-r1";
-import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
+import { createOperatorFinanceNavigation, createOperatorModuleNavigation, financeTabFromUrl, operatorModuleFromUrl, presentFinanceTab, presentOperatorModule, startOperatorDashboard } from "./operator-dashboard.js?v=20260912-dossier-continuity-project-r1";
+import { createOperatorWorkspaceMaster, createOperatorWorkspaceRecovery } from "./operator-workspace-master.mjs?v=20260912-dossier-continuity-project-r1";
+import { clearOperatorWorkspaceResumeHint, readOperatorWorkspaceResumeHint, writeOperatorWorkspaceResumeHint } from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
 import { createOperatorWorkspaceStatusPresenter } from "./operator-workspace-status.mjs?v=20260903-multiscreen-ux-r1";
 import { createOperatorMfaDialog, isMfaOperatorSubject, mountOperatorAal2VerificationButton, mountOperatorMfaButton } from "./operator-mfa.mjs?v=20260906-aal2-standalone-r1";
 
@@ -115,6 +115,7 @@ try {
         onAvailabilityChange: presentWorkspaceStatus,
         onInvalidate: (moduleKey)=>{
           if (moduleKey === "messages") document.getElementById("messagesWorkspace")?.operatorMessagesController?.refresh();
+          if (moduleKey === "dossiers") document.querySelector("[data-dossiers-workspace]")?.operatorDossiersController?.refresh();
         },
       });
       const activateWorkspaceMaster = (master)=>{

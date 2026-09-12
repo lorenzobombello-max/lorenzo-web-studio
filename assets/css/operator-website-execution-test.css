@@ -1,0 +1,5 @@
+.website-execution-checkpoint { display:grid; gap:1.25rem; }
+.website-execution-checkpoint__project { max-width:1180px; margin:0 auto; }
+.website-execution-checkpoint__project .primary-action { margin-top:1rem; }
+.website-execution-checkpoint__child { width:100%; }
+.operator-test-caption { margin:1rem 0 0; color:var(--muted); font-size:.75rem; font-weight:700; }

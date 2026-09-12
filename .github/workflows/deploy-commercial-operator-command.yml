@@ -1,25 +1,25 @@
-name: Deploy Static Site to GitHub Pages
+name: Deploy Commercial Operator Command
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: commercial-operator-command-production
+  cancel-in-progress: false
 
 jobs:
   continuity-predeploy:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Require current production branch
+        if: github.ref != 'refs/heads/main'
+        shell: pwsh
+        run: throw "HARD STOP - controlled Edge releases must run from refs/heads/main"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -38,7 +38,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  build:
+  deploy:
     runs-on: ubuntu-latest
     needs: continuity-predeploy
 
@@ -46,32 +46,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build allowlisted Pages artifact
+      - name: Install locked release tooling
+        run: npm ci
+
+      - name: Require Edge deployment credentials
         shell: pwsh
         env:
-          LWS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.LWS_SUPABASE_PUBLISHABLE_KEY }}
-        run: ./scripts/prepare-pages-dist.ps1 -OutputDir dist
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          LWS_SUPABASE_PROJECT_REF: ${{ vars.LWS_SUPABASE_PROJECT_REF }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SUPABASE_ACCESS_TOKEN)) { throw "HARD STOP - SUPABASE_ACCESS_TOKEN is required" }
+          if ([string]::IsNullOrWhiteSpace($env:LWS_SUPABASE_PROJECT_REF)) { throw "HARD STOP - LWS_SUPABASE_PROJECT_REF is required" }
 
-      - name: Verify dist security and link integrity
-        shell: pwsh
-        run: ./scripts/verify-pages-dist.ps1 -DistDir dist
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Deploy commercial operator command only
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          LWS_SUPABASE_PROJECT_REF: ${{ vars.LWS_SUPABASE_PROJECT_REF }}
+        run: npx --no-install supabase functions deploy commercial-operator-command --project-ref "$LWS_SUPABASE_PROJECT_REF"
 
   continuity-postdeploy:
     runs-on: ubuntu-latest

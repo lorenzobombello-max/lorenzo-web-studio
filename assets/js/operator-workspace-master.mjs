@@ -9,8 +9,8 @@ import {
   validUuid,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
-import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260902-login-stability";
+} from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
+import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1";
 
 async function requestLocalMasterLock(navigatorObject) {
   if (!navigatorObject?.locks?.request) return { acquired: false, release() {} };
@@ -260,7 +260,10 @@ export async function createOperatorWorkspaceMaster({
       return;
     }
     if (openButtons.has(button)) return;
-    const listener = ()=>openOperatorModuleWindow(moduleKey, slotKey);
+    const listener = ()=>openOperatorModuleWindow(
+      button.dataset?.operatorWindowModule || moduleKey,
+      button.dataset?.operatorWindowSlot || slotKey,
+    );
     openButtons.set(button, listener);
     button.hidden = false;
     button.disabled = !active;
@@ -283,6 +286,9 @@ export async function createOperatorWorkspaceMaster({
     if (!validWorkspaceEvent(event.data, { workspaceId: memory.workspaceId, epoch: memory.epoch })) return;
     if (event.data.type === "HELLO") publish("REGISTERED", event.data.moduleKey, event.data.slotKey);
     if (event.data.type === "INVALIDATE" && resolveStandaloneOperatorModule(event.data.moduleKey)) onInvalidate(event.data.moduleKey);
+    if (event.data.type === "OPEN_REQUEST") {
+      openOperatorModuleWindow(event.data.moduleKey, event.data.slotKey);
+    }
   });
 
   async function shutdownWorkspace() {

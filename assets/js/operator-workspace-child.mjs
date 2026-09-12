@@ -5,7 +5,7 @@ import {
   shouldLockForLease,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
+} from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
 
 function leaseTime(value) {
   const timestamp = Date.parse(value);
@@ -36,7 +36,7 @@ export function createOperatorWorkspaceChild({
   let verificationPending = false;
   const senderSequences = new Map();
 
-  function publish(type, moduleKey) {
+  function publish(type, moduleKey, slotKey = bootstrap.slotKey) {
     if (!active && type !== "LOCK") return;
     channel.postMessage(createWorkspaceEvent({
       type,
@@ -46,7 +46,7 @@ export function createOperatorWorkspaceChild({
       sequence: sequence++,
       now: now(),
       moduleKey,
-      slotKey: bootstrap.slotKey,
+      slotKey,
     }));
   }
 
@@ -86,6 +86,7 @@ export function createOperatorWorkspaceChild({
   }
 
   channel.addEventListener("message", (event)=>{
+    if (!active) return;
     const safetyEvent = event.data?.type === "SHUTDOWN" || event.data?.type === "LOCK";
     const minimumSequence = safetyEvent ? -1 : senderSequences.get(event.data?.senderWindowId) ?? -1;
     if (!validWorkspaceEvent(event.data, { workspaceId: bootstrap.workspaceId, epoch: bootstrap.epoch, minimumSequence })) return;
@@ -93,7 +94,9 @@ export function createOperatorWorkspaceChild({
     if (event.data.type === "HEARTBEAT" || event.data.type === "REGISTERED") lastHeartbeatAt = now();
     if (event.data.type === "SHUTDOWN") lock("WORKSPACE_SHUTDOWN", true);
     if (event.data.type === "LOCK") lock("WORKSPACE_LOCKED");
-    if (event.data.type === "INVALIDATE" && event.data.moduleKey === bootstrap.moduleKey) onInvalidate(bootstrap.moduleKey);
+    if (event.data.type === "INVALIDATE" && event.data.moduleKey === bootstrap.moduleKey) {
+      onInvalidate(bootstrap.moduleKey, event.data.slotKey);
+    }
     if (event.data.type === "FOCUS_REQUEST" && event.data.moduleKey === bootstrap.moduleKey && event.data.slotKey === bootstrap.slotKey) windowObject.focus();
   });
 
@@ -118,6 +121,14 @@ export function createOperatorWorkspaceChild({
       channel.close();
     },
     invalidate(moduleKey = bootstrap.moduleKey) { publish("INVALIDATE", moduleKey); },
+    requestOpen(moduleKey, slotKey = "main") {
+      try {
+        publish("OPEN_REQUEST", moduleKey, slotKey);
+        return true;
+      } catch {
+        return false;
+      }
+    },
     lock,
     verifyServerLease,
   };

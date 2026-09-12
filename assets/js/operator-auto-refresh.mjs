@@ -1,5 +1,25 @@
 export const OPERATOR_AUTO_REFRESH_CADENCE_MS = 8_000;
 
+export function createOperatorRefreshGenerationGuard() {
+  let generation = 0;
+  let disposed = false;
+  return Object.freeze({
+    begin() {
+      if (disposed) return null;
+      generation += 1;
+      return generation;
+    },
+    isCurrent(selection) {
+      return !disposed && selection === generation;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      generation += 1;
+    },
+  });
+}
+
 export function createOperatorAutoRefresh({
   moduleKey,
   refresh,

@@ -45,7 +45,7 @@
     },
     {
       "id": "production-build-deployment",
-      "paths": [".github/workflows/deploy-pages.yml", "scripts/prepare-pages-dist.ps1", "scripts/verify-pages-dist.ps1", "CNAME", "robots.txt", "sitemap.xml", "site.webmanifest"]
+      "paths": [".github/workflows/deploy-pages.yml", ".github/workflows/deploy-commercial-operator-command.yml", "scripts/prepare-pages-dist.ps1", "scripts/verify-pages-dist.ps1", "scripts/invoke-dossier-continuity-release-gate.ps1", "scripts/dossier-continuity-*.mjs", "CNAME", "robots.txt", "sitemap.xml", "site.webmanifest"]
     }
   ],
   "generatedArtifactPatterns": [

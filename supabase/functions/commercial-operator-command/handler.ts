@@ -68,6 +68,17 @@ const APPLICATION_ACTIONS = new Set([
   "promote_customer_request_upload_to_document_inbox",
   "assign_dossier",
   "get_project_dossier",
+  "get_project_workspace",
+  "get_website_execution_workspace",
+  "start_project_work",
+  "get_project_requirements_board",
+  "create_project_requirements_board",
+  "create_project_requirement",
+  "finalize_project_requirements_board",
+  "start_project_requirement",
+  "block_project_requirement",
+  "complete_project_requirement",
+  "reopen_project_requirement",
   "promote_accepted_application",
   "create_internal_e2e_run",
   "create_customer_request_smoke_fixture",
@@ -143,6 +154,17 @@ const CUSTOMER_REQUEST_TYPES = new Set([
   "CORRECTION",
   "FILE_DELIVERY",
   "OTHER",
+]);
+const REQUIREMENT_CATEGORIES = new Set([
+  "PAGE", "CONTENT", "DESIGN", "FORM", "SEO", "INTEGRATION", "AUTOMATION",
+  "AUTH", "ECOMMERCE", "DOCUMENT_FLOW", "MULTIMEDIA", "TECHNICAL", "OTHER",
+]);
+const REQUIREMENT_MODES = new Set(["AUTO", "OPERATOR", "HYBRID", "EXTERNAL"]);
+const REQUIREMENT_LIFECYCLE_ACTIONS = new Set([
+  "start_project_requirement",
+  "block_project_requirement",
+  "complete_project_requirement",
+  "reopen_project_requirement",
 ]);
 type DossierLifecycleRpcResult = Readonly<{
   data: unknown;
@@ -1036,6 +1058,42 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ])
     : action === "get_project_dossier"
     ? new Set(["action", "project_id"])
+    : action === "get_project_workspace" ||
+      action === "get_website_execution_workspace"
+    ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "get_project_requirements_board"
+    ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "create_project_requirements_board"
+    ? new Set(["action", "quote_request_id", "project_id", "idempotency_key"])
+    : action === "create_project_requirement"
+    ? new Set([
+      "action", "quote_request_id", "project_id", "requirements_board_id",
+      "expected_board_revision", "item", "idempotency_key",
+    ])
+    : action === "finalize_project_requirements_board"
+    ? new Set([
+      "action", "quote_request_id", "project_id", "requirements_board_id",
+      "expected_revision", "idempotency_key",
+    ])
+    : REQUIREMENT_LIFECYCLE_ACTIONS.has(action)
+    ? new Set([
+      "action", "quote_request_id", "project_id", "requirement_id",
+      "expected_revision", "idempotency_key",
+      ...(action === "block_project_requirement" || action === "reopen_project_requirement"
+        ? ["reason"]
+        : action === "complete_project_requirement"
+        ? ["evidence_reference"]
+        : []),
+    ])
+    : action === "start_project_work"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "project_id",
+      "expected_state",
+      "expected_revision",
+      "idempotency_key",
+    ])
     : action === "get_application_detail"
     ? new Set([
       "action",
@@ -1733,6 +1791,121 @@ function validateApplicationAction(value: UnvalidatedInput) {
     const projectId = String(value.project_id || "");
     if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, project_id: projectId };
+  }
+  if (action === "get_project_workspace" ||
+    action === "get_website_execution_workspace") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+    };
+  }
+  if (action === "get_project_requirements_board") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, quote_request_id: quoteRequestId, project_id: projectId };
+  }
+  if (action === "create_project_requirements_board") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, quote_request_id: quoteRequestId, project_id: projectId, idempotency_key: idempotencyKey };
+  }
+  if (action === "create_project_requirement") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    const boardId = String(value.requirements_board_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    const expectedBoardRevision = value.expected_board_revision;
+    const item = value.item;
+    const itemKeys = [
+      "item_number", "title", "description", "category", "source_reference",
+      "linked_page_or_module", "completion_mode", "completion_rule_key",
+      "completion_rule_version", "sort_order", "required",
+    ];
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(boardId) ||
+      !UUID.test(idempotencyKey) || !Number.isSafeInteger(expectedBoardRevision) ||
+      Number(expectedBoardRevision) < 1 || !isRecord(item) || !hasExactKeys(item, itemKeys)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    const source = item.source_reference;
+    const mode = String(item.completion_mode || "");
+    const ruleKey = item.completion_rule_key;
+    const ruleVersion = item.completion_rule_version;
+    if (!Number.isSafeInteger(item.item_number) || Number(item.item_number) < 1 ||
+      typeof item.title !== "string" || item.title.trim().length < 1 || item.title.trim().length > 120 ||
+      typeof item.description !== "string" || item.description.trim().length < 1 || item.description.trim().length > 1200 ||
+      !REQUIREMENT_CATEGORIES.has(String(item.category || "")) ||
+      !isRecord(source) || !hasExactKeys(source, ["authority_type", "authority_id", "json_path", "source_sha256"]) ||
+      !new Set(["ACCEPTED_PROJECT_SCOPE", "ACCEPTED_LINE_ITEM"]).has(String(source.authority_type || "")) ||
+      !UUID.test(String(source.authority_id || "")) || typeof source.json_path !== "string" ||
+      !/^[0-9a-f]{64}$/.test(String(source.source_sha256 || "")) ||
+      (item.linked_page_or_module !== null && (typeof item.linked_page_or_module !== "string" || item.linked_page_or_module.trim().length < 1 || item.linked_page_or_module.trim().length > 160)) ||
+      !REQUIREMENT_MODES.has(mode) || !Number.isSafeInteger(item.sort_order) ||
+      Number(item.sort_order) < 1 || typeof item.required !== "boolean" ||
+      (mode === "OPERATOR" && (ruleKey !== null || ruleVersion !== null)) ||
+      (mode !== "OPERATOR" && (typeof ruleKey !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(ruleKey) || !Number.isSafeInteger(ruleVersion) || Number(ruleVersion) < 1))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, quote_request_id: quoteRequestId, project_id: projectId, requirements_board_id: boardId, expected_board_revision: expectedBoardRevision, item, idempotency_key: idempotencyKey };
+  }
+  if (action === "finalize_project_requirements_board" || REQUIREMENT_LIFECYCLE_ACTIONS.has(action)) {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    const targetId = String(action === "finalize_project_requirements_board" ? value.requirements_board_id : value.requirement_id || "");
+    const expectedRevision = value.expected_revision;
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(targetId) ||
+      !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 1 || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    const base = { action, quote_request_id: quoteRequestId, project_id: projectId, expected_revision: expectedRevision, idempotency_key: idempotencyKey };
+    if (action === "finalize_project_requirements_board") return { ...base, requirements_board_id: targetId };
+    if (action === "block_project_requirement" || action === "reopen_project_requirement") {
+      const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+      if (reason.length < 1 || reason.length > 500) throw new RequestError(400, "INVALID_REQUEST");
+      return { ...base, requirement_id: targetId, reason };
+    }
+    if (action === "complete_project_requirement") {
+      const evidence = value.evidence_reference;
+      if (!isRecord(evidence) || !hasExactKeys(evidence, ["attestation"]) || typeof evidence.attestation !== "string" || evidence.attestation.trim().length < 1 || evidence.attestation.trim().length > 500) {
+        throw new RequestError(400, "INVALID_REQUEST");
+      }
+      return { ...base, requirement_id: targetId, evidence_reference: { attestation: evidence.attestation.trim() } };
+    }
+    return { ...base, requirement_id: targetId };
+  }
+  if (action === "start_project_work") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    const expectedState = String(value.expected_state || "");
+    const expectedRevision = value.expected_revision;
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(projectId) ||
+      expectedState !== "PROJECT_RELEASED" ||
+      !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0 ||
+      !UUID.test(idempotencyKey)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+      expected_state: expectedState,
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+    };
   }
   if (PROJECT_SITE_ACTIONS.has(action)) {
     const projectId = String(value.project_id || "");

@@ -2,6 +2,12 @@ import { buildSdfQualificationPresentation } from "./sdf-qualification-review.mj
 import { createOperatorAutoRefresh } from "./operator-auto-refresh.mjs?v=20260903-auto-refresh-8s";
 import { createOperatorRefreshHeartbeat } from "./operator-refresh-heartbeat.mjs?v=20260903-live-heartbeat";
 import {
+  loadProjectWorkspace,
+  projectSummaryMarkup,
+  projectWorkspaceRequest,
+  projectWorkspaceSlot,
+} from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
+import {
   buildVatReadinessAction,
   canComposeQuotationFromVatReadiness,
   normalizeVatReadiness,
@@ -22,7 +28,7 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "list_applications_v2", "list_pending_intakes", "count_pending_intakes", "get_application_facets_v2", "get_application_detail", "get_dossier_substance", "mark_dossier_seen",
   "get_website_quotation_pricing_state", "authorize_website_quotation_pricing_decision", "update_quote_request_billing_context",
   "evaluate_quotation_vat_readiness", "request_quotation_vat_review", "request_vat_turnover_refresh", "upsert_quotation_business_draft",
-  "get_project_dossier", "get_my_assigned_dossiers", "get_dossier_document_manifest",
+  "get_project_dossier", "get_project_workspace", "get_website_execution_workspace", "start_project_work", "get_project_requirements_board", "create_project_requirements_board", "create_project_requirement", "finalize_project_requirements_board", "start_project_requirement", "block_project_requirement", "complete_project_requirement", "reopen_project_requirement", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
   "revoke_customer_request_upload_link", "create_sdf_customer_request",
@@ -86,6 +92,17 @@ export function websiteQuotationPricingPresentation(detail, pricing, identity) {
     showBillingForm: false,
     canComposeQuotation: false,
   };
+}
+
+export function retainWebsiteQuotationAuthorities(
+  detail,
+  pricing,
+  vatReadiness,
+  quoteRequestId,
+) {
+  return detail?.quote_request_id === String(quoteRequestId || "")
+    ? Object.freeze({ pricing, vatReadiness })
+    : Object.freeze({ pricing: null, vatReadiness: null });
 }
 
 function websitePriceMinor(value) {
@@ -645,6 +662,7 @@ function dossierWorkspaceMarkup() {
         <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow">Dossierreferentie <strong data-dossiers-field="reference"></strong></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
         <section class="panel dossiers-customer" data-dossiers-customer hidden><div class="panel__heading"><div><p class="eyebrow">Relatie</p><h2>Klant</h2></div></div><dl class="application-detail"><div><dt>Naam</dt><dd data-dossiers-field="customer_name"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div></dl></section>
         <section class="panel dossiers-intake" data-dossiers-intake hidden><div class="panel__heading"><div><p class="eyebrow">Klantinput</p><h2>Intake</h2></div><span class="badge" data-dossiers-intake-status></span></div><dl class="application-detail dossiers-intake-meta"><div><dt>Uitnodiging</dt><dd data-dossiers-field="invited_at"></dd></div><div><dt>Gestart</dt><dd data-dossiers-field="started_at"></dd></div><div><dt>Ingediend</dt><dd data-dossiers-field="submitted_at"></dd></div></dl><div class="dossiers-substance-sections" data-dossiers-intake-sections></div></section>
+        ${projectSummaryMarkup()}
         <section class="panel website-pricing-decision" data-dossiers-website-pricing hidden>
           <div class="panel__heading"><div><p class="eyebrow">Pricing</p><h2>Definitieve offerteprijs</h2></div></div>
           <dl class="application-detail"><div><dt>Minimumprijs</dt><dd data-dossiers-website-pricing-minimum></dd></div><div><dt>Definitief bedrag</dt><dd data-dossiers-website-pricing-final></dd></div><div><dt>Beslist op</dt><dd data-dossiers-website-pricing-decided-at></dd></div></dl>
@@ -678,6 +696,20 @@ function resetDossierCopyPreview(workspace) {
   workspace.querySelector("[data-dossiers-copy-content]").replaceChildren();
 }
 
+function resetProjectWorkspace(workspace, hidden = true) {
+  const panel = workspace.querySelector("[data-dossiers-project]");
+  panel.hidden = hidden;
+  panel.querySelector("[data-project-empty]").textContent = "Project laden...";
+  panel.querySelector("[data-project-empty]").hidden = false;
+  panel.querySelector("[data-project-content]").hidden = true;
+  panel.querySelector("[data-project-status-badge]").textContent = "";
+  panel.querySelector("[data-project-summary-status]").textContent =
+    "Project laden...";
+  const open = panel.querySelector("[data-project-open]");
+  open.hidden = true;
+  delete open.dataset.operatorWindowSlot;
+}
+
 function renderWebsiteQuotationPricing(workspace, state, identity) {
   const panel = workspace.querySelector("[data-dossiers-website-pricing]");
   const presentation = websiteQuotationPricingPresentation(state.detail, state.websitePricing, identity);
@@ -708,12 +740,45 @@ function renderWebsiteQuotationPricing(workspace, state, identity) {
   for (const control of panel.querySelectorAll("input, textarea, button")) control.disabled = state.websitePricingBusy;
 }
 
+function renderProjectWorkspace(workspace, view) {
+  const panel = workspace.querySelector("[data-dossiers-project]");
+  const empty = panel.querySelector("[data-project-empty]");
+  const content = panel.querySelector("[data-project-content]");
+  panel.hidden = false;
+  if (view?.state !== "ready") {
+    panel.querySelector("[data-project-summary-status]").textContent =
+      view?.state === "empty" ? "Nog geen project" : "Project niet beschikbaar";
+    empty.textContent = view?.message || "Project kon niet veilig worden geladen.";
+    empty.hidden = false;
+    content.hidden = true;
+    panel.querySelector("[data-project-open]").hidden = true;
+    return;
+  }
+  empty.hidden = true;
+  content.hidden = false;
+  const badge = panel.querySelector("[data-project-status-badge]");
+  badge.textContent = view.currentPhase;
+  badge.className = `badge badge--${view.permissionTone}`;
+  panel.querySelector("[data-project-summary-status]").textContent =
+    view.projectStatusLabel;
+  panel.querySelector("[data-project-summary-progress]").textContent =
+    `${view.completedSteps} / ${view.steps.length}`;
+  panel.querySelector("[data-project-summary-current-step]").textContent =
+    view.currentStepLabel;
+  panel.querySelector("[data-project-summary-payment]").textContent =
+    view.firstPaymentStatus;
+  const open = panel.querySelector("[data-project-open]");
+  open.dataset.operatorWindowSlot = projectWorkspaceSlot(view.quoteRequestId);
+  open.hidden = false;
+}
+
 function clearDetailSelection(workspace) {
   resetDossierCopyPreview(workspace);
+  resetProjectWorkspace(workspace);
   const pricingDialog = workspace.querySelector("[data-dossiers-website-pricing-dialog]");
   if (pricingDialog.open) pricingDialog.close();
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = false;
-  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-website-pricing], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
+  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-project], .context-column > [data-dossiers-website-pricing], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
     panel.hidden = true;
   }
 }
@@ -1192,6 +1257,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     detail: null,
     documents: [],
     assignment: null,
+    projectWorkspace: null,
     roster: [],
     command: null,
     requests: [],
@@ -1212,7 +1278,6 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   const status = workspace.querySelector("[data-dossiers-status]");
 
   async function refreshWebsiteQuotationAuthorities(selection) {
-    state.vatReadiness = null;
     const pricingRequest = websiteQuotationPricingStateRequest(state.detail);
     const vatRequest = websiteQuotationVatReadinessRequest(state.detail);
     if (!pricingRequest || !vatRequest) {
@@ -1266,6 +1331,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.substance = null;
     state.documents = [];
     state.assignment = null;
+    state.projectWorkspace = null;
     state.roster = [];
     state.requests = [];
     state.request = null;
@@ -1397,6 +1463,12 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   async function selectDossier(summary, { markSeen = false } = {}) {
     if (!summary) return false;
     const selection = ++selectDossier.generation;
+    const retainedWebsiteAuthorities = retainWebsiteQuotationAuthorities(
+      state.detail,
+      state.websitePricing,
+      state.vatReadiness,
+      summary.raw?.quote_request_id,
+    );
     resetDossierCopyPreview(workspace);
     const retainPurgeEligibility = identity.role === "owner" && summary.kind !== "pending" && state.query.zone === "TRASHED";
     state.purgeEligibility = retainPurgeEligibility
@@ -1404,17 +1476,19 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       : null;
     state.selected = summary;
     state.detail = null;
+    state.projectWorkspace = null;
     state.substance = null;
     state.copySource = null;
     state.requests = [];
     state.request = null;
     state.uploadUrl = null;
     state.requestBusy = false;
-    state.websitePricing = null;
-    state.vatReadiness = null;
+    state.websitePricing = retainedWebsiteAuthorities.pricing;
+    state.vatReadiness = retainedWebsiteAuthorities.vatReadiness;
     state.pendingWebsitePricingRequest = null;
     state.websiteQuotationOpen = false;
     selectCustomerRequest.generation += 1;
+    resetProjectWorkspace(workspace);
     renderWebsiteQuotationPricing(workspace, state, identity);
     workspace.querySelector("[data-dossiers-request-detail]").hidden = true;
     presentDossierPurgeEligibility(workspace, state.purgeEligibility, { refreshing: Boolean(state.purgeEligibility) });
@@ -1455,6 +1529,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       state.substance = substance;
       state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
       renderDetail(workspace, detail, summary, substance);
+      const projectRequest = projectWorkspaceRequest(detail);
+      if (!projectRequest && detail.request_kind === "website") {
+        state.projectWorkspace = { state: "empty", message: "Geen project gekoppeld." };
+        renderProjectWorkspace(workspace, state.projectWorkspace);
+      }
       if (markSeen) void markSelectedDossierSeen(summary, selection);
       const reference = dossierReference(detail);
       const canRequestPurgeEligibility = identity.role === "owner" && detail.dossier_lifecycle?.state === "TRASHED";
@@ -1498,6 +1577,27 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           }),
         );
       }
+      if (projectRequest) {
+        resetProjectWorkspace(workspace, false);
+        const projectContext = {
+          quoteRequestId: projectRequest.quote_request_id,
+          projectId: projectRequest.project_id,
+        };
+        tasks.push(
+          loadProjectWorkspace(authority.gateway, projectContext).then((view) => {
+            if (selection !== selectDossier.generation) return;
+            state.projectWorkspace = view;
+            renderProjectWorkspace(workspace, view);
+          }, () => {
+            if (selection !== selectDossier.generation) return;
+            state.projectWorkspace = {
+              state: "error",
+              message: "Project kon niet veilig worden geladen.",
+            };
+            renderProjectWorkspace(workspace, state.projectWorkspace);
+          }),
+        );
+      }
       if (["owner", "operations_manager"].includes(identity.role)) {
         tasks.push(Promise.all([
           authority.gateway({ action: "get_dossier_assignment", dossier_reference: reference }),
@@ -1514,6 +1614,13 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
           }
           select.value = assignment.assignee_operator_id || "";
           workspace.querySelector("[data-dossiers-assignee]").textContent = assignment.assignee_display_name || "Niet toegewezen";
+          if (state.projectWorkspace?.state === "ready") {
+            state.projectWorkspace = {
+              ...state.projectWorkspace,
+              assignee: assignment.assignee_display_name || "Niet toegewezen",
+            };
+            renderProjectWorkspace(workspace, state.projectWorkspace);
+          }
           section.hidden = false;
         }));
       }

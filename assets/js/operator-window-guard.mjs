@@ -1,9 +1,9 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 import { createOperatorMfaDialog, isMfaOperatorSubject } from "./operator-mfa.mjs?v=20260904-aal2-r1";
-import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260905-dossiers-purge-aal2-r1&calendar=20260905-calendar-selection-r5";
-import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260902-lifecycle-round2-hotfix1";
-import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260902-lifecycle-round2-hotfix1";
+import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1";
+import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260912-dossier-continuity-project-r1";
+import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";
 
 const gate = document.getElementById("operatorWindowGate");
@@ -49,21 +49,24 @@ try {
     client,
     bootstrap,
     joinedWorkspace,
-    onInvalidate: (moduleKey)=>moduleKey === bootstrap.moduleKey && sensitiveContent.operatorModuleController?.refresh(),
+    onInvalidate: (moduleKey, invalidationSlotKey)=>moduleKey === bootstrap.moduleKey &&
+      sensitiveContent.operatorModuleController?.refresh({ background: true, invalidationSlotKey }),
     onLock: lockWindow,
   });
   const moduleController = await mountStandaloneOperatorModule({
     moduleKey: bootstrap.moduleKey,
+    slotKey: bootstrap.slotKey,
     root: document,
     client,
     identity,
     requireAal2,
     onInvalidate: (moduleKey)=>childCoordinator.invalidate(moduleKey),
+    requestOpen: (moduleKey, slotKey)=>childCoordinator.requestOpen(moduleKey, slotKey),
     onAuthorizationFailure: ()=>childCoordinator.lock("WORKSPACE_MODULE_NOT_AUTHORIZED"),
   });
   sensitiveContent.operatorModuleController = moduleController;
   windowHost.setModuleController(moduleController);
-  document.title = `${descriptor.displayName} | Lorenzo Web Solutions`;
+  document.title = `${moduleController.displayName || descriptor.displayName} | Lorenzo Web Solutions`;
   identityBadge.textContent = String(identity.role || "OPERATOR").replaceAll("_", " ").toUpperCase();
   gate.hidden = true;
   shell.hidden = false;

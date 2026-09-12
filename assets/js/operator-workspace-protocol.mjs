@@ -6,7 +6,7 @@ export const SERVER_LEASE_DURATION_MS = 13_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODULE_OR_SLOT_KEY = /^[a-z][a-z0-9-]{0,47}$/;
-const EVENT_TYPES = new Set(["HELLO", "REGISTERED", "HEARTBEAT", "SHUTDOWN", "LOCK", "INVALIDATE", "FOCUS_REQUEST"]);
+const EVENT_TYPES = new Set(["HELLO", "REGISTERED", "HEARTBEAT", "SHUTDOWN", "LOCK", "INVALIDATE", "FOCUS_REQUEST", "OPEN_REQUEST"]);
 const EVENT_KEYS = new Set(["type", "workspaceId", "epoch", "senderWindowId", "sequence", "timestamp", "moduleKey", "slotKey"]);
 const MASTER_RESUME_STATE_KEY = "lwsOperatorWorkspaceResumeV1";
 

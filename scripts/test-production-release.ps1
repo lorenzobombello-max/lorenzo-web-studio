@@ -36,6 +36,11 @@ function Test-PathPattern {
 }
 
 try {
+  & ./scripts/invoke-dossier-continuity-release-gate.ps1 -Phase Local
+  if ($LASTEXITCODE -ne 0) {
+    throw "HARD STOP: dossier continuity local gate failed"
+  }
+
   $contract = Get-Content $ContractFile -Raw | ConvertFrom-Json
   $scope = Get-Content $ScopeFile -Raw | ConvertFrom-Json
   $remote = $contract.productionAuthority.remote

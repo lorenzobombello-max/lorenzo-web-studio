@@ -219,6 +219,7 @@ type ValidatedApplicationActionInput =
     start_date: string;
     end_date: string;
     input: Record<string, unknown>;
+    expected_state: string;
   }>;
 type ValidatedDossierLifecycleActionInput =
   & ValidatedApplicationActionInput
@@ -1606,6 +1607,98 @@ if (import.meta.main) {
                 p_idempotency_key: input.idempotency_key,
               },
             );
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "get_project_workspace") {
+            const [project, startGate] = await Promise.all([
+              client.rpc("get_commercial_project_view_v2", {
+                p_project_id: input.project_id,
+              }),
+              client.rpc("get_operator_project_start_gate_v1", {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+              }),
+            ]);
+            if (project.error) throw new Error(project.error.message);
+            if (startGate.error) throw new Error(startGate.error.message);
+            return { project: project.data, start_gate: startGate.data };
+          }
+          if (input.action === "get_website_execution_workspace") {
+            const { data, error } = await client.rpc(
+              "get_website_execution_workspace_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+              },
+            );
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "get_project_requirements_board") {
+            const { data, error } = await client.rpc("get_project_requirements_board_v1", {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+            });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "create_project_requirements_board") {
+            const { data, error } = await client.rpc("create_project_requirements_board_v1", {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+              p_idempotency_key: input.idempotency_key,
+            });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "create_project_requirement") {
+            const { data, error } = await client.rpc("create_project_requirement_v1", {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+              p_requirements_board_id: input.requirements_board_id,
+              p_expected_board_revision: input.expected_board_revision,
+              p_item: input.item,
+              p_idempotency_key: input.idempotency_key,
+            });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "finalize_project_requirements_board") {
+            const { data, error } = await client.rpc("finalize_project_requirements_board_v1", {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+              p_requirements_board_id: input.requirements_board_id,
+              p_expected_revision: input.expected_revision,
+              p_idempotency_key: input.idempotency_key,
+            });
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "start_project_requirement" || input.action === "block_project_requirement" || input.action === "complete_project_requirement" || input.action === "reopen_project_requirement") {
+            const rpcName = `${input.action}_v1`;
+            const parameters: Record<string, unknown> = {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+              p_requirement_id: input.requirement_id,
+              p_expected_revision: input.expected_revision,
+              p_idempotency_key: input.idempotency_key,
+            };
+            if (input.action === "block_project_requirement") parameters.p_blocked_reason = input.reason;
+            if (input.action === "complete_project_requirement") parameters.p_evidence_reference = input.evidence_reference;
+            if (input.action === "reopen_project_requirement") parameters.p_reopen_reason = input.reason;
+            const { data, error } = await client.rpc(rpcName, parameters);
+            if (error) throw new Error(error.message);
+            return data;
+          }
+          if (input.action === "start_project_work") {
+            const { data, error } = await client.rpc("start_project_work_v1", {
+              p_quote_request_id: input.quote_request_id,
+              p_project_id: input.project_id,
+              p_expected_state: input.expected_state,
+              p_expected_revision: input.expected_revision,
+              p_idempotency_key: input.idempotency_key,
+            });
             if (error) throw new Error(error.message);
             return data;
           }

@@ -209,19 +209,19 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
-    `/assets/css/operator-dashboard.css?v=${OPERATOR_ASSET_RELEASE}&pulse=${OPERATOR_PROFILE_PULSE_RELEASE}&dossier-zones=20260905-r1&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
-    `/assets/js/operator-dashboard-guard.mjs?v=${OPERATOR_GUARD_RELEASE}&calendar-selection=${OPERATOR_CALENDAR_CSS_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
-    `./operator-dashboard.js?v=${OPERATOR_PROFILE_RELEASE}&patch=${OPERATOR_RUNTIME_RELEASE}&calendar=${OPERATOR_CALENDAR_SELECTION_RELEASE}&vat-readiness=20260911-vat-readiness-v1`,
+    "/assets/css/operator-dashboard.css?v=20260912-dossier-continuity-project-r1",
+    "/assets/js/operator-dashboard-guard.mjs?v=20260912-dossier-continuity-project-r1",
+    "./operator-dashboard.js?v=20260912-dossier-continuity-project-r1",
   ]);
-  for (const [url, release] of [[cssUrl, OPERATOR_ASSET_RELEASE], [guardUrl, OPERATOR_GUARD_RELEASE], [dashboardUrl, OPERATOR_PROFILE_RELEASE]]) {
+  for (const [url, release] of [[cssUrl, "20260912-dossier-continuity-project-r1"], [guardUrl, "20260912-dossier-continuity-project-r1"], [dashboardUrl, "20260912-dossier-continuity-project-r1"]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
   }
   assert.match(guardUrl, /^\/assets\/js\/operator-dashboard-guard\.mjs\?v=/);
   assert.match(dashboardUrl, /^\.\/operator-dashboard\.js\?v=/);
-  assert.equal(new URL(cssUrl, "https://operator.example/").searchParams.get("pulse"), OPERATOR_PROFILE_PULSE_RELEASE);
-  assert.equal(new URL(dashboardUrl, "https://operator.example/").searchParams.get("patch"), OPERATOR_RUNTIME_RELEASE);
+  assert.equal(new URL(cssUrl, "https://operator.example/").searchParams.get("pulse"), null);
+  assert.equal(new URL(dashboardUrl, "https://operator.example/").searchParams.get("patch"), null);
   assert.match(prepare, /"assets\/css\/operator-dashboard\.css"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard-guard\.mjs"/);
   assert.match(prepare, /"assets\/js\/operator-dashboard\.js"/);
@@ -3236,7 +3236,11 @@ test("module motion remains decorative, finite, and reduced-motion safe", async 
       .replace(/\.dossiers-status-overview button\[aria-current="true"\]::before \{[^}]*\}/, "")
       .replace(/\.calendar-capacity-day\[aria-pressed="true"\] \{[^}]*\}/, "")
       .replace(/\.calendar-capacity-day\[aria-pressed="true"\]::before \{[^}]*\}/, "")
-      .replace(/\.calendar-date-trigger\[aria-pressed="true"\] \{[^}]*\}/, ""),
+      .replace(/\.calendar-date-trigger\[aria-pressed="true"\] \{[^}]*\}/, "")
+      .replace(/\.project-progress li\[data-state="in_progress"\] \.project-progress__copy \{[^}]*\}/, "")
+      .replace(/\.project-progress li\[data-state="in_progress"\] \.project-progress__copy::before \{[^}]*\}/, "")
+      .replace(/\.project-requirements__card--active \{[^}]*\}/, "")
+      .replace(/\.project-requirements__card--active::before \{[^}]*\}/, ""),
     /infinite/
   );
 });

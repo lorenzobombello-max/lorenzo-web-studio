@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <title>CHECKPOINT Q12 · Project Requirements Board</title>
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="/assets/css/pages.css" />
+  <link rel="stylesheet" href="/assets/css/operator-dashboard.css?v=20260910-requirements-summary-v1" />
+  <link rel="stylesheet" href="/assets/css/operator-test.css?v=20260903-operator-test-r1" />
+  <link rel="stylesheet" href="/assets/css/operator-project-requirements-test.css?v=20260910-task12-v1" />
+</head>
+<body class="operator-test-page">
+  <div id="operatorDashboard">
+    <a class="skip-link" href="#workspace">Ga naar testscherm</a>
+    <header class="topbar">
+      <a class="identity" href="/operator/" aria-label="Lorenzo Web Solutions operatoromgeving">
+        <img class="identity__mark" src="/assets/images/branding/logo/lorenzo-web-solution-logo-transparent.png" alt="" width="1254" height="1254" />
+        <span><strong>Lorenzo Web Solutions</strong><small>Operator testomgeving</small></span>
+      </a>
+      <div class="topbar__status"><span class="operator-test-badge">Q12 · TEST</span></div>
+    </header>
+
+    <main id="workspace" class="workspace requirements-checkpoint">
+      <section class="panel dossiers-project requirements-checkpoint__dossier" aria-labelledby="activeDossierTitle">
+        <div class="panel__heading"><div><p class="eyebrow">Q12.1 · Operator / Actieve dossiers</p><h1 id="activeDossierTitle">Actieve dossiers</h1></div><span class="badge badge--active">PROJECT GESTART</span></div>
+        <dl class="requirements-checkpoint__facts">
+          <div><dt>Klant</dt><dd>Atelier Noord</dd></div>
+          <div><dt>Dossier</dt><dd>LWS-AAN-2026-0042</dd></div>
+          <div><dt>Project</dt><dd>a1800000-0000-4000-8000-000000000002</dd></div>
+          <div><dt>Gate</dt><dd>Website in uitvoering</dd></div>
+        </dl>
+        <nav class="requirements-checkpoint__dossier-actions" aria-label="Beschikbare projectroutes">
+          <a class="primary-action primary-action--compact" href="#project-workspace">Project openen</a>
+          <a class="secondary-action" href="#website-workspace">Website openen</a>
+          <a class="secondary-action" href="#requirements-board">Takenbord openen</a>
+        </nav>
+      </section>
+
+      <div class="requirements-checkpoint__siblings" aria-label="Q12.8 één master met drie managed siblings">
+        <section id="project-workspace" class="panel dossiers-project requirements-checkpoint__sibling" aria-labelledby="projectWorkspaceTitle">
+          <div class="panel__heading"><div><p class="eyebrow">Q12.2 · Project Workspace</p><h2 id="projectWorkspaceTitle">Projectwerkruimte</h2></div><span class="badge badge--active">WEBSITE IN UITVOERING</span></div>
+          <ol class="requirements-checkpoint__steps">
+            <li data-state="complete"><strong>01 Intake afgerond</strong><br />Projectinput bevestigd</li>
+            <li data-state="complete"><strong>02 Eerste betaling</strong><br />M1 bevestigd</li>
+            <li data-state="active"><strong>03 Website in uitvoering</strong><br />8 / 12 vereisten afgerond</li>
+            <li><strong>04 Review en goedkeuring</strong><br />Wacht op preview</li>
+            <li><strong>05 Oplevering</strong><br />Nog vergrendeld</li>
+          </ol>
+          <section class="project-workspace-requirements">
+            <p class="eyebrow">Projectvereisten</p><h3>08 / 12</h3>
+            <dl class="requirements-checkpoint__facts"><div><dt>Open</dt><dd>3</dd></div><div><dt>Geblokkeerd</dt><dd>1</dd></div><div><dt>Preview gereed</dt><dd>NEE</dd></div></dl>
+          </section>
+          <nav class="website-execution__actions" aria-label="Projectacties"><a class="secondary-action" href="#website-workspace">Website openen</a><a class="secondary-action" href="#requirements-board">Takenbord openen</a></nav>
+        </section>
+
+        <section id="website-workspace" class="module-shell project-child-workspace website-execution-workspace requirements-checkpoint__sibling" aria-labelledby="websiteWorkspaceTitle">
+          <section class="website-execution">
+            <header class="project-child-heading website-execution__heading"><div><p class="eyebrow">Q12.3 · Website Execution Workspace</p><h2 id="websiteWorkspaceTitle">Website Execution Workspace</h2></div><span class="badge badge--active">PASS</span></header>
+            <section class="website-execution__requirements"><p class="eyebrow">Projectvereisten</p><h3>08 / 12</h3><dl class="requirements-checkpoint__facts"><div><dt>Open</dt><dd>3</dd></div><div><dt>Geblokkeerd</dt><dd>1</dd></div><div><dt>Preview gereed</dt><dd>NEE</dd></div></dl><a class="secondary-action" href="#requirements-board">Takenbord openen</a></section>
+            <section class="website-execution__board requirements-checkpoint__technical">
+              <div class="website-execution__board-heading"><div><p class="eyebrow">Technische werkruimte</p><h3>Development references</h3></div></div>
+              <dl class="website-execution__references">
+                <div><dt>Repository</dt><dd>lws-studio/lws-web-2026-0042</dd></div>
+                <div><dt>Actieve branch</dt><dd>develop</dd></div>
+                <div><dt>Preview</dt><dd>preview.example.test/build/42</dd></div>
+                <div><dt>Productie URL</dt><dd>www.example.test</dd></div>
+                <div class="website-execution__reference-wide"><dt>Laatste commit</dt><dd>a8f4c2d19b764377b881218779690c54f4668021</dd></div>
+              </dl>
+            </section>
+          </section>
+        </section>
+
+        <section id="requirements-board" class="module-shell project-child-workspace project-requirements-workspace requirements-checkpoint__sibling" aria-labelledby="requirementsTitle">
+          <section class="project-requirements">
+            <header class="project-child-heading"><div><p class="eyebrow">Q12.4 · Project Requirements Board</p><h2 id="requirementsTitle">Project Requirements</h2><p>12 server-gebonden uitvoeringsvereisten</p></div><span class="badge badge--active">08 / 12</span></header>
+            <div class="project-requirements__progress"><strong>08 / 12</strong><span>projectvereisten afgerond</span></div>
+            <nav class="project-requirements__filters" aria-label="Q12.5 statusfilters"><button type="button" class="secondary-action" aria-pressed="true">Alle</button><button type="button" class="secondary-action">Actief</button><button type="button" class="secondary-action">Open</button><button type="button" class="secondary-action">Afgerond</button></nav>
+            <div class="project-requirements__cards">
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>01 Homepage</h3><p>Homepage volgens geaccepteerde scope.</p><p>COMPLETED · PAGE · Geverifieerd</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>02 Over ons</h3><p>Bedrijfsverhaal en teaminhoud.</p><p>COMPLETED · CONTENT · Gecontroleerd</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>03 Contactformulier</h3><p>Veilige aanvraagflow met validatie.</p><p>COMPLETED · FORM · PASS</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>04 Mobiele navigatie</h3><p>Responsive navigatie op alle viewports.</p><p>COMPLETED · DESIGN · PASS</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>05 SEO basis</h3><p>Metadata en headingstructuur.</p><p>COMPLETED · SEO · PASS</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>06 Cookiebanner</h3><p>Toestemming en voorkeuren.</p><p>COMPLETED · TECHNICAL · PASS</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>07 Google Maps</h3><p>Locatie-integratie volgens scope.</p><p>COMPLETED · INTEGRATION · PASS</p></article>
+              <article data-requirement-card data-status="COMPLETED" class="project-requirements__card project-requirements__card--completed"><h3>08 Afspraakmodule</h3><p>Boekingsflow en bevestiging.</p><p>COMPLETED · INTEGRATION · PASS</p></article>
+              <article data-requirement-card data-status="ACTIVE" class="project-requirements__card project-requirements__card--active"><h3>09 Automatische e-mail</h3><p>Bevestigingsmail na aanvraag.</p><p>ACTIVE · AUTOMATION · In uitvoering</p><button type="button" class="secondary-action">Blokkeren</button></article>
+              <article data-requirement-card data-status="PENDING" class="project-requirements__card project-requirements__card--pending"><h3>10 Klantenlogin</h3><p>Afgeschermde klantomgeving.</p><p>PENDING · AUTH · Open</p><button type="button" class="secondary-action">Aan deze taak werken</button></article>
+              <article data-requirement-card data-status="PENDING" class="project-requirements__card project-requirements__card--pending"><h3>11 Fotogalerij</h3><p>Beeldcollectie met mobiele presentatie.</p><p>PENDING · MULTIMEDIA · Open</p></article>
+              <article data-requirement-card data-status="BLOCKED" class="project-requirements__card project-requirements__card--blocked"><h3>12 Meertaligheid</h3><p>Wacht op goedgekeurde klantinhoud.</p><p>BLOCKED · CONTENT · Geblokkeerd</p></article>
+            </div>
+            <p class="requirements-checkpoint__caption">Q12.6 sibling sync zonder F5 · Q12.7 ready_for_preview: false → ready_for_preview: true zonder previewtransition · Q12.9 master refresh behoudt children · Q12.10 logout/revoke fail closed · Q12.11 reduced motion · Q12.12 responsive matrix</p>
+          </section>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

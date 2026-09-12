@@ -250,11 +250,11 @@ test("calendar selection release identity reaches dashboard and standalone windo
     readFile(new URL("../operator/window/index.html", import.meta.url), "utf8"),
   ]);
   assert.ok(dashboard.includes(`operator-calendar.mjs?v=${release}`));
-  assert.ok(dashboardGuard.includes(`calendar=${release}`));
-  assert.ok(dashboardHtml.includes(`calendar-selection=${cssRelease}`));
+  assert.ok(dashboardGuard.includes("operator-dashboard.js?v=20260912-dossier-continuity-project-r1"));
+  assert.ok(dashboardHtml.includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"));
   assert.ok(registry.includes(`operator-calendar.mjs?v=${release}`));
-  assert.ok(windowGuard.includes(`calendar=${release}`));
-  assert.ok(windowHtml.includes(`calendar-selection=${cssRelease}`));
+  assert.ok(windowGuard.includes("operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1"));
+  assert.ok(windowHtml.includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"));
 });
 
 test("standalone calendar template provides the module panel required by its initializer", async ()=>{

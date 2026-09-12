@@ -116,9 +116,13 @@ test("quotation compose and submit both require server READY and authoritative r
     source,
     /target\.hasAttribute\("data-dossiers-website-pricing-compose"\)[\s\S]*websiteQuotationCanCompose\(presentation, state\.vatReadiness\)/,
   );
+  const refreshBody = source.match(
+    /async function refreshWebsiteQuotationAuthorities\(selection\) \{([\s\S]*?)\n  \}/,
+  )?.[1] || "";
+  assert.doesNotMatch(refreshBody, /state\.vatReadiness = null/);
   assert.match(
-    source,
-    /async function refreshWebsiteQuotationAuthorities[\s\S]*state\.vatReadiness = null[\s\S]*Promise\.all\([\s\S]*authority\.gateway\(pricingRequest\)[\s\S]*authority\.gateway\(vatRequest\)/,
+    refreshBody,
+    /Promise\.all\([\s\S]*authority\.gateway\(pricingRequest\)[\s\S]*authority\.gateway\(vatRequest\)[\s\S]*state\.websitePricing = pricing;\s+state\.vatReadiness = normalizeVatReadiness\(vatReadiness\);/,
   );
   assert.match(
     source,
