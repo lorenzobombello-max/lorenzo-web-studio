@@ -353,7 +353,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const dossierCacheIdentity = "20260912-pricing-refresh-retention-r1";
+  const dossierCacheIdentity = "20260912-project-refresh-retention-r1";
   const windowGuardCacheIdentity = "20260912-dossier-continuity-project-r1";
   const windowRegistryCacheIdentity = "20260912-dossier-continuity-project-r1";
   const dossierCssCacheIdentity = "20260912-dossier-continuity-project-r1";
@@ -783,8 +783,8 @@ test("Dossiers wires VAT remediation and cache versions without a dashboard dupl
   assert.match(html, /operator-dashboard\.css\?v=20260912-dossier-continuity-project-r1/);
   assert.match(html, /operator-dashboard-guard\.mjs\?v=20260912-dossier-continuity-project-r1/);
   assert.match(guard, /operator-dashboard\.js\?v=20260912-dossier-continuity-project-r1/);
-  assert.match(dashboard, /operator-dossiers\.mjs\?v=20260912-pricing-refresh-retention-r1/);
-  assert.match(registry, /operator-dossiers\.mjs\?v=20260912-pricing-refresh-retention-r1/);
+  assert.match(dashboard, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);
+  assert.match(registry, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);
   assert.doesNotMatch(dashboard, /authorize_website_quotation_pricing_decision|websiteQuotationPricingPresentation/);
   assert.match(distScript, /"assets\/js\/operator-vat-readiness\.mjs"/);
 });

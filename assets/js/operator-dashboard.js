@@ -13,7 +13,7 @@ import { initializeOperatorCalendar } from "./operator-calendar.mjs?v=20260905-c
 import { initializeOperatorRecruitment } from "./operator-recruitment.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorWorkforce } from "./operator-workforce.mjs?v=20260903-auto-refresh-8s";
 import { initializeOperatorFinance } from "./operator-finance.mjs?v=20260903-auto-refresh-8s";
-import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260912-pricing-refresh-retention-r1";
+import { initializeOperatorDossiers } from "./operator-dossiers.mjs?v=20260912-project-refresh-retention-r1";
 import { initializeOperatorProfile } from "./operator-profile.mjs?v=20260905-profile-welcome-r2";
 
 const APPLICATION_REFERENCE = /^LWS-AAN-[0-9]{4}-[0-9]{4}$/;

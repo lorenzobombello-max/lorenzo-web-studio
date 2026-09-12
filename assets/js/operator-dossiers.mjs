@@ -105,6 +105,12 @@ export function retainWebsiteQuotationAuthorities(
     : Object.freeze({ detail: null, pricing: null, vatReadiness: null });
 }
 
+export function retainProjectWorkspace(detail, projectWorkspace, quoteRequestId) {
+  return detail?.quote_request_id === String(quoteRequestId || "")
+    ? projectWorkspace
+    : null;
+}
+
 function websitePriceMinor(value) {
   const normalized = String(value || "").trim().replace(",", ".");
   if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
@@ -1469,6 +1475,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       state.vatReadiness,
       summary.raw?.quote_request_id,
     );
+    const retainedProjectWorkspace = retainProjectWorkspace(
+      state.detail,
+      state.projectWorkspace,
+      summary.raw?.quote_request_id,
+    );
     resetDossierCopyPreview(workspace);
     const retainPurgeEligibility = identity.role === "owner" && summary.kind !== "pending" && state.query.zone === "TRASHED";
     state.purgeEligibility = retainPurgeEligibility
@@ -1476,7 +1487,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       : null;
     state.selected = summary;
     state.detail = retainedWebsiteAuthorities.detail;
-    state.projectWorkspace = null;
+    state.projectWorkspace = retainedProjectWorkspace;
     state.substance = null;
     state.copySource = null;
     state.requests = [];
@@ -1488,7 +1499,8 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.pendingWebsitePricingRequest = null;
     state.websiteQuotationOpen = false;
     selectCustomerRequest.generation += 1;
-    resetProjectWorkspace(workspace);
+    if (state.projectWorkspace) renderProjectWorkspace(workspace, state.projectWorkspace);
+    else resetProjectWorkspace(workspace);
     renderWebsiteQuotationPricing(workspace, state, identity);
     workspace.querySelector("[data-dossiers-request-detail]").hidden = true;
     presentDossierPurgeEligibility(workspace, state.purgeEligibility, { refreshing: Boolean(state.purgeEligibility) });

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  retainProjectWorkspace,
   retainWebsiteQuotationAuthorities,
 } from "../assets/js/operator-dossiers.mjs";
 
@@ -11,6 +12,7 @@ const quoteRequestB = "a1800000-0000-4000-8000-000000000002";
 const oldDetail = Object.freeze({ quote_request_id: quoteRequestA });
 const oldPricing = Object.freeze({ quote_request_id: quoteRequestA, revision: 1 });
 const oldVatReadiness = Object.freeze({ quote_request_id: quoteRequestA, vat_readiness: "READY" });
+const oldProjectWorkspace = Object.freeze({ state: "empty", message: "Geen project gekoppeld." });
 
 const source = await readFile(
   new URL("../assets/js/operator-dossiers.mjs", import.meta.url),
@@ -65,6 +67,20 @@ test("dossier selection changes never retain pricing from the previous dossier",
   assert.deepEqual(retained, { detail: null, pricing: null, vatReadiness: null });
 });
 
+test("background refresh retains the same dossier project presentation", () => {
+  assert.equal(
+    retainProjectWorkspace(oldDetail, oldProjectWorkspace, quoteRequestA),
+    oldProjectWorkspace,
+  );
+});
+
+test("dossier selection changes never retain the previous project presentation", () => {
+  assert.equal(
+    retainProjectWorkspace(oldDetail, oldProjectWorkspace, quoteRequestB),
+    null,
+  );
+});
+
 test("Dossiers refresh retains by identity and replaces paired authorities after both fetches", () => {
   assert.match(
     source,
@@ -78,5 +94,9 @@ test("Dossiers refresh retains by identity and replaces paired authorities after
   assert.match(
     refreshBody,
     /state\.websitePricing = pricing;\s+state\.vatReadiness = normalizeVatReadiness\(vatReadiness\);/,
+  );
+  assert.match(
+    source,
+    /const retainedProjectWorkspace = retainProjectWorkspace\([\s\S]*state\.projectWorkspace = retainedProjectWorkspace;[\s\S]*if \(state\.projectWorkspace\) renderProjectWorkspace\(workspace, state\.projectWorkspace\);/,
   );
 });
