@@ -440,6 +440,533 @@ select is(
 
 select has_table('public', 'website_concepts', 'Website concept authority exists');
 select has_table('public', 'website_work_contexts', 'Website work-context authority exists');
+select has_table('public', 'website_concept_events', 'Website concept event authority exists');
+select has_table('public', 'website_concept_idempotency_ledger', 'Website concept idempotency authority exists');
+
+select columns_are(
+  'public', 'website_concepts',
+  array[
+    'concept_id','quote_request_id','mode','briefing_status',
+    'commercially_released','concept_status','promoted_project_id','revision',
+    'created_by','created_at','updated_at','promoted_at'
+  ],
+  'Website concept stores only the contracted authority fields'
+);
+select columns_are(
+  'public', 'website_work_contexts',
+  array[
+    'website_work_context_id','quote_request_id','concept_id','project_id',
+    'phase','revision','created_at','updated_at'
+  ],
+  'Website work context stores one lifecycle-neutral technical identity'
+);
+select columns_are(
+  'public', 'website_concept_events',
+  array[
+    'event_id','concept_id','website_work_context_id','quote_request_id',
+    'event_type','actor_id','actor_role','command_id','metadata','occurred_at'
+  ],
+  'Website concept event stores the complete safe audit binding'
+);
+select columns_are(
+  'public', 'website_concept_idempotency_ledger',
+  array[
+    'operation_id','actor_id','quote_request_id','command_type',
+    'idempotency_key','request_fingerprint','result_reference',
+    'result_payload','created_at'
+  ],
+  'Website concept idempotency ledger stores fingerprint and complete result snapshot'
+);
+
+select is(
+  (select jsonb_object_agg(column_name, data_type)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_concepts'),
+  '{"concept_id":"uuid","quote_request_id":"uuid","mode":"text","briefing_status":"text","commercially_released":"boolean","concept_status":"text","promoted_project_id":"uuid","revision":"bigint","created_by":"uuid","created_at":"timestamp with time zone","updated_at":"timestamp with time zone","promoted_at":"timestamp with time zone"}'::jsonb,
+  'every Website concept column has its contracted type'
+);
+select is(
+  (select jsonb_object_agg(column_name, data_type)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_work_contexts'),
+  '{"website_work_context_id":"uuid","quote_request_id":"uuid","concept_id":"uuid","project_id":"uuid","phase":"text","revision":"bigint","created_at":"timestamp with time zone","updated_at":"timestamp with time zone"}'::jsonb,
+  'every Website work-context column has its contracted type'
+);
+select is(
+  (select jsonb_object_agg(column_name, data_type)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_concept_events'),
+  '{"event_id":"uuid","concept_id":"uuid","website_work_context_id":"uuid","quote_request_id":"uuid","event_type":"text","actor_id":"uuid","actor_role":"text","command_id":"uuid","metadata":"jsonb","occurred_at":"timestamp with time zone"}'::jsonb,
+  'every Website concept event column has its contracted type'
+);
+select is(
+  (select jsonb_object_agg(column_name, data_type)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_concept_idempotency_ledger'),
+  '{"operation_id":"uuid","actor_id":"uuid","quote_request_id":"uuid","command_type":"text","idempotency_key":"uuid","request_fingerprint":"character","result_reference":"text","result_payload":"jsonb","created_at":"timestamp with time zone"}'::jsonb,
+  'every Website concept idempotency column has its contracted type'
+);
+select is(
+  (select array_agg(column_name::text order by ordinal_position)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_concepts'
+     and is_nullable = 'NO'),
+  array[
+    'concept_id','quote_request_id','mode','briefing_status',
+    'commercially_released','concept_status','revision','created_by',
+    'created_at','updated_at'
+  ],
+  'only future promotion fields are nullable on Website concepts'
+);
+select is(
+  (select array_agg(column_name::text order by ordinal_position)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'website_work_contexts'
+     and is_nullable = 'NO'),
+  array[
+    'website_work_context_id','quote_request_id','phase','revision',
+    'created_at','updated_at'
+  ],
+  'only concept and project alternatives are nullable on work contexts'
+);
+select is(
+  (select count(*)
+   from information_schema.columns
+   where table_schema = 'public'
+     and table_name in ('website_concept_events','website_concept_idempotency_ledger')
+     and is_nullable = 'NO'),
+  19::bigint,
+  'event and idempotency snapshots have no nullable fields'
+);
+
+select col_type_is('public', 'website_concepts', 'concept_id', 'uuid', 'concept identity is uuid');
+select col_type_is('public', 'website_concepts', 'quote_request_id', 'uuid', 'concept dossier binding is uuid');
+select col_type_is('public', 'website_concepts', 'revision', 'bigint', 'concept revision is bigint');
+select col_type_is('public', 'website_concepts', 'created_at', 'timestamp with time zone', 'concept creation is timestamptz');
+select col_type_is('public', 'website_concepts', 'updated_at', 'timestamp with time zone', 'concept update is timestamptz');
+select col_type_is('public', 'website_concepts', 'promoted_at', 'timestamp with time zone', 'concept promotion time is timestamptz');
+select col_type_is('public', 'website_work_contexts', 'website_work_context_id', 'uuid', 'work-context identity is uuid');
+select col_type_is('public', 'website_work_contexts', 'revision', 'bigint', 'work-context revision is bigint');
+select col_type_is('public', 'website_concept_events', 'metadata', 'jsonb', 'event metadata is jsonb');
+select col_type_is('public', 'website_concept_events', 'occurred_at', 'timestamp with time zone', 'event time is timestamptz');
+select col_type_is('public', 'website_concept_idempotency_ledger', 'request_fingerprint', 'character(64)', 'request fingerprint is fixed lowercase SHA-256');
+select col_type_is('public', 'website_concept_idempotency_ledger', 'result_payload', 'jsonb', 'result snapshot is jsonb');
+
+select col_is_pk('public', 'website_concepts', 'concept_id', 'concept identity is primary');
+select col_is_pk('public', 'website_work_contexts', 'website_work_context_id', 'work-context identity is primary');
+select col_is_pk('public', 'website_concept_events', 'event_id', 'event identity is primary');
+select col_is_pk('public', 'website_concept_idempotency_ledger', 'operation_id', 'operation identity is primary');
+select col_has_default('public', 'website_concepts', 'concept_id', 'concept identity is server generated');
+select col_has_default('public', 'website_concepts', 'commercially_released', 'commercial release defaults server-side');
+select col_has_default('public', 'website_concepts', 'revision', 'concept revision defaults server-side');
+select col_has_default('public', 'website_concepts', 'created_at', 'concept creation time is server generated');
+select col_has_default('public', 'website_concepts', 'updated_at', 'concept update time is server generated');
+select col_has_default('public', 'website_work_contexts', 'website_work_context_id', 'work-context identity is server generated');
+select col_has_default('public', 'website_work_contexts', 'revision', 'work-context revision defaults server-side');
+select col_has_default('public', 'website_concept_events', 'event_id', 'event identity is server generated');
+select col_has_default('public', 'website_concept_events', 'metadata', 'event metadata defaults server-side');
+select col_has_default('public', 'website_concept_events', 'occurred_at', 'event time is server generated');
+select col_has_default('public', 'website_concept_idempotency_ledger', 'operation_id', 'operation identity is server generated');
+select col_has_default('public', 'website_concept_idempotency_ledger', 'created_at', 'ledger time is server generated');
+
+select is(
+  (select count(*)
+   from pg_constraint
+   where contype = 'u'
+     and conrelid in (
+       to_regclass('public.website_concepts'),
+       to_regclass('public.website_work_contexts'),
+       to_regclass('public.website_concept_idempotency_ledger')
+     )
+     and pg_get_constraintdef(oid) in (
+       'UNIQUE (quote_request_id)',
+       'UNIQUE (promoted_project_id)',
+       'UNIQUE (concept_id)',
+       'UNIQUE (project_id)',
+       'UNIQUE (actor_id, command_type, idempotency_key)',
+       'UNIQUE (quote_request_id, command_type)'
+     )),
+  7::bigint,
+  'concept, context, and idempotency unique bindings are complete'
+);
+
+select ok(
+  (select count(*) = 12
+   from pg_constraint as constraint_row
+   where constraint_row.contype = 'f'
+     and constraint_row.conrelid in (
+       to_regclass('public.website_concepts'),
+       to_regclass('public.website_work_contexts'),
+       to_regclass('public.website_concept_events'),
+       to_regclass('public.website_concept_idempotency_ledger')
+     )
+     and constraint_row.confrelid in (
+       'public.quote_requests'::regclass,
+       'public.commercial_projects'::regclass,
+       'public.commercial_operators'::regclass,
+       to_regclass('public.website_concepts'),
+       to_regclass('public.website_work_contexts')
+     )),
+  'all twelve concept-root foreign keys are present'
+);
+select ok(
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = to_regclass('public.website_work_contexts')
+      and contype = 'f'
+      and condeferrable
+      and condeferred
+  ),
+  'work-context concept binding can be validated atomically'
+);
+select ok(
+  (select bool_and(relrowsecurity and relforcerowsecurity)
+   from pg_class
+   where oid in (
+     to_regclass('public.website_concepts'),
+     to_regclass('public.website_work_contexts'),
+     to_regclass('public.website_concept_events'),
+     to_regclass('public.website_concept_idempotency_ledger')
+   )),
+  'all four concept roots have forced RLS'
+);
+select ok(
+  not exists (
+    select 1
+    from information_schema.table_privileges
+    where table_schema = 'public'
+      and table_name in (
+        'website_concepts','website_work_contexts',
+        'website_concept_events','website_concept_idempotency_ledger'
+      )
+      and grantee in ('PUBLIC','anon','authenticated','service_role')
+  ),
+  'public, anon, authenticated, and service_role have no direct concept-root privileges'
+);
+
+select set_config('lws.website_concept_command', 'on', true);
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, concept_status, revision, created_by
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'OFFICIAL_PROJECT', 'LIMITED',
+      'ACTIVE', 1, 'c1010000-0000-4000-8000-000000000001'
+    )$$,
+  '23514', null,
+  'concept mode is fixed to PRE_PROJECT'
+);
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, commercially_released,
+      concept_status, revision, created_by
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'PRE_PROJECT', 'LIMITED', true,
+      'ACTIVE', 1, 'c1010000-0000-4000-8000-000000000001'
+    )$$,
+  '23514', null,
+  'concept commercial release is fixed false'
+);
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, concept_status, revision, created_by
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'PRE_PROJECT', 'LIMITED',
+      'ACTIVE', 0, 'c1010000-0000-4000-8000-000000000001'
+    )$$,
+  '23514', null,
+  'concept revision must be positive'
+);
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, concept_status, revision, created_by
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'PRE_PROJECT', 'LIMITED',
+      'PROMOTED', 1, 'c1010000-0000-4000-8000-000000000001'
+    )$$,
+  '23514', null,
+  'PROMOTED concept requires project and promotion timestamp'
+);
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, concept_status, revision, created_by,
+      created_at, updated_at
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'PRE_PROJECT', 'LIMITED',
+      'ACTIVE', 1, 'c1010000-0000-4000-8000-000000000001',
+      '2099-01-02T00:00:00Z', '2099-01-01T00:00:00Z'
+    )$$,
+  '23514', null,
+  'concept timestamps cannot move before creation'
+);
+select throws_ok(
+  $$insert into public.website_work_contexts(
+      quote_request_id, concept_id, project_id, phase, revision
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', null, null, 'PRE_PROJECT', 1
+    )$$,
+  '23514', null,
+  'PRE_PROJECT context requires a concept and forbids a project'
+);
+select throws_ok(
+  $$insert into public.website_work_contexts(
+      quote_request_id, concept_id, project_id, phase, revision
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', null,
+      'c1900000-0000-4000-8000-000000000005', 'OFFICIAL_PROJECT', 0
+    )$$,
+  '23514', null,
+  'work-context revision must be positive'
+);
+insert into public.website_concepts(
+  concept_id, quote_request_id, mode, briefing_status, concept_status,
+  revision, created_by
+) values (
+  'c1b00000-0000-4000-8000-000000000001',
+  'c1110001-0000-4000-8000-000000000001',
+  'PRE_PROJECT', 'COMPLETE', 'ACTIVE', 1,
+  'c1010000-0000-4000-8000-000000000001'
+);
+insert into public.website_work_contexts(
+  website_work_context_id, quote_request_id, concept_id, project_id, phase, revision
+) values (
+  'c1c00000-0000-4000-8000-000000000001',
+  'c1110001-0000-4000-8000-000000000001',
+  'c1b00000-0000-4000-8000-000000000001', null, 'PRE_PROJECT', 1
+);
+insert into public.website_concept_events(
+  event_id, concept_id, website_work_context_id, quote_request_id, event_type,
+  actor_id, actor_role, command_id, metadata
+) values (
+  'c1d00000-0000-4000-8000-000000000001',
+  'c1b00000-0000-4000-8000-000000000001',
+  'c1c00000-0000-4000-8000-000000000001',
+  'c1110001-0000-4000-8000-000000000001',
+  'WEBSITE_CONCEPT_STARTED', 'c1010000-0000-4000-8000-000000000001',
+  'owner', 'c1a00000-0000-4000-8000-000000000011',
+  jsonb_build_object('briefing_status', 'COMPLETE')
+);
+insert into public.website_concept_idempotency_ledger(
+  operation_id, actor_id, quote_request_id, command_type, idempotency_key,
+  request_fingerprint, result_reference, result_payload
+) values (
+  'c1e00000-0000-4000-8000-000000000001',
+  'c1010000-0000-4000-8000-000000000001',
+  'c1110001-0000-4000-8000-000000000001',
+  'START_WEBSITE_CONCEPT', 'c1a00000-0000-4000-8000-000000000011',
+  repeat('a', 64), 'c1b00000-0000-4000-8000-000000000001',
+  jsonb_build_object(
+    'state', 'PRE_PROJECT',
+    'quote_request_id', 'c1110001-0000-4000-8000-000000000001',
+    'concept_id', 'c1b00000-0000-4000-8000-000000000001',
+    'project_id', null,
+    'website_work_context_id', 'c1c00000-0000-4000-8000-000000000001',
+    'mode', 'PRE_PROJECT',
+    'briefing_status', 'COMPLETE',
+    'commercially_released', false,
+    'revision', 1,
+    'permitted_actions', jsonb_build_array('OPEN_WEBSITE')
+  )
+);
+set constraints all immediate;
+set constraints all deferred;
+select set_config('lws.website_concept_command', '', true);
+
+create function pg_temp.insert_mismatched_website_context_v1()
+returns void
+language plpgsql
+as $$
+begin
+  insert into public.website_concepts(
+    concept_id, quote_request_id, mode, briefing_status, concept_status,
+    revision, created_by
+  ) values (
+    'c1b00000-0000-4000-8000-000000000002',
+    'c1120002-0000-4000-8000-000000000002',
+    'PRE_PROJECT', 'LIMITED', 'ACTIVE', 1,
+    'c1010000-0000-4000-8000-000000000001'
+  );
+  insert into public.website_work_contexts(
+    quote_request_id, concept_id, project_id, phase, revision
+  ) values (
+    'c1140004-0000-4000-8000-000000000004',
+    'c1b00000-0000-4000-8000-000000000002', null, 'PRE_PROJECT', 1
+  );
+  set constraints all immediate;
+end;
+$$;
+
+create function pg_temp.insert_non_website_concept_v1()
+returns void
+language plpgsql
+as $$
+begin
+  insert into public.website_concepts(
+    quote_request_id, mode, briefing_status, concept_status, revision, created_by
+  ) values (
+    'c1130003-0000-4000-8000-000000000003', 'PRE_PROJECT', 'LIMITED',
+    'ACTIVE', 1, 'c1010000-0000-4000-8000-000000000001'
+  );
+  set constraints all immediate;
+end;
+$$;
+
+select throws_ok(
+  $$insert into public.website_concepts(
+      quote_request_id, mode, briefing_status, concept_status, revision, created_by
+    ) values (
+      'c1120002-0000-4000-8000-000000000002', 'PRE_PROJECT', 'LIMITED',
+      'ACTIVE', 1, 'c1010000-0000-4000-8000-000000000001'
+    )$$,
+  '55000', 'DIRECT_WEBSITE_CONCEPT_WRITE_FORBIDDEN',
+  'direct concept insert is denied outside the command boundary'
+);
+select throws_ok(
+  $$update public.website_work_contexts set revision = revision + 1
+    where website_work_context_id = 'c1c00000-0000-4000-8000-000000000001'$$,
+  '55000', 'DIRECT_WEBSITE_CONCEPT_WRITE_FORBIDDEN',
+  'direct work-context update is denied outside the command boundary'
+);
+select throws_ok(
+  $$update public.website_concept_events set metadata = metadata
+    where event_id = 'c1d00000-0000-4000-8000-000000000001'$$,
+  '55000', 'WEBSITE_CONCEPT_EVENT_IMMUTABLE',
+  'Website concept events cannot be updated'
+);
+select throws_ok(
+  $$delete from public.website_concept_events
+    where event_id = 'c1d00000-0000-4000-8000-000000000001'$$,
+  '55000', 'WEBSITE_CONCEPT_EVENT_IMMUTABLE',
+  'Website concept events cannot be deleted'
+);
+select throws_ok(
+  $$update public.website_concept_idempotency_ledger
+    set result_payload = result_payload
+    where operation_id = 'c1e00000-0000-4000-8000-000000000001'$$,
+  '55000', 'WEBSITE_CONCEPT_IDEMPOTENCY_IMMUTABLE',
+  'Website concept idempotency rows cannot be updated'
+);
+select throws_ok(
+  $$delete from public.website_concept_idempotency_ledger
+    where operation_id = 'c1e00000-0000-4000-8000-000000000001'$$,
+  '55000', 'WEBSITE_CONCEPT_IDEMPOTENCY_IMMUTABLE',
+  'Website concept idempotency rows cannot be deleted'
+);
+select throws_ok(
+  $$insert into public.website_concept_events(
+      concept_id, website_work_context_id, quote_request_id, event_type,
+      actor_id, actor_role, command_id
+    ) values (
+      'c1b00000-0000-4000-8000-000000000001',
+      'c1c00000-0000-4000-8000-000000000001',
+      'c1110001-0000-4000-8000-000000000001',
+      'WEBSITE_CONCEPT_STARTED', 'c1010000-0000-4000-8000-000000000001',
+      'owner', 'c1a00000-0000-4000-8000-000000000013'
+    )$$,
+  '55000', 'DIRECT_WEBSITE_CONCEPT_WRITE_FORBIDDEN',
+  'direct concept event insert is denied outside the command boundary'
+);
+select throws_ok(
+  $$insert into public.website_concept_idempotency_ledger(
+      actor_id, quote_request_id, command_type, idempotency_key,
+      request_fingerprint, result_reference, result_payload
+    )
+    select
+      actor_id, quote_request_id, command_type,
+      'c1a00000-0000-4000-8000-000000000013', request_fingerprint,
+      result_reference, result_payload
+    from public.website_concept_idempotency_ledger
+    where operation_id = 'c1e00000-0000-4000-8000-000000000001'$$,
+  '55000', 'DIRECT_WEBSITE_CONCEPT_WRITE_FORBIDDEN',
+  'direct idempotency insert is denied outside the command boundary'
+);
+select set_config('lws.website_concept_command', 'on', true);
+select throws_ok(
+  $$insert into public.website_concept_events(
+      concept_id, website_work_context_id, quote_request_id, event_type,
+      actor_id, actor_role, command_id, metadata
+    ) values (
+      'c1b00000-0000-4000-8000-000000000001',
+      'c1c00000-0000-4000-8000-000000000001',
+      'c1110001-0000-4000-8000-000000000001',
+      'WEBSITE_CONCEPT_STARTED', 'c1010000-0000-4000-8000-000000000001',
+      'owner', 'c1a00000-0000-4000-8000-000000000012',
+      '{"credential":"forbidden"}'::jsonb
+    )$$,
+  '23514', null,
+  'event metadata rejects credential-bearing keys'
+);
+select throws_ok(
+  $$select pg_temp.insert_mismatched_website_context_v1()$$,
+  'P0001', 'WEBSITE_WORK_CONTEXT_BINDING_MISMATCH',
+  'cross-dossier concept binding fails closed under validation'
+);
+select throws_ok(
+  $$select pg_temp.insert_non_website_concept_v1()$$,
+  '23514', 'WEBSITE_CONCEPT_PRODUCTION_WEBSITE_REQUIRED',
+  'non-Website concept root is rejected under dossier lock'
+);
+select set_config('lws.website_concept_command', '', true);
+set local session_replication_role = replica;
+delete from public.website_concept_idempotency_ledger
+where operation_id = 'c1e00000-0000-4000-8000-000000000001';
+delete from public.website_concept_events
+where event_id = 'c1d00000-0000-4000-8000-000000000001';
+delete from public.website_work_contexts
+where website_work_context_id = 'c1c00000-0000-4000-8000-000000000001';
+delete from public.website_concepts
+where concept_id = 'c1b00000-0000-4000-8000-000000000001';
+set local session_replication_role = origin;
+
+select set_config('lws.website_concept_command', 'on', true);
+insert into public.website_work_contexts(
+  website_work_context_id, quote_request_id, concept_id, project_id, phase, revision
+) values (
+  'c1c00000-0000-4000-8000-000000000005',
+  'c1150005-0000-4000-8000-000000000005', null,
+  'c1900000-0000-4000-8000-000000000005', 'OFFICIAL_PROJECT', 1
+);
+set constraints all immediate;
+set constraints all deferred;
+select is(
+  (select project_id
+   from public.website_work_contexts
+   where website_work_context_id = 'c1c00000-0000-4000-8000-000000000005'),
+  'c1900000-0000-4000-8000-000000000005'::uuid,
+  'official context resolves through accepted same-dossier commercial lineage'
+);
+set local session_replication_role = replica;
+delete from public.website_work_contexts
+where website_work_context_id = 'c1c00000-0000-4000-8000-000000000005';
+set local session_replication_role = origin;
+
+create function pg_temp.insert_mismatched_official_context_v1()
+returns void
+language plpgsql
+as $$
+begin
+  insert into public.website_work_contexts(
+    quote_request_id, concept_id, project_id, phase, revision
+  ) values (
+    'c1120002-0000-4000-8000-000000000002', null,
+    'c1900000-0000-4000-8000-000000000005', 'OFFICIAL_PROJECT', 1
+  );
+  set constraints all immediate;
+end;
+$$;
+select throws_ok(
+  $$select pg_temp.insert_mismatched_official_context_v1()$$,
+  'P0001', 'WEBSITE_WORK_CONTEXT_BINDING_MISMATCH',
+  'cross-dossier official project binding fails closed under accepted-lineage lock'
+);
+select set_config('lws.website_concept_command', '', true);
+
+\if :{?task2_schema_only}
+select * from finish();
+rollback;
+\quit
+\endif
+
 select has_function(
   'public', 'get_operator_website_work_v1', array['uuid'],
   'Website work projection exists'
