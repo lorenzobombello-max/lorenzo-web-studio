@@ -8,6 +8,7 @@ import {
 
 const quoteRequestA = "a1800000-0000-4000-8000-000000000001";
 const quoteRequestB = "a1800000-0000-4000-8000-000000000002";
+const oldDetail = Object.freeze({ quote_request_id: quoteRequestA });
 const oldPricing = Object.freeze({ quote_request_id: quoteRequestA, revision: 1 });
 const oldVatReadiness = Object.freeze({ quote_request_id: quoteRequestA, vat_readiness: "READY" });
 
@@ -18,11 +19,12 @@ const source = await readFile(
 
 test("background pricing refresh retains the last valid same-dossier presentation", () => {
   const retained = retainWebsiteQuotationAuthorities(
-    { quote_request_id: quoteRequestA },
+    oldDetail,
     oldPricing,
     oldVatReadiness,
     quoteRequestA,
   );
+  assert.equal(retained.detail, oldDetail);
   assert.equal(retained.pricing, oldPricing);
   assert.equal(retained.vatReadiness, oldVatReadiness);
 });
@@ -55,18 +57,18 @@ test("pricing refresh failure leaves the retained same-dossier presentation inta
 
 test("dossier selection changes never retain pricing from the previous dossier", () => {
   const retained = retainWebsiteQuotationAuthorities(
-    { quote_request_id: quoteRequestA },
+    oldDetail,
     oldPricing,
     oldVatReadiness,
     quoteRequestB,
   );
-  assert.deepEqual(retained, { pricing: null, vatReadiness: null });
+  assert.deepEqual(retained, { detail: null, pricing: null, vatReadiness: null });
 });
 
 test("Dossiers refresh retains by identity and replaces paired authorities after both fetches", () => {
   assert.match(
     source,
-    /retainWebsiteQuotationAuthorities\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
+    /retainWebsiteQuotationAuthorities\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*state\.detail = retainedWebsiteAuthorities\.detail;[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
   );
   const refreshBody = source.match(
     /async function refreshWebsiteQuotationAuthorities\(selection\) \{([\s\S]*?)\n  \}/,

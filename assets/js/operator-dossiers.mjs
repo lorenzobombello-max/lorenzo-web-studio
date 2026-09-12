@@ -101,8 +101,8 @@ export function retainWebsiteQuotationAuthorities(
   quoteRequestId,
 ) {
   return detail?.quote_request_id === String(quoteRequestId || "")
-    ? Object.freeze({ pricing, vatReadiness })
-    : Object.freeze({ pricing: null, vatReadiness: null });
+    ? Object.freeze({ detail, pricing, vatReadiness })
+    : Object.freeze({ detail: null, pricing: null, vatReadiness: null });
 }
 
 function websitePriceMinor(value) {
@@ -1475,7 +1475,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       ? retainDossierPurgeEligibility(state.purgeEligibility, summary.reference)
       : null;
     state.selected = summary;
-    state.detail = null;
+    state.detail = retainedWebsiteAuthorities.detail;
     state.projectWorkspace = null;
     state.substance = null;
     state.copySource = null;

@@ -140,7 +140,7 @@ const standaloneInitializers = new Map([
         requestOpen,
       });
     }
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260912-dossier-continuity-project-r1");
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260912-pricing-refresh-retention-r1");
     const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure, requireAal2 });
     return {
       dispose: ()=>controller.dispose(),
