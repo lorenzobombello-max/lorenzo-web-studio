@@ -70,6 +70,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_dossier",
   "get_project_workspace",
   "get_website_execution_workspace",
+  "start_website_concept",
   "start_project_work",
   "get_project_requirements_board",
   "create_project_requirements_board",
@@ -392,6 +393,12 @@ export type QuotationBusinessDraftActionInput = Readonly<{
   expected_revision: number;
   idempotency_key: string;
   input: Record<string, unknown>;
+}>;
+export type WebsiteConceptStartActionInput = Readonly<{
+  action: "start_website_concept";
+  quote_request_id: string;
+  expected_website_work_revision: number;
+  idempotency_key: string;
 }>;
 export type QuotationBusinessApprovalPromotionActionInput = Readonly<{
   action: "promote_quotation_business_draft_to_approval";
@@ -1058,9 +1065,15 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ])
     : action === "get_project_dossier"
     ? new Set(["action", "project_id"])
-    : action === "get_project_workspace" ||
-      action === "get_website_execution_workspace"
+    : action === "get_project_workspace"
     ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "get_website_execution_workspace"
+    ? new Set(["action", "quote_request_id"])
+    : action === "start_website_concept"
+    ? new Set([
+      "action", "quote_request_id", "expected_website_work_revision",
+      "idempotency_key",
+    ])
     : action === "get_project_requirements_board"
     ? new Set(["action", "quote_request_id", "project_id"])
     : action === "create_project_requirements_board"
@@ -1792,8 +1805,27 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, project_id: projectId };
   }
-  if (action === "get_project_workspace" ||
-    action === "get_website_execution_workspace") {
+  if (action === "start_website_concept") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const expectedRevision = value.expected_website_work_revision;
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (
+      !UUID.test(quoteRequestId) || !Number.isSafeInteger(expectedRevision) ||
+      Number(expectedRevision) < 1 || !UUID.test(idempotencyKey)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      expected_website_work_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+    };
+  }
+  if (action === "get_website_execution_workspace") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    return { action, quote_request_id: quoteRequestId };
+  }
+  if (action === "get_project_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
     const projectId = String(value.project_id || "");
     if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
@@ -2045,6 +2077,7 @@ function mapDatabaseError(error: unknown) {
       "SDF_CUSTOMER_REQUEST_ACCESS_DENIED",
       "OPERATIONS_MANAGER_ROSTER_READER_REQUIRED",
       "WORKFORCE_MANAGEMENT_READER_REQUIRED",
+      "AAL2_REQUIRED",
       "OWNER_REQUIRED",
       "RECRUITMENT_OWNER_REQUIRED",
       "PROJECT_SITE_OWNER_ADMIN_REQUIRED",
@@ -2065,6 +2098,13 @@ function mapDatabaseError(error: unknown) {
     ].includes(code)
   ) return response(403, "INSUFFICIENT_PERMISSIONS");
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
+  if (
+    ["STALE_WEBSITE_WORK_REVISION", "WEBSITE_CONCEPT_ALREADY_EXISTS"].includes(code)
+  ) return response(409, code);
+  if (code === "WEBSITE_CONCEPT_DOSSIER_NOT_FOUND") return response(404, code);
+  if (code === "WEBSITE_CONCEPT_OWNER_REQUIRED") {
+    return response(403, "OPERATOR_NOT_AUTHORIZED");
+  }
   if (code === "STALE_BUSINESS_REVISION") return response(409, code);
   if (code === "APPROVAL_CONFLICT") return response(409, code);
   if (code === "CONCURRENT_MODIFICATION") return response(409, code);
@@ -2272,6 +2312,19 @@ export async function executeSdfM1InvoicePreparationTransport(
     throw new Error("INVALID_SDF_M1_INVOICE_PREPARATION_RESPONSE");
   }
   return { obligation_id: input.obligation_id, ...data };
+}
+
+export async function executeWebsiteConceptStartTransport(
+  client: DossierAssignmentRpcClient,
+  input: WebsiteConceptStartActionInput,
+): Promise<unknown> {
+  const { data, error } = await client.rpc("start_website_concept_v1", {
+    p_quote_request_id: input.quote_request_id,
+    p_expected_website_work_revision: input.expected_website_work_revision,
+    p_idempotency_key: input.idempotency_key,
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function executeDossierAssignmentReadTransport(

@@ -25,6 +25,8 @@ import {
   type SdfQuotationIssuanceActionInput,
   type SdfM1InvoicePreparationActionInput,
   executeSdfM1InvoicePreparationTransport,
+  executeWebsiteConceptStartTransport,
+  type WebsiteConceptStartActionInput,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
@@ -184,6 +186,7 @@ type ValidatedApplicationActionInput =
     intake_id: string;
     event_type: string;
     expected_revision: number;
+    expected_website_work_revision: number;
     idempotency_key: string;
     reason: string | null;
     quote_request_id: string | null;
@@ -355,6 +358,14 @@ export async function executeCallerJwtSdfM1InvoicePreparationAction(
   clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeSdfM1InvoicePreparationTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtWebsiteConceptStartAction(
+  jwt: string,
+  input: WebsiteConceptStartActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeWebsiteConceptStartTransport(clientFor(jwt), input);
 }
 
 export async function executeCallerJwtWorkforceCalendarAction(
@@ -1456,6 +1467,13 @@ if (import.meta.main) {
               clientFor,
             );
           }
+          if (input.action === "start_website_concept") {
+            return await executeCallerJwtWebsiteConceptStartAction(
+              jwt,
+              input as WebsiteConceptStartActionInput,
+              clientFor,
+            );
+          }
           const client = clientFor(jwt);
           if (
             ["archive_pending_intake", "restore_pending_intake"].includes(
@@ -1626,10 +1644,9 @@ if (import.meta.main) {
           }
           if (input.action === "get_website_execution_workspace") {
             const { data, error } = await client.rpc(
-              "get_website_execution_workspace_v1",
+              "get_website_execution_workspace_v2",
               {
                 p_quote_request_id: input.quote_request_id,
-                p_project_id: input.project_id,
               },
             );
             if (error) throw new Error(error.message);

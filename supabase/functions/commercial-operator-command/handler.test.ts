@@ -12,6 +12,7 @@ import {
   executeOperatorPersonalQueueTransport,
   executeRecruitmentVacancyTransport,
   executeSdfM1InvoicePreparationTransport,
+  executeWebsiteConceptStartTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   withCommercialOperatorCors,
@@ -33,6 +34,7 @@ import {
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
   executeCallerJwtSdfM1InvoicePreparationAction,
+  executeCallerJwtWebsiteConceptStartAction,
   executeCallerJwtWorkforceCalendarAction,
   executeApplicationDetailRead,
   executeCustomerRequestUploadInboxPromotionAction,
@@ -402,6 +404,106 @@ const quotationBusinessInput = {
   payment_schedule: { milestones: [] },
   validity_days: null,
 };
+
+const websiteConceptStartRequest = {
+  action: "start_website_concept" as const,
+  quote_request_id: "c1110001-0000-4000-8000-000000000001",
+  expected_website_work_revision: 1,
+  idempotency_key: "c1a00000-0000-4000-8000-000000000001",
+};
+
+Deno.test("Website concept start accepts only bounded browser intent", async () => {
+  const accepted = dependencies();
+  const response = await handleCommercialOperator(
+    request(websiteConceptStartRequest),
+    accepted.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("cache-control"), "no-store");
+  assertEquals(accepted.calls[0], { jwt, input: websiteConceptStartRequest });
+
+  for (const forbiddenKey of [
+    "actor_id", "role", "mode", "briefing_status", "commercially_released",
+    "created_by", "project_id", "password", "credential", "unknown",
+  ]) {
+    const harness = dependencies();
+    const rejected = await handleCommercialOperator(
+      request({ ...websiteConceptStartRequest, [forbiddenKey]: "forbidden" }),
+      harness.deps,
+    );
+    assertEquals(rejected.status, 400, forbiddenKey);
+    assertEquals(harness.calls.length, 0, forbiddenKey);
+  }
+});
+
+Deno.test("Website concept start transport forwards only command RPC arguments", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeWebsiteConceptStartTransport({
+    rpc: async (name, args) => {
+      calls.push({ name, args });
+      return { data: { state: "PRE_PROJECT", replayed: false }, error: null };
+    },
+  }, websiteConceptStartRequest);
+  assertEquals(result, { state: "PRE_PROJECT", replayed: false });
+  assertEquals(calls, [{
+    name: "start_website_concept_v1",
+    args: {
+      p_quote_request_id: websiteConceptStartRequest.quote_request_id,
+      p_expected_website_work_revision: 1,
+      p_idempotency_key: websiteConceptStartRequest.idempotency_key,
+    },
+  }]);
+});
+
+Deno.test("Website concept start constructs only a caller JWT client", async () => {
+  const seenJwts: string[] = [];
+  await executeCallerJwtWebsiteConceptStartAction(
+    jwt,
+    websiteConceptStartRequest,
+    (seenJwt) => {
+      seenJwts.push(seenJwt);
+      return { rpc: async () => ({ data: {}, error: null }) };
+    },
+  );
+  assertEquals(seenJwts, [jwt]);
+});
+
+Deno.test("Website concept start maps authority, conflict, and missing errors narrowly", async () => {
+  for (const [databaseCode, status, responseCode] of [
+    ["AAL2_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["WEBSITE_CONCEPT_OWNER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["STALE_WEBSITE_WORK_REVISION", 409, "STALE_WEBSITE_WORK_REVISION"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ["WEBSITE_CONCEPT_ALREADY_EXISTS", 409, "WEBSITE_CONCEPT_ALREADY_EXISTS"],
+    ["WEBSITE_CONCEPT_DOSSIER_NOT_FOUND", 404, "WEBSITE_CONCEPT_DOSSIER_NOT_FOUND"],
+  ] as const) {
+    const response = await handleCommercialOperator(
+      request(websiteConceptStartRequest),
+      dependencies({
+        executeApplicationAction: async () => {
+          throw new Error(databaseCode);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status, databaseCode);
+    assertEquals(await response.json(), { ok: false, code: responseCode }, databaseCode);
+  }
+});
+
+Deno.test("Website workspace read accepts only the dossier locator", async () => {
+  const harness = dependencies();
+  const input = {
+    action: "get_website_execution_workspace",
+    quote_request_id: websiteConceptStartRequest.quote_request_id,
+  };
+  assertEquals((await handleCommercialOperator(request(input), harness.deps)).status, 200);
+  assertEquals(harness.calls[0], { jwt, input });
+  assertEquals((await handleCommercialOperator(request({
+    ...input,
+    project_id: userId,
+  }), harness.deps)).status, 400);
+  assertEquals(harness.calls.length, 1);
+});
 
 Deno.test("SDF qualification transition uses the established application action boundary", async () => {
   const harness = dependencies();
