@@ -7,6 +7,7 @@ import {
   projectWorkspaceRequest,
   projectWorkspaceSlot,
 } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
 import {
   buildVatReadinessAction,
   canComposeQuotationFromVatReadiness,
@@ -29,6 +30,7 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "get_website_quotation_pricing_state", "authorize_website_quotation_pricing_decision", "update_quote_request_billing_context",
   "evaluate_quotation_vat_readiness", "request_quotation_vat_review", "request_vat_turnover_refresh", "upsert_quotation_business_draft",
   "get_project_dossier", "get_project_workspace", "get_website_execution_workspace", "start_project_work", "get_project_requirements_board", "create_project_requirements_board", "create_project_requirement", "finalize_project_requirements_board", "start_project_requirement", "block_project_requirement", "complete_project_requirement", "reopen_project_requirement", "get_my_assigned_dossiers", "get_dossier_document_manifest",
+  "start_website_concept",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
   "revoke_customer_request_upload_link", "create_sdf_customer_request",
@@ -109,6 +111,89 @@ export function retainProjectWorkspace(detail, projectWorkspace, quoteRequestId)
   return detail?.quote_request_id === String(quoteRequestId || "")
     ? projectWorkspace
     : null;
+}
+
+const WEBSITE_WORK_KEYS = [
+  "state", "quote_request_id", "concept_id", "project_id",
+  "website_work_context_id", "mode", "briefing_status",
+  "commercially_released", "revision", "permitted_actions",
+];
+const WEBSITE_WORK_ACTIONS = new Set(["CAN_START_WEBSITE_CONCEPT", "OPEN_WEBSITE"]);
+
+export function validateWebsiteWork(value, expectedQuoteRequestId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== WEBSITE_WORK_KEYS.length
+    || !WEBSITE_WORK_KEYS.every((key)=>key in value)
+    || !UUID.test(String(expectedQuoteRequestId || ""))
+    || value.quote_request_id !== expectedQuoteRequestId
+    || !["NONE", "PRE_PROJECT", "OFFICIAL_PROJECT"].includes(value.state)
+    || typeof value.commercially_released !== "boolean"
+    || !Number.isSafeInteger(value.revision) || value.revision < 1
+    || !Array.isArray(value.permitted_actions)
+    || new Set(value.permitted_actions).size !== value.permitted_actions.length
+    || value.permitted_actions.some((action)=>!WEBSITE_WORK_ACTIONS.has(action))) {
+    throw new Error("INVALID_WEBSITE_WORK");
+  }
+  const isUuidOrNull = (candidate)=>candidate === null || UUID.test(String(candidate || ""));
+  if (!isUuidOrNull(value.concept_id) || !isUuidOrNull(value.project_id)
+    || !isUuidOrNull(value.website_work_context_id)) throw new Error("INVALID_WEBSITE_WORK");
+  const actions = new Set(value.permitted_actions);
+  if (value.state === "NONE" && (value.concept_id !== null || value.project_id !== null
+    || value.website_work_context_id !== null || value.mode !== null
+    || value.briefing_status !== null || value.commercially_released
+    || actions.has("OPEN_WEBSITE"))) throw new Error("INVALID_WEBSITE_WORK");
+  if (value.state === "PRE_PROJECT" && (!UUID.test(String(value.concept_id || ""))
+    || value.project_id !== null || !UUID.test(String(value.website_work_context_id || ""))
+    || value.mode !== "PRE_PROJECT" || !["LIMITED", "COMPLETE"].includes(value.briefing_status)
+    || value.commercially_released || actions.has("CAN_START_WEBSITE_CONCEPT"))) {
+    throw new Error("INVALID_WEBSITE_WORK");
+  }
+  if (value.state === "OFFICIAL_PROJECT" && (!UUID.test(String(value.project_id || ""))
+    || !UUID.test(String(value.website_work_context_id || ""))
+    || value.mode !== "OFFICIAL_PROJECT" || !["LIMITED", "COMPLETE"].includes(value.briefing_status)
+    || actions.has("CAN_START_WEBSITE_CONCEPT"))) throw new Error("INVALID_WEBSITE_WORK");
+  return Object.freeze({ ...value, permitted_actions: Object.freeze([...value.permitted_actions]) });
+}
+
+export function validateWebsiteConceptStartResponse(value, expectedQuoteRequestId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || typeof value.replayed !== "boolean") {
+    throw new Error("INVALID_WEBSITE_CONCEPT_START_RESPONSE");
+  }
+  const { replayed: _replayed, ...websiteWork } = value;
+  try {
+    const validated = validateWebsiteWork(websiteWork, expectedQuoteRequestId);
+    if (validated.state !== "PRE_PROJECT") throw new Error();
+    return validated;
+  } catch {
+    throw new Error("INVALID_WEBSITE_CONCEPT_START_RESPONSE");
+  }
+}
+
+export function websiteConceptStartRequest(websiteWork, idempotencyKey) {
+  const validated = validateWebsiteWork(websiteWork, websiteWork?.quote_request_id);
+  if (validated.state !== "NONE"
+    || !validated.permitted_actions.includes("CAN_START_WEBSITE_CONCEPT")
+    || !UUID.test(String(idempotencyKey || ""))) throw new Error("INVALID_WEBSITE_CONCEPT_START");
+  return Object.freeze({
+    action: "start_website_concept",
+    quote_request_id: validated.quote_request_id,
+    expected_website_work_revision: validated.revision,
+    idempotency_key: idempotencyKey,
+  });
+}
+
+export function websiteWorkPresentation(websiteWork) {
+  const validated = validateWebsiteWork(websiteWork, websiteWork?.quote_request_id);
+  return Object.freeze({
+    statusLabel: validated.state === "NONE" ? "Nog geen websiteconcept"
+      : validated.state === "PRE_PROJECT" ? "PRE_PROJECT / CONCEPT" : "OFFICIAL_PROJECT",
+    briefingLabel: validated.briefing_status || "Niet beschikbaar",
+    releaseLabel: validated.commercially_released
+      ? "Commercieel vrijgegeven" : "Niet commercieel vrijgegeven",
+    canStart: validated.permitted_actions.includes("CAN_START_WEBSITE_CONCEPT"),
+    canOpen: validated.permitted_actions.includes("OPEN_WEBSITE"),
+  });
 }
 
 function websitePriceMinor(value) {
@@ -668,6 +753,7 @@ function dossierWorkspaceMarkup() {
         <article class="panel dossiers-detail" data-dossiers-detail hidden><div class="panel__heading"><div><p class="eyebrow">Dossierreferentie <strong data-dossiers-field="reference"></strong></p><h2 data-dossiers-field="name"></h2></div><span class="badge" data-dossiers-field="status"></span></div><h3 class="dossiers-substance-title">Aanvraag</h3><dl class="application-detail"><div><dt>Product</dt><dd data-dossiers-field="product"></dd></div><div><dt>Zone</dt><dd data-dossiers-field="zone"></dd></div><div><dt>Aangevraagd op</dt><dd data-dossiers-field="requested_at"></dd></div><div class="application-detail__wide dossiers-original-request"><dt>Originele klantaanvraag</dt><dd data-dossiers-field="description"></dd></div></dl></article>
         <section class="panel dossiers-customer" data-dossiers-customer hidden><div class="panel__heading"><div><p class="eyebrow">Relatie</p><h2>Klant</h2></div></div><dl class="application-detail"><div><dt>Naam</dt><dd data-dossiers-field="customer_name"></dd></div><div><dt>Bedrijf</dt><dd data-dossiers-field="company"></dd></div><div><dt>E-mail</dt><dd data-dossiers-field="email"></dd></div><div><dt>Telefoon</dt><dd data-dossiers-field="phone"></dd></div></dl></section>
         <section class="panel dossiers-intake" data-dossiers-intake hidden><div class="panel__heading"><div><p class="eyebrow">Klantinput</p><h2>Intake</h2></div><span class="badge" data-dossiers-intake-status></span></div><dl class="application-detail dossiers-intake-meta"><div><dt>Uitnodiging</dt><dd data-dossiers-field="invited_at"></dd></div><div><dt>Gestart</dt><dd data-dossiers-field="started_at"></dd></div><div><dt>Ingediend</dt><dd data-dossiers-field="submitted_at"></dd></div></dl><div class="dossiers-substance-sections" data-dossiers-intake-sections></div></section>
+        <section class="panel" data-dossiers-website-work hidden><div class="panel__heading"><div><p class="eyebrow">Websitewerk</p><h2 data-dossiers-website-work-status></h2></div><span class="badge" data-dossiers-website-work-badge></span></div><dl class="application-detail"><div><dt>Briefing</dt><dd data-dossiers-website-work-briefing></dd></div><div><dt>Vrijgave</dt><dd data-dossiers-website-work-release></dd></div></dl><div class="lifecycle-actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-website-concept-start hidden>WEBSITE-CONCEPT STARTEN</button><button type="button" class="primary-action primary-action--compact" data-dossiers-website-open data-operator-window-module="dossiers" hidden>WEBSITE OPENEN</button></div><p class="action-message action-message--dark" data-dossiers-website-work-message role="status" aria-live="polite"></p></section>
         ${projectSummaryMarkup()}
         <section class="panel website-pricing-decision" data-dossiers-website-pricing hidden>
           <div class="panel__heading"><div><p class="eyebrow">Pricing</p><h2>Definitieve offerteprijs</h2></div></div>
@@ -687,6 +773,7 @@ function dossierWorkspaceMarkup() {
       </aside></div>
     <dialog class="operator-modal--reading dossier-preview-dialog" data-dossiers-copy-dialog aria-labelledby="dossiersCopyTitle"><div class="dossier-preview-dialog__shell"><header class="dossier-preview-dialog__header"><div><p class="eyebrow">Documentpreview</p><h2 id="dossiersCopyTitle">Historische dossierkopie</h2><p class="empty-state" data-dossiers-copy-reference></p></div><div class="dossier-preview-dialog__actions"><button type="button" class="primary-action primary-action--compact" data-dossiers-copy="download">Download PDF</button><button type="button" class="secondary-action" data-dossiers-copy="print">Afdrukken</button><button type="button" class="secondary-action" data-dossiers-copy-close>Sluiten</button></div></header><div class="dossier-preview-dialog__body"><div class="application-dossier-copy" data-dossiers-copy-content></div></div></div></dialog>
     <dialog class="operator-modal--compact" data-dossiers-website-pricing-dialog aria-labelledby="dossiersWebsitePricingTitle"><div class="confirmation"><p class="eyebrow eyebrow--red">Expliciete bevestiging vereist</p><h2 id="dossiersWebsitePricingTitle">Definitieve prijs vastleggen</h2><p>Minimumprijs: <strong data-dossiers-website-pricing-confirm-minimum></strong><br>Gekozen eindbedrag: <strong data-dossiers-website-pricing-confirm-amount></strong></p><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-website-pricing-cancel>Annuleren</button><button type="button" class="danger-action" data-dossiers-website-pricing-confirm>Prijs definitief vastleggen</button></div></div></dialog>
+    <dialog class="operator-modal--compact" data-dossiers-website-concept-dialog aria-labelledby="dossiersWebsiteConceptTitle"><div class="confirmation"><p class="eyebrow">Bevestiging vereist</p><h2 id="dossiersWebsiteConceptTitle">Voorlopig concept starten — dit is nog geen commerciële bestelling</h2><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-website-concept-cancel>Annuleren</button><button type="button" class="primary-action primary-action--compact" data-dossiers-website-concept-confirm>Concept starten</button></div></div></dialog>
     <dialog class="operator-modal--action-confirm dossiers-command-dialog" data-dossiers-command-dialog aria-modal="true" aria-labelledby="dossiersCommandTitle" aria-describedby="dossiersCommandDescription"><form class="confirmation" data-dossiers-command-form><p class="eyebrow" data-dossiers-command-eyebrow>Bevestiging vereist</p><h2 id="dossiersCommandTitle" data-dossiers-command-title>Dossieractie</h2><p id="dossiersCommandDescription" data-dossiers-command-message></p><label class="confirmation__field" for="dossiersCommandReason"><span>Reden</span><textarea id="dossiersCommandReason" name="reason" rows="4" minlength="1" maxlength="500" required></textarea></label><div class="confirmation__actions"><button type="button" class="secondary-action" data-dossiers-command-cancel>Annuleren</button><button type="submit" class="danger-action" data-dossiers-command-confirm>Bevestigen</button></div></form></dialog>`;
 }
 
@@ -714,6 +801,27 @@ function resetProjectWorkspace(workspace, hidden = true) {
   const open = panel.querySelector("[data-project-open]");
   open.hidden = true;
   delete open.dataset.operatorWindowSlot;
+}
+
+function renderWebsiteWork(workspace, detail, busy = false) {
+  const panel = workspace.querySelector("[data-dossiers-website-work]");
+  if (detail?.request_kind !== "website") {
+    panel.hidden = true;
+    return;
+  }
+  const websiteWork = validateWebsiteWork(detail.website_work, detail.quote_request_id);
+  const presentation = websiteWorkPresentation(websiteWork);
+  panel.hidden = false;
+  panel.querySelector("[data-dossiers-website-work-status]").textContent = presentation.statusLabel;
+  panel.querySelector("[data-dossiers-website-work-badge]").textContent = presentation.statusLabel;
+  panel.querySelector("[data-dossiers-website-work-briefing]").textContent = presentation.briefingLabel;
+  panel.querySelector("[data-dossiers-website-work-release]").textContent = presentation.releaseLabel;
+  const start = panel.querySelector("[data-dossiers-website-concept-start]");
+  start.hidden = !presentation.canStart;
+  start.disabled = busy;
+  const open = panel.querySelector("[data-dossiers-website-open]");
+  open.hidden = !presentation.canOpen;
+  open.dataset.operatorWindowSlot = websiteExecutionSlot(websiteWork.quote_request_id);
 }
 
 function renderWebsiteQuotationPricing(workspace, state, identity) {
@@ -784,7 +892,7 @@ function clearDetailSelection(workspace) {
   const pricingDialog = workspace.querySelector("[data-dossiers-website-pricing-dialog]");
   if (pricingDialog.open) pricingDialog.close();
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = false;
-  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-project], .context-column > [data-dossiers-website-pricing], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
+  for (const panel of workspace.querySelectorAll(".context-column > [data-dossiers-detail], .context-column > [data-dossiers-customer], .context-column > [data-dossiers-intake], .context-column > [data-dossiers-website-work], .context-column > [data-dossiers-project], .context-column > [data-dossiers-website-pricing], .context-column > [data-dossiers-document-overview], .context-column > [data-dossiers-copy-actions], .context-column > [data-dossiers-assignment], .context-column > [data-dossiers-documents], .context-column > [data-dossiers-requests], .context-column > [data-dossiers-lifecycle-panel], .context-column > [data-dossiers-pending-actions]")) {
     panel.hidden = true;
   }
 }
@@ -901,7 +1009,9 @@ export function boundDossierCopy(selected, items, copySource) {
 function detailIdentity(detail) {
   if (!detail || !UUID.test(String(detail.quote_request_id || "")) || !["website", "slimme_documentenflow"].includes(detail.request_kind)
     || typeof detail.name !== "string" || !detail.name) throw new Error("INVALID_DOSSIER_DETAIL_RESPONSE");
-  return detail;
+  return detail.request_kind === "website"
+    ? { ...detail, website_work: validateWebsiteWork(detail.website_work, detail.quote_request_id) }
+    : detail;
 }
 
 function customerValue(detail, key) {
@@ -1118,6 +1228,7 @@ function renderDetail(workspace, detail, summary, substance) {
   setText(workspace, "product", detail.request_kind === "website" ? "Website" : "Slimme Documentenflow");
   setText(workspace, "zone", detail.dossier_lifecycle?.state || summary?.zone);
   renderSubstance(workspace, substance);
+  renderWebsiteWork(workspace, detail);
   workspace.querySelector("[data-dossiers-detail-empty]").hidden = true;
   workspace.querySelector("[data-dossiers-detail]").hidden = false;
   const lifecycle = workspace.querySelector("[data-dossiers-lifecycle-panel]");
@@ -1275,6 +1386,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     websitePricing: null,
     vatReadiness: null,
     websitePricingBusy: false,
+    websiteConceptBusy: false,
     pendingWebsitePricingRequest: null,
     websiteQuotationOpen: false,
     pendingPurgeEligibility: null,
@@ -1347,6 +1459,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     state.websitePricing = null;
     state.vatReadiness = null;
     state.websitePricingBusy = false;
+    state.websiteConceptBusy = false;
     state.pendingWebsitePricingRequest = null;
     state.websiteQuotationOpen = false;
     state.purgeEligibility = null;
@@ -1811,6 +1924,44 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     dialog.querySelector("textarea").focus();
   }
 
+  async function startWebsiteConcept() {
+    if (state.websiteConceptBusy || !state.detail) return false;
+    const selection = selectDossier.generation;
+    const message = workspace.querySelector("[data-dossiers-website-work-message]");
+    state.websiteConceptBusy = true;
+    renderWebsiteWork(workspace, state.detail, true);
+    workspace.querySelector("[data-dossiers-website-concept-confirm]").disabled = true;
+    try {
+      await options.requireAal2();
+      const request = websiteConceptStartRequest(
+        state.detail.website_work,
+        crypto.randomUUID(),
+      );
+      const result = await authority.gateway(request);
+      if (selection !== selectDossier.generation) return false;
+      const websiteWork = validateWebsiteConceptStartResponse(
+        result,
+        state.detail.quote_request_id,
+      );
+      state.detail = { ...state.detail, website_work: websiteWork };
+      renderWebsiteWork(workspace, state.detail);
+      workspace.querySelector("[data-dossiers-website-concept-dialog]").close();
+      message.textContent = "Het voorlopige websiteconcept is gestart.";
+      return true;
+    } catch (error) {
+      if (selection === selectDossier.generation) {
+        message.textContent = `Het websiteconcept kon niet worden gestart (${errorCode(error)}).`;
+      }
+      return false;
+    } finally {
+      if (selection === selectDossier.generation) {
+        state.websiteConceptBusy = false;
+        workspace.querySelector("[data-dossiers-website-concept-confirm]").disabled = false;
+        renderWebsiteWork(workspace, state.detail);
+      }
+    }
+  }
+
   controller.listen(workspace, "submit", (event)=>{
     if (event.target.matches("[data-dossiers-filters]")) {
       event.preventDefault();
@@ -2007,6 +2158,16 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
         });
         void executeVatRemediation(request, "Het omzetbewijs is opnieuw aangevraagd.");
       }
+    } else if (target.hasAttribute("data-dossiers-website-concept-start")) {
+      if (websiteWorkPresentation(state.detail?.website_work).canStart && !state.websiteConceptBusy) {
+        workspace.querySelector("[data-dossiers-website-concept-dialog]").showModal();
+      }
+    } else if (target.hasAttribute("data-dossiers-website-concept-cancel")) {
+      if (!state.websiteConceptBusy) {
+        workspace.querySelector("[data-dossiers-website-concept-dialog]").close();
+      }
+    } else if (target.hasAttribute("data-dossiers-website-concept-confirm")) {
+      void startWebsiteConcept();
     } else if (target.hasAttribute("data-dossiers-website-pricing-cancel")) {
       state.pendingWebsitePricingRequest = null;
       workspace.querySelector("[data-dossiers-website-pricing-dialog]").close();

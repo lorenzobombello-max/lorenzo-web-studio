@@ -10,8 +10,9 @@ test("dedicated Dossiers module imports independently", async () => {
   assert.equal(typeof dossiers.initializeOperatorDossiers, "function");
   assert.equal(typeof dossiers.createOperatorDossiersController, "function");
   const source = await read("assets/js/operator-dossiers.mjs");
-  assert.doesNotMatch(source, /from ["'][^"']*(?:operator-dashboard|application-dossier|sdf-qualification-intake|website)[^"']*["']/i);
+  assert.doesNotMatch(source, /from ["'][^"']*(?:operator-dashboard|application-dossier|sdf-qualification-intake)[^"']*["']/i);
   assert.match(source, /from "\.\/sdf-qualification-review\.mjs"/);
+  assert.match(source, /import \{ websiteExecutionSlot \} from "\.\/operator-website-execution\.mjs\?v=[^"]+"/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|window\.name|localhost|127\.0\.0\.1/i);
 });
 
@@ -611,6 +612,7 @@ test("active Dossiers workspace owns the Website pricing decision flow", async (
     "authorize_website_quotation_pricing_decision",
     "update_quote_request_billing_context",
     "upsert_quotation_business_draft",
+    "start_website_concept",
   ]) assert.match(source, new RegExp(`"${action}"`));
   assert.match(source, /data-dossiers-website-pricing/);
   assert.match(source, /data-dossiers-website-quotation-form/);
