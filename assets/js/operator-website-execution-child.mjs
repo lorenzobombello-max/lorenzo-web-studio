@@ -94,7 +94,7 @@ function childMarkup() {
           </dl>
           <p data-website-requirements-preview></p>
         </div>
-        <button type="button" class="secondary-action" data-website-action="requirements" data-website-requirements-open>Takenbord openen</button>
+        <button type="button" class="secondary-action" data-website-action="requirements">Takenbord openen</button>
       </section>
       <section class="website-execution__board" aria-labelledby="websiteTechnicalTitle">
         <div class="website-execution__board-heading"><div><p class="eyebrow">Development references</p><h2 id="websiteTechnicalTitle">Technische werkruimte</h2></div><span class="badge badge--active" data-website-build>UNKNOWN</span></div>
@@ -171,7 +171,6 @@ function renderChild(workspace, state) {
   workspace.querySelector("[data-website-release]").textContent = view.releaseLabel;
   const officialProject = context.mode === "OFFICIAL_PROJECT";
   workspace.querySelector("[data-website-project-context]").hidden = !officialProject;
-  workspace.querySelector("[data-website-requirements-open]").hidden = !officialProject;
   workspace.querySelector("[data-website-project-back]").hidden = !officialProject;
   for (const field of ["repository", "branch", "preview", "production", "commit"]) {
     workspace.querySelector(`[data-website-field="${field}"]`).textContent = view[field];
@@ -278,7 +277,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const action = event.target.closest?.("[data-website-action]")?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "files") options.requestOpen?.("dossiers", "main");
-    if (action === "requirements" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {
+    if (action === "requirements" && currentSnapshot) {
       options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId));
     }
     if (action === "back" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {

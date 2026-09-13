@@ -10,6 +10,10 @@ import {
   websiteExecutionSlot,
   websiteExecutionView,
 } from "../assets/js/operator-website-execution.mjs";
+import {
+  requirementsChildContext,
+} from "../assets/js/operator-project-requirements-child.mjs";
+import { requirementsBoardSlot } from "../assets/js/operator-project-requirements.mjs";
 
 const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
@@ -220,6 +224,7 @@ test("PRE_PROJECT V2 validation is exact and context-bound", () => {
     projectId: null,
     conceptId,
     websiteWorkContextId,
+    websiteWorkRevision: 1,
     mode: "PRE_PROJECT",
   };
   const projection = validateWebsiteExecutionWorkspace(preProjectV2, context);
@@ -522,4 +527,32 @@ test("Task 11 summary synchronization has one coherent source-only hard-refresh 
   for (const source of sources) assert.equal(source.includes(token), true);
   assert.equal(sources[0].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
   assert.equal(sources[1].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
+});
+
+test("PRE_PROJECT Website opens the existing Requirements managed sibling with the same work context", async () => {
+  const child = await read("assets/js/operator-website-execution-child.mjs");
+  const detail = {
+    quote_request_id: quoteRequestId,
+    request_kind: "website",
+    application_reference: "LWS-AAN-2026-0042",
+    project: null,
+    website_work: preProjectWork,
+  };
+  assert.equal(requirementsBoardSlot(quoteRequestId), `req-${quoteRequestId}`);
+  assert.deepEqual(requirementsChildContext(detail, quoteRequestId), {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 1,
+    mode: "PRE_PROJECT",
+    dossierReference: "LWS-AAN-2026-0042",
+    customerName: "Niet beschikbaar",
+  });
+  assert.doesNotMatch(child, /button[^>]*data-website-requirements-open/);
+  assert.doesNotMatch(child, /querySelector\("\[data-website-requirements-open\]"\)\.hidden/);
+  assert.match(
+    child,
+    /action === "requirements"[^]*requestOpen\?\.\("dossiers", requirementsBoardSlot/,
+  );
 });

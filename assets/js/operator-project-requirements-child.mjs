@@ -16,7 +16,11 @@ import {
   validateProjectRequirementsBoard,
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
 import { projectWorkspaceRequest } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
+import {
+  validateWebsiteExecutionWorkspace,
+  websiteExecutionRequest,
+  websiteExecutionSlot,
+} from "./operator-website-execution.mjs?v=20260913-requirements-wiring-r1";
 
 const FILTERS = Object.freeze([
   ["ALL", "Alle"],
@@ -43,22 +47,37 @@ export function requirementsChildContext(
   if (detail?.request_kind !== "website" || detail?.quote_request_id !== quoteRequestId) {
     throw new Error("PROJECT_REQUIREMENTS_BINDING_MISMATCH");
   }
+  const work = detail.website_work;
+  const websiteRequest = work ? websiteExecutionRequest(detail) : null;
+  if (work && (!websiteRequest || websiteRequest.quote_request_id !== quoteRequestId)) {
+    throw new Error("PROJECT_REQUIREMENTS_BINDING_MISMATCH");
+  }
   const request = projectWorkspaceRequest(detail);
-  if (!request || request.quote_request_id !== quoteRequestId ||
-    (expectedProjectId && request.project_id !== expectedProjectId)) {
+  const mode = work?.mode || "OFFICIAL_PROJECT";
+  if (mode === "OFFICIAL_PROJECT" &&
+    (!request || request.quote_request_id !== quoteRequestId ||
+      (expectedProjectId && request.project_id !== expectedProjectId))) {
     throw new Error("PROJECT_REQUIREMENTS_BINDING_MISMATCH");
   }
   const reference = dossierReference(detail);
   if (!reference) throw new Error("PROJECT_REQUIREMENTS_DOSSIER_REQUIRED");
-  return Object.freeze({
+  const context = {
     quoteRequestId,
-    projectId: request.project_id,
+    projectId: request?.project_id || null,
     dossierReference: reference,
     customerName: String(
       substance?.customer?.company || substance?.customer?.name ||
         detail?.customer?.company || detail?.customer?.name ||
         detail?.customer?.full_name || "Niet beschikbaar",
     ),
+  };
+  if (!work) return Object.freeze(context);
+  return Object.freeze({
+    ...context,
+    conceptId: work.concept_id,
+    websiteWorkContextId: work.website_work_context_id,
+    websiteWorkRevision: work.revision,
+    mode,
   });
 }
 
@@ -130,6 +149,22 @@ function renderChild(root, workspace, state, activeFilter) {
     workspace.querySelector("[data-requirements-cards]").replaceChildren();
     return;
   }
+  const progress = workspace.querySelector("[data-requirements-progress]").parentElement;
+  const filters = workspace.querySelector("[data-requirements-filter]").parentElement;
+  const cards = workspace.querySelector("[data-requirements-cards]");
+  if (state.view.state === "pre-project") {
+    empty.textContent = state.view.message;
+    empty.hidden = false;
+    content.hidden = false;
+    for (const [field, value] of Object.entries(state.view.context)) {
+      workspace.querySelector(`[data-requirements-context="${field}"]`).textContent = value;
+    }
+    progress.hidden = true;
+    filters.hidden = true;
+    cards.hidden = true;
+    cards.replaceChildren();
+    return;
+  }
   if (state.view.state === "empty") {
     empty.textContent = state.view.message;
     empty.hidden = false;
@@ -139,6 +174,9 @@ function renderChild(root, workspace, state, activeFilter) {
   }
   empty.hidden = true;
   content.hidden = false;
+  progress.hidden = false;
+  filters.hidden = false;
+  cards.hidden = false;
   for (const [field, value] of Object.entries(state.view.context)) {
     workspace.querySelector(`[data-requirements-context="${field}"]`).textContent = value;
   }
@@ -147,7 +185,6 @@ function renderChild(root, workspace, state, activeFilter) {
   for (const button of workspace.querySelectorAll("[data-requirements-filter]")) {
     button.setAttribute("aria-pressed", String(button.dataset.requirementsFilter === activeFilter));
   }
-  const cards = workspace.querySelector("[data-requirements-cards]");
   cards.replaceChildren();
   const filtered = filterProjectRequirements(state.projection.items, activeFilter);
   const byId = new Map(state.view.cards.map((card) => [card.requirementId, card]));
@@ -217,17 +254,44 @@ export function initializeOperatorProjectRequirements(root, client, identity, op
         }),
       ]);
       const context = requirementsChildContext(detail, detailRequest.quote_request_id, substance);
-      const rawBoard = await authority.gateway(projectRequirementsRequest(context));
-      const projection = validateProjectRequirementsBoard(rawBoard, context);
+      let projection;
+      let view;
+      if (context.mode === "PRE_PROJECT") {
+        const [rawWorkspace, assignment] = await Promise.all([
+          authority.gateway(websiteExecutionRequest(detail)),
+          authority.gateway({
+            action: "get_dossier_assignment",
+            dossier_reference: context.dossierReference,
+          }),
+        ]);
+        projection = validateWebsiteExecutionWorkspace(rawWorkspace, context);
+        if (projection.context_revision !== context.websiteWorkRevision) {
+          throw new Error("WEBSITE_WORKSPACE_REVISION_MISMATCH");
+        }
+        view = Object.freeze({
+          state: "pre-project",
+          message: projection.requirements.message,
+          context: Object.freeze({
+            customer: context.customerName,
+            dossier: context.dossierReference,
+            project: "Niet van toepassing",
+            operator: assignment?.assignee_display_name || "Niet toegewezen",
+          }),
+        });
+      } else {
+        const rawBoard = await authority.gateway(projectRequirementsRequest(context));
+        projection = validateProjectRequirementsBoard(rawBoard, context);
+        view = projectRequirementsView(projection);
+      }
       if (!refreshGeneration.isCurrent(selection)) return false;
       currentContext = context;
       currentProjection = projection;
-      currentView = projectRequirementsView(projection);
+      currentView = view;
       renderChild(root, workspace, { state: "ready", projection, view: currentView }, activeFilter);
       return true;
     } catch (error) {
       if (!refreshGeneration.isCurrent(selection)) return false;
-      if (background && currentProjection && currentView) return false;
+      if (background && currentView) return false;
       currentContext = null;
       currentProjection = null;
       currentView = null;
