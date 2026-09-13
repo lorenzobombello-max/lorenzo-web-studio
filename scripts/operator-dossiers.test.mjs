@@ -355,10 +355,10 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
   const dossierCacheIdentity = "20260912-project-refresh-retention-r1";
-  const windowGuardCacheIdentity = "20260912-dossier-continuity-project-r1";
+  const windowGuardCacheIdentity = "20260913-user-gesture-handoff-r1";
   const windowRegistryCacheIdentity = "20260912-dossier-continuity-project-r1";
   const dossierCssCacheIdentity = "20260912-dossier-continuity-project-r1";
-  const dashboardGuardCacheIdentity = "20260912-dossier-continuity-project-r1";
+  const dashboardGuardCacheIdentity = "20260913-user-gesture-handoff-r1";
   const dashboardModuleCacheIdentity = "20260912-dossier-continuity-project-r1";
   const dashboardCssCacheIdentity = "20260912-dossier-continuity-project-r1";
   assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${dashboardGuardCacheIdentity}`));
@@ -783,7 +783,7 @@ test("Dossiers wires VAT remediation and cache versions without a dashboard dupl
   assert.match(source, /async function executeVatRemediation[\s\S]*await options\.requireAal2\(\)[\s\S]*await authority\.gateway\(request\)[\s\S]*await refreshWebsiteQuotationAuthorities/);
   assert.doesNotMatch(source, /approve_quotation_vat_review|governed_turnover_minor\s*:|classification_code\s*:/);
   assert.match(html, /operator-dashboard\.css\?v=20260912-dossier-continuity-project-r1/);
-  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260912-dossier-continuity-project-r1/);
+  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260913-user-gesture-handoff-r1/);
   assert.match(guard, /operator-dashboard\.js\?v=20260912-dossier-continuity-project-r1/);
   assert.match(dashboard, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);
   assert.match(registry, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);

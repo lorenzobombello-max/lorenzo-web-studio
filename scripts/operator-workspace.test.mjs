@@ -6,6 +6,7 @@ import {
   LOCAL_HEARTBEAT_INTERVAL_MS,
   LOCAL_HEARTBEAT_STALE_MS,
   MASTER_SERVER_RENEWAL_INTERVAL_MS,
+  OPEN_RESERVATION_TIMEOUT_MS,
   SERVER_LEASE_DURATION_MS,
   createWorkspaceEvent,
   clearOperatorWorkspaceResumeHint,
@@ -15,6 +16,7 @@ import {
   readOperatorWorkspaceResumeHint,
   shouldLockForLease,
   validWorkspaceEvent,
+  workspaceReservationWindowName,
   writeOperatorWorkspaceResumeHint,
 } from "../assets/js/operator-workspace-protocol.mjs";
 import { createOperatorWorkspaceChild } from "../assets/js/operator-workspace-child.mjs";
@@ -37,6 +39,7 @@ const workspaceId = "f4000000-0000-4000-8000-000000000001";
 const masterWindowId = "f4000000-0000-4000-8000-000000000002";
 const childWindowId = "f4000000-0000-4000-8000-000000000003";
 const launchNonce = "f4000000-0000-4000-8000-000000000004";
+const reservationId = "f4000000-0000-4000-8000-000000000005";
 const epoch = 41;
 const root = new URL("../", import.meta.url);
 const read = (path)=>readFile(new URL(path, root), "utf8");
@@ -77,7 +80,22 @@ function childHarness({ nowValue = 10_000, rpc = async()=>({ data: { valid: true
   FakeBroadcastChannel.instances = [];
   const timers = timerHarness();
   const locks = [];
-  const windowObject = { BroadcastChannel: FakeBroadcastChannel, close() { this.closed = true; }, focus() {} };
+  const reservations = [];
+  const windowObject = {
+    BroadcastChannel: FakeBroadcastChannel,
+    crypto: { randomUUID: ()=>reservationId },
+    close() { this.closed = true; },
+    focus() {},
+    open(url, name, features) {
+      const reference = {
+        closed: false,
+        close() { this.closed = true; },
+        setTimeout(callback, delay) { this.timeout = { callback, delay }; },
+      };
+      reservations.push({ url, name, features, reference });
+      return reference;
+    },
+  };
   const child = createOperatorWorkspaceChild({
     client: { rpc },
     bootstrap: { workspaceId, epoch, windowId: childWindowId, moduleKey: "messages", slotKey: "main" },
@@ -89,7 +107,7 @@ function childHarness({ nowValue = 10_000, rpc = async()=>({ data: { valid: true
     clearIntervalFn: timers.clearIntervalFn,
     onLock: (reason)=>locks.push(reason),
   });
-  return { child, channel: FakeBroadcastChannel.instances[0], locks, timers, windowObject, setNow(value) { nowValue = value; } };
+  return { child, channel: FakeBroadcastChannel.instances[0], locks, reservations, timers, windowObject, setNow(value) { nowValue = value; } };
 }
 
 test("approved workspace timing remains inside the owner safety target", ()=>{
@@ -219,6 +237,22 @@ test("workspace events are scoped hints with no role permission token or busines
   assert.equal(validWorkspaceEvent({ ...event, role: "owner" }, { workspaceId, epoch }), false);
   assert.equal(validWorkspaceEvent({ ...event, workspaceId: childWindowId }, { workspaceId, epoch }), false);
   assert.equal(validWorkspaceEvent({ ...event, sequence: 6 }, { workspaceId, epoch, minimumSequence: 7 }), false);
+  const openRequest = createWorkspaceEvent({ type: "OPEN_REQUEST", workspaceId, epoch, senderWindowId: childWindowId, sequence: 8, now: 10_001, moduleKey: "dossiers", slotKey: "main", reservationId });
+  assert.equal(validWorkspaceEvent(openRequest, { workspaceId, epoch }), true);
+  assert.equal(validWorkspaceEvent({ ...openRequest, reservationId: "not-a-uuid" }, { workspaceId, epoch }), false);
+  assert.equal(validWorkspaceEvent({ ...event, reservationId }, { workspaceId, epoch }), false);
+});
+
+test("child reserves only a bounded generic shell before publishing an open request", ()=>{
+  const harness = childHarness();
+  assert.equal(harness.child.requestOpen("dossiers", "main"), true);
+  assert.equal(harness.reservations.length, 1);
+  assert.equal(harness.reservations[0].url, "about:blank");
+  assert.equal(harness.reservations[0].name, workspaceReservationWindowName(workspaceId, reservationId));
+  assert.equal(harness.reservations[0].features, "popup");
+  assert.equal(harness.reservations[0].reference.timeout.delay, OPEN_RESERVATION_TIMEOUT_MS);
+  assert.equal(harness.channel.messages.at(-1).type, "OPEN_REQUEST");
+  assert.equal(harness.channel.messages.at(-1).reservationId, reservationId);
 });
 
 test("server expiry is the hard child lock deadline even after forged local heartbeats", ()=>{
@@ -445,6 +479,43 @@ test("PRE_PROJECT Website launches reuse one generic module-slot child", async (
   });
   assert.equal(opened[0].includes("concept"), false);
   master.dispose();
+});
+
+test("master claims a reserved shell and retains deduplication and shutdown ownership", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const ids = [masterWindowId, childWindowId, launchNonce];
+  const opened = [];
+  const managedReference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; } };
+  const duplicateReservation = { closed: false, close() { this.closed = true; } };
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>name === "revoke_operator_workspace_v1"
+      ? { data: { revoked: true }, error: null }
+      : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open(url, name) {
+        opened.push({ url, name });
+        return url === "about:blank" ? duplicateReservation : managedReference;
+      },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  const channel = FakeBroadcastChannel.instances[0];
+  channel.emit(createWorkspaceEvent({ type: "OPEN_REQUEST", workspaceId, epoch, senderWindowId: childWindowId, sequence: 1, now: 10_001, moduleKey: "dossiers", slotKey: "main", reservationId }));
+  assert.equal(opened[0].name, workspaceReservationWindowName(workspaceId, reservationId));
+  assert.equal(parseChildBootstrap(opened[0].url)?.moduleKey, "dossiers");
+  channel.emit(createWorkspaceEvent({ type: "OPEN_REQUEST", workspaceId, epoch, senderWindowId: childWindowId, sequence: 2, now: 10_002, moduleKey: "dossiers", slotKey: "main", reservationId: "f4000000-0000-4000-8000-000000000006" }));
+  assert.equal(opened.length, 2);
+  assert.equal(duplicateReservation.closed, true);
+  assert.equal(managedReference.focusCalls, 2);
+  assert.equal(await master.shutdownWorkspace(), true);
+  assert.equal(managedReference.closed, true);
 });
 
 test("remounted module launch controls are bound once and release detached listeners", async ()=>{

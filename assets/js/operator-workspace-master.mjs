@@ -9,7 +9,8 @@ import {
   validUuid,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
+  workspaceReservationWindowName,
+} from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
 import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1";
 
 async function requestLocalMasterLock(navigatorObject) {
@@ -226,12 +227,16 @@ export async function createOperatorWorkspaceMaster({
     onInvalidWorkspace(reason);
   }
 
-  function openOperatorModuleWindow(moduleKey, slotKey = "main") {
+  function openOperatorModuleWindow(moduleKey, slotKey = "main", reservationId) {
     const descriptor = resolveStandaloneOperatorModule(moduleKey);
     if (!active || !descriptor || !validOperatorSlotKey(slotKey)) return false;
     const childKey = `${moduleKey}:${slotKey}`;
     const existing = childWindows.get(childKey);
     if (existing?.reference && !existing.reference.closed) {
+      if (reservationId) {
+        const reservation = windowObject.open("about:blank", workspaceReservationWindowName(memory.workspaceId, reservationId), "popup");
+        try { reservation?.close(); } catch {}
+      }
       existing.reference.focus();
       publish("FOCUS_REQUEST", moduleKey, slotKey);
       return true;
@@ -245,7 +250,10 @@ export async function createOperatorWorkspaceMaster({
       moduleKey,
       slotKey,
     }, windowObject.location.origin);
-    const reference = windowObject.open(url.href, `lws-operator-${moduleKey}-${slotKey}-${memory.workspaceId}`, "popup");
+    const windowName = reservationId
+      ? workspaceReservationWindowName(memory.workspaceId, reservationId)
+      : `lws-operator-${moduleKey}-${slotKey}-${memory.workspaceId}`;
+    const reference = windowObject.open(url.href, windowName, "popup");
     childWindows.set(childKey, { windowId, reference });
     reference?.focus();
     return Boolean(reference);
@@ -287,7 +295,7 @@ export async function createOperatorWorkspaceMaster({
     if (event.data.type === "HELLO") publish("REGISTERED", event.data.moduleKey, event.data.slotKey);
     if (event.data.type === "INVALIDATE" && resolveStandaloneOperatorModule(event.data.moduleKey)) onInvalidate(event.data.moduleKey);
     if (event.data.type === "OPEN_REQUEST") {
-      openOperatorModuleWindow(event.data.moduleKey, event.data.slotKey);
+      openOperatorModuleWindow(event.data.moduleKey, event.data.slotKey, event.data.reservationId);
     }
   });
 

@@ -3,11 +3,12 @@ export const MASTER_SERVER_RENEWAL_INTERVAL_MS = 4_000;
 export const CHILD_SERVER_CHECK_INTERVAL_MS = 4_000;
 export const LOCAL_HEARTBEAT_STALE_MS = 6_000;
 export const SERVER_LEASE_DURATION_MS = 13_000;
+export const OPEN_RESERVATION_TIMEOUT_MS = 10_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODULE_OR_SLOT_KEY = /^[a-z][a-z0-9-]{0,47}$/;
 const EVENT_TYPES = new Set(["HELLO", "REGISTERED", "HEARTBEAT", "SHUTDOWN", "LOCK", "INVALIDATE", "FOCUS_REQUEST", "OPEN_REQUEST"]);
-const EVENT_KEYS = new Set(["type", "workspaceId", "epoch", "senderWindowId", "sequence", "timestamp", "moduleKey", "slotKey"]);
+const EVENT_KEYS = new Set(["type", "workspaceId", "epoch", "senderWindowId", "sequence", "timestamp", "moduleKey", "slotKey", "reservationId"]);
 const MASTER_RESUME_STATE_KEY = "lwsOperatorWorkspaceResumeV1";
 
 export function validUuid(value) {
@@ -23,6 +24,11 @@ export function createWindowId(cryptoObject = globalThis.crypto) {
 export function workspaceChannelName(workspaceId, epoch) {
   if (!validUuid(workspaceId) || !Number.isSafeInteger(epoch) || epoch < 1) throw new Error("INVALID_WORKSPACE_CHANNEL");
   return `lws-operator-workspace-v1:${workspaceId}:${epoch}`;
+}
+
+export function workspaceReservationWindowName(workspaceId, reservationId) {
+  if (![workspaceId, reservationId].every(validUuid)) throw new Error("INVALID_WORKSPACE_RESERVATION");
+  return `lws-operator-reservation-${workspaceId}-${reservationId}`;
 }
 
 export function managedChildUrl({ workspaceId, epoch, windowId, launchNonce, moduleKey, slotKey = "main" }, origin = "https://operator.local") {
@@ -50,10 +56,11 @@ export function parseChildBootstrap(urlLike, origin = "https://operator.local") 
   return Object.freeze({ workspaceId, epoch, windowId, launchNonce, moduleKey, slotKey });
 }
 
-export function createWorkspaceEvent({ type, workspaceId, epoch, senderWindowId, sequence, now = Date.now(), moduleKey, slotKey }) {
+export function createWorkspaceEvent({ type, workspaceId, epoch, senderWindowId, sequence, now = Date.now(), moduleKey, slotKey, reservationId }) {
   const event = { type, workspaceId, epoch, senderWindowId, sequence, timestamp: now };
   if (moduleKey !== undefined) event.moduleKey = moduleKey;
   if (slotKey !== undefined) event.slotKey = slotKey;
+  if (reservationId !== undefined) event.reservationId = reservationId;
   if (!validWorkspaceEvent(event, { workspaceId, epoch })) throw new Error("INVALID_WORKSPACE_EVENT");
   return Object.freeze(event);
 }
@@ -66,6 +73,7 @@ export function validWorkspaceEvent(event, { workspaceId, epoch, minimumSequence
   if (!Number.isFinite(event.timestamp) || event.timestamp < 0) return false;
   if (event.moduleKey !== undefined && !MODULE_OR_SLOT_KEY.test(event.moduleKey)) return false;
   if (event.slotKey !== undefined && !MODULE_OR_SLOT_KEY.test(event.slotKey)) return false;
+  if (event.reservationId !== undefined && (event.type !== "OPEN_REQUEST" || !validUuid(event.reservationId))) return false;
   return true;
 }
 

@@ -1,11 +1,14 @@
 import {
   CHILD_SERVER_CHECK_INTERVAL_MS,
   LOCAL_HEARTBEAT_STALE_MS,
+  OPEN_RESERVATION_TIMEOUT_MS,
+  createWindowId,
   createWorkspaceEvent,
   shouldLockForLease,
   validWorkspaceEvent,
   workspaceChannelName,
-} from "./operator-workspace-protocol.mjs?v=20260912-dossier-continuity-project-r1";
+  workspaceReservationWindowName,
+} from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
 
 function leaseTime(value) {
   const timestamp = Date.parse(value);
@@ -36,7 +39,7 @@ export function createOperatorWorkspaceChild({
   let verificationPending = false;
   const senderSequences = new Map();
 
-  function publish(type, moduleKey, slotKey = bootstrap.slotKey) {
+  function publish(type, moduleKey, slotKey = bootstrap.slotKey, reservationId) {
     if (!active && type !== "LOCK") return;
     channel.postMessage(createWorkspaceEvent({
       type,
@@ -47,6 +50,7 @@ export function createOperatorWorkspaceChild({
       now: now(),
       moduleKey,
       slotKey,
+      reservationId,
     }));
   }
 
@@ -122,10 +126,20 @@ export function createOperatorWorkspaceChild({
     },
     invalidate(moduleKey = bootstrap.moduleKey) { publish("INVALIDATE", moduleKey); },
     requestOpen(moduleKey, slotKey = "main") {
+      let reservation;
       try {
-        publish("OPEN_REQUEST", moduleKey, slotKey);
+        const reservationId = createWindowId(windowObject.crypto);
+        reservation = windowObject.open(
+          "about:blank",
+          workspaceReservationWindowName(bootstrap.workspaceId, reservationId),
+          "popup",
+        );
+        if (!reservation) return false;
+        reservation.setTimeout?.(()=>reservation.close(), OPEN_RESERVATION_TIMEOUT_MS);
+        publish("OPEN_REQUEST", moduleKey, slotKey, reservationId);
         return true;
       } catch {
+        try { reservation?.close(); } catch {}
         return false;
       }
     },
