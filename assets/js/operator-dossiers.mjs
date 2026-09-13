@@ -196,6 +196,18 @@ export function websiteWorkPresentation(websiteWork) {
   });
 }
 
+export function retainWebsiteWorkSnapshot(detail, substance, quoteRequestId) {
+  if (detail?.request_kind !== "website" || detail.quote_request_id !== quoteRequestId) return null;
+  try {
+    const validatedDetail = detailIdentity(detail);
+    const validatedSubstance = validateDossierSubstance(substance, quoteRequestId);
+    if (validatedSubstance.request_kind !== validatedDetail.request_kind) return null;
+    return Object.freeze({ detail: validatedDetail, substance: validatedSubstance });
+  } catch {
+    return null;
+  }
+}
+
 function websitePriceMinor(value) {
   const normalized = String(value || "").trim().replace(",", ".");
   if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
@@ -1365,7 +1377,6 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     workspace.querySelector("[data-dossiers-lifecycle-panel]"),
     workspace.querySelector("[data-dossiers-pending-actions]"),
   );
-  const authority = createOperatorDossierAuthority(client, options);
   const state = {
     query: { zone: "PENDING", retention_state: "ACTIVE", request_kind: null, search: "" },
     items: [],
@@ -1394,6 +1405,14 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
     counters: null,
   };
   const status = workspace.querySelector("[data-dossiers-status]");
+  const authority = createOperatorDossierAuthority(client, {
+    ...options,
+    onAuthorizationFailure(code) {
+      state.items = [];
+      revalidateSelection();
+      options.onAuthorizationFailure?.(code);
+    },
+  });
 
   async function refreshWebsiteQuotationAuthorities(selection) {
     const pricingRequest = websiteQuotationPricingStateRequest(state.detail);
@@ -1582,6 +1601,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
   async function selectDossier(summary, { markSeen = false } = {}) {
     if (!summary) return false;
     const selection = ++selectDossier.generation;
+    const retainedWebsiteWorkSnapshot = retainWebsiteWorkSnapshot(
+      state.detail,
+      state.substance,
+      summary.raw?.quote_request_id,
+    );
     const retainedWebsiteAuthorities = retainWebsiteQuotationAuthorities(
       state.detail,
       state.websitePricing,
@@ -1599,9 +1623,9 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       ? retainDossierPurgeEligibility(state.purgeEligibility, summary.reference)
       : null;
     state.selected = summary;
-    state.detail = retainedWebsiteAuthorities.detail;
+    state.detail = retainedWebsiteWorkSnapshot?.detail || null;
     state.projectWorkspace = retainedProjectWorkspace;
-    state.substance = null;
+    state.substance = retainedWebsiteWorkSnapshot?.substance || null;
     state.copySource = null;
     state.requests = [];
     state.request = null;
@@ -1650,9 +1674,11 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       const detail = detailIdentity(detailResponse);
       const substance = validateDossierSubstance(substanceResponse, detail.quote_request_id);
       if (controller.disposed || selection !== selectDossier.generation) return false;
-      state.detail = detail;
-      state.substance = substance;
-      state.copySource = dossierCopyAvailable(detail) ? detail.application : null;
+      Object.assign(state, {
+        detail,
+        substance,
+        copySource: dossierCopyAvailable(detail) ? detail.application : null,
+      });
       renderDetail(workspace, detail, summary, substance);
       const projectRequest = projectWorkspaceRequest(detail);
       if (!projectRequest && detail.request_kind === "website") {

@@ -84,7 +84,7 @@ test("dossier selection changes never retain the previous project presentation",
 test("Dossiers refresh retains by identity and replaces paired authorities after both fetches", () => {
   assert.match(
     source,
-    /retainWebsiteQuotationAuthorities\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*state\.detail = retainedWebsiteAuthorities\.detail;[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
+    /retainWebsiteWorkSnapshot\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*retainWebsiteQuotationAuthorities\([\s\S]*state\.detail = retainedWebsiteWorkSnapshot\?\.detail \|\| null;[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
   );
   const refreshBody = source.match(
     /async function refreshWebsiteQuotationAuthorities\(selection\) \{([\s\S]*?)\n  \}/,
