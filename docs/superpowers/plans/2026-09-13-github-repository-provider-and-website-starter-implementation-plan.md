@@ -384,11 +384,29 @@ export type LwsProjectMarkerV1 = Readonly<{
 - [ ] Step 6: Prove disabled mode performs zero token, GitHub and binding calls; inspect response snapshots for secrets/raw provider bodies.
 - [ ] Step 7: Commit with `git commit -m "feat(repository): route owner provisioning command"`.
 
-### OWNER GATES 3–5: GitHub App authority and credential
+### OWNER GATES 3–5A: GitHub App authority and offline credential readiness
 
 - [ ] **OWNER GATE 3 — GitHub App registration:** register the LWS-owned App only after Tasks 1-10 pass locally; record App identity and incident owner outside source control. STOP before registration until approved.
 - [ ] **OWNER GATE 4 — permissions and installation scope:** approve Metadata read, Administration write and Contents write only; explicitly reject Workflows, Actions, Pages, Deployments, Webhooks, Issues, Pull Requests, Members and Secrets. Install with **Only select repositories**, initially selecting only the canonical template. STOP on any permission drift.
-- [ ] **OWNER GATE 5 — private key and secure store:** generate the key, place it in the approved secret manager, rehearse rotation/revocation and confirm it is absent from source, variables, database, browser and logs. STOP until evidence is approved.
+- [x] **OWNER GATE 5A — Secret Placement and Offline Credential Readiness:** generate the GitHub App private key, place it only in the approved Supabase Edge Function Secrets store and delete the downloaded local PEM. Store only the exact contract names `LWS_GITHUB_APP_PRIVATE_KEY`, `LWS_GITHUB_APP_ID`, `LWS_GITHUB_APP_INSTALLATION_ID`, `LWS_GITHUB_PRODUCTION_ORGANIZATION`, `LWS_GITHUB_TEST_ORGANIZATION`, `LWS_GITHUB_TEMPLATE_OWNER`, `LWS_GITHUB_TEMPLATE_NAME` and `LWS_GITHUB_PROVIDER_ENABLED`; the App ID and installation ID must be recorded there. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`; prove no secret material exists in source, database, browser, logs, local environment or evidence; require offline configuration validation and fail-closed tests to pass. No real GitHub API call is required or authorized by Gate 5A. **Status: COMPLETE by OWNER-approved evidence.**
+- [ ] **OWNER GATE 5B — Live Rotation / Revocation Evidence:** complete only after OWNER Gate 6 authorizes the first real GitHub API call and the initial `GET /app` plus repository-scoped installation-token test succeeds. Generate a second App private key, replace the active Supabase secret with the new key before revoking the previous key, verify new-key authentication and narrowly scoped token issuance, revoke the previous key, prove old-key authentication is denied and prove the new key remains valid. Record no key, JWT or token material; keep the provider disabled unless separately authorized. STOP until the rotation/revocation evidence is approved.
+
+### OWNER-approved credential gate sequence
+
+The legal sequence after completed Task 11 is:
+
+1. Complete OWNER Gate 5A.
+2. Complete Task 12.
+3. Complete Task 13 Steps 1–5 without network access.
+4. Obtain OWNER Gate 6 approval.
+5. Perform only the approved first real GitHub authentication and narrowly scoped installation-token test.
+6. Complete OWNER Gate 5B rotation/revocation rehearsal.
+7. Complete the remaining Task 13 steps.
+8. Complete Tasks 14–21.
+9. Obtain OWNER Gate 7 approval.
+10. Obtain OWNER Gate 8 production activation approval.
+
+Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. Gate 6 remains the hard stop before the first real GitHub API call. Gate 5B remains mandatory before Task 13 may perform its approved external template-generation execution. Gate 8 remains the separate authority for migration execution, Edge deployment and feature-flag enablement.
 
 ## PHASE D — canonical starter repository contract
 
@@ -451,13 +469,24 @@ export type LwsProjectMarkerV1 = Readonly<{
 - [ ] Step 3: Implement dry-run by default and exact redacted evidence output; cleanup remains disabled unless a separately approved marker+context+external-ID test cleanup path exists.
 - [ ] Step 4: Re-run the unit harness test and provider Deno tests without network access; require pass.
 - [ ] Step 5: Stop before any `--execute` invocation and request OWNER Gate 6.
-- [ ] Step 6: After approval, run the documented test-island command once, capture request IDs/external IDs/hashes, and verify no non-test repository is listed, read, changed or deleted.
-- [ ] Step 7: Commit only harness/tests/evidence schema with `git commit -m "test(repository): add GitHub test-island contract"`; do not commit credentials or raw tokens.
 
 ### OWNER GATE 6: Test installation and external side effect
 
 - [ ] OWNER approves the dedicated test App installation, exact selected template repository, one synthetic repository creation and non-destructive evidence collection.
 - [ ] STOP before the first real GitHub API call. A failed repository-scoped template-generation contract blocks activation; installation-wide token scope is forbidden as a workaround.
+- [ ] After approval, perform the first authentication test with a short-lived in-memory App JWT using `GET /app`, then request one installation token restricted to the canonical template repository and the approved Metadata read, Administration write and Contents write permissions. Discard both credentials immediately, record only redacted status/request/scope/expiry evidence and perform no repository mutation. STOP for OWNER review and Gate 5B continuation.
+
+### OWNER GATE 5B: Live rotation / revocation evidence
+
+- [ ] Generate a second GitHub App private key and store it as the active Supabase Edge secret before revoking the previous key.
+- [ ] Verify new-key App authentication and narrowly repository-scoped installation-token issuance, revoke the previous key, prove old-key authentication is denied and prove the new key remains valid.
+- [ ] Record only redacted key identifiers, timestamps, HTTP status, GitHub request IDs, repository/permission scope and expiry; never record PEM, JWT or installation-token material. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`.
+- [ ] STOP until OWNER approves Gate 5B evidence. This approval does not authorize provider enablement, Edge deployment, installation-scope expansion, customer repository creation or production mutation.
+
+### Task 13 continuation after OWNER Gate 5B
+
+- [ ] Step 6: After Gate 5B approval, run the documented test-island command once, capture request IDs/external IDs/hashes, and verify no non-test repository is listed, read, changed or deleted.
+- [ ] Step 7: Commit only harness/tests/evidence schema with `git commit -m "test(repository): add GitHub test-island contract"`; do not commit credentials or raw tokens.
 
 ### Task 14: Complete bootstrap provenance and recovery cases
 
@@ -694,7 +723,7 @@ export type LwsProjectMarkerV1 = Readonly<{
 - [ ] Verify every task has concrete Create/Modify/Test paths, consumed/produced interfaces, an observed failing test, expected failure, minimal implementation, passing rerun, adjacent regression, scope review and commit boundary.
 - [ ] Verify every design section maps to at least one task or OWNER gate and every external side effect is preceded by an explicit STOP.
 - [ ] Verify the inert V1 provider contract is not reinterpreted, customer source never enters core, one repository/workspace/files/preview/cache/build/artifact namespace exists per context, and promotion preserves that island.
-- [ ] Verify the eight OWNER gates are present and no GitHub App, secret, repository, API call, migration, deploy, push or production mutation was performed while writing this plan.
+- [ ] Verify the eight numbered OWNER gates are present, with Gate 5 split into Gate 5A and Gate 5B, and no GitHub App, secret, repository, API call, migration, deploy, push or production mutation was performed while writing this plan.
 - [ ] Search this plan case-insensitively for unfinished markers and require none; examples in the fixed contracts are intentional executable shapes, not deferred decisions.
 - [ ] Validate exact status outputs:
 
