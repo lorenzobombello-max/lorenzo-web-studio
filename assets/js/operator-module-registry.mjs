@@ -123,7 +123,7 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("website-")) {
-      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260912-dossier-continuity-project-r1");
+      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260912-website-concept-pre-project-v1");
       return initializeOperatorWebsiteExecution(root, client, identity, {
         slotKey,
         onInvalidate,

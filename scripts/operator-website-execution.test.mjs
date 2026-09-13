@@ -13,13 +13,99 @@ import {
 
 const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
-const expected = { quoteRequestId, projectId };
+const conceptId = "a1800000-0000-4000-8000-000000000004";
+const websiteWorkContextId = "a1800000-0000-4000-8000-000000000005";
+const expected = {
+  quoteRequestId,
+  projectId,
+  conceptId: null,
+  websiteWorkContextId,
+  mode: "OFFICIAL_PROJECT",
+};
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const base = {
+  contract_version: 2,
+  mode: "OFFICIAL_PROJECT",
+  quote_request_id: quoteRequestId,
+  concept_id: null,
+  project_id: projectId,
+  website_work_context_id: websiteWorkContextId,
+  context_revision: 1,
+  briefing_status: "COMPLETE",
+  commercially_released: false,
   project: { project_id: projectId, site: null },
   start_gate: { project_id: projectId, quote_request_id: quoteRequestId },
   workspace: null,
+  requirements: { state: "PROJECT_BOUND", message: null },
+};
+
+const officialWork = {
+  state: "OFFICIAL_PROJECT",
+  quote_request_id: quoteRequestId,
+  concept_id: null,
+  project_id: projectId,
+  website_work_context_id: websiteWorkContextId,
+  mode: "OFFICIAL_PROJECT",
+  briefing_status: "COMPLETE",
+  commercially_released: false,
+  revision: 1,
+  permitted_actions: ["OPEN_WEBSITE"],
+};
+
+function workspaceFixture(overrides = {}) {
+  return {
+    website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+    website_work_context_id: websiteWorkContextId,
+    project_id: projectId,
+    quote_request_id: quoteRequestId,
+    repository_provider: "GITHUB",
+    repository_owner: "lws-studio",
+    repository_name: "lws-web-2026-0042",
+    default_branch: "main",
+    preview_branch: "develop",
+    preview_url: "https://preview.example.com/build/42#private",
+    last_commit_sha: "a".repeat(40),
+    last_commit_at: "2026-09-12T12:00:00Z",
+    last_build_result: "PASS",
+    last_build_at: "2026-09-12T12:01:00Z",
+    binding_revision: 1,
+    created_at: "2026-09-12T10:00:00Z",
+    updated_at: "2026-09-12T12:01:00Z",
+    ...overrides,
+  };
+}
+
+const preProjectWork = {
+  state: "PRE_PROJECT",
+  quote_request_id: quoteRequestId,
+  concept_id: conceptId,
+  project_id: null,
+  website_work_context_id: websiteWorkContextId,
+  mode: "PRE_PROJECT",
+  briefing_status: "COMPLETE",
+  commercially_released: false,
+  revision: 1,
+  permitted_actions: ["OPEN_WEBSITE"],
+};
+
+const preProjectV2 = {
+  contract_version: 2,
+  mode: "PRE_PROJECT",
+  quote_request_id: quoteRequestId,
+  concept_id: conceptId,
+  project_id: null,
+  website_work_context_id: websiteWorkContextId,
+  context_revision: 1,
+  briefing_status: "COMPLETE",
+  commercially_released: false,
+  project: null,
+  start_gate: null,
+  workspace: null,
+  requirements: {
+    state: "NOT_AVAILABLE",
+    message: "Requirements volgen na intake-sync.",
+  },
 };
 
 function requirementsProjection(overrides = {}) {
@@ -83,7 +169,7 @@ function requirement(itemNumber, status) {
   };
 }
 
-test("website slot and request retain the exact dossier/project context", () => {
+test("website slot and request retain the exact dossier context", () => {
   const slot = websiteExecutionSlot(quoteRequestId.toUpperCase());
   assert.equal(slot, `website-${quoteRequestId}`);
   assert.equal(quoteRequestIdFromWebsiteExecutionSlot(slot), quoteRequestId);
@@ -91,13 +177,70 @@ test("website slot and request retain the exact dossier/project context", () => 
   assert.deepEqual(websiteExecutionRequest({
     request_kind: "website",
     quote_request_id: quoteRequestId,
-    project: { project_id: projectId },
+    website_work: officialWork,
   }), {
     action: "get_website_execution_workspace",
     quote_request_id: quoteRequestId,
-    project_id: projectId,
   });
   assert.equal(websiteExecutionRequest({ request_kind: "sdf" }), null);
+});
+
+test("PRE_PROJECT request uses only the stable dossier locator", () => {
+  assert.deepEqual(websiteExecutionRequest({
+    request_kind: "website",
+    quote_request_id: quoteRequestId,
+    website_work: preProjectWork,
+  }), {
+    action: "get_website_execution_workspace",
+    quote_request_id: quoteRequestId,
+  });
+  assert.throws(() => websiteExecutionRequest({
+    request_kind: "website",
+    quote_request_id: quoteRequestId,
+    website_work: { ...preProjectWork, concept_id: null },
+  }), /INVALID_WEBSITE_EXECUTION_CONTEXT/);
+});
+
+test("PRE_PROJECT V2 validation is exact and context-bound", () => {
+  const context = {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    mode: "PRE_PROJECT",
+  };
+  const projection = validateWebsiteExecutionWorkspace(preProjectV2, context);
+  const view = websiteExecutionView(projection);
+  assert.equal(projection.mode, "PRE_PROJECT");
+  assert.equal(view.modeLabel, "Voorlopig concept");
+  assert.equal(view.releaseLabel, "Niet commercieel vrijgegeven");
+  assert.equal(view.briefingLabel, "COMPLETE");
+  assert.equal(projection.requirements.message, "Requirements volgen na intake-sync.");
+  for (const malformed of [
+    { ...preProjectV2, unknown: true },
+    { ...preProjectV2, commercially_released: true },
+    { ...preProjectV2, website_work_context_id: crypto.randomUUID() },
+    { ...preProjectV2, project_id: crypto.randomUUID() },
+    { ...preProjectV2, requirements: { state: "EMPTY", message: "Other" } },
+  ]) assert.throws(
+    () => validateWebsiteExecutionWorkspace(malformed, context),
+    /INVALID_WEBSITE_EXECUTION_RESPONSE|WEBSITE_WORKSPACE_BINDING_MISMATCH/,
+  );
+});
+
+test("Website child branches PRE_PROJECT without Project or Requirements authority", async () => {
+  const [child, website] = await Promise.all([
+    read("assets/js/operator-website-execution-child.mjs"),
+    read("assets/js/operator-website-execution.mjs"),
+  ]);
+  assert.doesNotMatch(child, /projectWorkspaceRequest/);
+  assert.match(child, /websiteExecutionRequest\(detail\)/);
+  assert.match(child, /projection\.mode === "OFFICIAL_PROJECT"[^]*projectRequirementsRequest\(context\)/);
+  assert.match(child, /: websiteRequirementsSummary\(projection\.requirements, context\)/);
+  assert.match(website, /Requirements volgen na intake-sync\./);
+  assert.match(child, /data-website-mode/);
+  assert.match(child, /data-website-briefing/);
+  assert.match(child, /data-website-release/);
 });
 
 test("website projection fails closed for the wrong dossier or project", () => {
@@ -116,6 +259,9 @@ test("empty workspace and missing preview/production states are explicit", () =>
   assert.deepEqual(websiteExecutionView(projection), {
     state: "empty",
     message: "Website workspace niet gekoppeld.",
+    modeLabel: "Officieel project",
+    briefingLabel: "COMPLETE",
+    releaseLabel: "Niet commercieel vrijgegeven",
     repository: "Repository niet gekoppeld",
     branch: "Niet beschikbaar",
     preview: "Preview nog niet beschikbaar",
@@ -132,18 +278,7 @@ test("repository metadata renders safe GitHub and VS Code Web links", () => {
       project_id: projectId,
       site: { canonical_url: "https://www.example.com" },
     },
-    workspace: {
-      project_id: projectId,
-      quote_request_id: quoteRequestId,
-      repository_provider: "GITHUB",
-      repository_owner: "lws-studio",
-      repository_name: "lws-web-2026-0042",
-      default_branch: "main",
-      preview_branch: "develop",
-      preview_url: "https://preview.example.com/build/42#private",
-      last_commit_sha: "a".repeat(40),
-      last_build_result: "PASS",
-    },
+    workspace: workspaceFixture(),
   }, expected);
   const view = websiteExecutionView(projection);
   assert.equal(view.repository, "lws-studio/lws-web-2026-0042");
@@ -160,16 +295,10 @@ test("unsafe repository and URL references are rejected", () => {
     /INVALID_WEBSITE_REPOSITORY_REFERENCE/);
   assert.throws(() => validateWebsiteExecutionWorkspace({
     ...base,
-    workspace: {
-      project_id: projectId,
-      quote_request_id: quoteRequestId,
-      repository_provider: "GITHUB",
-      repository_owner: "lws-studio",
+    workspace: workspaceFixture({
       repository_name: "client-site",
-      default_branch: "main",
-      preview_branch: "develop",
       preview_url: "javascript:alert(1)",
-    },
+    }),
   }, expected), /INVALID_WEBSITE_EXECUTION_URL/);
 });
 
@@ -342,12 +471,13 @@ test("refreshed server DTO replaces Website Requirements summary without client 
 test("Website child fetches and renders summary through existing refresh and managed sibling flow", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
   assert.match(child, /projectRequirementsRequest\(context\)/);
-  assert.match(child, /Promise\.all\(\[[^]*get_website_execution_workspace[^]*projectRequirementsRequest\(context\)/);
+  assert.match(child, /Promise\.all\(\[[^]*websiteExecutionRequest\(detail\)[^]*get_dossier_assignment/);
+  assert.match(child, /validateWebsiteExecutionWorkspace\(rawWorkspace, context\)[^]*projection\.mode === "OFFICIAL_PROJECT"[^]*projectRequirementsRequest\(context\)/);
   assert.match(child, /data-website-requirements-progress/);
   assert.match(child, /data-website-requirements-open/);
   assert.match(child, /data-website-requirements-blocked/);
   assert.match(child, /data-website-requirements-preview/);
-  assert.match(child, /summary: websiteRequirementsSummary\(rawRequirements, context\)/);
+  assert.match(child, /summary,/);
   assert.equal(child.indexOf("function renderRequirementsSummary"), child.lastIndexOf("function renderRequirementsSummary"));
   assert.equal(child.indexOf("function renderRequirementsSummary") < child.indexOf("function setLink"), true);
   assert.match(child, /data-website-action="requirements"/);

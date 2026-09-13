@@ -6,13 +6,13 @@ import {
   createOperatorDossierAuthority,
   dossierReference,
 } from "./operator-dossiers.mjs";
-import { projectWorkspaceRequest } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
 import {
   quoteRequestIdFromWebsiteExecutionSlot,
   validateWebsiteExecutionWorkspace,
+  websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
-} from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-website-execution.mjs?v=20260912-website-concept-pre-project-v1";
 import {
   projectRequirementsRequest,
   requirementsBoardSlot,
@@ -40,7 +40,8 @@ export function websiteChildContext(detail, quoteRequestId, substance = null) {
     detail?.quote_request_id !== quoteRequestId) {
     throw new Error("WEBSITE_WORKSPACE_BINDING_MISMATCH");
   }
-  const request = projectWorkspaceRequest(detail);
+  const request = websiteExecutionRequest(detail);
+  const work = detail.website_work;
   if (!request || request.quote_request_id !== quoteRequestId) {
     throw new Error("WEBSITE_WORKSPACE_BINDING_MISMATCH");
   }
@@ -48,7 +49,10 @@ export function websiteChildContext(detail, quoteRequestId, substance = null) {
   if (!reference) throw new Error("WEBSITE_WORKSPACE_DOSSIER_REQUIRED");
   return Object.freeze({
     quoteRequestId,
-    projectId: request.project_id,
+    projectId: work.project_id,
+    conceptId: work.concept_id,
+    websiteWorkContextId: work.website_work_context_id,
+    mode: work.mode,
     dossierReference: reference,
     customerName: String(
       substance?.customer?.company || substance?.customer?.name ||
@@ -67,9 +71,14 @@ function childMarkup() {
     <p class="empty-state" data-website-empty>Website workspace laden...</p>
     <div data-website-content hidden>
       <dl class="project-child-context website-execution__context">
+        <div><dt>Werkfase</dt><dd data-website-mode></dd></div>
+        <div><dt>Briefing</dt><dd data-website-briefing></dd></div>
+        <div><dt>Vrijgave</dt><dd data-website-release></dd></div>
+      </dl>
+      <dl class="project-child-context website-execution__context">
         <div><dt>Klant</dt><dd data-website-context="customer"></dd></div>
         <div><dt>Dossier</dt><dd data-website-context="dossier"></dd></div>
-        <div><dt>Projectreferentie</dt><dd data-website-context="project"></dd></div>
+        <div data-website-project-context><dt>Projectreferentie</dt><dd data-website-context="project"></dd></div>
         <div><dt>Toegewezen operator</dt><dd data-website-context="assignee"></dd></div>
       </dl>
       <section class="website-execution__requirements" aria-labelledby="websiteRequirementsTitle">
@@ -84,7 +93,7 @@ function childMarkup() {
           </dl>
           <p data-website-requirements-preview></p>
         </div>
-        <button type="button" class="secondary-action" data-website-action="requirements">Takenbord openen</button>
+        <button type="button" class="secondary-action" data-website-action="requirements" data-website-requirements-open>Takenbord openen</button>
       </section>
       <section class="website-execution__board" aria-labelledby="websiteTechnicalTitle">
         <div class="website-execution__board-heading"><div><p class="eyebrow">Development references</p><h2 id="websiteTechnicalTitle">Technische werkruimte</h2></div><span class="badge badge--active" data-website-build>UNKNOWN</span></div>
@@ -102,7 +111,7 @@ function childMarkup() {
         <a class="secondary-action" data-website-link="preview" target="_blank" rel="noopener noreferrer">Open Preview</a>
         <a class="secondary-action" data-website-link="vscode" target="_blank" rel="noopener noreferrer">Open in VS Code Web</a>
         <button type="button" class="secondary-action" data-website-action="files">Projectbestanden</button>
-        <button type="button" class="secondary-action" data-website-action="back">Terug naar Project</button>
+        <button type="button" class="secondary-action" data-website-action="back" data-website-project-back>Terug naar Project</button>
       </nav>
       <p class="action-message" data-website-message role="status" aria-live="polite"></p>
     </div>
@@ -150,12 +159,19 @@ function renderChild(workspace, state) {
   const contextFields = {
     customer: context.customerName,
     dossier: context.dossierReference,
-    project: context.projectId,
+    project: context.projectId || "Niet van toepassing",
     assignee: assignment?.assignee_display_name || "Niet toegewezen",
   };
   for (const [field, value] of Object.entries(contextFields)) {
     workspace.querySelector(`[data-website-context="${field}"]`).textContent = value;
   }
+  workspace.querySelector("[data-website-mode]").textContent = view.modeLabel;
+  workspace.querySelector("[data-website-briefing]").textContent = view.briefingLabel;
+  workspace.querySelector("[data-website-release]").textContent = view.releaseLabel;
+  const officialProject = context.mode === "OFFICIAL_PROJECT";
+  workspace.querySelector("[data-website-project-context]").hidden = !officialProject;
+  workspace.querySelector("[data-website-requirements-open]").hidden = !officialProject;
+  workspace.querySelector("[data-website-project-back]").hidden = !officialProject;
   for (const field of ["repository", "branch", "preview", "production", "commit"]) {
     workspace.querySelector(`[data-website-field="${field}"]`).textContent = view[field];
   }
@@ -201,26 +217,27 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         }),
       ]);
       const context = websiteChildContext(detail, detailRequest.quote_request_id, substance);
-      const [rawWorkspace, rawRequirements, assignment] = await Promise.all([
-        authority.gateway({
-          action: "get_website_execution_workspace",
-          quote_request_id: context.quoteRequestId,
-          project_id: context.projectId,
-        }),
-        authority.gateway(projectRequirementsRequest(context)),
+      const [rawWorkspace, assignment] = await Promise.all([
+        authority.gateway(websiteExecutionRequest(detail)),
         authority.gateway({
           action: "get_dossier_assignment",
           dossier_reference: context.dossierReference,
         }),
       ]);
       const projection = validateWebsiteExecutionWorkspace(rawWorkspace, context);
+      const summary = projection.mode === "OFFICIAL_PROJECT"
+        ? websiteRequirementsSummary(
+          await authority.gateway(projectRequirementsRequest(context)),
+          context,
+        )
+        : websiteRequirementsSummary(projection.requirements, context);
       if (!refreshGeneration.isCurrent(selection)) return false;
       currentContext = context;
       renderChild(workspace, {
         state: "ready",
         context,
         assignment,
-        summary: websiteRequirementsSummary(rawRequirements, context),
+        summary,
         view: websiteExecutionView(projection),
       });
       return true;
@@ -245,10 +262,10 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const action = event.target.closest?.("[data-website-action]")?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "files") options.requestOpen?.("dossiers", "main");
-    if (action === "requirements" && currentContext) {
+    if (action === "requirements" && currentContext?.mode === "OFFICIAL_PROJECT") {
       options.requestOpen?.("dossiers", requirementsBoardSlot(currentContext.quoteRequestId));
     }
-    if (action === "back" && currentContext) {
+    if (action === "back" && currentContext?.mode === "OFFICIAL_PROJECT") {
       options.requestOpen?.("dossiers", `project-${currentContext.quoteRequestId}`);
     }
   };
