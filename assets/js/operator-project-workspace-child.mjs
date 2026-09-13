@@ -22,7 +22,7 @@ import {
   requirementsBoardSlot,
   requirementsInvalidationMatches,
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260913-pre-project-workspace-r1";
 
 const PROJECT_CHILD_ROLES = new Set(["owner"]);
 

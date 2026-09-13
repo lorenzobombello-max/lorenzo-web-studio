@@ -7,7 +7,7 @@ import {
   projectWorkspaceRequest,
   projectWorkspaceSlot,
 } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260913-pre-project-workspace-r1";
 import {
   buildVatReadinessAction,
   canComposeQuotationFromVatReadiness,
@@ -30,7 +30,7 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "get_website_quotation_pricing_state", "authorize_website_quotation_pricing_decision", "update_quote_request_billing_context",
   "evaluate_quotation_vat_readiness", "request_quotation_vat_review", "request_vat_turnover_refresh", "upsert_quotation_business_draft",
   "get_project_dossier", "get_project_workspace", "get_website_execution_workspace", "start_project_work", "get_project_requirements_board", "create_project_requirements_board", "create_project_requirement", "finalize_project_requirements_board", "start_project_requirement", "block_project_requirement", "complete_project_requirement", "reopen_project_requirement", "get_my_assigned_dossiers", "get_dossier_document_manifest",
-  "start_website_concept",
+  "start_website_concept", "provision_website_execution_workspace",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
   "revoke_customer_request_upload_link", "create_sdf_customer_request",

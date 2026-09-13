@@ -20,7 +20,7 @@ import {
   validateWebsiteExecutionWorkspace,
   websiteExecutionRequest,
   websiteExecutionSlot,
-} from "./operator-website-execution.mjs?v=20260913-requirements-wiring-r1";
+} from "./operator-website-execution.mjs?v=20260913-pre-project-workspace-r1";
 
 const FILTERS = Object.freeze([
   ["ALL", "Alle"],

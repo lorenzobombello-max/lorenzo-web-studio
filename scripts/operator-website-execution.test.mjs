@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  websiteExecutionProvisionRequest,
   quoteRequestIdFromWebsiteExecutionSlot,
   safeWebsiteExecutionLinks,
   websiteRequirementsSummary,
@@ -14,6 +15,7 @@ import {
   requirementsChildContext,
 } from "../assets/js/operator-project-requirements-child.mjs";
 import { requirementsBoardSlot } from "../assets/js/operator-project-requirements.mjs";
+import { createOperatorDossierAuthority } from "../assets/js/operator-dossiers.mjs";
 
 const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
@@ -63,6 +65,7 @@ function workspaceFixture(overrides = {}) {
     website_work_context_id: websiteWorkContextId,
     project_id: projectId,
     quote_request_id: quoteRequestId,
+    workspace_state: "READY",
     repository_provider: "GITHUB",
     repository_owner: "lws-studio",
     repository_name: "lws-web-2026-0042",
@@ -74,11 +77,102 @@ function workspaceFixture(overrides = {}) {
     last_build_result: "PASS",
     last_build_at: "2026-09-12T12:01:00Z",
     binding_revision: 1,
+    provisioned_by: "a1800000-0000-4000-8000-000000000010",
+    provisioned_at: "2026-09-12T10:00:00Z",
     created_at: "2026-09-12T10:00:00Z",
     updated_at: "2026-09-12T12:01:00Z",
     ...overrides,
   };
 }
+
+test("PRE_PROJECT provisioning request accepts only the stable dossier locator", () => {
+  assert.deepEqual(websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "a1800000-0000-4000-8000-000000000009",
+  }), {
+    action: "provision_website_execution_workspace",
+    quote_request_id: quoteRequestId,
+    idempotency_key: "a1800000-0000-4000-8000-000000000009",
+  });
+  assert.throws(() => websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "invalid",
+    projectId,
+  }), /INVALID_WEBSITE_WORKSPACE_PROVISION_REQUEST/);
+});
+
+test("PRE_PROJECT provisioning passes through the shared caller-JWT gateway", async () => {
+  const requests = [];
+  const authority = createOperatorDossierAuthority({
+    functions: {
+      invoke: async (name, options) => {
+        requests.push({ name, body: options.body });
+        return { data: { ok: true, result: { created: true } }, error: null };
+      },
+    },
+  });
+  const request = websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "a1800000-0000-4000-8000-000000000009",
+  });
+  assert.deepEqual(await authority.gateway(request), { created: true });
+  assert.deepEqual(requests, [{
+    name: "commercial-operator-command",
+    body: request,
+  }]);
+});
+
+test("PRE_PROJECT pending workspace is context-bound without fake repository data", () => {
+  const context = {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 1,
+    mode: "PRE_PROJECT",
+  };
+  const projection = validateWebsiteExecutionWorkspace({
+    ...preProjectV2,
+    workspace: workspaceFixture({
+      project_id: null,
+      workspace_state: "PENDING_REPOSITORY",
+      repository_owner: null,
+      repository_name: null,
+      preview_branch: null,
+      preview_url: null,
+      last_commit_sha: null,
+      last_commit_at: null,
+      last_build_result: null,
+      last_build_at: null,
+      provisioned_by: "a1800000-0000-4000-8000-000000000010",
+      provisioned_at: "2026-09-13T10:00:00Z",
+    }),
+  }, context);
+  const view = websiteExecutionView(projection);
+  assert.equal(view.state, "pending_repository");
+  assert.equal(view.repository, "Repository provisioning nog niet uitgevoerd");
+  assert.equal(view.branch, "main");
+  assert.equal(view.production, "Production URL nog niet beschikbaar");
+  assert.equal(view.links.github, null);
+});
+
+test("PRE_PROJECT technical workspace authority and managed development surface exist", async () => {
+  const [migration, handler, index, child] = await Promise.all([
+    read("supabase/migrations/20260913100000_add_pre_project_technical_workspace_provisioning_v1.sql"),
+    read("supabase/functions/commercial-operator-command/handler.ts"),
+    read("supabase/functions/commercial-operator-command/index.ts"),
+    read("assets/js/operator-website-execution-child.mjs"),
+  ]);
+  assert.match(migration, /provision_website_execution_workspace_v1/);
+  assert.match(migration, /TECHNICAL_WORKSPACE_PROVISIONED/);
+  assert.match(migration, /TECHNICAL_WORKSPACE_REUSED/);
+  assert.match(handler, /"provision_website_execution_workspace"/);
+  assert.match(index, /"provision_website_execution_workspace_v1"/);
+  assert.match(child, /Technische werkruimte starten/);
+  assert.match(child, /data-website-development/);
+  assert.match(child, /data-website-requirements-panel/);
+  assert.doesNotMatch(child, /action === "files"[^]*requestOpen\?\.\("dossiers", "main"\)/);
+});
 
 const preProjectWork = {
   state: "PRE_PROJECT",
@@ -511,8 +605,8 @@ test("Website Requirements summary has compact responsive no-overflow contracts"
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.website-execution__requirements-facts \{[^}]*grid-template-columns:1fr/);
 });
 
-test("Task 11 summary synchronization has one coherent source-only hard-refresh cache chain", async () => {
-  const token = "20260912-dossier-continuity-project-r1";
+test("PRE_PROJECT workspace has one coherent source-only hard-refresh cache chain", async () => {
+  const token = "20260913-pre-project-workspace-r1";
   const sources = await Promise.all([
     "operator/dashboard/index.html",
     "operator/window/index.html",
@@ -525,8 +619,9 @@ test("Task 11 summary synchronization has one coherent source-only hard-refresh 
     "assets/js/operator-project-workspace-child.mjs",
   ].map(read));
   for (const source of sources) assert.equal(source.includes(token), true);
-  assert.equal(sources[0].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
-  assert.equal(sources[1].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
+  assert.equal(sources[0].includes(`operator-dashboard.css?v=${token}`), true);
+  assert.equal(sources[1].includes(`operator-dashboard.css?v=${token}`), true);
+  assert.equal(sources[7].includes(`operator-dossiers.mjs?v=${token}`), true);
 });
 
 test("PRE_PROJECT Website opens the existing Requirements managed sibling with the same work context", async () => {

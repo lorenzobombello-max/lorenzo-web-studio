@@ -123,11 +123,12 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("website-")) {
-      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260913-requirements-wiring-r1");
+      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260913-pre-project-workspace-r1");
       return initializeOperatorWebsiteExecution(root, client, identity, {
         slotKey,
         onInvalidate,
         onAuthorizationFailure,
+        requireAal2,
         requestOpen,
       });
     }

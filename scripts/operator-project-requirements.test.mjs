@@ -242,7 +242,7 @@ test("Requirements invalidation is exact-quote scoped and shared by all three ch
 });
 
 test("Task 11 synchronization has one coherent source hard-refresh cache chain", () => {
-  const token = "20260912-dossier-continuity-project-r1";
+  const token = "20260913-pre-project-workspace-r1";
   const paths = [
     "../operator/dashboard/index.html",
     "../assets/js/operator-dashboard-guard.mjs",
@@ -540,7 +540,7 @@ test("Requirements layout declares 1440, 900 and 390-safe overflow behavior", ()
 });
 
 test("Requirements visual CSS has a coherent managed-window cache key", () => {
-  const token = "operator-dashboard.css?v=20260912-dossier-continuity-project-r1";
+  const token = "operator-dashboard.css?v=20260913-pre-project-workspace-r1";
   for (const path of ["../operator/dashboard/index.html", "../operator/window/index.html"]) {
     assert.equal(readFileSync(new URL(path, import.meta.url), "utf8").includes(token), true);
   }
