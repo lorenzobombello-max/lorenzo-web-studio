@@ -410,6 +410,43 @@ test("a second launch focuses the managed child without opening a duplicate", as
   assert.equal(focusCalls, 2);
 });
 
+test("PRE_PROJECT Website launches reuse one generic module-slot child", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const ids = [masterWindowId, childWindowId, launchNonce];
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
+  const slotKey = `website-${quoteRequestId}`;
+  const opened = [];
+  let focusCalls = 0;
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open(url) { opened.push(url); return { closed: false, focus() { focusCalls += 1; } }; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  assert.equal(master.openOperatorModuleWindow("dossiers", slotKey), true);
+  assert.equal(master.openOperatorModuleWindow("dossiers", slotKey), true);
+  assert.equal(opened.length, 1);
+  assert.equal(focusCalls, 2);
+  assert.deepEqual(parseChildBootstrap(opened[0]), {
+    workspaceId,
+    epoch,
+    windowId: childWindowId,
+    launchNonce,
+    moduleKey: "dossiers",
+    slotKey,
+  });
+  assert.equal(opened[0].includes("concept"), false);
+  master.dispose();
+});
+
 test("remounted module launch controls are bound once and release detached listeners", async ()=>{
   FakeBroadcastChannel.instances = [];
   const timers = timerHarness();

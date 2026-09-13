@@ -185,6 +185,19 @@ test("website slot and request retain the exact dossier context", () => {
   assert.equal(websiteExecutionRequest({ request_kind: "sdf" }), null);
 });
 
+test("NONE to PRE_PROJECT keeps the Website slot and never creates concept authority", async () => {
+  const [dossiers, child, registry] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("assets/js/operator-website-execution-child.mjs"),
+    read("assets/js/operator-module-registry.mjs"),
+  ]);
+  assert.equal(websiteExecutionSlot(quoteRequestId), `website-${quoteRequestId}`);
+  assert.match(child, /websiteChildDetailRequest\(options\.slotKey\)/);
+  assert.match(child, /get_application_detail/);
+  assert.match(child, /websiteExecutionRequest\(detail\)/);
+  assert.doesNotMatch(`${dossiers}\n${child}\n${registry}`, /concept-\$\{|`concept-|"concept-/);
+});
+
 test("PRE_PROJECT request uses only the stable dossier locator", () => {
   assert.deepEqual(websiteExecutionRequest({
     request_kind: "website",
