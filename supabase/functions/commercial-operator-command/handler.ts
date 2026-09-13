@@ -73,6 +73,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_dossier",
   "get_project_workspace",
   "get_website_execution_workspace",
+  "provision_website_execution_workspace",
   "start_website_concept",
   "start_project_work",
   "get_project_requirements_board",
@@ -406,6 +407,11 @@ export type WebsiteConceptStartActionInput = Readonly<{
   action: "start_website_concept";
   quote_request_id: string;
   expected_website_work_revision: number;
+  idempotency_key: string;
+}>;
+export type WebsiteExecutionWorkspaceProvisionActionInput = Readonly<{
+  action: "provision_website_execution_workspace";
+  quote_request_id: string;
   idempotency_key: string;
 }>;
 export type QuotationBusinessApprovalPromotionActionInput = Readonly<{
@@ -1081,6 +1087,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "project_id"])
     : action === "get_website_execution_workspace"
     ? new Set(["action", "quote_request_id"])
+    : action === "provision_website_execution_workspace"
+    ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "start_website_concept"
     ? new Set([
       "action", "quote_request_id", "expected_website_work_revision",
@@ -1847,6 +1855,18 @@ function validateApplicationAction(value: UnvalidatedInput) {
       idempotency_key: idempotencyKey,
     };
   }
+  if (action === "provision_website_execution_workspace") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      idempotency_key: idempotencyKey,
+    };
+  }
   if (action === "get_website_execution_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
@@ -2116,6 +2136,7 @@ function mapDatabaseError(error: unknown) {
       "DOSSIER_DOCUMENT_ACCESS_DENIED",
       "DOSSIER_DOCUMENT_NOT_DOWNLOADABLE",
       "DOSSIER_DOCUMENT_SOURCE_INVALID",
+      "WEBSITE_WORKSPACE_OWNER_REQUIRED",
     ].includes(code)
   ) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if (
@@ -2126,7 +2147,12 @@ function mapDatabaseError(error: unknown) {
   ) return response(403, "INSUFFICIENT_PERMISSIONS");
   if (code === "IDEMPOTENCY_CONFLICT") return response(409, code);
   if (
-    ["STALE_WEBSITE_WORK_REVISION", "WEBSITE_CONCEPT_ALREADY_EXISTS"].includes(code)
+    [
+      "STALE_WEBSITE_WORK_REVISION",
+      "WEBSITE_CONCEPT_ALREADY_EXISTS",
+      "WEBSITE_WORKSPACE_NOT_ELIGIBLE",
+      "WEBSITE_WORK_CONTEXT_BINDING_MISMATCH",
+    ].includes(code)
   ) return response(409, code);
   if (code === "WEBSITE_CONCEPT_DOSSIER_NOT_FOUND") return response(404, code);
   if (code === "WEBSITE_CONCEPT_OWNER_REQUIRED") {
@@ -2350,6 +2376,21 @@ export async function executeWebsiteConceptStartTransport(
     p_expected_website_work_revision: input.expected_website_work_revision,
     p_idempotency_key: input.idempotency_key,
   });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function executeWebsiteExecutionWorkspaceProvisionTransport(
+  client: DossierAssignmentRpcClient,
+  input: WebsiteExecutionWorkspaceProvisionActionInput,
+): Promise<unknown> {
+  const { data, error } = await client.rpc(
+    "provision_website_execution_workspace_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_idempotency_key: input.idempotency_key,
+    },
+  );
   if (error) throw new Error(error.message);
   return data;
 }
