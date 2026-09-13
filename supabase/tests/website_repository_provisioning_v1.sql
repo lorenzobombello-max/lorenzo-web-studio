@@ -12,6 +12,28 @@ select has_table(
   'public', 'website_repository_provisioning_events',
   'repository provisioning transitions have immutable events'
 );
+select has_function(
+  'public','claim_website_repository_provisioning_v1',
+  array['uuid','uuid','uuid','text','text','text'],
+  'owner command can claim one durable repository operation'
+);
+select has_function(
+  'public','record_website_repository_external_identity_v1',
+  array['uuid','text','text'],
+  'provider result can durably capture external repository identity'
+);
+select has_function(
+  'public','bind_website_repository_v1',array['uuid','jsonb'],
+  'verified provider result can bind one repository'
+);
+select has_function(
+  'public','fail_website_repository_provisioning_v1',array['uuid','text','text'],
+  'stable provider failure can advance operation authority'
+);
+select has_function(
+  'public','get_website_repository_operation_v1',array['uuid'],
+  'caller-authorized operation projection exists'
+);
 
 select columns_are(
   'public', 'website_repository_provisioning_operations',
@@ -218,6 +240,13 @@ select ok(
 );
 
 set local session_replication_role = replica;
+insert into public.commercial_operators(
+  operator_id,auth_user_id,display_name,role,status
+) values (
+  'c1e35692-c152-4d0d-a3df-c4a4b78e143e',
+  'c1e35692-c152-4d0d-a3df-c4a4b78e143e',
+  'Repository schema fixture','owner','ACTIVE'
+);
 insert into public.quote_requests(
   id,application_reference,record_classification,request_kind,name,email,
   website_type,budget,timing,description,privacy_consent,status
@@ -253,6 +282,7 @@ insert into public.website_execution_workspaces(
   'c1e35692-c152-4d0d-a3df-c4a4b78e143e',clock_timestamp()
 );
 set local session_replication_role = origin;
+select set_config('lws.website_repository_command','on',true);
 
 insert into public.website_repository_provisioning_operations(
   operation_id,website_workspace_id,website_work_context_id,actor_id,
@@ -357,6 +387,450 @@ select throws_ok(
     where event_id='a5700000-0000-4000-8000-000000000001'$$,
   '55000','WEBSITE_REPOSITORY_EVENT_IMMUTABLE',
   'repository lifecycle events cannot be deleted'
+);
+select set_config('lws.website_repository_command','',true);
+
+select is(
+  (
+    select count(*)::integer
+    from pg_proc as procedure
+    join pg_namespace as namespace on namespace.oid=procedure.pronamespace
+    cross join lateral aclexplode(procedure.proacl) as privilege
+    join pg_roles as role on role.oid=privilege.grantee
+    where namespace.nspname='public'
+      and procedure.proname in (
+        'claim_website_repository_provisioning_v1',
+        'record_website_repository_external_identity_v1',
+        'bind_website_repository_v1',
+        'fail_website_repository_provisioning_v1',
+        'get_website_repository_operation_v1'
+      )
+      and privilege.privilege_type='EXECUTE'
+      and role.rolname='authenticated'
+  ),
+  5,
+  'all repository command RPCs grant execute to authenticated callers'
+);
+select is(
+  (
+    select count(*)::integer
+    from pg_proc as procedure
+    join pg_namespace as namespace on namespace.oid=procedure.pronamespace
+    cross join lateral aclexplode(procedure.proacl) as privilege
+    left join pg_roles as role on role.oid=privilege.grantee
+    where namespace.nspname='public'
+      and procedure.proname in (
+        'claim_website_repository_provisioning_v1',
+        'record_website_repository_external_identity_v1',
+        'bind_website_repository_v1',
+        'fail_website_repository_provisioning_v1',
+        'get_website_repository_operation_v1'
+      )
+      and privilege.privilege_type='EXECUTE'
+      and coalesce(role.rolname,'public') in ('public','anon','service_role')
+  ),
+  0,
+  'repository command RPCs grant no execute authority to public, anon or service_role'
+);
+
+set local session_replication_role = replica;
+insert into public.commercial_operators(
+  operator_id,auth_user_id,display_name,role,status
+) values (
+  'd9000000-0000-4000-8000-000000000001',
+  'd9000000-0000-4000-8000-000000000002',
+  'Disabled repository owner','owner','DISABLED'
+);
+insert into public.quote_requests(
+  id,application_reference,record_classification,request_kind,name,email,
+  website_type,budget,timing,description,privacy_consent,status
+) values
+  ('b1100000-0000-4000-8000-000000000001','LWS-AAN-2099-6101',
+   'internal_e2e','website','Repository RPC fixture A','repository-rpc-a@example.test',
+   'business','EUR 4.000','flexible','Repository RPC authority fixture A.',true,'approved'),
+  ('b2100000-0000-4000-8000-000000000002','LWS-AAN-2099-6102',
+   'internal_e2e','website','Repository RPC fixture B','repository-rpc-b@example.test',
+   'business','EUR 4.000','flexible','Repository RPC authority fixture B.',true,'approved'),
+  ('b3100000-0000-4000-8000-000000000003','LWS-AAN-2099-6103',
+   'internal_e2e','website','Repository RPC fixture C','repository-rpc-c@example.test',
+   'business','EUR 4.000','flexible','Repository RPC authority fixture C.',true,'approved');
+insert into public.website_concepts(
+  concept_id,quote_request_id,briefing_status,created_by
+) values
+  ('b1200000-0000-4000-8000-000000000001','b1100000-0000-4000-8000-000000000001','LIMITED','c1e35692-c152-4d0d-a3df-c4a4b78e143e'),
+  ('b1200000-0000-4000-8000-000000000002','b2100000-0000-4000-8000-000000000002','LIMITED','c1e35692-c152-4d0d-a3df-c4a4b78e143e'),
+  ('b1200000-0000-4000-8000-000000000003','b3100000-0000-4000-8000-000000000003','LIMITED','c1e35692-c152-4d0d-a3df-c4a4b78e143e');
+insert into public.website_work_contexts(
+  website_work_context_id,quote_request_id,concept_id,phase
+) values
+  ('b1300000-0000-4000-8000-000000000001','b1100000-0000-4000-8000-000000000001','b1200000-0000-4000-8000-000000000001','PRE_PROJECT'),
+  ('b1300000-0000-4000-8000-000000000002','b2100000-0000-4000-8000-000000000002','b1200000-0000-4000-8000-000000000002','PRE_PROJECT'),
+  ('b1300000-0000-4000-8000-000000000003','b3100000-0000-4000-8000-000000000003','b1200000-0000-4000-8000-000000000003','PRE_PROJECT');
+insert into public.website_execution_workspaces(
+  website_workspace_id,website_work_context_id,project_id,quote_request_id,
+  workspace_state,repository_provider,default_branch,preview_branch,created_by,
+  provisioned_by,provisioned_at
+) values
+  ('b1400000-0000-4000-8000-000000000001','b1300000-0000-4000-8000-000000000001',null,'b1100000-0000-4000-8000-000000000001','PENDING_REPOSITORY','GITHUB','main',null,'c1e35692-c152-4d0d-a3df-c4a4b78e143e','c1e35692-c152-4d0d-a3df-c4a4b78e143e',clock_timestamp()),
+  ('b1400000-0000-4000-8000-000000000002','b1300000-0000-4000-8000-000000000002',null,'b2100000-0000-4000-8000-000000000002','PENDING_REPOSITORY','GITHUB','main',null,'c1e35692-c152-4d0d-a3df-c4a4b78e143e','c1e35692-c152-4d0d-a3df-c4a4b78e143e',clock_timestamp()),
+  ('b1400000-0000-4000-8000-000000000003','b1300000-0000-4000-8000-000000000003',null,'b3100000-0000-4000-8000-000000000003','PENDING_REPOSITORY','GITHUB','main',null,'c1e35692-c152-4d0d-a3df-c4a4b78e143e','c1e35692-c152-4d0d-a3df-c4a4b78e143e',clock_timestamp());
+set local session_replication_role = origin;
+
+select set_config('request.jwt.claims','{}',true);
+select throws_ok(
+  $$select public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )$$,
+  '42501','HUMAN_JWT_REQUIRED',
+  'repository claim requires a caller JWT'
+);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub','c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role','authenticated','aal','aal1'
+  )::text,true
+);
+select throws_ok(
+  $$select public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )$$,
+  '42501','AAL2_REQUIRED',
+  'repository claim rejects an owner at aal1'
+);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub','bd2ab636-0d42-4069-88a9-60bd97f2b335',
+    'role','authenticated','aal','aal2'
+  )::text,true
+);
+select throws_ok(
+  $$select public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )$$,
+  '42501','WEBSITE_REPOSITORY_OWNER_REQUIRED',
+  'repository claim rejects a non-owner at aal2'
+);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub','d9000000-0000-4000-8000-000000000002',
+    'role','authenticated','aal','aal2'
+  )::text,true
+);
+select throws_ok(
+  $$select public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )$$,
+  '42501','WEBSITE_REPOSITORY_OWNER_REQUIRED',
+  'repository claim rejects a disabled owner at aal2'
+);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub','c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role','authenticated','aal','aal2'
+  )::text,true
+);
+
+create temporary table repository_rpc_results(
+  result_name text primary key,
+  payload jsonb not null
+) on commit drop;
+insert into repository_rpc_results values (
+  'claim',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )
+);
+select is(
+  (select payload->>'result' from repository_rpc_results where result_name='claim'),
+  'CLAIMED','first exact request claims a durable repository operation'
+);
+select results_eq(
+  $$select repository_owner,repository_name,starter_source,starter_version,
+      starter_commit_sha,state
+    from public.website_repository_provisioning_operations
+    where website_work_context_id='b1300000-0000-4000-8000-000000000001'$$,
+  $$values (
+    'lorenzo-web-solutions-lab'::text,
+    'lws-web-b1300000000040008000000000000001'::text,
+    'lorenzo-web-solutions-lab/website-starter'::text,
+    '1.0.0'::text,repeat('1',40)::text,'CLAIMED'::text
+  )$$,
+  'claim derives the test owner and UUID repository name and binds starter provenance'
+);
+insert into repository_rpc_results values (
+  'claim_replay',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )
+);
+select is(
+  (select payload->>'result' from repository_rpc_results where result_name='claim_replay'),
+  'REPLAY','an exact idempotency fingerprint replays the existing operation'
+);
+insert into repository_rpc_results values (
+  'claim_in_progress',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000002',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )
+);
+select is(
+  (select payload->>'result' from repository_rpc_results where result_name='claim_in_progress'),
+  'IN_PROGRESS','a second key cannot create another active context operation'
+);
+select throws_ok(
+  $$select public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions-lab/website-starter','1.0.1',repeat('1',40)
+  )$$,
+  'P0001','IDEMPOTENCY_CONFLICT',
+  'an idempotency key cannot be reused with a different fingerprint'
+);
+select throws_ok(
+  $$select public.bind_website_repository_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    '{}'::jsonb
+  )$$,
+  '22023','INVALID_WEBSITE_REPOSITORY_BINDING',
+  'binding rejects incomplete verification before external capture'
+);
+insert into repository_rpc_results values (
+  'external_capture',
+  public.record_website_repository_external_identity_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    '610001','R_kgDORepository610001'
+  )
+);
+select results_eq(
+  $$select state,repository_external_id,repository_node_id,
+      external_created_at is not null
+    from public.website_repository_provisioning_operations
+    where website_work_context_id='b1300000-0000-4000-8000-000000000001'$$,
+  $$values ('EXTERNAL_CREATED'::text,610001::bigint,
+    'R_kgDORepository610001'::text,true)$$,
+  'external repository identity is durable before verification and binding'
+);
+select throws_ok(
+  $$select public.record_website_repository_external_identity_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    '610002','R_kgDORepository610002'
+  )$$,
+  'P0001','WEBSITE_REPOSITORY_IDENTITY_MISMATCH',
+  'captured external identity cannot be substituted'
+);
+select throws_ok(
+  $$select public.bind_website_repository_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    jsonb_build_object(
+      'operation_id',(select operation_id from public.website_repository_provisioning_operations where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+      'website_workspace_id','b1400000-0000-4000-8000-000000000001',
+      'website_work_context_id','b1300000-0000-4000-8000-000000000002',
+      'repository_external_id','610001','repository_node_id','R_kgDORepository610001',
+      'repository_owner','lorenzo-web-solutions-lab',
+      'repository_name','lws-web-b1300000000040008000000000000001',
+      'repository_visibility','private','default_branch','main',
+      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
+      'repository_marker_commit_sha',repeat('2',40)
+    )
+  )$$,
+  'P0001','WEBSITE_REPOSITORY_BINDING_MISMATCH',
+  'binding rejects a substituted work context'
+);
+select throws_ok(
+  $$select public.bind_website_repository_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    jsonb_build_object(
+      'operation_id',(select operation_id from public.website_repository_provisioning_operations where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+      'website_workspace_id','b1400000-0000-4000-8000-000000000001',
+      'website_work_context_id','b1300000-0000-4000-8000-000000000001',
+      'repository_external_id','610002','repository_node_id','R_kgDORepository610001',
+      'repository_owner','lorenzo-web-solutions-lab',
+      'repository_name','lws-web-b1300000000040008000000000000001',
+      'repository_visibility','private','default_branch','main',
+      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
+      'repository_marker_commit_sha',repeat('2',40)
+    )
+  )$$,
+  'P0001','WEBSITE_REPOSITORY_BINDING_MISMATCH',
+  'binding rejects a substituted external repository ID'
+);
+insert into repository_rpc_results values (
+  'bound',
+  public.bind_website_repository_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    jsonb_build_object(
+      'operation_id',(select operation_id from public.website_repository_provisioning_operations where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+      'website_workspace_id','b1400000-0000-4000-8000-000000000001',
+      'website_work_context_id','b1300000-0000-4000-8000-000000000001',
+      'repository_external_id','610001','repository_node_id','R_kgDORepository610001',
+      'repository_owner','lorenzo-web-solutions-lab',
+      'repository_name','lws-web-b1300000000040008000000000000001',
+      'repository_visibility','private','default_branch','main',
+      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
+      'repository_marker_commit_sha',repeat('2',40)
+    )
+  )
+);
+select is(
+  (select payload->>'result' from repository_rpc_results where result_name='bound'),
+  'BOUND','an exact verified repository result binds the workspace'
+);
+select results_eq(
+  $$select workspace_state,repository_state,repository_external_id,
+      repository_node_id,repository_marker_commit_sha,repository_bound_at is not null
+    from public.website_execution_workspaces
+    where website_workspace_id='b1400000-0000-4000-8000-000000000001'$$,
+  $$values ('REPOSITORY_READY'::text,'BOUND'::text,610001::bigint,
+    'R_kgDORepository610001'::text,repeat('2',40)::text,true)$$,
+  'binding persists the exact verified repository identity and marker'
+);
+select throws_ok(
+  $$select public.bind_website_repository_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+    jsonb_build_object(
+      'operation_id',(select operation_id from public.website_repository_provisioning_operations where website_work_context_id='b1300000-0000-4000-8000-000000000001'),
+      'website_workspace_id','b1400000-0000-4000-8000-000000000001',
+      'website_work_context_id','b1300000-0000-4000-8000-000000000002',
+      'repository_external_id','610001','repository_node_id','R_kgDORepository610001',
+      'repository_owner','lorenzo-web-solutions-lab',
+      'repository_name','lws-web-b1300000000040008000000000000001',
+      'repository_visibility','private','default_branch','main',
+      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
+      'repository_marker_commit_sha',repeat('2',40)
+    )
+  )$$,
+  'P0001','WEBSITE_REPOSITORY_BINDING_MISMATCH',
+  'bound replay still rejects a substituted context'
+);
+insert into repository_rpc_results values (
+  'read',
+  public.get_website_repository_operation_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000001')
+  )
+);
+select results_eq(
+  $$select array_agg(key order by key)
+    from jsonb_object_keys((select payload from repository_rpc_results where result_name='read')) as key$$,
+  $$values (array[
+    'attempt_count','bound_at','claimed_at','external_created_at','failure_code',
+    'operation_id','repository_external_id','repository_name','repository_node_id',
+    'repository_owner','repository_provider','result','retry_at','starter_commit_sha',
+    'starter_source','starter_version','state','updated_at','website_work_context_id',
+    'website_workspace_id'
+  ]::text[])$$,
+  'operation read returns the exact redacted projection'
+);
+
+insert into repository_rpc_results values (
+  'failure_claim',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000002',
+    'b1300000-0000-4000-8000-000000000002',
+    'b1500000-0000-4000-8000-000000000003',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )
+);
+insert into repository_rpc_results values (
+  'retryable_failure',
+  public.fail_website_repository_provisioning_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000002'),
+    'PROVIDER_UNAVAILABLE','github-request-610002'
+  )
+);
+select results_eq(
+  $$select state,failure_code,retry_at is not null
+    from public.website_repository_provisioning_operations
+    where website_work_context_id='b1300000-0000-4000-8000-000000000002'$$,
+  $$values ('RETRYABLE_FAILED'::text,'PROVIDER_UNAVAILABLE'::text,true)$$,
+  'retryable provider failure records a stable code and retry boundary'
+);
+insert into repository_rpc_results values (
+  'quarantine_claim',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000003',
+    'b1300000-0000-4000-8000-000000000003',
+    'b1500000-0000-4000-8000-000000000004',
+    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+  )
+);
+insert into repository_rpc_results values (
+  'quarantine_external_capture',
+  public.record_website_repository_external_identity_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000003'),
+    '610003','R_kgDORepository610003'
+  )
+);
+insert into repository_rpc_results values (
+  'quarantined_failure',
+  public.fail_website_repository_provisioning_v1(
+    (select operation_id from public.website_repository_provisioning_operations
+      where website_work_context_id='b1300000-0000-4000-8000-000000000003'),
+    'MARKER_MISMATCH','github-request-610003'
+  )
+);
+select results_eq(
+  $$select state,failure_code,retry_at is null
+    from public.website_repository_provisioning_operations
+    where website_work_context_id='b1300000-0000-4000-8000-000000000003'$$,
+  $$values ('QUARANTINED'::text,'MARKER_MISMATCH'::text,true)$$,
+  'permanent verification mismatch is quarantined without automatic retry'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.website_repository_provisioning_events
+    where operation_id in (
+      select operation_id
+      from public.website_repository_provisioning_operations
+      where website_work_context_id in (
+        'b1300000-0000-4000-8000-000000000001',
+        'b1300000-0000-4000-8000-000000000002',
+        'b1300000-0000-4000-8000-000000000003'
+      )
+    )
+  ),
+  8,
+  'claims, external capture, binding and failures emit immutable redacted events'
 );
 
 select * from finish();
