@@ -1623,7 +1623,7 @@ export function initializeOperatorDossiers(root, client, identity, options = {})
       ? retainDossierPurgeEligibility(state.purgeEligibility, summary.reference)
       : null;
     state.selected = summary;
-    state.detail = retainedWebsiteWorkSnapshot?.detail || null;
+    state.detail = retainedWebsiteAuthorities.detail || retainedWebsiteWorkSnapshot?.detail || null;
     state.projectWorkspace = retainedProjectWorkspace;
     state.substance = retainedWebsiteWorkSnapshot?.substance || null;
     state.copySource = null;

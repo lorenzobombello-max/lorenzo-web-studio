@@ -190,6 +190,8 @@ test("Pages and Edge releases require the same runtime-authenticated pre and pos
   assert.match(edge, /github\.ref[^\n]+refs\/heads\/main/);
   assert.match(runner, /PRODUCTION_RELEASE_ALLOWED=NEE/);
   assert.match(runner, /dossier-continuity-regression-gate\.mjs local/);
+  assert.match(runner, /operator-dossiers-pricing-refresh\.test\.mjs/);
+  assert.match(runner, /operator-dossiers-pricing-stability-live-preview\.test\.mjs/);
   assert.match(runner, /dossier-continuity-regression-gate\.mjs snapshot/);
   assert.match(runner, /dossier-continuity-regression-gate\.mjs compare/);
   assert.match(ciRunner, /invoke-dossier-continuity-release-gate\.ps1/);

@@ -65,7 +65,7 @@ test("Website concept start preserves NONE until validated PRE_PROJECT atomicall
 test("Dossiers retains Website work only for the selected dossier and authorization still locks immediately", () => {
   const selection = source.match(/async function selectDossier\(summary[^]*?\n  \}/)?.[0] || "";
   assert.match(selection, /retainWebsiteWorkSnapshot\(\s*state\.detail,\s*state\.substance,\s*summary\.raw\?\.quote_request_id,?\s*\)/);
-  assert.match(selection, /state\.detail = retainedWebsiteWorkSnapshot\?\.detail \|\| null/);
+  assert.match(selection, /state\.detail = retainedWebsiteAuthorities\.detail \|\| retainedWebsiteWorkSnapshot\?\.detail \|\| null/);
   assert.match(selection, /state\.substance = retainedWebsiteWorkSnapshot\?\.substance \|\| null/);
   assert.doesNotMatch(selection, /state\.detail = null/);
   assert.match(source, /onAuthorizationFailure\(code\) \{[^]*state\.items = \[\];[^]*revalidateSelection\(\);[^]*options\.onAuthorizationFailure\?\.\(code\)/);
@@ -80,7 +80,7 @@ test("validated detail and substance replace the retained snapshot in one state 
 test("first load may wait while same-record refresh never blanks Website work", () => {
   const selection = source.match(/async function selectDossier\(summary[^]*?\n  \}/)?.[0] || "";
   const beforeRead = selection.split("try {")[0];
-  assert.match(beforeRead, /state\.detail = retainedWebsiteWorkSnapshot\?\.detail \|\| null/);
+  assert.match(beforeRead, /state\.detail = retainedWebsiteAuthorities\.detail \|\| retainedWebsiteWorkSnapshot\?\.detail \|\| null/);
   assert.match(beforeRead, /status\.textContent = "Dossier laden\."/);
   assert.doesNotMatch(beforeRead, /renderWebsiteWork|data-dossiers-website-work-(?:status|badge|briefing|release)|clearDetailSelection/);
 });

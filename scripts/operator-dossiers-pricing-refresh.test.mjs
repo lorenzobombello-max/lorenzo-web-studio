@@ -67,6 +67,52 @@ test("dossier selection changes never retain pricing from the previous dossier",
   assert.deepEqual(retained, { detail: null, pricing: null, vatReadiness: null });
 });
 
+test("SAME_DOSSIER_PRICING_NEVER_EMPTY while other dossier data is pending", () => {
+  const retained = retainWebsiteQuotationAuthorities(
+    oldDetail,
+    oldPricing,
+    oldVatReadiness,
+    quoteRequestA,
+  );
+  const frames = [
+    retained,
+    retained,
+    {
+      detail: Object.freeze({ quote_request_id: quoteRequestA }),
+      pricing: Object.freeze({ quote_request_id: quoteRequestA, revision: 2 }),
+      vatReadiness: Object.freeze({ quote_request_id: quoteRequestA, vat_readiness: "READY" }),
+    },
+  ];
+  assert.ok(frames.every((frame)=>frame.detail && frame.pricing && frame.vatReadiness));
+  assert.match(
+    source,
+    /state\.detail = retainedWebsiteAuthorities\.detail \|\| retainedWebsiteWorkSnapshot\?\.detail \|\| null;/,
+  );
+});
+
+test("SAME_DOSSIER_PRICING_NEVER_HIDDEN and never replaced by loading presentation", () => {
+  assert.doesNotMatch(source, /if \(background\)[\s\S]{0,240}state\.websitePricing = null/);
+  assert.doesNotMatch(source, /if \(background\)[\s\S]{0,240}pricingPanel\.hidden = true/);
+});
+
+test("FAILED_REFRESH_RETAINS_LAST_VALID and CROSS_DOSSIER_CLEARS_OLD_PRICING", () => {
+  const failedRefresh = retainWebsiteQuotationAuthorities(
+    oldDetail,
+    oldPricing,
+    oldVatReadiness,
+    quoteRequestA,
+  );
+  const switched = retainWebsiteQuotationAuthorities(
+    oldDetail,
+    oldPricing,
+    oldVatReadiness,
+    quoteRequestB,
+  );
+  assert.equal(failedRefresh.pricing, oldPricing);
+  assert.equal(failedRefresh.vatReadiness, oldVatReadiness);
+  assert.deepEqual(switched, { detail: null, pricing: null, vatReadiness: null });
+});
+
 test("background refresh retains the same dossier project presentation", () => {
   assert.equal(
     retainProjectWorkspace(oldDetail, oldProjectWorkspace, quoteRequestA),
@@ -84,7 +130,7 @@ test("dossier selection changes never retain the previous project presentation",
 test("Dossiers refresh retains by identity and replaces paired authorities after both fetches", () => {
   assert.match(
     source,
-    /retainWebsiteWorkSnapshot\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*retainWebsiteQuotationAuthorities\([\s\S]*state\.detail = retainedWebsiteWorkSnapshot\?\.detail \|\| null;[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
+    /retainWebsiteWorkSnapshot\([\s\S]*summary\.raw\?\.quote_request_id,[\s\S]*retainWebsiteQuotationAuthorities\([\s\S]*state\.detail = retainedWebsiteAuthorities\.detail \|\| retainedWebsiteWorkSnapshot\?\.detail \|\| null;[\s\S]*state\.websitePricing = retainedWebsiteAuthorities\.pricing;[\s\S]*state\.vatReadiness = retainedWebsiteAuthorities\.vatReadiness;/,
   );
   const refreshBody = source.match(
     /async function refreshWebsiteQuotationAuthorities\(selection\) \{([\s\S]*?)\n  \}/,
