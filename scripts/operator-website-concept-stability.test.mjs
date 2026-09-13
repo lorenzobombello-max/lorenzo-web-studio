@@ -39,6 +39,10 @@ const source = await readFile(
   new URL("../assets/js/operator-dossiers.mjs", import.meta.url),
   "utf8",
 );
+const childSource = await readFile(
+  new URL("../assets/js/operator-website-execution-child.mjs", import.meta.url),
+  "utf8",
+);
 
 test("same-record refresh retains one complete Website work snapshot", () => {
   const retained = retainWebsiteWorkSnapshot(detail, substance, quoteRequestA);
@@ -86,4 +90,18 @@ test("malformed or failed same-record reads retain the mounted snapshot with a s
   const failure = selection.match(/catch \(error\) \{\s*if \(selection === selectDossier\.generation\) \{([^]*?)\n      \}\s*return false;/)?.[1] || "";
   assert.match(failure, /status\.textContent = [^;]*"Dossier kon niet veilig worden geladen\."/);
   assert.doesNotMatch(failure, /state\.(?:detail|substance)\s*=|renderDetail|renderWebsiteWork|clearDetailSelection|\.hidden\s*=/);
+});
+
+test("Website child commits one complete context-bound snapshot after every authority validates", () => {
+  assert.match(childSource, /let currentSnapshot = null/);
+  assert.match(childSource, /projection\.context_revision !== context\.websiteWorkRevision/);
+  assert.match(childSource, /const nextSnapshot = Object\.freeze\(\{\s*state: "ready",\s*context,\s*assignment,\s*summary,\s*view:/);
+  assert.match(childSource, /currentSnapshot = nextSnapshot;\s*renderChild\(workspace, currentSnapshot\)/);
+});
+
+test("Website child retains mounted content on background failure but clears denial and dispose", () => {
+  const refresh = childSource.match(/async function refresh\([^]*?\n  \}/)?.[0] || "";
+  assert.match(refresh, /if \(denied\) \{[^]*currentSnapshot = null;[^]*renderChild\(workspace, \{\s*state: "denied"/);
+  assert.match(refresh, /if \(currentSnapshot\) \{[^]*data-website-message[^]*background[^]*return false/);
+  assert.match(childSource, /dispose\(\) \{[^]*currentSnapshot = null;[^]*workspace\.replaceChildren\(\)/);
 });

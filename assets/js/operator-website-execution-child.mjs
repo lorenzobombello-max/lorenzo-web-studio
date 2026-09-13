@@ -52,6 +52,7 @@ export function websiteChildContext(detail, quoteRequestId, substance = null) {
     projectId: work.project_id,
     conceptId: work.concept_id,
     websiteWorkContextId: work.website_work_context_id,
+    websiteWorkRevision: work.revision,
     mode: work.mode,
     dossierReference: reference,
     customerName: String(
@@ -183,6 +184,7 @@ function renderChild(workspace, state) {
   setLink(workspace, "github", view.links.github);
   setLink(workspace, "preview", view.links.preview);
   setLink(workspace, "vscode", view.links.vscode);
+  workspace.querySelector("[data-website-message]").textContent = "";
 }
 
 export function initializeOperatorWebsiteExecution(root, client, identity, options = {}) {
@@ -200,7 +202,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   });
   let disposed = false;
   const refreshGeneration = createOperatorRefreshGenerationGuard();
-  let currentContext = null;
+  let currentSnapshot = null;
 
   async function refresh({ background = false, invalidationSlotKey } = {}) {
     if (!requirementsInvalidationMatches(invalidationSlotKey, detailRequest.quote_request_id)) {
@@ -225,6 +227,9 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         }),
       ]);
       const projection = validateWebsiteExecutionWorkspace(rawWorkspace, context);
+      if (projection.context_revision !== context.websiteWorkRevision) {
+        throw new Error("WEBSITE_WORKSPACE_REVISION_MISMATCH");
+      }
       const summary = projection.mode === "OFFICIAL_PROJECT"
         ? websiteRequirementsSummary(
           await authority.gateway(projectRequirementsRequest(context)),
@@ -232,27 +237,38 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         )
         : websiteRequirementsSummary(projection.requirements, context);
       if (!refreshGeneration.isCurrent(selection)) return false;
-      currentContext = context;
-      renderChild(workspace, {
+      const nextSnapshot = Object.freeze({
         state: "ready",
         context,
         assignment,
         summary,
         view: websiteExecutionView(projection),
       });
+      currentSnapshot = nextSnapshot;
+      renderChild(workspace, currentSnapshot);
       return true;
     } catch (error) {
       if (!refreshGeneration.isCurrent(selection)) return false;
-      if (background && currentContext) return false;
-      currentContext = null;
       const denied = /DENIED|NOT_AUTHORIZED|NO_ACCESS|42501/.test(
         String(error?.context?.code || error?.code || error?.message || ""),
       );
+      if (denied) {
+        currentSnapshot = null;
+        renderChild(workspace, {
+          state: "denied",
+          message: "Geen toegang tot deze Website Workspace.",
+        });
+        return false;
+      }
+      if (currentSnapshot) {
+        workspace.querySelector("[data-website-message]").textContent = background
+          ? "De achtergrondvernieuwing kon niet veilig worden geladen."
+          : "Website workspace kon niet veilig worden vernieuwd.";
+        return false;
+      }
       renderChild(workspace, {
-        state: denied ? "denied" : "error",
-        message: denied
-          ? "Geen toegang tot deze Website Workspace."
-          : "Website workspace kon niet veilig worden geladen.",
+        state: "error",
+        message: "Website workspace kon niet veilig worden geladen.",
       });
       return false;
     }
@@ -262,11 +278,11 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const action = event.target.closest?.("[data-website-action]")?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "files") options.requestOpen?.("dossiers", "main");
-    if (action === "requirements" && currentContext?.mode === "OFFICIAL_PROJECT") {
-      options.requestOpen?.("dossiers", requirementsBoardSlot(currentContext.quoteRequestId));
+    if (action === "requirements" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {
+      options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId));
     }
-    if (action === "back" && currentContext?.mode === "OFFICIAL_PROJECT") {
-      options.requestOpen?.("dossiers", `project-${currentContext.quoteRequestId}`);
+    if (action === "back" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {
+      options.requestOpen?.("dossiers", `project-${currentSnapshot.context.quoteRequestId}`);
     }
   };
   workspace.addEventListener("click", click);
@@ -288,6 +304,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       autoRefresh.dispose();
       workspace.removeEventListener("click", click);
       authority.dispose();
+      currentSnapshot = null;
+      workspace.replaceChildren();
     },
     setInvalidationPublisher() {},
   });

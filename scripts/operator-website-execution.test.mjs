@@ -352,7 +352,7 @@ test("Website managed child retains lifecycle, safe actions, and explicit denial
 test("Website Workspace opens Requirements through the bounded sibling context", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
   assert.match(child, /data-website-action="requirements"/);
-  assert.match(child, /requirementsBoardSlot\(currentContext\.quoteRequestId\)/);
+  assert.match(child, /requirementsBoardSlot\(currentSnapshot\.context\.quoteRequestId\)/);
   assert.match(child, /options\.requestOpen\?\.\("dossiers"/);
   assert.doesNotMatch(child, /window\.open|location\.reload/);
 });
@@ -481,7 +481,7 @@ test("Website child fetches and renders summary through existing refresh and man
   assert.equal(child.indexOf("function renderRequirementsSummary"), child.lastIndexOf("function renderRequirementsSummary"));
   assert.equal(child.indexOf("function renderRequirementsSummary") < child.indexOf("function setLink"), true);
   assert.match(child, /data-website-action="requirements"/);
-  assert.match(child, /requirementsBoardSlot\(currentContext\.quoteRequestId\)/);
+  assert.match(child, /requirementsBoardSlot\(currentSnapshot\.context\.quoteRequestId\)/);
   assert.doesNotMatch(child, /window\.open|location\.reload|items\.filter|items\.reduce/);
 });
 
