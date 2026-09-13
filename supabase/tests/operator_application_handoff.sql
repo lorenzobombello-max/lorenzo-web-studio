@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(122);
+select plan(123);
 
 select has_function('public','list_operator_applications_v1',array['integer','integer'],'application list RPC exists');
 select has_function('public','get_operator_application_v1',array['uuid','text'],'application detail RPC exists');
@@ -23,11 +23,20 @@ insert into auth.users (id, email) values
   ('a1000000-0000-4000-8000-000000000004','disabled@example.test'),
   ('a1000000-0000-4000-8000-000000000005','unknown@example.test');
 
-insert into public.commercial_operators (auth_user_id, display_name, role, status) values
-  ('a1000000-0000-4000-8000-000000000001','Test Owner','owner','ACTIVE'),
-  ('a1000000-0000-4000-8000-000000000002','Test Admin','admin','ACTIVE'),
-  ('a1000000-0000-4000-8000-000000000003','Test Operator','operator','ACTIVE'),
-  ('a1000000-0000-4000-8000-000000000004','Disabled Operator','admin','DISABLED');
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
+select lives_ok(
+  $$insert into public.commercial_operators (auth_user_id, display_name, role, status) values
+    ('a1000000-0000-4000-8000-000000000001','Test Owner','owner','ACTIVE'),
+    ('a1000000-0000-4000-8000-000000000002','Test Admin','admin','ACTIVE'),
+    ('a1000000-0000-4000-8000-000000000003','Test Operator','operator','ACTIVE'),
+    ('a1000000-0000-4000-8000-000000000004','Disabled Operator','admin','DISABLED')$$,
+  'operator fixture binding is provisioned by an eligible human at aal2'
+);
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests (
   id, application_reference, request_kind, sdf_package, created_at, name, company, email, website_type, budget, timing,

@@ -76,11 +76,17 @@ insert into auth.users (id, email) values
   ('fc000000-0000-4000-8000-000000000001', 'sdf-purge-owner@example.test'),
   ('fc000000-0000-4000-8000-000000000002', 'sdf-purge-admin@example.test');
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators (
   operator_id, auth_user_id, display_name, role, status, revoked_at
 ) values
   ('fc010000-0000-4000-8000-000000000001', 'fc000000-0000-4000-8000-000000000001', 'SDF Purge Owner', 'owner', 'ACTIVE', null),
   ('fc010000-0000-4000-8000-000000000002', 'fc000000-0000-4000-8000-000000000002', 'SDF Purge Admin', 'admin', 'ACTIVE', null);
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests (
   id, record_classification, request_kind, sdf_package, name, email,
@@ -207,7 +213,11 @@ begin
 end;
 $$;
 
-select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000001', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 select pg_temp.trash_sdf_dossier('fc100001-0000-4000-8000-000000000001', 'fc400001-0000-4000-8000-000000000001');
 select pg_temp.trash_sdf_dossier('fc100002-0000-4000-8000-000000000002', 'fc400002-0000-4000-8000-000000000002');
 select pg_temp.trash_sdf_dossier('fc100003-0000-4000-8000-000000000003', 'fc400003-0000-4000-8000-000000000003');
@@ -256,7 +266,11 @@ select is(
   'DOSSIER_NOT_FOUND', 'unknown dossier is rejected'
 );
 
-select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000002', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"bd2ab636-0d42-4069-88a9-60bd97f2b335","role":"authenticated","aal":"aal2"}',
+  true
+);
 select throws_ok(
   $$select public.purge_sdf_dossier_v1(
     'fc100001-0000-4000-8000-000000000001', 'Cleanup',
@@ -265,7 +279,11 @@ select throws_ok(
   '42501', 'OWNER_REQUIRED', 'non-owner cannot purge SDF dossier'
 );
 
-select set_config('request.jwt.claim.sub', 'fc000000-0000-4000-8000-000000000001', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 select throws_ok(
   $$select public.purge_sdf_dossier_v1(
     'fc100003-0000-4000-8000-000000000003', 'Must remain isolated',

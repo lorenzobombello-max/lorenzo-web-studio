@@ -78,11 +78,17 @@ insert into auth.users (id, email) values
   ('fa000000-0000-4000-8000-000000000001', 'purge-owner@example.test'),
   ('fa000000-0000-4000-8000-000000000002', 'purge-admin@example.test');
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators (
   operator_id, auth_user_id, display_name, role, status, revoked_at
 ) values
   ('fa010000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000001', 'Purge Owner', 'owner', 'ACTIVE', null),
   ('fa010000-0000-4000-8000-000000000002', 'fa000000-0000-4000-8000-000000000002', 'Purge Admin', 'admin', 'ACTIVE', null);
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests (
   id, request_kind, website_type, budget, timing, created_at,
@@ -114,7 +120,11 @@ insert into lws_internal.operator_dossier_assignment_commands (
   'fa010000-0000-4000-8000-000000000001', 0, repeat('2', 64), '{}'::jsonb
 );
 
-select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000002', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"bd2ab636-0d42-4069-88a9-60bd97f2b335","role":"authenticated","aal":"aal2"}',
+  true
+);
 select throws_ok(
   $$select public.purge_dossier_v1(
     'd3752349-3489-4c19-bd03-f0cc076b5607', 'Permanent cleanup',
@@ -123,7 +133,11 @@ select throws_ok(
   '42501', 'OWNER_REQUIRED', 'non-owner operator cannot purge a dossier'
 );
 
-select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000001', true);
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 select is(
   public.can_purge_dossier_v1('d3752349-3489-4c19-bd03-f0cc076b5607')->>'can_purge',
   'false', 'active Website dossier must enter Trash before purge eligibility'
