@@ -45,11 +45,17 @@ insert into auth.users(id, email) values
   ('fa000000-0000-4000-8000-000000000004', 'sdf-finance-disabled@example.test'),
   ('fa000000-0000-4000-8000-000000000005', 'sdf-finance-unknown@example.test');
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
   ('fa100000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000001', 'SDF Finance Owner', 'owner', 'ACTIVE'),
   ('fa100000-0000-4000-8000-000000000002', 'fa000000-0000-4000-8000-000000000002', 'SDF Finance Admin', 'admin', 'ACTIVE'),
   ('fa100000-0000-4000-8000-000000000003', 'fa000000-0000-4000-8000-000000000003', 'SDF Finance Operator', 'operator', 'ACTIVE'),
   ('fa100000-0000-4000-8000-000000000004', 'fa000000-0000-4000-8000-000000000004', 'SDF Finance Disabled', 'owner', 'DISABLED');
+select set_config('request.jwt.claims', '{}', true);
 
 select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000001', true);
 select lives_ok($$select public.get_sdf_finance_portfolio_v1()$$, 'active owner can read the portfolio');

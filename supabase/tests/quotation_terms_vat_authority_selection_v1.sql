@@ -15,6 +15,11 @@ insert into public.quotation_terms_authorities (
 
 insert into auth.users (id, email) values
   ('bc300000-0000-4000-8000-000000000001', 'authority-selection-owner@example.test');
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators (
   operator_id, auth_user_id, display_name, role, status
 ) values (
@@ -22,6 +27,7 @@ insert into public.commercial_operators (
   'bc300000-0000-4000-8000-000000000001',
   'Authority Selection Owner', 'owner', 'ACTIVE'
 );
+select set_config('request.jwt.claims', '{}', true);
 
 create temporary table authority_selection_initial_count as
 select count(*)::integer as value

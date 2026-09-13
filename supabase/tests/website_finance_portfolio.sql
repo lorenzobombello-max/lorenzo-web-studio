@@ -43,10 +43,16 @@ insert into auth.users(id, email) values
   ('f2000000-0000-4000-8000-000000000003', 'finance-operator@example.test'),
   ('f2000000-0000-4000-8000-000000000004', 'finance-unknown@example.test');
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
   ('f2010000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000001', 'Finance Owner', 'owner', 'ACTIVE'),
   ('f2010000-0000-4000-8000-000000000002', 'f2000000-0000-4000-8000-000000000002', 'Finance Admin', 'admin', 'ACTIVE'),
   ('f2010000-0000-4000-8000-000000000003', 'f2000000-0000-4000-8000-000000000003', 'Finance Operator', 'operator', 'ACTIVE');
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests (
   id, application_reference, request_kind, sdf_package, created_at, name, company, email,

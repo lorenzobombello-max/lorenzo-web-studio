@@ -190,6 +190,11 @@ insert into public.quote_requests (
 insert into auth.users (id, email) values (
   'bd110000-0000-4000-8000-000000000001', 'vat-authority-owner@example.test'
 );
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators (
   operator_id, auth_user_id, display_name, role, status
 ) values (
@@ -197,6 +202,7 @@ insert into public.commercial_operators (
   'bd110000-0000-4000-8000-000000000001',
   'VAT Authority Owner', 'owner', 'ACTIVE'
 );
+select set_config('request.jwt.claims', '{}', true);
 insert into public.quote_request_intakes (
   id, quote_request_id, status, access_token_hash, access_token_expires_at
 ) values (

@@ -49,6 +49,11 @@ insert into auth.users (id, email) values
   ('d0247fd9-60d5-40bc-a905-6b02024b6420', 'step-2k-operator-three@example.test')
 on conflict (id) do nothing;
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators (
   operator_id, auth_user_id, display_name, role, status
 ) values
@@ -56,6 +61,7 @@ insert into public.commercial_operators (
   ('2e110000-0000-4000-8000-000000000002', 'bd2ab636-0d42-4069-88a9-60bd97f2b335', 'Step 2K Operator Two', 'operator', 'ACTIVE')
 on conflict (auth_user_id) do update
 set role = excluded.role, status = excluded.status;
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests (
   id, record_classification, request_kind, website_type, budget, timing,

@@ -39,8 +39,14 @@ select ok(
 
 insert into auth.users(id,email) values
   ('d1000000-0000-4000-8000-000000000001','dossier-state-owner@example.test');
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c9bcd3ef-1e7e-4889-8a12-db827f1b97b0","role":"authenticated","aal":"aal2"}',
+  true
+);
 insert into public.commercial_operators(operator_id,auth_user_id,display_name,role,status) values
   ('d1010000-0000-4000-8000-000000000001','d1000000-0000-4000-8000-000000000001','Dossier State Owner','owner','ACTIVE');
+select set_config('request.jwt.claims', '{}', true);
 
 insert into public.quote_requests(
   id,record_classification,request_kind,sdf_package,name,email,description,privacy_consent,status
