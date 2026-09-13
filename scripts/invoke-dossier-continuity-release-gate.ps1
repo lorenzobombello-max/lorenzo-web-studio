@@ -22,7 +22,7 @@ function Invoke-Node {
 }
 
 function Invoke-LocalGate {
-  Invoke-Node --test scripts/dossier-continuity-regression-gate.test.mjs scripts/dossier-continuity-release-integration.test.mjs scripts/operator-dossiers-pricing-refresh.test.mjs
+  Invoke-Node --test scripts/dossier-continuity-regression-gate.test.mjs scripts/dossier-continuity-release-integration.test.mjs scripts/operator-dossiers-pricing-refresh.test.mjs scripts/operator-pricing-vat-edge-contract.test.mjs
   Invoke-Node scripts/dossier-continuity-regression-gate.mjs local
 }
 

@@ -34,12 +34,14 @@ import {
   executeCallerJwtOperatorPersonalQueueAction,
   executeCallerJwtRecruitmentVacancyAction,
   executeCallerJwtSdfM1InvoicePreparationAction,
+  executeCallerJwtQuotationVatReadinessAction,
   executeCallerJwtWebsiteConceptStartAction,
   executeCallerJwtWorkforceCalendarAction,
   executeApplicationDetailRead,
   executeCustomerRequestUploadInboxPromotionAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
+  executeWebsiteQuotationPricingStateAction,
   executeServiceRoleDossierDocumentAction,
   normalizePendingSeenStateItems,
   normalizeWebsitePendingItems,
@@ -411,6 +413,128 @@ const websiteConceptStartRequest = {
   expected_website_work_revision: 1,
   idempotency_key: "c1a00000-0000-4000-8000-000000000001",
 };
+
+const pricingStateRequest = {
+  action: "get_website_quotation_pricing_state" as const,
+  quote_request_id: "7d120000-0000-4000-8000-000000000001",
+  intake_id: "7d130000-0000-4000-8000-000000000001",
+};
+
+Deno.test("pricing read accepts only the canonical frontend contract", async () => {
+  const accepted = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(request(pricingStateRequest), accepted.deps)).status,
+    200,
+  );
+  assertEquals(accepted.calls, [{ jwt, input: pricingStateRequest }]);
+
+  for (const invalid of [
+    { action: pricingStateRequest.action, quote_request_id: pricingStateRequest.quote_request_id },
+    { ...pricingStateRequest, intake_id: "bad" },
+    { ...pricingStateRequest, extra: true },
+  ]) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(invalid), harness.deps)).status,
+      400,
+    );
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("VAT read accepts only the canonical frontend contract", async () => {
+  const vatRequest = {
+    action: "evaluate_quotation_vat_readiness",
+    quote_request_id: pricingStateRequest.quote_request_id,
+  };
+  const accepted = dependencies();
+  assertEquals(
+    (await handleCommercialOperator(request(vatRequest), accepted.deps)).status,
+    200,
+  );
+  assertEquals(accepted.calls, [{ jwt, input: vatRequest }]);
+
+  for (const invalid of [
+    { action: vatRequest.action },
+    { ...vatRequest, quote_request_id: "bad" },
+    { ...vatRequest, extra: true },
+  ]) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(invalid), harness.deps)).status,
+      400,
+    );
+    assertEquals(harness.calls.length, 0);
+  }
+});
+
+Deno.test("pricing and VAT reads use caller JWT and strict response contracts", async () => {
+  const pricingResponse = {
+    quote_request_id: pricingStateRequest.quote_request_id,
+    intake_id: pricingStateRequest.intake_id,
+    pricing_snapshot_id: "7d140000-0000-4000-8000-000000000001",
+    pricing_snapshot_sha256: "a".repeat(64),
+    currency: "EUR",
+    known_minimum_minor: 100,
+    contains_from_pricing: false,
+    decision_required: false,
+    can_decide: false,
+    resolved: true,
+    decision: null,
+    quotation_draft_available: true,
+    billing_context_complete: true,
+    billing_context: {
+      billing_address: "Straat 1",
+      billing_postal_code: "2000",
+      billing_city: "Antwerpen",
+      billing_country: "BE",
+      billing_email: "billing@example.test",
+    },
+  };
+  const pricingCalls: unknown[] = [];
+  assertEquals(await executeWebsiteQuotationPricingStateAction(
+    userId,
+    pricingStateRequest,
+    {
+      rpc: async (name, args) => {
+        pricingCalls.push({ name, args });
+        return { data: pricingResponse, error: null };
+      },
+    },
+  ), pricingResponse);
+  assertEquals(pricingCalls.length, 1);
+  await assertRejects(
+    () => executeWebsiteQuotationPricingStateAction(userId, pricingStateRequest, {
+      rpc: async () => ({ data: { ...pricingResponse, extra: true }, error: null }),
+    }),
+    Error,
+    "INVALID_WEBSITE_PRICING_STATE_RESPONSE",
+  );
+
+  const vatResponse = {
+    quote_request_id: pricingStateRequest.quote_request_id,
+    intake_id: pricingStateRequest.intake_id,
+    vat_readiness: "READY",
+    classification_status: "READY",
+    turnover_status: "READY",
+    blocking_reason: "VAT_EVIDENCE_READY",
+    policy_version: "v1",
+    context_sha256: "b".repeat(64),
+    resolved_at: "2099-01-01T00:00:00Z",
+    can_request_review: false,
+    can_request_turnover_refresh: false,
+  };
+  const callerJwts: string[] = [];
+  assertEquals(await executeCallerJwtQuotationVatReadinessAction(
+    jwt,
+    { action: "evaluate_quotation_vat_readiness", quote_request_id: pricingStateRequest.quote_request_id },
+    (token) => {
+      callerJwts.push(token);
+      return { rpc: async () => ({ data: vatResponse, error: null }) };
+    },
+  ), vatResponse);
+  assertEquals(callerJwts, [jwt]);
+});
 
 Deno.test("Website concept start accepts only bounded browser intent", async () => {
   const accepted = dependencies();

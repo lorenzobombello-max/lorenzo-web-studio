@@ -1,4 +1,5 @@
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
+import { validateVatReadinessAction } from "./vat-readiness.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const UUID =
@@ -30,6 +31,8 @@ const APPLICATION_ACTIONS = new Set([
   "set_recruitment_vacancy_status",
   "get_recruitment_publication_state",
   "set_recruitment_publication_enabled",
+  "get_website_quotation_pricing_state",
+  "evaluate_quotation_vat_readiness",
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
   "issue_and_deliver_approved_quotation",
@@ -393,6 +396,11 @@ export type QuotationBusinessDraftActionInput = Readonly<{
   expected_revision: number;
   idempotency_key: string;
   input: Record<string, unknown>;
+}>;
+export type WebsiteQuotationPricingStateActionInput = Readonly<{
+  action: "get_website_quotation_pricing_state";
+  quote_request_id: string;
+  intake_id: string;
 }>;
 export type WebsiteConceptStartActionInput = Readonly<{
   action: "start_website_concept";
@@ -1000,6 +1008,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "request_kind",
       "search",
     ])
+    : action === "get_website_quotation_pricing_state"
+    ? new Set(["action", "quote_request_id", "intake_id"])
+    : action === "evaluate_quotation_vat_readiness"
+    ? new Set(["action", "quote_request_id"])
     : action === "upsert_quotation_business_draft"
     ? new Set([
       "action",
@@ -1234,6 +1246,21 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) {
     throw new RequestError(400, "INVALID_REQUEST");
+  }
+  if (action === "evaluate_quotation_vat_readiness") {
+    try {
+      return validateVatReadinessAction(value);
+    } catch {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+  }
+  if (action === "get_website_quotation_pricing_state") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const intakeId = String(value.intake_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(intakeId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, quote_request_id: quoteRequestId, intake_id: intakeId };
   }
   if (action === "upsert_quotation_business_draft") {
     const intakeId = String(value.intake_id || "");

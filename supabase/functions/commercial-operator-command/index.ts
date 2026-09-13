@@ -30,7 +30,12 @@ import {
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
+  type WebsiteQuotationPricingStateActionInput,
 } from "./handler.ts";
+import {
+  normalizeVatReadinessResponse,
+  type VatReadinessActionInput,
+} from "./vat-readiness.ts";
 import {
   deliverIssuedQuotation,
   sendPreparedSdfQuotationDelivery,
@@ -428,6 +433,96 @@ type QuotationBusinessDraftRpcClient = Readonly<{
     }>
   >;
 }>;
+
+const SHA256 = /^[0-9a-f]{64}$/;
+
+function isWebsitePricingDecisionResponse(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  const expected = [
+    "decision_id", "resolved_rule_id", "currency", "known_minimum_minor",
+    "owner_final_amount_minor", "decision_sha256", "decided_at",
+  ];
+  return Object.keys(result).length === expected.length &&
+    expected.every((key) => key in result) &&
+    UUID.test(String(result.decision_id || "")) &&
+    typeof result.resolved_rule_id === "string" && result.resolved_rule_id.length > 0 &&
+    result.currency === "EUR" && Number.isSafeInteger(result.known_minimum_minor) &&
+    Number.isSafeInteger(result.owner_final_amount_minor) &&
+    Number(result.owner_final_amount_minor) >= Number(result.known_minimum_minor) &&
+    SHA256.test(String(result.decision_sha256 || "")) &&
+    typeof result.decided_at === "string" && result.decided_at.length > 0;
+}
+
+function isWebsitePricingStateResponse(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  const expected = [
+    "quote_request_id", "intake_id", "pricing_snapshot_id",
+    "pricing_snapshot_sha256", "currency", "known_minimum_minor",
+    "contains_from_pricing", "decision_required", "can_decide", "resolved",
+    "decision", "quotation_draft_available", "billing_context_complete",
+    "billing_context",
+  ];
+  const billing = result.billing_context as Record<string, unknown> | null;
+  const billingKeys = [
+    "billing_address", "billing_postal_code", "billing_city",
+    "billing_country", "billing_email",
+  ];
+  return Object.keys(result).length === expected.length &&
+    expected.every((key) => key in result) &&
+    UUID.test(String(result.quote_request_id || "")) &&
+    UUID.test(String(result.intake_id || "")) &&
+    UUID.test(String(result.pricing_snapshot_id || "")) &&
+    SHA256.test(String(result.pricing_snapshot_sha256 || "")) &&
+    result.currency === "EUR" && Number.isSafeInteger(result.known_minimum_minor) &&
+    Number(result.known_minimum_minor) >= 0 &&
+    ["contains_from_pricing", "decision_required", "can_decide", "resolved", "quotation_draft_available", "billing_context_complete"]
+      .every((key) => typeof result[key] === "boolean") &&
+    billing !== null && typeof billing === "object" && !Array.isArray(billing) &&
+    Object.keys(billing).length === billingKeys.length &&
+    billingKeys.every((key) =>
+      key in billing && (billing[key] === null || typeof billing[key] === "string")
+    ) &&
+    (result.decision === null || isWebsitePricingDecisionResponse(result.decision));
+}
+
+export async function executeWebsiteQuotationPricingStateAction(
+  actorAuthUserId: string,
+  input: WebsiteQuotationPricingStateActionInput,
+  client: QuotationBusinessDraftRpcClient,
+): Promise<unknown> {
+  const { data, error } = await client.rpc(
+    "get_operator_website_quotation_pricing_state_v1",
+    {
+      p_actor_auth_user_id: actorAuthUserId,
+      p_quote_request_id: input.quote_request_id,
+      p_intake_id: input.intake_id,
+    },
+  );
+  if (error) throw new Error(error.message);
+  if (!isWebsitePricingStateResponse(data)) {
+    throw new Error("INVALID_WEBSITE_PRICING_STATE_RESPONSE");
+  }
+  return data;
+}
+
+export async function executeCallerJwtQuotationVatReadinessAction(
+  jwt: string,
+  input: VatReadinessActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  const { data, error } = await clientFor(jwt).rpc(
+    "get_quotation_vat_readiness_v1",
+    { p_quote_request_id: input.quote_request_id },
+  );
+  if (error) throw new Error(error.message);
+  return normalizeVatReadinessResponse(data);
+}
 
 type QuotationIssuanceRuntimeOptions = Omit<
   QuotationRuntimeOptions,
@@ -1471,6 +1566,20 @@ if (import.meta.main) {
             return await executeCallerJwtWebsiteConceptStartAction(
               jwt,
               input as WebsiteConceptStartActionInput,
+              clientFor,
+            );
+          }
+          if (input.action === "get_website_quotation_pricing_state") {
+            return await executeWebsiteQuotationPricingStateAction(
+              actorAuthUserId,
+              input as WebsiteQuotationPricingStateActionInput,
+              clientFor(jwt),
+            );
+          }
+          if (input.action === "evaluate_quotation_vat_readiness") {
+            return await executeCallerJwtQuotationVatReadinessAction(
+              jwt,
+              input as VatReadinessActionInput,
               clientFor,
             );
           }
