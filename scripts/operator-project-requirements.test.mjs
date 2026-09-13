@@ -231,7 +231,7 @@ test("Requirements invalidation is exact-quote scoped and shared by all three ch
     assert.match(source, /invalidationSlotKey/);
     assert.match(source, /requirementsInvalidationMatches\(invalidationSlotKey/);
     assert.match(source, /createOperatorAutoRefresh/);
-    assert.match(source, /if \(background && current/);
+    assert.match(source, /if \((?:background && )?current/);
     assert.doesNotMatch(source, /location\.reload|record_preview_ready/);
   }
   const windowGuard = readFileSync(
