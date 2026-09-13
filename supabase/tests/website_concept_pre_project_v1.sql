@@ -351,12 +351,22 @@ insert into public.commercial_projects(
   'c1700000-0000-4000-8000-000000000005',
   10000, 'EUR', 4000, 4000, 2000, 'QUOTE_ACCEPTED', 1
 );
+select set_config('lws.website_concept_command', 'on', true);
+insert into public.website_work_contexts(
+  website_work_context_id, quote_request_id, concept_id, project_id, phase, revision
+) values (
+  'c1c00000-0000-4000-8000-000000000005',
+  'c1150005-0000-4000-8000-000000000005', null,
+  'c1900000-0000-4000-8000-000000000005', 'OFFICIAL_PROJECT', 1
+);
+select set_config('lws.website_concept_command', '', true);
 insert into public.website_execution_workspaces(
-  website_workspace_id, project_id, quote_request_id,
+  website_workspace_id, website_work_context_id, project_id, quote_request_id,
   repository_owner, repository_name, last_commit_sha, last_commit_at,
   last_build_result, last_build_at, created_by
 ) values (
   'c1910000-0000-4000-8000-000000000005',
+  'c1c00000-0000-4000-8000-000000000005',
   'c1900000-0000-4000-8000-000000000005',
   'c1150005-0000-4000-8000-000000000005',
   'lorenzo-test', 'concept-official-fixture', repeat('a', 40), clock_timestamp(),
@@ -922,14 +932,6 @@ delete from public.website_concepts
 where concept_id = 'c1b00000-0000-4000-8000-000000000001';
 set local session_replication_role = origin;
 
-select set_config('lws.website_concept_command', 'on', true);
-insert into public.website_work_contexts(
-  website_work_context_id, quote_request_id, concept_id, project_id, phase, revision
-) values (
-  'c1c00000-0000-4000-8000-000000000005',
-  'c1150005-0000-4000-8000-000000000005', null,
-  'c1900000-0000-4000-8000-000000000005', 'OFFICIAL_PROJECT', 1
-);
 set constraints all immediate;
 set constraints all deferred;
 select is(
@@ -939,10 +941,6 @@ select is(
   'c1900000-0000-4000-8000-000000000005'::uuid,
   'official context resolves through accepted same-dossier commercial lineage'
 );
-set local session_replication_role = replica;
-delete from public.website_work_contexts
-where website_work_context_id = 'c1c00000-0000-4000-8000-000000000005';
-set local session_replication_role = origin;
 
 create function pg_temp.insert_mismatched_official_context_v1()
 returns void
@@ -958,10 +956,11 @@ begin
   set constraints all immediate;
 end;
 $$;
+select set_config('lws.website_concept_command', 'on', true);
 select throws_ok(
   $$select pg_temp.insert_mismatched_official_context_v1()$$,
-  'P0001', 'WEBSITE_WORK_CONTEXT_BINDING_MISMATCH',
-  'cross-dossier official project binding fails closed under accepted-lineage lock'
+  '23505', null,
+  'a second official context for the same project fails closed'
 );
 select set_config('lws.website_concept_command', '', true);
 
@@ -1174,7 +1173,7 @@ select is(
     'quote_request_id', 'c1150005-0000-4000-8000-000000000005',
     'concept_id', null,
     'project_id', 'c1900000-0000-4000-8000-000000000005',
-    'website_work_context_id', null,
+    'website_work_context_id', 'c1c00000-0000-4000-8000-000000000005',
     'mode', 'OFFICIAL_PROJECT',
     'briefing_status', 'COMPLETE',
     'commercially_released', false,
@@ -1704,20 +1703,138 @@ select has_function(
   'public', 'get_website_execution_workspace_v2', array['uuid'],
   'Website Execution V2 read exists'
 );
+select col_not_null(
+  'public', 'website_execution_workspaces', 'website_work_context_id',
+  'every Website workspace is anchored to a work context'
+);
+select ok(
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.website_execution_workspaces'::regclass
+      and contype = 'f'
+      and conkey = array[
+        (select attnum from pg_attribute
+         where attrelid = 'public.website_execution_workspaces'::regclass
+           and attname = 'website_work_context_id')
+      ]::smallint[]
+      and confrelid = 'public.website_work_contexts'::regclass
+  ),
+  'Website workspace context binding has an enforced foreign key'
+);
+select ok(
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.website_execution_workspaces'::regclass
+      and contype = 'u'
+      and conkey = array[
+        (select attnum from pg_attribute
+         where attrelid = 'public.website_execution_workspaces'::regclass
+           and attname = 'website_work_context_id')
+      ]::smallint[]
+  ),
+  'one work context owns at most one Website workspace'
+);
+select is(
+  (select count(*)
+   from public.website_execution_workspaces as workspace
+   join public.website_work_contexts as context
+     on context.website_work_context_id = workspace.website_work_context_id
+   where context.phase = 'OFFICIAL_PROJECT'
+     and context.project_id = workspace.project_id
+     and context.quote_request_id = workspace.quote_request_id),
+  (select count(*) from public.website_execution_workspaces),
+  'all Website workspaces resolve legacy locators from one official context'
+);
+select is(
+  (select count(*)
+   from public.commercial_projects as project
+   join public.quote_request_quotation_acceptances as acceptance
+     on acceptance.id = project.acceptance_id
+    and acceptance.issuance_id = project.quotation_issuance_id
+   join public.quote_request_quotation_issuances as issuance
+     on issuance.id = project.quotation_issuance_id
+    and issuance.status = 'ISSUED'
+   join public.quote_request_quotation_approvals as approval
+     on approval.id = issuance.approval_id
+   join public.quote_requests as request on request.id = approval.quote_request_id
+   left join public.website_work_contexts as context
+     on context.project_id = project.project_id
+    and context.quote_request_id = request.id
+    and context.phase = 'OFFICIAL_PROJECT'
+   where request.record_classification = 'production'
+     and request.request_kind = 'website'
+     and context.website_work_context_id is null),
+  0::bigint,
+  'every valid Website commercial project has one official work context'
+);
+select throws_ok(
+  $$update public.website_execution_workspaces
+    set quote_request_id = 'c1110001-0000-4000-8000-000000000001'
+    where website_workspace_id = 'c1910000-0000-4000-8000-000000000005'$$,
+  'P0001', 'WEBSITE_WORKSPACE_BINDING_MISMATCH',
+  'legacy Website workspace locators cannot diverge from context authority'
+);
 
 select is(
   pg_temp.get_website_execution_workspace_v2(
     'c1110001-0000-4000-8000-000000000001'
-  )->>'project_id',
-  null,
-  'PRE_PROJECT Website workspace has no project id'
+  ),
+  jsonb_build_object(
+    'contract_version', 2,
+    'mode', 'PRE_PROJECT',
+    'quote_request_id', 'c1110001-0000-4000-8000-000000000001',
+    'concept_id', (select concept_id from public.website_concepts
+      where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    'project_id', null,
+    'website_work_context_id', (select website_work_context_id
+      from public.website_work_contexts
+      where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    'context_revision', 1,
+    'briefing_status', 'COMPLETE',
+    'commercially_released', false,
+    'project', null,
+    'start_gate', null,
+    'workspace', null,
+    'requirements', jsonb_build_object(
+      'state', 'NOT_AVAILABLE',
+      'message', 'Requirements volgen na intake-sync.'
+    )
+  ),
+  'PRE_PROJECT V2 returns the exact context-bound empty workspace contract'
 );
 select is(
-  pg_temp.get_website_execution_workspace_v2(
-    'c1110001-0000-4000-8000-000000000001'
-  )->'workspace',
-  'null'::jsonb,
-  'PRE_PROJECT Website workspace succeeds with no linked workspace'
+  (select jsonb_build_object(
+    'contract_version', projection->'contract_version',
+    'mode', projection->'mode',
+    'concept_id', projection->'concept_id',
+    'project_id', projection->'project_id',
+    'website_work_context_id', projection->'website_work_context_id',
+    'project', projection->'project',
+    'start_gate', projection->'start_gate',
+    'workspace', projection->'workspace'
+  )
+  from (select pg_temp.get_website_execution_workspace_v2(
+    'c1150005-0000-4000-8000-000000000005'
+  ) as projection) as resolved),
+  (select jsonb_build_object(
+    'contract_version', 2,
+    'mode', 'OFFICIAL_PROJECT',
+    'concept_id', null,
+    'project_id', 'c1900000-0000-4000-8000-000000000005',
+    'website_work_context_id', 'c1c00000-0000-4000-8000-000000000005',
+    'project', legacy->'project',
+    'start_gate', legacy->'start_gate',
+    'workspace', (legacy->'workspace') || jsonb_build_object(
+      'website_work_context_id', 'c1c00000-0000-4000-8000-000000000005'
+    )
+  )
+  from (select public.get_website_execution_workspace_v1(
+    'c1150005-0000-4000-8000-000000000005',
+    'c1900000-0000-4000-8000-000000000005'
+  ) as legacy) as resolved),
+  'OFFICIAL_PROJECT V2 preserves the complete V1 project and workspace projection'
 );
 
 select is(

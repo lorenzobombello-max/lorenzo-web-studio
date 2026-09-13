@@ -187,6 +187,20 @@ test("Website Workspace server projection reuses existing authorities and expose
   assert.match(migration, /revoke all privileges on table public\.website_execution_workspaces/);
 });
 
+test("Website Workspace V2 is anchored to the stable work context", async () => {
+  const migration = await read("supabase/migrations/20260912132000_reanchor_website_execution_workspace_v1.sql");
+  assert.match(migration, /add column website_work_context_id uuid/);
+  assert.match(migration, /alter column website_work_context_id set not null/);
+  assert.match(migration, /unique \(website_work_context_id\)/);
+  assert.match(migration, /references public\.website_work_contexts\(website_work_context_id\)/);
+  assert.match(migration, /create function public\.get_website_execution_workspace_v2\(/);
+  assert.match(migration, /public\.get_operator_website_work_v1/);
+  assert.match(migration, /if v_context\.phase = 'PRE_PROJECT'/);
+  assert.match(migration, /public\.get_website_execution_workspace_v1/);
+  assert.match(migration, /WEBSITE_WORKSPACE_BINDING_MISMATCH/);
+  assert.doesNotMatch(migration, /drop column (?:project_id|quote_request_id)/i);
+});
+
 test("Website managed child retains lifecycle, safe actions, and explicit denial", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
   const registry = await read("assets/js/operator-module-registry.mjs");
@@ -226,7 +240,9 @@ test("commercial command dispatch uses the exact caller-scoped Website RPC", asy
   const handler = await read("supabase/functions/commercial-operator-command/handler.ts");
   const index = await read("supabase/functions/commercial-operator-command/index.ts");
   assert.match(handler, /"get_website_execution_workspace"/);
-  assert.match(index, /"get_website_execution_workspace_v1"[^]*p_quote_request_id: input\.quote_request_id[^]*p_project_id: input\.project_id/);
+  const branch = index.match(/if \(input\.action === "get_website_execution_workspace"\) \{[^]*?return data;\s*\}/)?.[0] || "";
+  assert.match(branch, /"get_website_execution_workspace_v2"[^]*p_quote_request_id: input\.quote_request_id/);
+  assert.doesNotMatch(branch, /p_project_id/);
 });
 
 test("Website Requirements summary accepts only validated exact project and quote data", () => {
