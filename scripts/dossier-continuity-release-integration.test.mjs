@@ -196,3 +196,14 @@ test("Pages and Edge releases require the same runtime-authenticated pre and pos
   assert.doesNotMatch(ciRunner, /refresh_token/i);
   assert.match(preservation, /invoke-dossier-continuity-release-gate\.ps1 -Phase Local/);
 });
+
+test("PRE_PROJECT release evidence includes deterministic desktop and mobile frame sampling", async () => {
+  const preview = await text("scripts/website-concept-pre-project-live-preview.test.mjs");
+  assert.match(preview, /initializeOperatorWebsiteExecution/);
+  assert.match(preview, /new MutationObserver/);
+  assert.match(preview, /waitForTimeout\(16\)/);
+  assert.match(preview, /\{ width: 1280, height: 800 \}/);
+  assert.match(preview, /\{ width: 390, height: 844 \}/);
+  assert.match(preview, /for \(const phase of \[1, 2, 3\]\)/);
+  assert.match(preview, /OPERATOR_NOT_AUTHORIZED/);
+});
