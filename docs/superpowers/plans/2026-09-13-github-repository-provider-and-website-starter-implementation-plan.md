@@ -398,15 +398,19 @@ The legal sequence after completed Task 11 is:
 1. Complete OWNER Gate 5A.
 2. Complete Task 12.
 3. Complete Task 13 Steps 1–5 without network access.
-4. Obtain OWNER Gate 6 approval.
-5. Perform only the approved first real GitHub authentication and narrowly scoped installation-token test.
-6. Complete OWNER Gate 5B rotation/revocation rehearsal.
-7. Complete the remaining Task 13 steps.
-8. Complete Tasks 14–21.
-9. Obtain OWNER Gate 7 approval.
-10. Obtain OWNER Gate 8 production activation approval.
+4. Obtain OWNER Gate 8A approval.
+5. Deploy only the minimal server-side test harness required to use the existing Supabase-managed secrets.
+6. Obtain OWNER Gate 6 approval.
+7. Perform only the approved first real `GET /app` authentication and narrowly repository-scoped installation-token test.
+8. Complete OWNER Gate 5B rotation/revocation rehearsal.
+9. Complete the remaining Task 13 steps and commit its harness/tests/evidence schema.
+10. Complete Tasks 14–21.
+11. Obtain OWNER Gate 7 approval.
+12. Obtain OWNER Gate 8B production activation approval.
 
-Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. Gate 6 remains the hard stop before the first real GitHub API call. Gate 5B remains mandatory before Task 13 may perform its approved external template-generation execution. Gate 8 remains the separate authority for migration execution, Edge deployment and feature-flag enablement.
+Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. Gate 8A is the narrow deployment authority required to make Gate 6 technically reachable without exporting Supabase secrets. Gate 6 remains the hard stop before the first real GitHub API call. Gate 5B remains mandatory before Task 13 may perform its approved external template-generation execution. Gate 8B remains the separate final authority for production migration execution, production Edge activation and feature-flag enablement.
+
+The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=false` remains mandatory; secrets remain server-side in Supabase Edge Function Secrets and may not be exported; browser DTOs contain no credentials; installation tokens must name exactly the approved repository and may never fall back to installation-wide scope; no customer repository or production provisioning is authorized; every dossier retains its own `website_work_context_id` repository island; and TEST remains fail-closed and separate from PRODUCTION.
 
 ## PHASE D — canonical starter repository contract
 
@@ -468,11 +472,18 @@ Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. G
 - [ ] Step 2: Run `node --test scripts/github-repository-provider-test-island.test.mjs`; expect missing harness.
 - [ ] Step 3: Implement dry-run by default and exact redacted evidence output; cleanup remains disabled unless a separately approved marker+context+external-ID test cleanup path exists.
 - [ ] Step 4: Re-run the unit harness test and provider Deno tests without network access; require pass.
-- [ ] Step 5: Stop before any `--execute` invocation and request OWNER Gate 6.
+- [ ] Step 5: Stop before any `--execute` invocation and request OWNER Gate 8A. Gate 6 is unreachable until the minimal secret-resident server-side harness is deployed under Gate 8A.
+
+### OWNER GATE 8A: Test-harness Edge deployment
+
+- [ ] OWNER authorizes deployment of only the minimal server-side GitHub App authentication/test harness required for Gate 6. It may read the existing Supabase-managed GitHub App secrets server-side, create a short-lived in-memory App JWT, call only `GET /app`, request one installation token restricted to the canonical starter repository and approved Metadata read, Administration read/write and Contents read/write permissions, emit redacted evidence and fail closed.
+- [ ] The Gate 8A route must expose no private key, JWT, installation token or Authorization header to browser DTOs, logs, files, environment exports or evidence. Credentials exist only in server memory and are discarded immediately after use. Installation-wide token fallback is forbidden.
+- [ ] Gate 8A does not authorize provider enablement, repository generation, customer repository creation, customer or production mutation, starter changes, App permission changes, installation-scope expansion, migration execution or general production Edge activation. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`.
+- [ ] STOP after the minimal deployment is verified fail-closed. No GitHub API call is authorized until OWNER Gate 6.
 
 ### OWNER GATE 6: Test installation and external side effect
 
-- [ ] OWNER approves the dedicated test App installation, exact selected template repository, one synthetic repository creation and non-destructive evidence collection.
+- [ ] OWNER approves use of the Gate 8A harness for the first real GitHub authentication and token-scope test against the dedicated test App installation and exact selected canonical template repository. This gate does not authorize repository creation or mutation.
 - [ ] STOP before the first real GitHub API call. A failed repository-scoped template-generation contract blocks activation; installation-wide token scope is forbidden as a workaround.
 - [ ] After approval, perform the first authentication test with a short-lived in-memory App JWT using `GET /app`, then request one installation token restricted to the canonical template repository and the approved Metadata read, Administration write and Contents write permissions. Discard both credentials immediately, record only redacted status/request/scope/expiry evidence and perform no repository mutation. STOP for OWNER review and Gate 5B continuation.
 
@@ -675,7 +686,7 @@ Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. G
 - [ ] After Tasks 1-21 pass and Gate 6 evidence is accepted, OWNER approves one end-to-end synthetic test-dossier provisioning operation. Verify database claim, scoped tokens, private repository, tree, marker, binding, launcher/files denial for another context and non-production preview denial.
 - [ ] STOP on any ambiguous external outcome, permission drift, leaked value, mismatched marker/tree, cross-context access or unresolved quarantine. Do not delete or repair automatically.
 
-### OWNER GATE 8: Production activation
+### OWNER GATE 8B: Production activation
 
 - [ ] OWNER reviews all local/test-island evidence, exact App permissions, Only-select-repositories scope, key rotation, timeout/orphan recovery, quarantine queue, 14 negative isolation outcomes, starter release and continuity gate.
 - [ ] OWNER separately authorizes migration execution, Edge deployment and feature-flag enablement. These are distinct controlled operations with rollback/pause instructions; no approval is inferred from implementation completion.
@@ -707,7 +718,7 @@ Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. G
 | 6-11 provider, ownership, naming, secrets, concurrency, recovery | Tasks 1-10, 13-14, OWNER Gates 1, 3-7 |
 | 12-14 starter technology, design and versioning | Tasks 11-14, OWNER Gate 2 |
 | 15-17 workspace, Requirements and project files | Tasks 15-18 |
-| 18 preview architecture | Task 21 and OWNER Gate 8; activation excluded |
+| 18 preview architecture | Task 21 and OWNER Gate 8B; activation excluded |
 | 19 promotion | Tasks 5-7, 19 and 21 regression assertions |
 | 20.1-20.12 island isolation | Tasks 16-21 and exact negative contract in Task 19 |
 | 21 threat model | Tasks 2-4, 7, 9, 14, 17, 19-21 |
@@ -715,15 +726,15 @@ Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. G
 | 23 data model | Tasks 5-7 |
 | 24 Edge contracts | Tasks 8-10 and 17 |
 | 25 testing | Every task plus Test Matrix |
-| 26 implementation phases | Phases A-I and OWNER Gates 1-8 |
-| 27 release boundaries | Execution Rules, Tasks 20-21 and OWNER Gate 8 |
+| 26 implementation phases | Phases A-I and OWNER Gates 1-8, with Gate 8 split into 8A and 8B |
+| 27 release boundaries | Execution Rules, Tasks 20-21 and OWNER Gates 8A-8B |
 
 ## Final Self-Review and Plan Commit
 
 - [ ] Verify every task has concrete Create/Modify/Test paths, consumed/produced interfaces, an observed failing test, expected failure, minimal implementation, passing rerun, adjacent regression, scope review and commit boundary.
 - [ ] Verify every design section maps to at least one task or OWNER gate and every external side effect is preceded by an explicit STOP.
 - [ ] Verify the inert V1 provider contract is not reinterpreted, customer source never enters core, one repository/workspace/files/preview/cache/build/artifact namespace exists per context, and promotion preserves that island.
-- [ ] Verify the eight numbered OWNER gates are present, with Gate 5 split into Gate 5A and Gate 5B, and no GitHub App, secret, repository, API call, migration, deploy, push or production mutation was performed while writing this plan.
+- [ ] Verify the eight numbered OWNER gates are present, with Gate 5 split into Gate 5A and Gate 5B and Gate 8 split into Gate 8A and Gate 8B. Verify Gate 8A authorizes only the minimal secret-resident test harness deployment, Gate 8B retains final production activation authority, and no GitHub App, secret, repository, API call, migration, deploy, push or production mutation was performed while writing this plan.
 - [ ] Search this plan case-insensitively for unfinished markers and require none; examples in the fixed contracts are intentional executable shapes, not deferred decisions.
 - [ ] Validate exact status outputs:
 
