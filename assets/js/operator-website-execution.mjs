@@ -22,6 +22,9 @@ const WORKSPACE_KEYS = [
   "preview_branch", "preview_url", "last_commit_sha", "last_commit_at",
   "last_build_result", "last_build_at", "binding_revision", "created_at", "updated_at",
 ];
+const CURRENT_WORKSPACE_KEYS = [
+  ...WORKSPACE_KEYS, "workspace_state", "provisioned_by", "provisioned_at",
+];
 
 function exactKeys(value, keys) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -136,11 +139,17 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
   let workspace = null;
   if (value.workspace !== null) {
     workspace = value.workspace;
-    if (!exactKeys(workspace, WORKSPACE_KEYS)
+    const legacyWorkspace = exactKeys(workspace, WORKSPACE_KEYS);
+    const currentWorkspace = exactKeys(workspace, CURRENT_WORKSPACE_KEYS);
+    if ((!legacyWorkspace && !currentWorkspace)
       || !UUID.test(String(workspace.website_workspace_id || ""))
       || workspace.website_work_context_id !== expected.websiteWorkContextId
       || workspace.project_id !== expected.projectId
       || workspace.quote_request_id !== expected.quoteRequestId
+      || (currentWorkspace
+        && (!["READY", "REPOSITORY_READY"].includes(workspace.workspace_state)
+          || !UUID.test(String(workspace.provisioned_by || ""))
+          || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null))
       || workspace.repository_provider !== "GITHUB"
       || !GITHUB_SEGMENT.test(String(workspace.repository_owner || ""))
       || !GITHUB_SEGMENT.test(String(workspace.repository_name || ""))

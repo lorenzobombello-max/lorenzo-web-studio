@@ -80,6 +80,15 @@ function workspaceFixture(overrides = {}) {
   };
 }
 
+function currentWorkspaceFixture(workspaceState, overrides = {}) {
+  return workspaceFixture({
+    workspace_state: workspaceState,
+    provisioned_by: "a1800000-0000-4000-8000-000000000010",
+    provisioned_at: "2026-09-12T10:00:00Z",
+    ...overrides,
+  });
+}
+
 const preProjectWork = {
   state: "PRE_PROJECT",
   quote_request_id: quoteRequestId,
@@ -306,6 +315,34 @@ test("repository metadata renders safe GitHub and VS Code Web links", () => {
   assert.equal(view.links.github, "https://github.com/lws-studio/lws-web-2026-0042");
   assert.equal(view.links.vscode, "https://vscode.dev/github/lws-studio/lws-web-2026-0042");
   assert.equal(JSON.stringify(projection).includes("token"), false);
+});
+
+test("READY and REPOSITORY_READY retain repository actions", () => {
+  for (const workspaceState of ["READY", "REPOSITORY_READY"]) {
+    const projection = validateWebsiteExecutionWorkspace({
+      ...base,
+      workspace: currentWorkspaceFixture(workspaceState),
+    }, expected);
+    const view = websiteExecutionView(projection);
+    assert.equal(view.state, "ready");
+    assert.equal(view.links.github, "https://github.com/lws-studio/lws-web-2026-0042");
+    assert.equal(view.links.vscode, "https://vscode.dev/github/lws-studio/lws-web-2026-0042");
+  }
+});
+
+test("non-ready and malformed current workspace states fail closed", () => {
+  for (const workspace of [
+    currentWorkspaceFixture("PENDING_REPOSITORY"),
+    currentWorkspaceFixture("REPOSITORY_FAILED"),
+    currentWorkspaceFixture("UNKNOWN"),
+    currentWorkspaceFixture("REPOSITORY_READY", { provisioned_by: null }),
+    currentWorkspaceFixture("REPOSITORY_READY", { provisioned_at: null }),
+  ]) {
+    assert.throws(() => validateWebsiteExecutionWorkspace({
+      ...base,
+      workspace,
+    }, expected), /INVALID_WEBSITE_EXECUTION_RESPONSE/);
+  }
 });
 
 test("unsafe repository and URL references are rejected", () => {
