@@ -27,6 +27,7 @@ import {
   executeSdfM1InvoicePreparationTransport,
   executeWebsiteConceptStartTransport,
   type WebsiteConceptStartActionInput,
+  type WebsiteExecutionWorkspaceProvisionActionInput,
   type RecruitmentVacancyActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
@@ -371,6 +372,22 @@ export async function executeCallerJwtWebsiteConceptStartAction(
   clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeWebsiteConceptStartTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
+  jwt: string,
+  input: WebsiteExecutionWorkspaceProvisionActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  const { data, error } = await clientFor(jwt).rpc(
+    "provision_website_execution_workspace_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_idempotency_key: input.idempotency_key,
+    },
+  );
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function executeCallerJwtWorkforceCalendarAction(
@@ -1566,6 +1583,13 @@ if (import.meta.main) {
             return await executeCallerJwtWebsiteConceptStartAction(
               jwt,
               input as WebsiteConceptStartActionInput,
+              clientFor,
+            );
+          }
+          if (input.action === "provision_website_execution_workspace") {
+            return await executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
+              jwt,
+              input as WebsiteExecutionWorkspaceProvisionActionInput,
               clientFor,
             );
           }

@@ -13,6 +13,7 @@ import {
   executeRecruitmentVacancyTransport,
   executeSdfM1InvoicePreparationTransport,
   executeWebsiteConceptStartTransport,
+  executeWebsiteExecutionWorkspaceProvisionTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   withCommercialOperatorCors,
@@ -36,6 +37,7 @@ import {
   executeCallerJwtSdfM1InvoicePreparationAction,
   executeCallerJwtQuotationVatReadinessAction,
   executeCallerJwtWebsiteConceptStartAction,
+  executeCallerJwtWebsiteExecutionWorkspaceProvisionAction,
   executeCallerJwtWorkforceCalendarAction,
   executeApplicationDetailRead,
   executeCustomerRequestUploadInboxPromotionAction,
@@ -414,6 +416,30 @@ const websiteConceptStartRequest = {
   idempotency_key: "c1a00000-0000-4000-8000-000000000001",
 };
 
+const websiteWorkspaceProvisionFixtures = [
+  {
+    quote_request_id: "c1110001-0000-4000-8000-000000000001",
+    website_work_context_id: "c1c00000-0000-4000-8000-000000000001",
+    idempotency_key: "c1a00000-0000-4000-8000-000000000002",
+    mode: "PRE_PROJECT",
+    briefing_status: "COMPLETE",
+    workspace: null,
+  },
+  {
+    quote_request_id: "c1120002-0000-4000-8000-000000000002",
+    website_work_context_id: "c1c00000-0000-4000-8000-000000000002",
+    idempotency_key: "c1a00000-0000-4000-8000-000000000003",
+    mode: "PRE_PROJECT",
+    briefing_status: "COMPLETE",
+    workspace: null,
+  },
+] as const;
+const websiteWorkspaceProvisionRequest = {
+  action: "provision_website_execution_workspace" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  idempotency_key: websiteWorkspaceProvisionFixtures[0].idempotency_key,
+};
+
 const pricingStateRequest = {
   action: "get_website_quotation_pricing_state" as const,
   quote_request_id: "7d120000-0000-4000-8000-000000000001",
@@ -557,6 +583,99 @@ Deno.test("Website concept start accepts only bounded browser intent", async () 
     );
     assertEquals(rejected.status, 400, forbiddenKey);
     assertEquals(harness.calls.length, 0, forbiddenKey);
+  }
+});
+
+Deno.test("Website workspace provision accepts the canonical command", async () => {
+  for (const fixture of websiteWorkspaceProvisionFixtures) {
+    const input = {
+      action: "provision_website_execution_workspace" as const,
+      quote_request_id: fixture.quote_request_id,
+      idempotency_key: fixture.idempotency_key,
+    };
+    const harness = dependencies();
+    const response = await handleCommercialOperator(request(input), harness.deps);
+    assertEquals(response.status, 200, fixture.website_work_context_id);
+    assertEquals(harness.calls, [{ jwt, input }]);
+  }
+});
+
+Deno.test("Website workspace provision accepts only bounded browser intent", async () => {
+  for (const invalid of [
+    { action: "provision_website_execution_workspace", idempotency_key: websiteWorkspaceProvisionRequest.idempotency_key },
+    { ...websiteWorkspaceProvisionRequest, quote_request_id: "invalid" },
+    { action: "provision_website_execution_workspace", quote_request_id: websiteWorkspaceProvisionRequest.quote_request_id },
+    { ...websiteWorkspaceProvisionRequest, idempotency_key: "invalid" },
+    { ...websiteWorkspaceProvisionRequest, action: "provision_unknown_workspace" },
+  ]) {
+    const harness = dependencies();
+    const rejected = await handleCommercialOperator(request(invalid), harness.deps);
+    assertEquals(rejected.status, 400);
+    assertEquals(await rejected.json(), { ok: false, code: "INVALID_REQUEST" });
+    assertEquals(harness.calls.length, 0);
+  }
+
+  for (const forbiddenKey of [
+    "actor_id", "role", "mode", "project_id", "workspace_state",
+    "repository_owner", "repository_name", "repository_provider", "created_by",
+  ]) {
+    const harness = dependencies();
+    const rejected = await handleCommercialOperator(
+      request({ ...websiteWorkspaceProvisionRequest, [forbiddenKey]: "forbidden" }),
+      harness.deps,
+    );
+    assertEquals(rejected.status, 400, forbiddenKey);
+    assertEquals(harness.calls.length, 0, forbiddenKey);
+  }
+});
+
+Deno.test("Website workspace provision uses only caller JWT RPC authority", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeWebsiteExecutionWorkspaceProvisionTransport({
+    rpc: async (name, args) => {
+      calls.push({ name, args });
+      return { data: { workspace_state: "PENDING_REPOSITORY" }, error: null };
+    },
+  }, websiteWorkspaceProvisionRequest);
+  assertEquals(result, { workspace_state: "PENDING_REPOSITORY" });
+  assertEquals(calls, [{
+    name: "provision_website_execution_workspace_v1",
+    args: {
+      p_quote_request_id: websiteWorkspaceProvisionRequest.quote_request_id,
+      p_idempotency_key: websiteWorkspaceProvisionRequest.idempotency_key,
+    },
+  }]);
+
+  const seenJwts: string[] = [];
+  await executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
+    jwt,
+    websiteWorkspaceProvisionRequest,
+    (seenJwt) => {
+      seenJwts.push(seenJwt);
+      return { rpc: async () => ({ data: {}, error: null }) };
+    },
+  );
+  assertEquals(seenJwts, [jwt]);
+});
+
+Deno.test("Website workspace provision maps authority and eligibility errors narrowly", async () => {
+  for (const [databaseCode, status, responseCode] of [
+    ["AAL2_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["WEBSITE_WORKSPACE_OWNER_REQUIRED", 403, "OPERATOR_NOT_AUTHORIZED"],
+    ["WEBSITE_WORKSPACE_NOT_ELIGIBLE", 409, "WEBSITE_WORKSPACE_NOT_ELIGIBLE"],
+    ["WEBSITE_WORK_CONTEXT_BINDING_MISMATCH", 409, "WEBSITE_WORK_CONTEXT_BINDING_MISMATCH"],
+    ["IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+  ] as const) {
+    const response = await handleCommercialOperator(
+      request(websiteWorkspaceProvisionRequest),
+      dependencies({
+        executeApplicationAction: async () => {
+          throw new Error(databaseCode);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status, databaseCode);
+    assertEquals(await response.json(), { ok: false, code: responseCode }, databaseCode);
   }
 });
 

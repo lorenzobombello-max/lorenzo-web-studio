@@ -164,6 +164,19 @@ test("PRE_PROJECT provisioning passes through the shared caller-JWT gateway", as
   }]);
 });
 
+test("PRE_PROJECT provision action remains coherent with the deployable command", async () => {
+  const [dossiers, handler, index] = await Promise.all([
+    read("assets/js/operator-dossiers.mjs"),
+    read("supabase/functions/commercial-operator-command/handler.ts"),
+    read("supabase/functions/commercial-operator-command/index.ts"),
+  ]);
+  const action = "provision_website_execution_workspace";
+  assert.match(dossiers, new RegExp(`"${action}"`));
+  assert.match(handler, new RegExp(`"${action}"`));
+  assert.match(index, new RegExp(`input\\.action === "${action}"`));
+  assert.match(index, /"provision_website_execution_workspace_v1"/);
+});
+
 test("PRE_PROJECT pending workspace is context-bound without fake repository data", () => {
   const context = {
     quoteRequestId,

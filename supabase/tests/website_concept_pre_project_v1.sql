@@ -2,6 +2,9 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink with schema extensions;
+grant usage on schema extensions to authenticated;
+grant execute on function extensions.throws_ok(text, character, text, text)
+to authenticated;
 set local search_path = public, lws_internal, extensions;
 
 select no_plan();
@@ -399,7 +402,7 @@ select
   )) as project_publication_events;
 
 select pg_temp.set_concept_claims_v1(
-  'c1000000-0000-4000-8000-000000000001', 'aal1'
+  'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal1'
 );
 select ok(
   current_setting('request.jwt.claims', true)::jsonb->>'aal' = 'aal1',
@@ -1813,7 +1816,8 @@ select is(
     'website_work_context_id', projection->'website_work_context_id',
     'project', projection->'project',
     'start_gate', projection->'start_gate',
-    'workspace', projection->'workspace'
+    'workspace', (projection->'workspace')
+      - array['workspace_state', 'provisioned_by', 'provisioned_at']
   )
   from (select pg_temp.get_website_execution_workspace_v2(
     'c1150005-0000-4000-8000-000000000005'
@@ -1929,6 +1933,238 @@ select ok(
       and column_name in ('concept_id', 'website_work_context_id')
   ),
   'Requirements roots remain project-bound and are not polymorphic'
+);
+
+select has_function(
+  'public', 'provision_website_execution_workspace_v1', array['uuid', 'uuid'],
+  'PRE_PROJECT technical workspace provisioning command exists'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.provision_website_execution_workspace_v1(uuid,uuid)',
+    'execute'
+  )
+  and not has_function_privilege(
+    'anon',
+    'public.provision_website_execution_workspace_v1(uuid,uuid)',
+    'execute'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'public.provision_website_execution_workspace_v1(uuid,uuid)',
+    'execute'
+  ),
+  'only authenticated callers can execute workspace provisioning'
+);
+select ok(
+  coalesce((
+    select prosecdef
+      and proconfig @> array[
+        'search_path=public, lws_internal, auth, extensions, pg_catalog'
+      ]
+    from pg_proc
+    where oid = to_regprocedure(
+      'public.provision_website_execution_workspace_v1(uuid,uuid)'
+    )
+  ), false),
+  'workspace provisioning is security definer with a fixed trusted search path'
+);
+
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000001', 'aal1'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1110001-0000-4000-8000-000000000001',
+    'c1a00000-0000-4000-8000-000000000041'
+  )$$,
+  '42501', 'AAL2_REQUIRED',
+  'AAL1 owner cannot provision a technical workspace'
+);
+reset role;
+
+select pg_temp.set_concept_claims_v1(
+  'c1000000-0000-4000-8000-000000000002', 'aal2'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1110001-0000-4000-8000-000000000001',
+    'c1a00000-0000-4000-8000-000000000042'
+  )$$,
+  '42501', 'WEBSITE_WORKSPACE_OWNER_REQUIRED',
+  'non-owner AAL2 operator cannot provision a technical workspace'
+);
+reset role;
+
+update public.commercial_operators
+set status = 'REVOKED',
+    revoked_at = clock_timestamp()
+where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0';
+select pg_temp.set_concept_claims_v1(
+  'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal2'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1110001-0000-4000-8000-000000000001',
+    'c1a00000-0000-4000-8000-000000000043'
+  )$$,
+  '42501', 'WEBSITE_WORKSPACE_OWNER_REQUIRED',
+  'revoked owner cannot provision a technical workspace'
+);
+reset role;
+update public.commercial_operators
+set status = 'ACTIVE',
+    revoked_at = null
+where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0';
+
+set local role authenticated;
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1199999-0000-4000-8000-000000000099',
+    'c1a00000-0000-4000-8000-000000000044'
+  )$$,
+  'P0001', 'WEBSITE_WORKSPACE_NOT_ELIGIBLE',
+  'unknown dossier cannot provision a technical workspace'
+);
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1140004-0000-4000-8000-000000000004',
+    'c1a00000-0000-4000-8000-000000000045'
+  )$$,
+  'P0001', 'WEBSITE_WORKSPACE_NOT_ELIGIBLE',
+  'trashed Website dossier cannot provision a technical workspace'
+);
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1150005-0000-4000-8000-000000000005',
+    'c1a00000-0000-4000-8000-000000000046'
+  )$$,
+  'P0001', 'WEBSITE_WORKSPACE_NOT_ELIGIBLE',
+  'official project cannot enter PRE_PROJECT workspace provisioning'
+);
+reset role;
+
+create temporary table workspace_provision_commercial_before as
+select
+  (select count(*) from public.quote_request_quotation_approvals) as approvals,
+  (select count(*) from public.quote_request_quotation_issuances) as issuances,
+  (select count(*) from public.quote_request_quotation_acceptances) as acceptances,
+  (select count(*) from public.commercial_projects) as projects,
+  (select count(*) from public.commercial_obligations) as obligations,
+  (select count(*) from public.payment_expectations) as payments,
+  (select count(*) from public.commercial_project_sites) as project_sites;
+
+set local role authenticated;
+create temporary table workspace_provision_first as
+select public.provision_website_execution_workspace_v1(
+  'c1110001-0000-4000-8000-000000000001',
+  'c1a00000-0000-4000-8000-000000000047'
+) as result;
+create temporary table workspace_provision_replay as
+select public.provision_website_execution_workspace_v1(
+  'c1110001-0000-4000-8000-000000000001',
+  'c1a00000-0000-4000-8000-000000000047'
+) as result;
+create temporary table workspace_provision_reuse as
+select public.provision_website_execution_workspace_v1(
+  'c1110001-0000-4000-8000-000000000001',
+  'c1a00000-0000-4000-8000-000000000048'
+) as result;
+select throws_ok(
+  $$select public.provision_website_execution_workspace_v1(
+    'c1120002-0000-4000-8000-000000000002',
+    'c1a00000-0000-4000-8000-000000000047'
+  )$$,
+  'P0001', 'IDEMPOTENCY_CONFLICT',
+  'changed dossier under the same provisioning key fails closed'
+);
+reset role;
+
+select is(
+  (select result->>'created' from workspace_provision_first),
+  'true',
+  'first provisioning creates the pending workspace'
+);
+select is(
+  (select result->>'replayed' from workspace_provision_replay),
+  'true',
+  'exact provisioning retry returns the stored result'
+);
+select is(
+  (select result->>'created' from workspace_provision_reuse),
+  'false',
+  'new key reuses the context-bound workspace'
+);
+select is(
+  (select result->>'website_workspace_id' from workspace_provision_first),
+  (select result->>'website_workspace_id' from workspace_provision_reuse),
+  'first call, replay, and new-key reuse resolve one workspace identity'
+);
+select is(
+  (select jsonb_build_array(
+    (select count(*) from public.website_execution_workspaces
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_execution_workspace_idempotency
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+    (select count(*) from public.website_execution_workspace_events
+     where quote_request_id = 'c1110001-0000-4000-8000-000000000001')
+  )),
+  '[1,2,2]'::jsonb,
+  'replay and reuse leave one workspace, two command results, and two events'
+);
+select is(
+  (select jsonb_build_object(
+    'workspace_state', workspace_state,
+    'project_id', project_id,
+    'repository_owner', repository_owner,
+    'repository_name', repository_name,
+    'preview_url', preview_url
+  ) from public.website_execution_workspaces
+  where quote_request_id = 'c1110001-0000-4000-8000-000000000001'),
+  jsonb_build_object(
+    'workspace_state', 'PENDING_REPOSITORY',
+    'project_id', null,
+    'repository_owner', null,
+    'repository_name', null,
+    'preview_url', null
+  ),
+  'pending workspace contains no fake project, repository, or preview authority'
+);
+select is(
+  (select projection->'workspace'->>'workspace_state'
+   from (select public.get_website_execution_workspace_v2(
+     'c1110001-0000-4000-8000-000000000001'
+   ) as projection) as resolved),
+  'PENDING_REPOSITORY',
+  'V2 returns the newly provisioned pending workspace'
+);
+select is(
+  (select jsonb_build_array(
+    after.approvals - before.approvals,
+    after.issuances - before.issuances,
+    after.acceptances - before.acceptances,
+    after.projects - before.projects,
+    after.obligations - before.obligations,
+    after.payments - before.payments,
+    after.project_sites - before.project_sites
+  )
+  from workspace_provision_commercial_before as before
+  cross join lateral (
+    select
+      (select count(*) from public.quote_request_quotation_approvals) as approvals,
+      (select count(*) from public.quote_request_quotation_issuances) as issuances,
+      (select count(*) from public.quote_request_quotation_acceptances) as acceptances,
+      (select count(*) from public.commercial_projects) as projects,
+      (select count(*) from public.commercial_obligations) as obligations,
+      (select count(*) from public.payment_expectations) as payments,
+      (select count(*) from public.commercial_project_sites) as project_sites
+  ) as after),
+  '[0,0,0,0,0,0,0]'::jsonb,
+  'technical provisioning does not mutate commercial or publication authority'
 );
 
 select * from finish();
