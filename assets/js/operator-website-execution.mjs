@@ -86,6 +86,19 @@ export function websiteExecutionRequest(detail) {
   });
 }
 
+export function websiteExecutionProvisionRequest(value) {
+  if (!exactKeys(value, ["quoteRequestId", "idempotencyKey"])
+    || !UUID.test(String(value.quoteRequestId || ""))
+    || !UUID.test(String(value.idempotencyKey || ""))) {
+    throw new Error("INVALID_WEBSITE_WORKSPACE_PROVISION_REQUEST");
+  }
+  return Object.freeze({
+    action: "provision_website_execution_workspace",
+    quote_request_id: value.quoteRequestId,
+    idempotency_key: value.idempotencyKey,
+  });
+}
+
 export function safeWebsiteExecutionLinks(repositoryOwner, repositoryName) {
   if (!GITHUB_SEGMENT.test(String(repositoryOwner || "")) ||
     !GITHUB_SEGMENT.test(String(repositoryName || ""))) {
@@ -147,12 +160,10 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || workspace.project_id !== expected.projectId
       || workspace.quote_request_id !== expected.quoteRequestId
       || (currentWorkspace
-        && (!["READY", "REPOSITORY_READY"].includes(workspace.workspace_state)
+        && (!["PENDING_REPOSITORY", "READY", "REPOSITORY_READY"].includes(workspace.workspace_state)
           || !UUID.test(String(workspace.provisioned_by || ""))
           || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null))
       || workspace.repository_provider !== "GITHUB"
-      || !GITHUB_SEGMENT.test(String(workspace.repository_owner || ""))
-      || !GITHUB_SEGMENT.test(String(workspace.repository_name || ""))
       || !BRANCH.test(String(workspace.default_branch || ""))
       || (workspace.preview_branch !== null && !BRANCH.test(String(workspace.preview_branch)))
       || (workspace.last_commit_sha !== null && !COMMIT_SHA.test(String(workspace.last_commit_sha)))
@@ -162,6 +173,17 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || !Number.isSafeInteger(workspace.binding_revision) || workspace.binding_revision < 1
       || !validTimestamp(workspace.created_at) || workspace.created_at === null
       || !validTimestamp(workspace.updated_at) || workspace.updated_at === null) {
+      throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
+    }
+    if (currentWorkspace && workspace.workspace_state === "PENDING_REPOSITORY") {
+      if (workspace.repository_owner !== null || workspace.repository_name !== null
+        || workspace.preview_branch !== null || workspace.preview_url !== null
+        || workspace.last_commit_sha !== null || workspace.last_commit_at !== null
+        || workspace.last_build_result !== null || workspace.last_build_at !== null) {
+        throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
+      }
+    } else if (!GITHUB_SEGMENT.test(String(workspace.repository_owner || ""))
+      || !GITHUB_SEGMENT.test(String(workspace.repository_name || ""))) {
       throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
     }
     workspace = {
@@ -195,6 +217,28 @@ export function websiteExecutionView(value) {
     });
   }
   const workspace = value.workspace;
+  if (workspace.workspace_state === "PENDING_REPOSITORY") {
+    return Object.freeze({
+      state: "pending_repository",
+      message: "Technische werkruimte is aangemaakt. Repository provisioning is nog niet uitgevoerd.",
+      modeLabel: value.mode === "PRE_PROJECT" ? "Voorlopig concept" : "Officieel project",
+      briefingLabel: value.briefing_status,
+      releaseLabel: value.commercially_released
+        ? "Commercieel vrijgegeven" : "Niet commercieel vrijgegeven",
+      repository: "Repository provisioning nog niet uitgevoerd",
+      branch: workspace.default_branch,
+      preview: "Preview nog niet beschikbaar",
+      production: productionUrl || "Production URL nog niet beschikbaar",
+      commit: "Nog geen commit geregistreerd",
+      buildResult: "PENDING",
+      links: Object.freeze({
+        github: null,
+        vscode: null,
+        preview: null,
+        production: productionUrl,
+      }),
+    });
+  }
   const links = safeWebsiteExecutionLinks(
     workspace.repository_owner,
     workspace.repository_name,

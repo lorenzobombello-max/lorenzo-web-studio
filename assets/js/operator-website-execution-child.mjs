@@ -5,14 +5,15 @@ import {
 import {
   createOperatorDossierAuthority,
   dossierReference,
-} from "./operator-dossiers.mjs";
+} from "./operator-dossiers.mjs?v=20260917-pre-project-workspace-r2";
 import {
   quoteRequestIdFromWebsiteExecutionSlot,
   validateWebsiteExecutionWorkspace,
+  websiteExecutionProvisionRequest,
   websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
-} from "./operator-website-execution.mjs?v=20260912-website-concept-pre-project-v1";
+} from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 import {
   projectRequirementsRequest,
   requirementsBoardSlot,
@@ -82,7 +83,8 @@ function childMarkup() {
         <div data-website-project-context><dt>Projectreferentie</dt><dd data-website-context="project"></dd></div>
         <div><dt>Toegewezen operator</dt><dd data-website-context="assignee"></dd></div>
       </dl>
-      <section class="website-execution__requirements" aria-labelledby="websiteRequirementsTitle">
+      <div class="website-execution__development" data-website-development tabindex="-1">
+      <section class="website-execution__requirements" data-website-requirements-panel aria-labelledby="websiteRequirementsTitle">
         <div><p class="eyebrow">Projectvereisten</p><h2 id="websiteRequirementsTitle">PROJECTVEREISTEN</h2></div>
         <p class="website-execution__requirements-empty" data-website-requirements-empty hidden></p>
         <div data-website-requirements-content>
@@ -107,7 +109,9 @@ function childMarkup() {
           <div class="website-execution__reference-wide"><dt>Laatste commit</dt><dd data-website-field="commit"></dd></div>
         </dl>
       </section>
+      </div>
       <nav class="website-execution__actions" aria-label="Website werkruimte acties">
+        <button type="button" class="primary-action primary-action--compact" data-website-action="provision" hidden>Technische werkruimte starten</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
         <a class="secondary-action" data-website-link="preview" target="_blank" rel="noopener noreferrer">Open Preview</a>
         <a class="secondary-action" data-website-link="vscode" target="_blank" rel="noopener noreferrer">Open in VS Code Web</a>
@@ -183,6 +187,9 @@ function renderChild(workspace, state) {
   setLink(workspace, "github", view.links.github);
   setLink(workspace, "preview", view.links.preview);
   setLink(workspace, "vscode", view.links.vscode);
+  workspace.querySelector("[data-website-action=\"provision\"]").hidden = !(
+    state.canProvision && context.mode === "PRE_PROJECT" && view.state === "empty"
+  );
   workspace.querySelector("[data-website-message]").textContent = "";
 }
 
@@ -240,8 +247,10 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         state: "ready",
         context,
         assignment,
+        projection,
         summary,
         view: websiteExecutionView(projection),
+        canProvision: identity.role === "owner",
       });
       currentSnapshot = nextSnapshot;
       renderChild(workspace, currentSnapshot);
@@ -273,10 +282,47 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     }
   }
 
+  async function provision(button) {
+    if (disposed || identity.role !== "owner"
+      || currentSnapshot?.context.mode !== "PRE_PROJECT"
+      || currentSnapshot?.projection.workspace !== null
+      || typeof options.requireAal2 !== "function") return false;
+    const confirmed = root.defaultView?.confirm(
+      "Technische werkruimte starten? Dit maakt alleen een interne werkruimte aan. Er ontstaat geen bestelling, factuur, betaling, publicatierecht of externe repository.",
+    );
+    if (!confirmed) return false;
+    button.disabled = true;
+    const message = workspace.querySelector("[data-website-message]");
+    try {
+      await options.requireAal2();
+      await authority.gateway(websiteExecutionProvisionRequest({
+        quoteRequestId: currentSnapshot.context.quoteRequestId,
+        idempotencyKey: crypto.randomUUID(),
+      }));
+      const refreshed = await refresh();
+      if (!refreshed || disposed) return false;
+      options.onInvalidate?.("dossiers");
+      message.textContent = "Technische werkruimte is gestart.";
+      return true;
+    } catch {
+      if (!disposed) {
+        button.disabled = false;
+        message.textContent = "Technische werkruimte kon niet veilig worden gestart.";
+      }
+      return false;
+    }
+  }
+
   const click = (event) => {
-    const action = event.target.closest?.("[data-website-action]")?.dataset.websiteAction;
+    const target = event.target.closest?.("[data-website-action]");
+    const action = target?.dataset.websiteAction;
     if (action === "refresh") void refresh();
-    if (action === "files") options.requestOpen?.("dossiers", "main");
+    if (action === "provision") void provision(target);
+    if (action === "files") {
+      const development = workspace.querySelector("[data-website-development]");
+      development?.scrollIntoView({ block: "start", behavior: "smooth" });
+      development?.focus({ preventScroll: true });
+    }
     if (action === "requirements" && currentSnapshot) {
       options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId));
     }

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { extname, join, normalize } from "node:path";
 import test from "node:test";
+import { chromium } from "@playwright/test";
 import {
+  websiteExecutionProvisionRequest,
   quoteRequestIdFromWebsiteExecutionSlot,
   safeWebsiteExecutionLinks,
   websiteRequirementsSummary,
@@ -10,6 +14,7 @@ import {
   websiteExecutionSlot,
   websiteExecutionView,
 } from "../assets/js/operator-website-execution.mjs";
+import { createOperatorDossierAuthority } from "../assets/js/operator-dossiers.mjs";
 import {
   requirementsChildContext,
 } from "../assets/js/operator-project-requirements-child.mjs";
@@ -27,6 +32,7 @@ const expected = {
   mode: "OFFICIAL_PROJECT",
 };
 const root = new URL("../", import.meta.url);
+const rootPath = decodeURIComponent(root.pathname).replace(/^\/(?:([A-Za-z]:))/, "$1");
 const read = (path) => readFile(new URL(path, root), "utf8");
 const base = {
   contract_version: 2,
@@ -120,6 +126,74 @@ const preProjectV2 = {
     message: "Requirements volgen na intake-sync.",
   },
 };
+
+test("PRE_PROJECT provisioning request accepts only the stable dossier locator", () => {
+  assert.deepEqual(websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "a1800000-0000-4000-8000-000000000009",
+  }), {
+    action: "provision_website_execution_workspace",
+    quote_request_id: quoteRequestId,
+    idempotency_key: "a1800000-0000-4000-8000-000000000009",
+  });
+  assert.throws(() => websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "invalid",
+    projectId,
+  }), /INVALID_WEBSITE_WORKSPACE_PROVISION_REQUEST/);
+});
+
+test("PRE_PROJECT provisioning passes through the shared caller-JWT gateway", async () => {
+  const requests = [];
+  const authority = createOperatorDossierAuthority({
+    functions: {
+      invoke: async (name, options) => {
+        requests.push({ name, body: options.body });
+        return { data: { ok: true, result: { created: true } }, error: null };
+      },
+    },
+  });
+  const request = websiteExecutionProvisionRequest({
+    quoteRequestId,
+    idempotencyKey: "a1800000-0000-4000-8000-000000000009",
+  });
+  assert.deepEqual(await authority.gateway(request), { created: true });
+  assert.deepEqual(requests, [{
+    name: "commercial-operator-command",
+    body: request,
+  }]);
+});
+
+test("PRE_PROJECT pending workspace is context-bound without fake repository data", () => {
+  const context = {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 1,
+    mode: "PRE_PROJECT",
+  };
+  const projection = validateWebsiteExecutionWorkspace({
+    ...preProjectV2,
+    workspace: currentWorkspaceFixture("PENDING_REPOSITORY", {
+      project_id: null,
+      repository_owner: null,
+      repository_name: null,
+      preview_branch: null,
+      preview_url: null,
+      last_commit_sha: null,
+      last_commit_at: null,
+      last_build_result: null,
+      last_build_at: null,
+    }),
+  }, context);
+  const view = websiteExecutionView(projection);
+  assert.equal(view.state, "pending_repository");
+  assert.equal(view.repository, "Repository provisioning nog niet uitgevoerd");
+  assert.equal(view.branch, "main");
+  assert.equal(view.production, "Production URL nog niet beschikbaar");
+  assert.equal(view.links.github, null);
+});
 
 function requirementsProjection(overrides = {}) {
   return {
@@ -548,22 +622,26 @@ test("Website Requirements summary has compact responsive no-overflow contracts"
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.website-execution__requirements-facts \{[^}]*grid-template-columns:1fr/);
 });
 
-test("Task 11 summary synchronization has one coherent source-only hard-refresh cache chain", async () => {
-  const token = "20260912-dossier-continuity-project-r1";
-  const sources = await Promise.all([
-    "operator/dashboard/index.html",
+test("PRE_PROJECT workspace release has one coherent active cache chain", async () => {
+  const token = "20260917-pre-project-workspace-r2";
+  const [windowPage, guard, registry, child, dossiers] = await Promise.all([
     "operator/window/index.html",
-    "assets/js/operator-dashboard-guard.mjs",
     "assets/js/operator-window-guard.mjs",
-    "assets/js/operator-workspace-master.mjs",
     "assets/js/operator-module-registry.mjs",
-    "assets/js/operator-website-execution.mjs",
     "assets/js/operator-website-execution-child.mjs",
-    "assets/js/operator-project-workspace-child.mjs",
+    "assets/js/operator-dossiers.mjs",
   ].map(read));
-  for (const source of sources) assert.equal(source.includes(token), true);
-  assert.equal(sources[0].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
-  assert.equal(sources[1].includes("operator-dashboard.css?v=20260912-dossier-continuity-project-r1"), true);
+  assert.equal(windowPage.includes(`operator-dashboard.css?v=${token}`), true);
+  assert.equal(windowPage.includes(`operator-window-guard.mjs?v=${token}`), true);
+  assert.equal(guard.includes(`operator-module-registry.mjs?v=${token}`), true);
+  assert.equal(registry.includes(`operator-website-execution-child.mjs?v=${token}`), true);
+  assert.equal(child.includes(`operator-website-execution.mjs?v=${token}`), true);
+  assert.equal(child.includes(`operator-dossiers.mjs?v=${token}`), true);
+  assert.equal(dossiers.includes(`operator-website-execution.mjs?v=${token}`), true);
+  assert.doesNotMatch(
+    registry,
+    /operator-website-execution-child\.mjs\?v=20260913-requirements-wiring-r1/,
+  );
 });
 
 test("PRE_PROJECT Website opens the existing Requirements managed sibling with the same work context", async () => {
@@ -592,4 +670,68 @@ test("PRE_PROJECT Website opens the existing Requirements managed sibling with t
     child,
     /action === "requirements"[^]*requestOpen\?\.\("dossiers", requirementsBoardSlot/,
   );
+});
+
+const provisionControlHarness = `<!doctype html><html><body><main data-dossiers-workspace></main><script type="module">
+window.setInterval = () => 1;
+window.clearInterval = () => {};
+const params = new URLSearchParams(location.search);
+const role = params.get("role") || "owner";
+const mode = params.get("mode") || "PRE_PROJECT";
+const hasWorkspace = params.get("workspace") === "present";
+const quoteRequestId = "${quoteRequestId}";
+const projectId = mode === "OFFICIAL_PROJECT" ? "${projectId}" : null;
+const conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
+const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
+const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z" } : null;
+const projection = { contract_version: 2, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
+const requirements = { contract_version: 1, quote_request_id: quoteRequestId, project_id: projectId, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", project_reference: projectId, assigned_operator: null }, board: null, items: [], empty_state: "NO_BOARD", readiness: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, active_requirement_id: null, active_item_number: null, ready_for_preview: false, readiness: "UNKNOWN", reason: "NO_BOARD" }, actions: { can_create_board: true, can_create_item: false, can_finalize: false } };
+const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_project_requirements_board") result = requirements; return { data: { ok: true, result }, error: null }; } } };
+const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
+window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => {} });
+</script></body></html>`;
+
+function serveProvisionControlHarness() {
+  const server = createServer(async (request, response) => {
+    if (request.url?.startsWith("/__provision-control-harness")) {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      response.end(provisionControlHarness);
+      return;
+    }
+    const relative = normalize(decodeURIComponent(request.url.split("?")[0])).replace(/^[/\\]+/, "");
+    if (relative.includes("..")) { response.writeHead(403).end(); return; }
+    try {
+      const body = await readFile(join(rootPath, relative));
+      response.setHeader("content-type", extname(relative) === ".mjs" ? "text/javascript" : "text/css");
+      response.end(body);
+    } catch { response.writeHead(404).end(); }
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
+test("provision control follows owner PRE_PROJECT empty-workspace render state", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const address = server.address();
+    const scenarios = [
+      { query: "role=owner&mode=PRE_PROJECT&workspace=null", visible: true },
+      { query: "role=operator&mode=PRE_PROJECT&workspace=null", visible: false },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=present", visible: false },
+      { query: "role=owner&mode=OFFICIAL_PROJECT&workspace=null", visible: false },
+    ];
+    for (const scenario of scenarios) {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${address.port}/__provision-control-harness?${scenario.query}`);
+      await page.waitForFunction(() => document.querySelector("[data-website-content]")?.hidden === false);
+      const control = page.locator('[data-website-action="provision"]');
+      assert.equal(await control.count(), 1, "provision control must exist in the rendered child DOM");
+      assert.equal(await control.textContent(), "Technische werkruimte starten");
+      assert.equal(await control.isVisible(), scenario.visible, scenario.query);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

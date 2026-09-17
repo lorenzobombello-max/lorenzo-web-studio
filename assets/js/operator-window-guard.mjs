@@ -1,7 +1,7 @@
 import { requireAuthorizedOperator, watchOperatorSession } from "./operator-auth-core.mjs?v=20260902-login-stability";
 import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-stability";
 import { createOperatorMfaDialog, isMfaOperatorSubject } from "./operator-mfa.mjs?v=20260904-aal2-r1";
-import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1";
+import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260917-pre-project-workspace-r2";
 import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260913-user-gesture-handoff-r1";
 import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";
