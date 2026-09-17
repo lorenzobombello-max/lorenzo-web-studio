@@ -35,8 +35,9 @@
 Planning inspection on 2026-09-17 established:
 
 ```text
-PLAN_BASE_HEAD=c23479676a3a48a19cfe70fcf2a13ddf94080c82
-PLAN_BASE_PARENT=f94888318c74e79bf5e148d81d3eb892907798b8
+ORIGINAL_PLAN_SPEC_HEAD=c23479676a3a48a19cfe70fcf2a13ddf94080c82
+PREVIOUS_PLAN_COMMIT=270e60f904503af96bbb1a78ffb72c1ce010a132
+AMENDED_SPEC_HEAD=325fadf50d3c17ffa89b9d77bbd71cb6ae227727
 REMOTE_MAIN_HEAD=f94888318c74e79bf5e148d81d3eb892907798b8
 DEPLOYED_V118_SOURCE=7c7672980d31a92fea124727b41ca5eef6eec005
 DEPLOYED_V118_PARENT=f94888318c74e79bf5e148d81d3eb892907798b8
@@ -46,23 +47,28 @@ The reviewed baseline does not contain the v118 gateway delta. It also does not 
 
 | Commit | Required pre-existing responsibility | Files Phase A may consume |
 |---|---|---|
-| `8bd8f04c13d8fae856ee5088f7f6570e9ce20576` | Versioned repository contract | `repository-provisioning.ts` types only; no command invocation |
-| `392e56379c73385a0137a960d615ca7d54056727` | GitHub App configuration | `github-app-config.ts` |
-| `96ced670d823ae7f1dd0cc8dcb7af7f9b97a80ba` | Repository-ID-scoped App token broker | `github-app-token.ts` |
-| `879e1a41840106368b3a4be4757ee07ac47ac29a` | Bounded GitHub HTTP transport | `github-http.ts` |
-| `c3619f0d6185b98cfb92c0af390ce0ecf5bb729f` | Repository lifecycle schema | `20260914090000_add_website_repository_provisioning_v1.sql` read model |
-| `2f4c193a5427b599f7b7b580ca513e2c9c451618` | Canonical claim/binding RPCs | same migration's binding fields and constraints |
-| `ffd65a6b6cfab2595d67f3724b5c4c913db6799a` | Reconciliation/quarantine authority | same migration's normalized lifecycle state |
-| `4dd420b4510df55642a8b1e2e1b91dfc4a61155e` | Hardened private-key/token/ref/provider tests | `github-app-private-key.ts`, `github-installation-token.ts`, `github-ref-read-diagnostic.ts`, and tests for the read primitives |
+| `8bd8f04c13d8fae856ee5088f7f6570e9ce20576` | Versioned repository contract | `supabase/functions/_shared/repository-provisioning.ts` types only; no command invocation |
+| `392e56379c73385a0137a960d615ca7d54056727` | GitHub App configuration | `supabase/functions/_shared/github-app-config.ts` |
+| `96ced670d823ae7f1dd0cc8dcb7af7f9b97a80ba` | Repository-ID-scoped App token broker | `supabase/functions/_shared/github-app-token.ts` |
+| `879e1a41840106368b3a4be4757ee07ac47ac29a` | Bounded GitHub HTTP transport | `supabase/functions/_shared/github-http.ts` |
+| `c3619f0d6185b98cfb92c0af390ce0ecf5bb729f` | Repository lifecycle schema | `supabase/migrations/20260914090000_add_website_repository_provisioning_v1.sql` read model |
+| `2f4c193a5427b599f7b7b580ca513e2c9c451618` | Canonical claim/binding RPCs | `supabase/migrations/20260914090000_add_website_repository_provisioning_v1.sql` binding fields and constraints |
+| `ffd65a6b6cfab2595d67f3724b5c4c913db6799a` | Reconciliation/quarantine authority | `supabase/migrations/20260914090000_add_website_repository_provisioning_v1.sql` normalized lifecycle state |
+| `4dd420b4510df55642a8b1e2e1b91dfc4a61155e` | Hardened private-key/token/ref/provider tests | `supabase/functions/_shared/github-app-private-key.ts`, `supabase/functions/_shared/github-installation-token.ts`, `supabase/functions/_shared/github-ref-read-diagnostic.ts`, and tests for the read primitives |
 
 These commits also contain repository-provisioning and test-island behavior outside Phase A. This plan never integrates that range itself.
+
+```text
+EXECUTABLE_PREREQUISITE_MODE=EXACT_ANCESTRY_ONLY
+NO_SECOND_CREATE=HARD
+```
 
 Execution has two mandatory stop gates:
 
 1. Re-prove and preserve v118 before editing either commercial gateway file.
-2. Obtain a controller-approved implementation baseline on which every exact commit in the prerequisite table is an ancestor. It must supply canonical `repository_external_id`, node/marker identity, `REPOSITORY_READY`, binding revision, and the audited read-only GitHub App primitives. If any ancestry proof fails, stop after v118 reconciliation. Do not infer patch equivalence, recreate a second binding authority, or import Task13 create/write/provision operations as Phase A work.
+2. Obtain a controller-approved implementation baseline on which every exact commit in the prerequisite table is an ancestor. It must supply canonical `repository_external_id`, node/marker identity, `REPOSITORY_READY`, binding revision, and the audited read-only GitHub App primitives. If any ancestry proof fails, Phase A stops after v118 reconciliation.
 
-The separately approved prerequisite may forward-port the reviewed read-only portions of `github-app-config.ts`, `github-app-private-key.ts`, `github-installation-token.ts`, `github-app-token.ts`, and `github-http.ts`, but its public operation union injected into this feature must expose only token exchange, repository metadata, ref, commit, tree, blob, and marker reads. `CREATE_REPOSITORY`, `CREATE_BLOB`, `CREATE_TREE`, `CREATE_COMMIT`, `CREATE_REF`, `UPDATE_REF`, `WRITE_PROJECT_MARKER`, and every provisioning service/store/router remain unreachable and absent from the Phase A dependency graph.
+This Phase A plan does not forward-port, cherry-pick subsets, copy source, or accept inferred, squashed, patch-ID, or patch-equivalent prerequisites. None of those mechanisms satisfies the ancestry gate. If exact ancestry cannot be obtained, a separate controller-approved prerequisite integration plan must produce a new reviewed baseline SHA; this Phase A plan must then be revalidated against that exact baseline before execution. No second binding/create authority may be reconstructed. `CREATE_REPOSITORY`, `CREATE_BLOB`, `CREATE_TREE`, `CREATE_COMMIT`, `CREATE_REF`, `UPDATE_REF`, `WRITE_PROJECT_MARKER`, and every provisioning service/store/router remain unreachable and absent from the Phase A dependency graph.
 
 ## Current Source Map
 
@@ -97,23 +103,23 @@ The separately approved prerequisite may forward-port the reviewed read-only por
 ### E/L. GitHub/provider read infrastructure
 
 - The reviewed `origin/main`/`c234796` tree has no GitHub provider modules.
-- The separate reviewed Task13 history proves useful patterns but is not an implementation dependency until the prerequisite gate is approved:
-  - `github-app-config.ts`: strict environment/config parsing and non-enumerable private key.
-  - `github-app-token.ts`: repository-ID-scoped installation token and `contents: read` permission.
-  - `github-http.ts`: injected abort-signal support, bounded responses, redirect denial, normalized HTTP errors, and validated metadata/ref/tree/blob results; Phase A owns one 10-second operation deadline outside this transport.
-  - `github-repository-runtime.ts`: server-selected ref/tree/blob reads, but it is coupled to provisioning and must not be imported directly by Phase A.
+- The separate reviewed Task13 history proves useful patterns but becomes an implementation dependency only when every required commit is an exact ancestor of the selected baseline:
+  - `supabase/functions/_shared/github-app-config.ts`: strict environment/config parsing and non-enumerable private key.
+  - `supabase/functions/_shared/github-app-token.ts`: repository-ID-scoped installation token and `contents: read` permission.
+  - `supabase/functions/_shared/github-http.ts`: injected abort-signal support, bounded responses, redirect denial, normalized HTTP errors, and validated metadata/ref/tree/blob results; Phase A owns one 10-second operation deadline outside this transport.
+  - `supabase/functions/_shared/github-repository-runtime.ts`: server-selected ref/tree/blob reads, but it is coupled to provisioning and must not be imported directly by Phase A.
 - Phase A adds a focused provider service over approved read-only primitives. It must not depend on `RepositoryProvisioningServiceV2`, provisioning stores, test-island handlers, or any write operation.
 
 ### F/K. Repository binding/read models and lifecycle
 
 - `supabase/migrations/20260912132000_reanchor_website_execution_workspace_v1.sql` establishes stable `website_work_context_id`, including `project_id = null` for PRE_PROJECT.
 - Deployed commit `7c76729` adds `workspace_state`, provisioning actor/time, `PENDING_REPOSITORY`, legacy `READY`, and `get_website_execution_workspace_v2`.
-- The separately reviewed Task13 migration `20260914090000_add_website_repository_provisioning_v1.sql` establishes `repository_external_id`, node identity, `REPOSITORY_PROVISIONING`, `REPOSITORY_READY`, `REPOSITORY_FAILED`, and operation states including `BLOCKED` and `QUARANTINED`. Phase A may consume an approved integrated version of these authorities but must not invoke their create/provision/retry/finalize commands.
+- The separately reviewed Task13 migration `supabase/migrations/20260914090000_add_website_repository_provisioning_v1.sql` establishes `repository_external_id`, node identity, `REPOSITORY_PROVISIONING`, `REPOSITORY_READY`, `REPOSITORY_FAILED`, and operation states including `BLOCKED` and `QUARANTINED`. Phase A may consume it only from a selected baseline satisfying exact ancestry and must not invoke its create/provision/retry/finalize commands.
 
 ### G. Caller JWT / OWNER / AAL2 authority
 
-- `handler.ts` rejects missing/expired/service-role JWTs and calls `verifyUser(jwt)`.
-- `index.ts` propagates the human JWT through `clientFor(jwt)`.
+- `supabase/functions/commercial-operator-command/handler.ts` rejects missing/expired/service-role JWTs and calls `verifyUser(jwt)`.
+- `supabase/functions/commercial-operator-command/index.ts` propagates the human JWT through `clientFor(jwt)`.
 - Existing SQL authorities resolve `auth.uid()` to `commercial_operators`, status, role, and `lws_internal.assert_operator_aal2_v1()`.
 - New Project Files acquisition must be an authenticated caller-JWT RPC requiring ACTIVE owner and AAL2. A service-role client cannot acquire file authority.
 
@@ -131,7 +137,7 @@ The separately approved prerequisite may forward-port the reviewed read-only por
 
 ### M. Historical project-file design
 
-- The approved spec at `c234796` is authoritative.
+- The amended authoritative spec is commit `325fadf50d3c17ffa89b9d77bbd71cb6ae227727` at `docs/superpowers/specs/2026-09-17-website-execution-build-workspace-design.md`.
 - Historical Website Execution Tasks 16-18 proposed a local launcher, server file reads, and internal file view but were never implemented. Phase A reuses only the internal read-only intent; launcher and build concepts remain excluded.
 
 ## File Structure / Responsibility Map
@@ -143,17 +149,17 @@ RESPONSIBILITY=Preserve deployed v118 PRE_PROJECT workspace provisioning and `ge
 WHY_EXISTING_FILE_OR_NEW_FILE=Exact six-file scope from audited commit `7c76729`; integrate the commit unchanged under Case A.
 PUBLIC_INTERFACE=`provision_website_execution_workspace_v1(uuid,uuid)`, `get_website_execution_workspace_v2(uuid)`.
 
-FILE=`supabase/functions/_shared/github-app-config.ts`, `github-app-private-key.ts`, `github-installation-token.ts`, `github-app-token.ts`, `github-http.ts`
+FILE=`supabase/functions/_shared/github-app-config.ts`, `supabase/functions/_shared/github-app-private-key.ts`, `supabase/functions/_shared/github-installation-token.ts`, `supabase/functions/_shared/github-app-token.ts`, `supabase/functions/_shared/github-http.ts`
 RESPONSIBILITY=Approved GitHub App config, signing/token exchange, redirect/timeout/size bounds, and read-only metadata/ref/commit/tree/blob operations.
-WHY_EXISTING_FILE_OR_NEW_FILE=Reviewed in separate Task13 history but absent from current main; prerequisite integration must forward-port only read-safe dependencies and tests.
+WHY_EXISTING_FILE_OR_NEW_FILE=Existing only on an approved selected baseline where every prerequisite commit is an exact ancestor; this plan does not forward-port or reconstruct these files.
 PUBLIC_INTERFACE=`loadGitHubAppConfig`, `createGitHubAppTokenBroker`, `createGitHubHttpClient`, read-only `GitHubHttpOperation` variants.
 
 ### Phase A files
 
 FILE=`supabase/migrations/20260917100000_add_website_project_files_read_authority_v1.sql`
-RESPONSIBILITY=Add caller-JWT owner+AAL2 authority projection, exact 60-second rolling rate accounting with five-minute record retention, 15-second concurrency leases, safe repository-operation status projection, and release RPC without granting direct table access.
+RESPONSIBILITY=Add caller-JWT owner+AAL2 authority projection, exact 60-second rolling rate accounting with five-minute record retention, 15-second concurrency leases, safe repository-operation status projection, new forward-only `get_website_execution_workspace_v3(uuid)`, and release RPC without granting direct table access while preserving v2 unchanged.
 WHY_EXISTING_FILE_OR_NEW_FILE=New forward-only authority; existing committed migrations remain immutable.
-PUBLIC_INTERFACE=`acquire_website_project_files_read_v1(uuid,text)`, `release_website_project_files_read_v1(uuid)`, revised Website Execution read contract version 3.
+PUBLIC_INTERFACE=`acquire_website_project_files_read_v1(uuid,text)`, `release_website_project_files_read_v1(uuid)`, `get_website_execution_workspace_v3(uuid)`; existing `get_website_execution_workspace_v2(uuid)` remains unchanged.
 
 FILE=`supabase/tests/website_project_files_phase_a_v1.sql`
 RESPONSIBILITY=pgTAP contract for caller authority, PRE_PROJECT, lifecycle gates, binding identity, rate/concurrency bounds, cross-context denial, forced RLS, and zero repository-operation creation.
@@ -161,9 +167,9 @@ WHY_EXISTING_FILE_OR_NEW_FILE=New focused executable SQL specification.
 PUBLIC_INTERFACE=Test-only synthetic `CONTEXT_A`/`CONTEXT_B` fixtures and assertions.
 
 FILE=`supabase/functions/_shared/website-project-files-policy.ts`
-RESPONSIBILITY=Normalize paths, reject unsafe object types, classify blocked names/content, enforce UTF-8/binary/size rules, and construct safe text metadata.
-WHY_EXISTING_FILE_OR_NEW_FILE=New focused pure module keeps policy out of `handler.ts` and provider transport.
-PUBLIC_INTERFACE=`normalizeWebsiteProjectPath`, `classifyWebsiteProjectPath`, `inspectWebsiteProjectFile`, `WebsiteProjectFilesPolicyError`.
+RESPONSIBILITY=Normalize paths, project metadata-only directory readability, map known unsupported entries inertly, reject unknown/malformed objects, classify blocked names/content, enforce post-read UTF-8/binary/size rules, and construct safe text results.
+WHY_EXISTING_FILE_OR_NEW_FILE=New focused pure module keeps policy out of `supabase/functions/commercial-operator-command/handler.ts` and provider transport.
+PUBLIC_INTERFACE=`normalizeWebsiteProjectPath`, `classifyWebsiteProjectPath`, `classifyWebsiteProjectDirectoryEntry`, `inspectWebsiteProjectFile`, `WebsiteProjectFilesPolicyError`.
 
 FILE=`supabase/functions/_shared/website-project-files-policy.test.ts`
 RESPONSIBILITY=Unit-test every path, sensitive-file, encoding, binary, and size boundary.
@@ -172,7 +178,7 @@ PUBLIC_INTERFACE=None; imports the policy exports.
 
 FILE=`supabase/functions/_shared/website-project-files-cursor.ts`
 RESPONSIBILITY=Sign and verify canonical five-minute HMAC cursors bound to actor/context/repository/binding/commit/directory/tree/offset.
-WHY_EXISTING_FILE_OR_NEW_FILE=Existing `operator-cursor.ts` is dossier-filter-specific and has a 15-minute payload; reuse its cryptographic pattern, not its incompatible DTO.
+WHY_EXISTING_FILE_OR_NEW_FILE=Existing `supabase/functions/_shared/operator-cursor.ts` is dossier-filter-specific and has a 15-minute payload; reuse its cryptographic pattern, not its incompatible DTO.
 PUBLIC_INTERFACE=`signWebsiteProjectFilesCursor`, `verifyWebsiteProjectFilesCursor`, `WebsiteProjectFilesCursorError`.
 
 FILE=`supabase/functions/_shared/website-project-files-cursor.test.ts`
@@ -217,7 +223,7 @@ PUBLIC_INTERFACE=None.
 
 FILE=`assets/js/operator-website-project-files.mjs`
 RESPONSIBILITY=Build exact requests, validate list/read DTOs, own in-memory tree/file/snapshot state, render inert DOM, and clear state on authority/context/lifecycle changes.
-WHY_EXISTING_FILE_OR_NEW_FILE=New focused frontend controller prevents `operator-website-execution-child.mjs` from becoming a files monolith.
+WHY_EXISTING_FILE_OR_NEW_FILE=New focused frontend controller prevents `assets/js/operator-website-execution-child.mjs` from becoming a files monolith.
 PUBLIC_INTERFACE=`websiteProjectDirectoryRequest`, `websiteProjectFileRequest`, `validateWebsiteProjectDirectory`, `validateWebsiteProjectFile`, `createWebsiteProjectFilesController`.
 
 FILE=`assets/js/operator-website-execution.mjs`
@@ -294,11 +300,11 @@ export type WebsiteProjectFilesAuthority = Readonly<{
 }>;
 ```
 
-`repositoryRef` is the database-authorized full ref such as `heads/main`; provider metadata is validation evidence and cannot select or replace it. `refLabel` is its safe browser label. `acquire_website_project_files_read_v1(quote_request_id, read_kind)` returns this only to the Edge caller-JWT transport after active OWNER+AAL2 and all bindings are proven. `read_kind` is exactly `DIRECTORY` or `FILE`; the database counts timestamps in the half-open 60-second interval `(clock_timestamp() - interval '60 seconds', clock_timestamp()]`, enforces 30 DIRECTORY and 10 FILE acquisitions per actor/context, retains accounting rows for five minutes only for cleanup/audit, and permits at most four unexpired leases per actor. `release_website_project_files_read_v1(lease_id)` accepts only the same caller, is idempotent for an already released/expired same-caller lease, and returns no authority. The `index.ts` runtime composition root is the single lease owner: acquire once before calling the service and release once in `finally`; the service never acquires or releases a lease.
+`repositoryRef` is the database-authorized full ref such as `heads/main`; provider metadata is validation evidence and cannot select or replace it. `refLabel` is its safe browser label. `acquire_website_project_files_read_v1(quote_request_id, read_kind)` returns this only to the Edge caller-JWT transport after active OWNER+AAL2 and all bindings are proven. `read_kind` is exactly `DIRECTORY` or `FILE`; the database counts timestamps in the half-open 60-second interval `(clock_timestamp() - interval '60 seconds', clock_timestamp()]`, enforces 30 DIRECTORY and 10 FILE acquisitions per actor/context, retains accounting rows for five minutes only for cleanup/audit, and permits at most four unexpired leases per actor. `release_website_project_files_read_v1(lease_id)` accepts only the same caller, is idempotent for an already released/expired same-caller lease, and returns no authority. The `supabase/functions/commercial-operator-command/index.ts` runtime composition root is the single lease owner: acquire once before calling the service and release once in `finally`; the service never acquires or releases a lease.
 
 ### Website Execution contract v3
 
-The existing root keys remain closed and `contract_version` becomes 3. The exact workspace object is:
+The existing `get_website_execution_workspace_v2(uuid)` RPC and its response remain unchanged for backward compatibility. Phase A adds the forward-only `get_website_execution_workspace_v3(uuid)` RPC in the new migration; v3 alone owns `WebsiteExecutionWorkspaceV3`. During Phase A implementation, the commercial operator Website Execution read route switches to v3. The existing root keys remain closed and v3 returns `contract_version: 3`. The exact workspace object is:
 
 ```ts
 type WebsiteExecutionWorkspaceV3 = Readonly<{
@@ -332,7 +338,20 @@ type WebsiteExecutionWorkspaceV3 = Readonly<{
 
 The root remains exactly `contract_version`, `mode`, `quote_request_id`, `concept_id`, `project_id`, `website_work_context_id`, `context_revision`, `briefing_status`, `commercially_released`, `project`, `start_gate`, `workspace`, and `requirements`. `repository_navigation_url` is null unless it is an allowlisted `https://github.com/<owner>/<repository>` projection. `project_files_read` is true only for `REPOSITORY_READY`, operation `COMPLETE`, verified binding, and a caller eligible to attempt the separately AAL2-guarded action.
 
-Before constructing this exact DTO, SQL normalizes any unrecognized persisted repository operation value to null and records no raw value in the response. Recovery projection is then a total precedence function evaluated top to bottom:
+Before constructing this exact DTO, SQL normalizes any unrecognized persisted repository operation value to null and records no raw value in the response. Failure category is an independent server projection evaluated with this total precedence:
+
+| Priority | Repository operation | Failure category |
+|---|---|---|
+| 1 | `QUARANTINED` | `QUARANTINED` |
+| 2 | `BLOCKED` | `BLOCKED` |
+| 3 | `TERMINAL_FAILED` | `TERMINAL` |
+| 4 | `RETRYABLE_FAILED` or `RETRY_SCHEDULED` | `RETRYABLE` |
+| 5 | `CLAIMED`, `CREATING`, `EXTERNAL_CREATED`, `VERIFYING`, or `COMPLETE` | null |
+| 6 | null, including an unknown operation normalized to null | null |
+
+For `REPOSITORY_FAILED` without a recognized failure operation, the category is null. For contradictory workspace/operation combinations, a recognized failure operation wins according to the table; otherwise the category is null. A null category does not mean success and never enables `project_files_read`.
+
+Recovery guidance is a separate server projection evaluated top to bottom:
 
 | Priority | Workspace/operation condition | Guidance | Files |
 |---|---|---|---|
@@ -345,7 +364,7 @@ Before constructing this exact DTO, SQL normalizes any unrecognized persisted re
 | 7 | workspace `REPOSITORY_READY` + operation `COMPLETE` + verified binding | null | true for owner-eligible caller only |
 | 8 | every null, unknown, or contradictory combination | `RECONCILIATION_REQUIRED` | false |
 
-Task 3 pgTAP and Task 7 frontend fixtures enumerate the Cartesian product of every declared workspace state with every declared operation state plus null and one unknown value, then assert this precedence table. No browser branch invents recovery guidance.
+Task 3 pgTAP and Task 7 frontend fixtures enumerate the Cartesian product of every declared workspace state with every declared operation state plus null and one unknown value, then assert both precedence tables. `repository_failure_category` and `repository_recovery_guidance` are independent server projections. No browser branch infers failure category or invents recovery guidance.
 
 ### Cursor
 
@@ -422,9 +441,9 @@ export type WebsiteProjectFilesService = Readonly<{
 
 `WebsiteProjectFilesListInput` is exactly `{ authority, path, cursor }`; `WebsiteProjectFileReadInput` is exactly `{ authority, path }`. `service.list()` resolves a snapshot exactly once for a new listing and passes `directoryTreeSha: null`; cursor continuation verifies and passes its signed `commitSha`, `rootTreeSha`, and non-null `directoryTreeSha` to direct tree listing without resolving the mutable ref or retraversing a changed path. `service.read()` resolves a snapshot exactly once and passes that immutable `commitSha`/`rootTreeSha` to `provider.readFile()`; `provider.readFile()` never resolves a branch.
 
-The `index.ts` lease wrapper creates one `AbortSignal.timeout(10000)` for the entire acquisition-to-result operation and injects it through service/provider/HTTP calls. Every nested call consumes the remaining single deadline; no call starts or retries after abort. This operation-wide 10-second deadline is strictly below the 15-second lease lifetime, so an active request cannot outlive its concurrency lease.
+The `supabase/functions/commercial-operator-command/index.ts` lease wrapper creates one `AbortSignal.timeout(10000)` for the entire acquisition-to-result operation and injects it through service/provider/HTTP calls. Every nested call consumes the remaining single deadline; no call starts or retries after abort. This operation-wide 10-second deadline is strictly below the 15-second lease lifetime, so an active request cannot outlive its concurrency lease.
 
-`resolveSnapshot` obtains a repository-ID-scoped installation token with metadata/content read only, verifies metadata identity/private repository, validates that `authority.repositoryRef` is the authorized binding ref and that its branch label agrees with metadata without deriving authority from metadata, resolves only `authority.repositoryRef`, validates the commit, reads `.lws/project.json` internally at that same commit, and compares context/external ID/marker operation. Directory traversal reads one non-recursive tree per normalized segment. Symlink modes, `commit` entries (submodules/Git links), redirects, wrong canonical paths, and tree truncation fail closed.
+`resolveSnapshot` obtains a repository-ID-scoped installation token with metadata/content read only, verifies metadata identity/private repository, validates that `authority.repositoryRef` is the authorized binding ref and that its branch label agrees with metadata without deriving authority from metadata, resolves only `authority.repositoryRef`, validates the commit, reads `.lws/project.json` internally at that same commit, and compares context/external ID/marker operation. Directory traversal reads one non-recursive tree per normalized segment. Known structurally valid symlink modes and `commit` entries (submodules/Git links) become inert non-selectable `UNSUPPORTED` directory entries and are never followed. Unknown object types, invalid mode/type combinations, malformed metadata, redirects, wrong canonical paths, root escapes, and tree truncation fail the entire current request closed; no partial unsafe listing is returned.
 
 ### Success DTOs
 
@@ -438,7 +457,7 @@ type WebsiteProjectDirectoryEntry =
       path: string;
       kind: "DIRECTORY" | "FILE" | "UNSUPPORTED";
       size_bytes: number | null;
-      readability: "DIRECTORY" | "TEXT" | "BINARY_UNSUPPORTED" | "SENSITIVE_BLOCKED" | "UNSUPPORTED";
+      readability: "DIRECTORY" | "READABLE_CANDIDATE" | "TOO_LARGE" | "SENSITIVE_BLOCKED" | "UNSUPPORTED";
       selectable: boolean;
     }>
   | Readonly<{
@@ -461,6 +480,21 @@ type WebsiteProjectDirectoryResult = Readonly<{
   next_cursor: string | null;
 }>;
 ```
+
+Directory listings contain metadata only and use this total projection:
+
+| Provider/tree fact | Exact directory result |
+|---|---|
+| Tree/directory | `kind=DIRECTORY`, `readability=DIRECTORY`, `selectable=true` |
+| Regular safe-path blob with declared size at most 1 MiB | `kind=FILE`, `readability=READABLE_CANDIDATE`, `selectable=true` |
+| Regular safe-path blob with null/unknown provider size | `kind=FILE`, `readability=READABLE_CANDIDATE`, `selectable=true`; enforce 1 MiB authoritatively during read |
+| Regular safe-path blob with declared size greater than 1 MiB | `kind=FILE`, `readability=TOO_LARGE`, `selectable=false` |
+| Blocked credential pathname | Exact redacted `BLOCKED_CREDENTIAL`; no path, original filename, size, object SHA/ID, cursor target, or selectable action |
+| Known structurally valid symlink | `kind=UNSUPPORTED`, `readability=UNSUPPORTED`, `selectable=false` |
+| Known structurally valid submodule/Git-link/commit entry | `kind=UNSUPPORTED`, `readability=UNSUPPORTED`, `selectable=false` |
+| Unknown object/mode, invalid mode/type, malformed metadata, canonical-path mismatch, redirect, or root escape | Fail the entire current request closed; return no partial unsafe entry |
+
+`TEXT` is a post-read success fact only after actual bytes pass size, strict UTF-8, binary, and sensitive-content checks. `BINARY_UNSUPPORTED`, `UNSUPPORTED_ENCODING`, `SENSITIVE_FILE_BLOCKED`, and `FILE_TOO_LARGE` are authoritative file-read outcomes/errors, not guesses from ordinary tree metadata. Only a provider-declared oversize blob yields pre-read `TOO_LARGE`; a blocked pathname yields the redacted blocked variant.
 
 File `result` is exact:
 
@@ -486,7 +520,11 @@ The gateway wraps either as `{ ok: true, code: "APPLICATION_ACTION_ACCEPTED", re
 
 ### Deterministic sensitive classifier
 
-`classifyWebsiteProjectPath` compares lowercase normalized basenames and path segments. It blocks the exact names/directories in the approved spec; provider-token files mean exact `.github-token`, `.gitlab-token`, `.npm-token`, `github-token`, and filenames matching `^(?:github|gitlab|npm|provider)[._-](?:token|credentials?)(?:\.[a-z0-9._-]+)?$`. Listings replace credential-store entries with the exact `BLOCKED_CREDENTIAL` union variant above; that variant has no path, size, object ID, cursor target, or selectable action.
+`classifyWebsiteProjectPath` compares normalized path segments and compares the normalized basename case-insensitively. It blocks the exact names/directories in the approved spec. Provider-token basenames use the semantic rule: optional leading `.`, provider `github|gitlab|npm|provider`, optional separator `-|_|.`, literal `token`, and an optional suffix beginning with `-`, `_`, or `.` and otherwise containing only ASCII letters, digits, `.`, `_`, or `-`. The equivalent implementation regex may be `^\.?(?:github|gitlab|npm|provider)(?:[-_.]?token)(?:[-_.][a-z0-9][a-z0-9._-]*)?$` with case-insensitive matching; semantic examples are authoritative.
+
+Provider-token tests must block every amended-spec example: `.github-token`, `.gitlab-token`, `.npm-token`, `.provider-token`, `github-token`, `gitlab-token`, `npm-token`, `provider-token`, `github_token`, `github.token`, `githubtoken`, `.github-token.local`, `github-token.backup`, `gitlab_token_prod`, `npm.token.dev`, `PROVIDER-TOKEN`, and `.GITHUB-TOKEN`. They must allow every amended-spec example: `github-actions.yml`, `provider-config.json`, `npm-package.json`, `tokenizer.ts`, `github-tokenizer.txt`, `gitlab-ci.yml`, `package.json`, and `build-token-view.mjs`. Add separator, suffix, first-suffix-character, case, and tokenizer near-miss boundaries. Exact independently blocked `.npmrc` and `.git-credentials` remain blocked.
+
+Listings replace every blocked credential/sensitive pathname with the exact `BLOCKED_CREDENTIAL` union variant above; that variant has no original filename, path, size, object ID/SHA, cursor target, or selectable action.
 
 The deterministic V1 local classifier first scans decoded text without logging it. `SENSITIVE` means a PEM private-key header; an HTTPS/SSH remote containing user-info or a token; a token matching `ghp_[A-Za-z0-9]{36}`, `github_pat_[A-Za-z0-9_]{82}`, `glpat-[A-Za-z0-9_-]{20,}`, or `npm_[A-Za-z0-9]{36}`; or an assignment whose normalized key matches `password|passwd|secret|token|api_key|apikey|private_key|client_secret` and whose value is neither empty nor one of `example`, `sample`, `dummy`, `changeme`, `replace-me`, or `${...}`. Tests cover each exact minimum, minimum-minus-one, and boundary characters. Null bytes, forbidden control-byte density above 1%, or strict UTF-8 failure are binary/encoding failures before this classifier. Any classifier exception maps to `UNAVAILABLE`; no partial content or matched fragment leaves the service.
 
@@ -518,7 +556,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
 - [ ] Fetch and record `git rev-parse origin/main`, `git rev-parse HEAD`, `git status --short`, `git rev-parse 7c767298^`, `git show --format=fuller --stat 7c767298`, and `git diff --check 7c767298^ 7c767298`.
 - [ ] CASE A requires `origin/main = 7c767298^ = f94888318c74e79bf5e148d81d3eb892907798b8`, clean worktree, and unchanged six-file commit scope. Cherry-pick the exact `7c767298...` commit; do not manually reconstruct it.
-- [ ] CASE B applies if `origin/main` moved or the parent/scope differs. Stop before backend editing. Create a separate controller-reviewed three-way reconciliation of OLD BASE `f948883...`, CURRENT MAIN, and DEPLOYED SOURCE `7c76729`; do not checkout handler/index from either side wholesale.
+- [ ] CASE B applies if `origin/main` moved or the parent/scope differs. Stop before backend editing. Create a separate controller-reviewed three-way reconciliation of OLD BASE `f948883...`, CURRENT MAIN, and DEPLOYED SOURCE `7c76729`; do not checkout `supabase/functions/commercial-operator-command/handler.ts` or `supabase/functions/commercial-operator-command/index.ts` from either side wholesale.
 - [ ] Under Case A, require this exact v118 file list before cherry-pick:
 
   ```text
@@ -543,6 +581,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
   ```powershell
   @('8bd8f04c13d8fae856ee5088f7f6570e9ce20576','392e56379c73385a0137a960d615ca7d54056727','96ced670d823ae7f1dd0cc8dcb7af7f9b97a80ba','879e1a41840106368b3a4be4757ee07ac47ac29a','c3619f0d6185b98cfb92c0af390ce0ecf5bb729f','2f4c193a5427b599f7b7b580ca513e2c9c451618','ffd65a6b6cfab2595d67f3724b5c4c913db6799a','4dd420b4510df55642a8b1e2e1b91dfc4a61155e') | ForEach-Object { git merge-base --is-ancestor $_ HEAD; if ($LASTEXITCODE -ne 0) { throw "Missing prerequisite commit $_" } }
   ```
+- [ ] If any exact ancestry check fails, stop Phase A. Do not forward-port, cherry-pick subsets, copy files, or accept patch-ID/patch equivalence under this plan. A separate controller-approved prerequisite integration plan must produce a reviewed baseline SHA, after which this complete Phase A plan is revalidated before execution resumes.
 - [ ] Require and typecheck the exact prerequisite manifest, then run every test file present for those primitives:
 
   ```powershell
@@ -552,7 +591,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
   ```
 
   Expected: `git ls-files` prints all 11 paths, typecheck passes all six source modules, and all three audited test files pass. The audited commit contains no separate private-key, installation-token, or ref-read-diagnostic test file; their compilation is explicit and their behavior is exercised through the token/HTTP suites.
-- [ ] The static test `Phase A provider dependency graph exposes read operations only` in Task 4 must read provider/service/index source and assert no `CREATE_REPOSITORY|CREATE_BLOB|CREATE_TREE|CREATE_COMMIT|CREATE_REF|UPDATE_REF|WRITE_PROJECT_MARKER|RepositoryProvisioningServiceV2` reference. At this gate, verify only that the prerequisite modules exist; Task 4 supplies the RED/GREEN proof after the focused provider exists.
+- [ ] The static test `Phase A provider dependency graph exposes read operations only` in Task 4 must read `supabase/functions/_shared/website-project-files-provider.ts`, `supabase/functions/_shared/website-project-files-service.ts`, and `supabase/functions/commercial-operator-command/index.ts` and assert no `CREATE_REPOSITORY|CREATE_BLOB|CREATE_TREE|CREATE_COMMIT|CREATE_REF|UPDATE_REF|WRITE_PROJECT_MARKER|RepositoryProvisioningServiceV2` reference. At this gate, verify only that the prerequisite modules exist; Task 4 supplies the RED/GREEN proof after the focused provider exists.
 - [ ] Commit boundary: the Case A cherry-pick preserves commit message `fix(operator): enable workspace provisioning command`; any Case B/prerequisite reconciliation uses a separately approved commit and is not authored under this plan.
 
 ## Task 2: Add path, object, encoding, and sensitive-file policy primitives
@@ -564,15 +603,17 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
 **Interfaces:**
 - Consumes: raw JSON path string, provider object metadata, declared size, decoded bytes, sensitive classifier
-- Produces: normalized path or exact `WebsiteProjectFilesPolicyError`; accepted UTF-8 text DTO only
+- Produces: normalized path, exact metadata-only directory projection, or exact `WebsiteProjectFilesPolicyError`; accepted UTF-8 text only after separate file-content inspection
 
 - [ ] Write failing tests named `path policy accepts root only for directory lists`, `path policy rejects absolute drive UNC URL and backslash forms`, `path policy rejects empty dot dotdot null control and invalid Unicode segments`, `path policy rejects percent encoded separator dot and null tricks`, `path policy rejects non-NFC and NFKC separator ambiguity`, and `provider canonical path mismatch and root escape fail closed`.
 - [ ] Test maximum 1024 UTF-8 bytes, 64 non-empty segments, and 255 UTF-8 bytes per segment at exact boundary and boundary+1.
-- [ ] Test object modes/types: regular blob accepted; symlink mode `120000`, tree-as-file, submodule/Git link type `commit`, redirect, and unknown object rejected before content.
-- [ ] Test blocked names exactly: `.env`, `.env.local`, `.env.production`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`, `.git-credentials`, `.netrc`, `.npmrc`, `.pypirc`, `credentials.json`, `service-account.json`, provider-token names, `.git/**`, and `.lws/project.json`.
+- [ ] Test metadata mapping separately from content inspection: tree becomes `DIRECTORY`; regular safe-path blob at or below 1 MiB and null/unknown-size blob become selectable `READABLE_CANDIDATE`; declared oversize becomes non-selectable `TOO_LARGE`; blocked pathname becomes the redacted non-selectable `BLOCKED_CREDENTIAL`; known symlink mode `120000` and known submodule/Git-link `commit` become inert non-selectable `UNSUPPORTED`.
+- [ ] Test unknown object type, invalid mode/type combination, malformed metadata, provider canonical-path mismatch, redirect, and root escape fail the whole current directory request closed with no partial item. A direct file read of a symlink or commit entry also fails closed and never follows the target.
+- [ ] Test blocked names exactly: `.env`, `.env.local`, `.env.production`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`, `.git-credentials`, `.netrc`, `.npmrc`, `.pypirc`, `credentials.json`, `service-account.json`, `.git/**`, and `.lws/project.json`.
+- [ ] Test all authoritative provider-token block/allow examples listed under Deterministic sensitive classifier, case-insensitive matching, and separator/suffix/tokenizer near-miss boundaries.
 - [ ] Test `.env.example`, `.env.sample`, and `.env.template` pass the name gate but still enter content scanning.
 - [ ] Test innocent filenames containing private-key headers, authenticated remotes/token-like content, and non-dummy credential assignments return `SENSITIVE_FILE_BLOCKED` with no partial text. Classifier exception/unavailability returns `SENSITIVE_CLASSIFICATION_UNAVAILABLE` with no bytes/text.
-- [ ] Test 1,048,576 decoded bytes accepted only when strict UTF-8 and 1,048,577 returns `FILE_TOO_LARGE`; provider-declared oversize blocks blob fetch. Test UTF-8 BOM removal, malformed UTF-8, UTF-16, legacy bytes, null/control binary heuristics, and no truncation.
+- [ ] In the separate post-read path, test 1,048,576 decoded bytes becomes `TEXT` only when strict UTF-8, binary checks, and sensitive-content classification all pass; 1,048,577 returns `FILE_TOO_LARGE`. Provider-declared oversize produces listing `TOO_LARGE` and blocks blob fetch. Test UTF-8 BOM removal, malformed UTF-8, UTF-16, legacy bytes, null/control binary heuristics, and no truncation. `BINARY_UNSUPPORTED`, `UNSUPPORTED_ENCODING`, `SENSITIVE_FILE_BLOCKED`, `FILE_TOO_LARGE`, and `SENSITIVE_CLASSIFICATION_UNAVAILABLE` are read outcomes/errors and never ordinary tree-metadata guesses.
 - [ ] Run RED:
 
   ```powershell
@@ -580,7 +621,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
   ```
 
   Expected: import/missing exports fail.
-- [ ] Implement `normalizeWebsiteProjectPath(raw, { allowRoot })`, `classifyWebsiteProjectPath(path)`, `inspectWebsiteProjectFile(input)`, and `WebsiteProjectFilesPolicyError` with the exact codes above. Decode JSON once; do not URL-decode paths.
+- [ ] Implement `normalizeWebsiteProjectPath(raw, { allowRoot })`, `classifyWebsiteProjectPath(path)`, `classifyWebsiteProjectDirectoryEntry(input)`, `inspectWebsiteProjectFile(input)`, and `WebsiteProjectFilesPolicyError` with the exact codes and metadata/read boundary above. Decode JSON once; do not URL-decode paths.
 - [ ] Run GREEN and adjacent security regression:
 
   ```powershell
@@ -615,6 +656,8 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - [ ] Test four unexpired leases pass and the fifth returns `PROJECT_FILES_CONCURRENCY_LIMITED`; release and expiry permit a later lease. Bind release to the acquiring caller.
 - [ ] Test A quote with B workspace/external ID/marker/binding revision cannot produce authority. Direct table updates and client-selected repository fields remain impossible.
 - [ ] Snapshot `website_repository_provisioning_operations/events` and all repository/workspace mutation ledgers before acquisitions; assert counts and content remain unchanged. Only rate bucket/read lease tables may change.
+- [ ] Add the forward-only `get_website_execution_workspace_v3(uuid)` contract tests and prove `V2_BACKWARD_COMPATIBILITY=PASS` for unchanged `get_website_execution_workspace_v2(uuid)` plus `V3_EXACT_CONTRACT=PASS` for the exact closed v3 DTO. Never redefine v2 to emit v3 semantics.
+- [ ] Enumerate the complete workspace-state x operation-state matrix, including null and one normalized unknown operation. Assert the exact failure-category table and the separate recovery-guidance table above, recognized failure-operation precedence for contradictory combinations, null category for `REPOSITORY_FAILED` without a recognized failure operation, zero browser inference, and false `project_files_read` outside the exact ready/complete/verified condition.
 - [ ] Run RED:
 
   ```powershell
@@ -624,7 +667,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
   Expected: missing migration functions/tables fail.
 - [ ] Implement forward-only private rate/lease tables keyed by actor+context, a precise rolling 60-second count, five-minute accounting-row retention, 15-second leases, immutable authority snapshot fields, forced RLS, no direct grants, and guarded acquisition/release functions.
 - [ ] Have acquisition call existing caller/work-context authority, `lws_internal.assert_operator_aal2_v1()`, lock authoritative rows, require role `owner` and status `ACTIVE`, and resolve latest verified binding/marker server-side. Do not accept repository coordinates in RPC parameters.
-- [ ] Extend the safe Website Execution projection to the exact contract version 3 shape above, including normalized operation state, failure category, recovery guidance, project-files capability, and server-projected allowlisted GitHub HTTPS URL. Return no external ID, node ID, installation ID, marker, or credential to browser workspace DTOs.
+- [ ] Create `get_website_execution_workspace_v3(uuid)` in the new forward-only migration with the exact contract version 3 shape above, including normalized operation state, independently projected failure category and recovery guidance, project-files capability, and server-projected allowlisted GitHub HTTPS URL. Preserve `get_website_execution_workspace_v2(uuid)` unchanged. Return no external ID, node ID, installation ID, marker, or credential to browser workspace DTOs.
 - [ ] Run GREEN and adjacent regressions:
 
   ```powershell
@@ -646,8 +689,8 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
 **Files:**
 - Create: `supabase/functions/_shared/website-project-files-cursor.ts`, `supabase/functions/_shared/website-project-files-cursor.test.ts`, `supabase/functions/_shared/website-project-files-provider.ts`, `supabase/functions/_shared/website-project-files-provider.test.ts`, `supabase/functions/_shared/website-project-files-service.ts`, `supabase/functions/_shared/website-project-files-service.test.ts`
-- Modify: approved prerequisite read-only GitHub token/HTTP tests only if the `WEBSITE_PROJECT_FILES_READ` operation is not yet exposed
-- Test: all six new shared-module/test files plus prerequisite GitHub read tests
+- Modify: `supabase/functions/_shared/github-app-token.ts`, `supabase/functions/_shared/github-app-token.test.ts`, `supabase/functions/_shared/github-http.ts`, `supabase/functions/_shared/github-http.test.ts` only if the `WEBSITE_PROJECT_FILES_READ` operation is not yet exposed
+- Test: `supabase/functions/_shared/website-project-files-cursor.test.ts`, `supabase/functions/_shared/website-project-files-provider.test.ts`, `supabase/functions/_shared/website-project-files-service.test.ts`, `supabase/functions/_shared/github-app-config.test.ts`, `supabase/functions/_shared/github-app-token.test.ts`, `supabase/functions/_shared/github-http.test.ts`
 
 **Interfaces:**
 - Consumes: server authority, normalized directory, optional opaque cursor
@@ -658,6 +701,8 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - [ ] Write provider RED tests named `directory listing resolves ref to immutable commit`, `directory traversal uses commit tree only`, `marker and external repository identity are mandatory`, `tree entries reject canonical path and object type mismatch`, `provider timeout throttle malformed and snapshot unavailable normalize`, and `provider exposes no write method`.
 - [ ] Mock `CONTEXT_A` and `CONTEXT_B`; substitute B metadata/tree/marker at every provider boundary and assert failure before any result.
 - [ ] Write service RED tests for root path, nested path, directories-first then Unicode-code-point sort, 500-entry page, 501-entry continuation, 512-KiB response ceiling, lazy non-recursive traversal, empty directory, invalid cursor, and snapshot unavailable. Assert the service has no acquisition/release dependency.
+- [ ] Add exact directory projection tests: safe blob -> selectable `READABLE_CANDIDATE`; null/unknown-size safe blob -> selectable `READABLE_CANDIDATE`; declared oversize -> non-selectable `TOO_LARGE`; blocked path -> redacted non-selectable `BLOCKED_CREDENTIAL`; known symlink -> inert non-selectable `UNSUPPORTED`; known submodule/Git-link/commit -> inert non-selectable `UNSUPPORTED`.
+- [ ] Add provider/service tests proving unknown object type, invalid mode/type, malformed metadata, canonical-path mismatch, redirect, root escape, and tree truncation fail the entire current request closed with zero partial entries. Assert no symlink target or submodule repository is fetched.
 - [ ] Assert cursor continuation reuses its bound commit and directory tree SHA even after the branch mock moves. Assert a caller cannot include or construct a historical commit/ref in request input.
 - [ ] Run RED:
 
@@ -666,7 +711,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
   ```
 
   Expected: missing exports/behavior fail.
-- [ ] Implement `signWebsiteProjectFilesCursor`/`verifyWebsiteProjectFilesCursor`, `createWebsiteProjectFilesProvider`, and `createWebsiteProjectFilesService`. Resolve `authority.repositoryRef` once per new list request, verify provider metadata default branch cannot override it, traverse trees by SHA, validate every returned path/type/SHA, and paginate only normalized entries.
+- [ ] Implement `signWebsiteProjectFilesCursor`/`verifyWebsiteProjectFilesCursor`, `createWebsiteProjectFilesProvider`, and `createWebsiteProjectFilesService`. Resolve `authority.repositoryRef` once per new list request, verify provider metadata default branch cannot override it, traverse trees by SHA, validate every returned path/type/SHA, map known unsupported entries inertly, fail unknown/malformed structures as a whole request, and paginate only normalized entries.
 - [ ] Build the serialized result incrementally with `TextEncoder`; reserve the measured fixed gateway-envelope bytes and stop before 500 entries or 524,288 bytes for the complete response. Add an assertion that `new TextEncoder().encode(JSON.stringify(envelope)).byteLength <= 524288`. If provider data cannot be represented safely, fail rather than truncate an entry.
 - [ ] For timeout, throttle, network failure, malformed response, and snapshot-unavailable tests, spy on the read-only HTTP client and assert exactly one provider attempt and zero automatic retries.
 - [ ] Pass the single operation-wide abort signal into every approved GitHub HTTP call without resetting its deadline, and use a repository-ID-scoped installation token with `{ metadata: "read", contents: "read" }`; never log or return token/raw body.
@@ -692,7 +737,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 **Files:**
 - Modify: `supabase/functions/_shared/website-project-files-provider.ts`, `supabase/functions/_shared/website-project-files-provider.test.ts`, `supabase/functions/_shared/website-project-files-service.ts`, `supabase/functions/_shared/website-project-files-service.test.ts`
 - Create: none
-- Test: provider/service/policy tests
+- Test: `supabase/functions/_shared/website-project-files-provider.test.ts`, `supabase/functions/_shared/website-project-files-service.test.ts`, `supabase/functions/_shared/website-project-files-policy.test.ts`
 
 **Interfaces:**
 - Consumes: server authority and normalized file path only
@@ -700,6 +745,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
 - [ ] Add failing tests `direct read re-resolves current canonical commit`, `direct read cannot select historical commit`, `parent tree traversal validates exact blob path`, and `changed branch yields new snapshot SHA`.
 - [ ] Add failing tests for preflight declared oversize, streamed/decoded oversize, strict UTF-8, BOM removal, malformed/legacy encoding, binary, sensitive path/content, classifier unavailable, symlink/submodule/Git link, no partial content, no provider URL, and no data/object/download URL.
+- [ ] Assert `TEXT` is produced only after fetched bytes pass decoded-size, strict UTF-8, binary, and sensitive-content checks. Assert `FILE_TOO_LARGE`, `BINARY_UNSUPPORTED`, `UNSUPPORTED_ENCODING`, `SENSITIVE_FILE_BLOCKED`, and `SENSITIVE_CLASSIFICATION_UNAVAILABLE` remain authoritative read outcomes/errors; listing metadata cannot pre-decide them except declared oversize and blocked pathname.
 - [ ] Add provider failure cases: timeout, throttling, malformed JSON/result, wrong repository ID, wrong canonical path, wrong object type, missing commit/tree/blob, and unavailable snapshot. Assert browser-facing errors contain only stable code/status.
 - [ ] Run RED:
 
@@ -724,7 +770,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 **Files:**
 - Modify: `supabase/functions/commercial-operator-command/handler.ts`, `supabase/functions/commercial-operator-command/index.ts`, `supabase/functions/commercial-operator-command/handler.test.ts`
 - Create: none
-- Test: `handler.test.ts`
+- Test: `supabase/functions/commercial-operator-command/handler.test.ts`
 
 **Interfaces:**
 - Consumes: exact browser DTOs
@@ -734,6 +780,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - [ ] For both actions reject every forbidden field listed in Global Constraints, unknown keys, omitted cursor/path, non-UUID quote IDs, non-string paths/cursors, and non-null/non-string cursor values.
 - [ ] Add response assertions for all stable statuses/codes, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, exact success result, and no token/provider/raw error fields.
 - [ ] Add index composition tests proving the caller JWT client invokes only acquisition/release RPCs and the service; no service-role client, provisioning RPC, repository operation, provider write, build, preview, publication, or GitHub mutation is referenced by either action branch.
+- [ ] Add an index routing test proving the Website Execution read path switches from unchanged `get_website_execution_workspace_v2(uuid)` to `get_website_execution_workspace_v3(uuid)` only as part of Phase A; project-file actions remain separate exact routes.
 - [ ] Add index runtime tests proving exactly one acquisition and one same-caller release in success, policy failure, provider failure, timeout, and thrown-error paths. Test the release RPC itself is idempotent for an already released or expired same-caller lease and rejects another caller.
 - [ ] Use a fake clock to prove sequential provider calls share one deadline: cumulative 9,999 ms may complete, cumulative 10,000 ms aborts before a later call/retry, and the 15-second lease remains unexpired until `finally` releases it. Assert four active requests deny the fifth for their full operation lifetime.
 - [ ] Run RED:
@@ -744,7 +791,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
   Expected: new actions are invalid/missing.
 - [ ] Add the two typed inputs, `APPLICATION_ACTIONS`, exact-key branches, path/cursor primitive validation, dependency methods `executeWebsiteProjectDirectoryList` and `executeWebsiteProjectFileRead`, explicit AAL2 requirement, and normalized error mapping.
-- [ ] In `index.ts`, compose the approved config/token/HTTP/provider/service once per request boundary without exposing secrets; acquire using `clientFor(jwt)`, execute provider read, and perform the single idempotent release in `finally`.
+- [ ] In `supabase/functions/commercial-operator-command/index.ts`, compose the approved config/token/HTTP/provider/service once per request boundary without exposing secrets; acquire using `clientFor(jwt)`, execute provider read, and perform the single idempotent release in `finally`.
 - [ ] Run GREEN, typecheck, and v118 regression:
 
   ```powershell
@@ -773,8 +820,10 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - Produces: exact requests, validated frozen projections, in-memory reducer/controller state
 
 - [ ] Write RED unit tests for exact request builders, root path/cursor shape, extra authority-field rejection, exact response keys/types, safe HTTPS navigation, and rejection of external ID/token/provider URL/local path fields.
-- [ ] Add exact-key contract-v3 fixtures and lifecycle view tests for no workspace, `PENDING_REPOSITORY`, `REPOSITORY_PROVISIONING`, `REPOSITORY_READY`, `REPOSITORY_FAILED`, operation `BLOCKED`, operation `QUARANTINED`, and legacy `READY` denied until verified. Assert exact recovery guidance and `capabilities.project_files_read` for each fixture.
+- [ ] Validate listing readability exactly as `DIRECTORY | READABLE_CANDIDATE | TOO_LARGE | SENSITIVE_BLOCKED | UNSUPPORTED`; reject stale listing `TEXT` and `BINARY_UNSUPPORTED` values. Validate the redacted `BLOCKED_CREDENTIAL` variant has no path, original filename, size, object SHA/ID, or action target.
+- [ ] Add exact-key `contract_version: 3` fixtures from the v3 route and lifecycle view tests for no workspace, `PENDING_REPOSITORY`, `REPOSITORY_PROVISIONING`, `REPOSITORY_READY`, `REPOSITORY_FAILED`, operation `BLOCKED`, operation `QUARANTINED`, and legacy `READY` denied until verified. Enumerate the complete workspace-state x operation-state matrix, including null and one normalized unknown operation, and assert exact independently projected failure category, recovery guidance, and `capabilities.project_files_read` for each fixture. No frontend branch may derive failure category.
 - [ ] Add reducer tests for loading, empty directory, denied, unavailable, not found, sensitive, binary, unsupported encoding, oversized, stale binding, generic failure, expanded directories, selected path, and cursor append.
+- [ ] Add reducer tests proving `DIRECTORY` is expandable, `READABLE_CANDIDATE` is a selectable file candidate, and `TOO_LARGE`, `UNSUPPORTED`, and `SENSITIVE_BLOCKED`/`BLOCKED_CREDENTIAL` are inert and non-selectable. Do not show a text/binary/content classification before a read result.
 - [ ] Add snapshot tests named `tree and file same commit may display`, `new file snapshot blocks stale tree presentation`, and `changed snapshot refreshes root before content display`. Assert content remains hidden until the refreshed tree commit equals the file commit.
 - [ ] Run RED:
 
@@ -807,6 +856,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - [ ] Add Playwright RED tests for all required lifecycle states and for `Projectbestanden` selecting/focusing an internal section without `window.open`, reservation, registry entry, or new module slot.
 - [ ] Test owner+AAL2 gating: non-owner/status-authorized callers see a disabled access state and make zero file requests; owner calls the existing child option `options.requireAal2()` before first list.
 - [ ] Test root list, nested lazy expansion, directories-first display, empty directory, 500-entry page, `next_cursor` continuation, refresh, keyboard focus, stable dimensions, mobile overflow, and loading lockout.
+- [ ] Test the exact listing UI mapping: `DIRECTORY` expands, `READABLE_CANDIDATE` can request a file read, `TOO_LARGE` and `UNSUPPORTED` are inert, and the redacted `SENSITIVE_BLOCKED`/`BLOCKED_CREDENTIAL` row exposes no original filename or target. No listing row claims `TEXT` or `BINARY_UNSUPPORTED` before read.
 - [ ] Run RED:
 
   ```powershell
@@ -845,6 +895,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 
 - [ ] Add RED malicious fixtures containing HTML, SVG, script, Markdown, template code, hostile filename text, event-handler strings, and closing tags. Assert zero script/event execution and no repository-derived `innerHTML`, trusted markup, object URL, or data URL.
 - [ ] Add RED tests for file metadata/path/size/encoding/commit display and every stable state: access denied, provider unavailable, file not found, sensitive, binary, unsupported encoding, oversized, stale binding, and generic fail-closed.
+- [ ] Assert the content pane presents `TEXT` only from a successful file result after all server read checks. Present `FILE_TOO_LARGE`, `BINARY_UNSUPPORTED`, `UNSUPPORTED_ENCODING`, `SENSITIVE_FILE_BLOCKED`, and `SENSITIVE_CLASSIFICATION_UNAVAILABLE` only as read outcomes/errors, never as guessed listing classifications.
 - [ ] Add RED clearing tests for logout/authorization failure, revoke callback, controller/module disposal, work-context change, workspace change, binding revision change, repository state downgrade, and owner/AAL2 loss.
 - [ ] Add a background-refresh failure test: mark the current tree/content stale, disable all further list/read controls, retain no content as current authority, and require a successful workspace revalidation before another file request.
 - [ ] Spy on localStorage, sessionStorage, IndexedDB, Cache API/service worker, history/location/hash, and URL creation; assert zero repository-content writes.
@@ -884,6 +935,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - Produces: executable isolation/no-write evidence
 
 - [ ] Verify the tests authored in Tasks 2-9 contain the explicit substitution matrix: A request with B path assumptions, A cursor under B, B provider metadata/tree/blob/marker under A, external repository ID mismatch, marker context/operation mismatch, binding revision mismatch, stale workspace, and changed repository node ID.
+- [ ] Verify the directory-object regression matrix: known structurally valid symlink/submodule/Git-link/commit entries are inert `UNSUPPORTED`; unknown object/mode, invalid mode/type, malformed metadata, canonical mismatch, redirect, and root escape fail the entire current request with no partial listing.
 - [ ] Run the matrix and require every case to return a stable fail-closed code, no provider content, no stale UI content, no cursor reuse, and lease release.
 - [ ] Run the exact resource tests for 60-second 30/10 budgets, four concurrent reads, 10-second timeout, 500 entries, complete-envelope 512 KiB, 1 MiB file, cursor expiry, provider oversized body, and classifier outage.
 - [ ] Run the exact static test `Phase A provider dependency graph exposes read operations only` and runtime mutation spies authored in Tasks 3-9. Require zero repository create/provision operation, GitHub POST/PATCH/PUT/DELETE, commit/push, build/preview, publication, production release, or Task14 calls.
@@ -912,6 +964,7 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 - Produces: local verification checkpoint; no deployment authorization
 
 - [ ] Re-fetch and record current `origin/main`, candidate HEAD, merge-base, full commit list, and the preserved v118 source relationship. Stop on unexplained baseline movement.
+- [ ] Re-run every Task 1 prerequisite `git merge-base --is-ancestor` check against the final candidate and record each exact ancestor result. Any failure stops release verification and requires a separate controller-approved prerequisite integration plan plus complete Phase A plan revalidation; do not integrate prerequisite code in this task.
 - [ ] Run database gates:
 
   ```powershell
@@ -992,9 +1045,17 @@ No raw provider message, request ID, token, URL, retry body, or response fragmen
 | No dead VS Code/Build/Preview controls | Tasks 7 and 8 |
 | Repository creation/provision/write/build/preview/publication unreachable | Tasks 3, 6, 10 static/runtime proof |
 | Backend v118/main divergence preserved | Task 1 Case A/B gate and Task 11 evidence |
+| Exact-ancestry-only prerequisite model | Task 1 ancestry stop gate and Task 11 repeated ancestry evidence |
+| Metadata-only pre-read directory semantics | Exact DTO plus Tasks 2, 4, 7, and 8 mapping tests |
+| `TEXT` only after successful file read | Exact DTO boundary plus Tasks 2, 5, 7, and 9 tests |
+| Known unsupported entries are inert and non-selectable | Tasks 2, 4, 7, 8, and 10 tests |
+| Unknown or malformed provider objects fail the whole request closed | Tasks 2, 4, and 10 provider/service tests |
+| Total server failure-category projection with zero browser inference | Exact v3 contract plus Tasks 3 and 7 Cartesian tests |
+| V2 preserved and forward-only v3 introduced | Tasks 3, 6, and 7 contract/routing tests |
+| Deterministic provider-token basename policy | Exact classifier contract plus Task 2 block/allow and boundary fixtures |
 
 ```text
-SPEC_REQUIREMENTS_COVERED=23
+SPEC_REQUIREMENTS_COVERED=31
 SPEC_REQUIREMENTS_MISSING=0
 PLACEHOLDERS=0
 ```
@@ -1020,7 +1081,7 @@ Create exactly one local docs-only commit:
 
 ```powershell
 git add docs/superpowers/plans/2026-09-17-website-execution-project-files-phase-a-implementation-plan.md
-git commit -m "docs(website): plan project files phase a"
+git commit -m "docs(website): harden project files phase a plan"
 ```
 
 Then require:
