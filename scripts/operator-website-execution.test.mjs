@@ -402,6 +402,66 @@ test("repository metadata renders safe GitHub and VS Code Web links", () => {
   assert.equal(JSON.stringify(projection).includes("token"), false);
 });
 
+test("REPOSITORY_READY renders only a complete server-bound repository", () => {
+  const context = {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 1,
+    mode: "PRE_PROJECT",
+  };
+  const repositoryReady = workspaceFixture({
+    project_id: null,
+    workspace_state: "REPOSITORY_READY",
+    repository_owner: "lorenzo-web-solutions-lab",
+    repository_name: "lws-web-a1800000000040008000000000000005",
+    preview_branch: null,
+    preview_url: null,
+    last_commit_sha: null,
+    last_commit_at: null,
+    last_build_result: null,
+    last_build_at: null,
+  });
+  const projection = validateWebsiteExecutionWorkspace({
+    ...preProjectV2,
+    workspace: repositoryReady,
+  }, context);
+  const view = websiteExecutionView(projection);
+  assert.equal(view.state, "ready");
+  assert.equal(
+    view.repository,
+    "lorenzo-web-solutions-lab/lws-web-a1800000000040008000000000000005",
+  );
+  assert.equal(
+    view.links.github,
+    "https://github.com/lorenzo-web-solutions-lab/lws-web-a1800000000040008000000000000005",
+  );
+  assert.equal(
+    view.links.vscode,
+    "https://vscode.dev/github/lorenzo-web-solutions-lab/lws-web-a1800000000040008000000000000005",
+  );
+
+  for (
+    const malformed of [
+      { workspace_state: "UNKNOWN" },
+      { repository_owner: null },
+      { repository_name: null },
+      { repository_owner: "../other" },
+      { repository_name: "../other" },
+    ]
+  ) {
+    assert.throws(
+      () =>
+        validateWebsiteExecutionWorkspace({
+          ...preProjectV2,
+          workspace: { ...repositoryReady, ...malformed },
+        }, context),
+      /INVALID_WEBSITE_EXECUTION_RESPONSE/,
+    );
+  }
+});
+
 test("unsafe repository and URL references are rejected", () => {
   assert.throws(() => safeWebsiteExecutionLinks("lws-studio", "../other"),
     /INVALID_WEBSITE_REPOSITORY_REFERENCE/);

@@ -17,7 +17,7 @@
 - Use test-first development: add the smallest failing test, observe the named failure, implement only enough to pass, run focused and adjacent regressions, inspect scope, then commit.
 - Keep commits independently reviewable. Never combine a database authority change, provider side effect, UI change, and release activation in one commit.
 - Preserve the existing untracked `supabase/functions/_shared/repository-provisioning.ts`, `supabase/functions/_shared/repository-provisioning.test.ts`, and `docs/superpowers/specs/2026-09-13-pre-project-repository-provider-v2-design.md` until Task 1 deliberately adopts the two provider files. Do not alter the earlier V2 design.
-- Never reinterpret the inert `bootstrap: "NONE"` contract. Introduce a reviewed V2 request before template generation.
+- Never reinterpret the inert `bootstrap: "NONE"` contract. Introduce a reviewed V2 request before snapshot bootstrap.
 - Derive repository owner, name, visibility, starter, branch, host, repository URL, token scope, local root, preview namespace, cache key and artifact prefix server-side.
 - Keep every token in memory for no more than one hour. Never return, persist or log App JWTs, installation tokens, PEM material, authorization headers, authenticated Git remotes or temporary download URLs.
 - Do not add PAT, OAuth-user-token, installation-wide-token, service-role fallback, delete, transfer, archive, visibility-change, force-push, workflow-write, arbitrary-content, webhook or production-publish behavior.
@@ -47,7 +47,7 @@ export type RepositoryProvisioningRequestV2 = Readonly<{
   repositoryName: string;
   visibility: "PRIVATE";
   defaultBranch: "main";
-  bootstrap: "GITHUB_TEMPLATE";
+  bootstrap: "GITHUB_SNAPSHOT";
   starter: Readonly<{
     source: string;
     version: string;
@@ -388,7 +388,7 @@ export type LwsProjectMarkerV1 = Readonly<{
 
 - [ ] **OWNER GATE 3 — GitHub App registration:** register the LWS-owned App only after Tasks 1-10 pass locally; record App identity and incident owner outside source control. STOP before registration until approved.
 - [ ] **OWNER GATE 4 — permissions and installation scope:** approve Metadata read, Administration write and Contents write only; explicitly reject Workflows, Actions, Pages, Deployments, Webhooks, Issues, Pull Requests, Members and Secrets. Install with **Only select repositories**, initially selecting only the canonical template. STOP on any permission drift.
-- [x] **OWNER GATE 5A — Secret Placement and Offline Credential Readiness:** generate the GitHub App private key, place it only in the approved Supabase Edge Function Secrets store and delete the downloaded local PEM. Store only the exact contract names `LWS_GITHUB_APP_PRIVATE_KEY`, `LWS_GITHUB_APP_ID`, `LWS_GITHUB_APP_INSTALLATION_ID`, `LWS_GITHUB_PRODUCTION_ORGANIZATION`, `LWS_GITHUB_TEST_ORGANIZATION`, `LWS_GITHUB_TEMPLATE_OWNER`, `LWS_GITHUB_TEMPLATE_NAME` and `LWS_GITHUB_PROVIDER_ENABLED`; the App ID and installation ID must be recorded there. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`; prove no secret material exists in source, database, browser, logs, local environment or evidence; require offline configuration validation and fail-closed tests to pass. No real GitHub API call is required or authorized by Gate 5A. **Status: COMPLETE by OWNER-approved evidence.**
+- [x] **OWNER GATE 5A — Secret Placement and Offline Credential Readiness:** generate the GitHub App private key, place it only in the approved Supabase Edge Function Secrets store and delete the downloaded local PEM. Store only the exact contract names `LWS_GITHUB_APP_PRIVATE_KEY`, `LWS_GITHUB_APP_ID`, `LWS_GITHUB_APP_INSTALLATION_ID`, `LWS_GITHUB_LAB_INSTALLATION_ID`, `LWS_GITHUB_PRODUCTION_ORGANIZATION`, `LWS_GITHUB_TEST_ORGANIZATION`, `LWS_GITHUB_TEMPLATE_OWNER`, `LWS_GITHUB_TEMPLATE_NAME`, `LWS_GITHUB_TEMPLATE_REPOSITORY_ID`, `LWS_GITHUB_STARTER_VERSION`, `LWS_GITHUB_STARTER_COMMIT_SHA`, `LWS_GITHUB_STARTER_TREE_SHA256` and `LWS_GITHUB_PROVIDER_ENABLED`. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`; prove no secret material exists in source, database, browser, logs, local environment or evidence; require offline configuration validation and fail-closed tests to pass. No real GitHub API call is required or authorized by Gate 5A. **Status: COMPLETE by OWNER-approved evidence.**
 - [ ] **OWNER GATE 5B — Live Rotation / Revocation Evidence:** complete only after OWNER Gate 6 authorizes the first real GitHub API call and the initial `GET /app` plus repository-scoped installation-token test succeeds. Generate a second App private key, replace the active Supabase secret with the new key before revoking the previous key, verify new-key authentication and narrowly scoped token issuance, revoke the previous key, prove old-key authentication is denied and prove the new key remains valid. Record no key, JWT or token material; keep the provider disabled unless separately authorized. STOP until the rotation/revocation evidence is approved.
 
 ### OWNER-approved credential gate sequence
@@ -408,7 +408,7 @@ The legal sequence after completed Task 11 is:
 11. Obtain OWNER Gate 7 approval.
 12. Obtain OWNER Gate 8B production activation approval.
 
-Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. Gate 8A is the narrow deployment authority required to make Gate 6 technically reachable without exporting Supabase secrets. Gate 6 remains the hard stop before the first real GitHub API call. Gate 5B remains mandatory before Task 13 may perform its approved external template-generation execution. Gate 8B remains the separate final authority for production migration execution, production Edge activation and feature-flag enablement.
+Gate 5A, not Gate 5B, is the prerequisite for Task 12 and Task 13 Steps 1–5. Gate 8A is the narrow deployment authority required to make Gate 6 technically reachable without exporting Supabase secrets. Gate 6 remains the hard stop before the first real GitHub API call. Gate 5B remains mandatory before any separately approved external two-principal snapshot-bootstrap execution. Gate 8B remains the separate final authority for production migration execution, production Edge activation and feature-flag enablement.
 
 The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=false` remains mandatory; secrets remain server-side in Supabase Edge Function Secrets and may not be exported; browser DTOs contain no credentials; installation tokens must name exactly the approved repository and may never fall back to installation-wide scope; no customer repository or production provisioning is authorized; every dossier retains its own `website_work_context_id` repository island; and TEST remains fail-closed and separate from PRODUCTION.
 
@@ -457,7 +457,7 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 
 ## PHASE E — starter bootstrap / provenance
 
-### Task 13: Prove template bootstrap in the isolated test organization
+### Task 13: Prove private cross-organization snapshot bootstrap in the isolated test organization
 
 **Files:**
 - Create: `scripts/github-repository-provider-test-island.mjs`
@@ -465,10 +465,22 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 - Test: both files plus provider unit tests
 
 **Interfaces:**
-- Consumes: dedicated test App, test organization, approved starter release and one synthetic test context
-- Produces: redacted evidence for scoped template generation, tree equality, marker commit/readback and captured external identity
+- Consumes: the production installation for read-only access to one approved private starter snapshot, the separate LAB installation for create/write/readback, the approved starter release and one synthetic test context
+- Produces: redacted evidence for complete pre-create snapshot verification, one LAB create, repository-scoped snapshot write, tree equality, marker commit/readback and captured external identity
 
-- [ ] Step 1: Unit-test the harness with fake API responses, explicit `--execute` opt-in, test-organization allowlist and refusal when production-like credentials/resources are supplied.
+Private cross-organization template generation is forbidden and unsupported. No installation token can represent both the production source organization and the LAB target organization. The only approved model is **TWO-PRINCIPAL READ THEN WRITE**:
+
+1. Mint a production token restricted to the canonical starter repository with `Metadata: read` and `Contents: read`.
+2. Read every blob for the approved commit into memory, reproduce the sorted tree-manifest digest and verify repository ID, owner, commit and digest before any create call.
+3. Discard the production token and retain only the verified in-memory snapshot.
+4. Mint one explicit LAB pre-repository create token with `Metadata: read` and `Administration: write`. Because the target repository does not yet exist, this token has no `repository_ids` selector; this named operation is not an installation-wide fallback and the HTTP adapter exposes only `POST /orgs/{lab}/repos` to it.
+5. Create exactly one empty private LAB repository and durably capture its external ID and node ID immediately.
+6. Discard the create token. Mint a new LAB token restricted to the captured repository ID with `Metadata: read` and `Contents: write`.
+7. Write the verified snapshot through Git data objects, create `main`, create `.lws/project.json` in a separate commit, then read back and verify installation, organization, external ID, name, privacy, branch, source digest, marker context, operation and provenance.
+
+No credential crosses the production/LAB boundary or enters a DTO, log, error, file, marker or evidence payload. A pre-create mismatch creates zero repositories. A failure after create is quarantined against the captured external ID and never triggers blind recreation.
+
+- [ ] Step 1: Unit-test the harness with fake API responses, explicit `--execute` opt-in, fixed production-source/LAB-target allowlists and refusal when either principal is substituted or crossed.
 - [ ] Step 2: Run `node --test scripts/github-repository-provider-test-island.test.mjs`; expect missing harness.
 - [ ] Step 3: Implement dry-run by default and exact redacted evidence output; cleanup remains disabled unless a separately approved marker+context+external-ID test cleanup path exists.
 - [ ] Step 4: Re-run the unit harness test and provider Deno tests without network access; require pass.
@@ -476,7 +488,7 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 
 ### OWNER GATE 8A: Test-harness Edge deployment
 
-- [ ] OWNER authorizes deployment of only the minimal server-side GitHub App authentication/test harness required for Gate 6. It may read the existing Supabase-managed GitHub App secrets server-side, create a short-lived in-memory App JWT, call only `GET /app`, request one installation token restricted to the canonical starter repository and approved Metadata read, Administration read/write and Contents read/write permissions, emit redacted evidence and fail closed.
+- [ ] OWNER authorizes deployment of only the minimal server-side GitHub App authentication/test harness required for Gate 6. It may read the existing Supabase-managed GitHub App secrets server-side, create a short-lived in-memory App JWT, call only `GET /app`, request one production installation token restricted to the canonical starter repository with Metadata/Contents read, emit redacted evidence and fail closed.
 - [ ] The Gate 8A route must expose no private key, JWT, installation token or Authorization header to browser DTOs, logs, files, environment exports or evidence. Credentials exist only in server memory and are discarded immediately after use. Installation-wide token fallback is forbidden.
 - [ ] Gate 8A does not authorize provider enablement, repository generation, customer repository creation, customer or production mutation, starter changes, App permission changes, installation-scope expansion, migration execution or general production Edge activation. Keep `LWS_GITHUB_PROVIDER_ENABLED=false`.
 - [ ] STOP after the minimal deployment is verified fail-closed. No GitHub API call is authorized until OWNER Gate 6.
@@ -484,8 +496,8 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 ### OWNER GATE 6: Test installation and external side effect
 
 - [ ] OWNER approves use of the Gate 8A harness for the first real GitHub authentication and token-scope test against the dedicated test App installation and exact selected canonical template repository. This gate does not authorize repository creation or mutation.
-- [ ] STOP before the first real GitHub API call. A failed repository-scoped template-generation contract blocks activation; installation-wide token scope is forbidden as a workaround.
-- [ ] After approval, perform the first authentication test with a short-lived in-memory App JWT using `GET /app`, then request one installation token restricted to the canonical template repository and the approved Metadata read, Administration write and Contents write permissions. Discard both credentials immediately, record only redacted status/request/scope/expiry evidence and perform no repository mutation. STOP for OWNER review and Gate 5B continuation.
+- [ ] STOP before the first real GitHub API call. A failed production read-only token contract blocks activation; private cross-organization template generation and installation-wide fallback are forbidden.
+- [ ] After approval, perform the first authentication test with a short-lived in-memory App JWT using `GET /app`, then request one production installation token restricted to the canonical starter repository with Metadata/Contents read. Discard both credentials immediately, record only redacted status/request/scope/expiry evidence and perform no repository mutation. STOP for OWNER review and Gate 5B continuation.
 
 ### OWNER GATE 5B: Live rotation / revocation evidence
 
@@ -496,7 +508,7 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 
 ### Task 13 continuation after OWNER Gate 5B
 
-- [ ] Step 6: After Gate 5B approval, run the documented test-island command once, capture request IDs/external IDs/hashes, and verify no non-test repository is listed, read, changed or deleted.
+- [ ] Step 6: Only after separate mutation approval, run the documented two-principal test-island command once, capture request IDs/external IDs/hashes, and verify the production principal only read the fixed starter while the LAB principal only created, wrote and verified the synthetic island. This redesign task authorizes no execution.
 - [ ] Step 7: Commit only harness/tests/evidence schema with `git commit -m "test(repository): add GitHub test-island contract"`; do not commit credentials or raw tokens.
 
 ### Task 14: Complete bootstrap provenance and recovery cases
@@ -702,7 +714,7 @@ The reconciliation changes no security boundary: `LWS_GITHUB_PROVIDER_ENABLED=fa
 | OPERATOR | `node --test scripts/operator-website-execution.test.mjs scripts/operator-project-requirements.test.mjs scripts/operator-project-files.test.mjs` | Existing managed child and read-only views pass |
 | MULTISCREEN | `node --test scripts/operator-workspace.test.mjs` | One `website-*` module-slot, re-resolution, revoke and focus behavior pass |
 | PRE_PROJECT | `npx supabase test db supabase/tests/website_concept_pre_project_v1.sql supabase/tests/website_execution_workspace_v1.sql` | Existing concept/workspace authority and production denial pass |
-| REPOSITORY PROVIDER | Deno fake-HTTP suites plus OWNER-approved `scripts/github-repository-provider-test-island.mjs --execute` | Scoped generation/tree/marker/recovery evidence passes |
+| REPOSITORY PROVIDER | Deno fake-HTTP suites plus OWNER-approved `scripts/github-repository-provider-test-island.mjs --execute` | Production read-only snapshot verification plus LAB create/write/tree/marker/recovery evidence passes |
 | ISOLATION | pgTAP plus `node --test scripts/website-repository-isolation.test.mjs scripts/website-workspace-launcher.test.mjs scripts/website-preview-isolation.test.mjs` | All 15 negative island outcomes pass |
 | SECURITY | token/redaction/SSRF/XSS/traversal/symlink/replay tests and secret scan | No credential leak, host escape, trusted markup or cross-context authority |
 | CONTINUITY | `node --test scripts/dossier-continuity-regression-gate.test.mjs scripts/dossier-continuity-release-integration.test.mjs` | Existing dossier, Website/SDF and release behavior preserved |

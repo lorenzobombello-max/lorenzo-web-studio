@@ -1,3 +1,9 @@
+import { GitHubAppGate6ProbeError } from "./probe.ts";
+import {
+  Gate6PreProbeError,
+  type Gate6PreProbeFailedPhase,
+} from "./preprobe.ts";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_BODY_BYTES = 256;
@@ -20,7 +26,11 @@ export type GitHubAppGate6ProbeDependencies = Readonly<{
   now(): number;
   verifyUser(jwt: string): Promise<Readonly<{ id: string }> | null>;
   authorizeOwner(jwt: string): Promise<void>;
+  diagnoseConfiguration(): Promise<
+    Readonly<{ configuration_valid: boolean; failed_check: string | null }>
+  >;
   executeProbe(): Promise<ProbeResult>;
+  projectProbeResult(result: ProbeResult): ProbeResult;
 }>;
 
 class RequestError extends Error {
@@ -40,6 +50,15 @@ function response(
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
     },
+  });
+}
+
+function failureResponse(
+  status: number,
+  failedPhase: Gate6PreProbeFailedPhase,
+): Response {
+  return response(status, "GITHUB_APP_GATE6_PROBE_FAILED", {
+    failed_phase: failedPhase,
   });
 }
 
@@ -65,7 +84,9 @@ function decodeClaims(jwt: string): Record<string, unknown> {
   }
 }
 
-async function validateBody(request: Request): Promise<void> {
+async function validateBody(
+  request: Request,
+): Promise<"run_gate6_probe" | "diagnose_configuration"> {
   if (
     (request.headers.get("content-type") || "").split(";", 1)[0].trim()
       .toLowerCase() !== "application/json"
@@ -76,10 +97,12 @@ async function validateBody(request: Request): Promise<void> {
   }
   try {
     const value = JSON.parse(text) as Record<string, unknown>;
+    const action = value.action;
     if (
-      !value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).length !== 1 || value.action !== "run_gate6_probe"
+      Object.keys(value).length !== 1 ||
+      !["run_gate6_probe", "diagnose_configuration"].includes(String(action))
     ) throw 0;
+    return action as "run_gate6_probe" | "diagnose_configuration";
   } catch {
     throw new RequestError(400, "INVALID_REQUEST");
   }
@@ -90,38 +113,90 @@ export async function handleGitHubAppGate6Probe(
   dependencies: GitHubAppGate6ProbeDependencies,
 ): Promise<Response> {
   try {
-    if (request.method !== "POST") {
-      throw new RequestError(405, "METHOD_NOT_ALLOWED");
+    let action: "run_gate6_probe" | "diagnose_configuration";
+    try {
+      if (request.method !== "POST") {
+        throw new RequestError(405, "METHOD_NOT_ALLOWED");
+      }
+      action = await validateBody(request);
+    } catch (error) {
+      return failureResponse(
+        error instanceof RequestError ? error.status : 400,
+        "REQUEST_PARSE",
+      );
     }
-    const token = bearer(request);
-    const claims = decodeClaims(token);
-    const subject = String(claims.sub || "");
-    if (
-      !UUID.test(subject) || typeof claims.exp !== "number" ||
-      claims.exp * 1000 <= dependencies.now()
-    ) throw new RequestError(401, "INVALID_JWT");
-    if (claims.role === "service_role") {
-      throw new RequestError(401, "HUMAN_JWT_REQUIRED");
+
+    const now = dependencies.now();
+    let token: string;
+    let claims: Record<string, unknown>;
+    let subject: string;
+    try {
+      token = bearer(request);
+      claims = decodeClaims(token);
+      subject = String(claims.sub || "");
+      if (
+        !UUID.test(subject) || typeof claims.exp !== "number" ||
+        claims.exp * 1000 <= now || claims.role === "service_role"
+      ) throw new RequestError(401, "INVALID_JWT");
+      const user = await dependencies.verifyUser(token);
+      if (!user || user.id !== subject) {
+        throw new RequestError(401, "INVALID_JWT");
+      }
+    } catch (error) {
+      return failureResponse(
+        error instanceof RequestError ? error.status : 502,
+        "CALLER_VERIFICATION",
+      );
     }
-    if (claims.aal !== "aal2") throw new RequestError(403, "AAL2_REQUIRED");
-    const user = await dependencies.verifyUser(token);
-    if (!user || user.id !== subject) {
-      throw new RequestError(401, "INVALID_JWT");
+
+    if (claims.aal !== "aal2") {
+      return failureResponse(403, "AAL2_VERIFICATION");
     }
-    await validateBody(request);
     try {
       await dependencies.authorizeOwner(token);
     } catch {
-      throw new RequestError(403, "OWNER_REQUIRED");
+      return failureResponse(403, "OWNER_AUTHORIZATION");
     }
-    return response(200, "GITHUB_APP_GATE6_PROBE_PASSED", {
-      result: await dependencies.executeProbe(),
-    });
+    if (action === "diagnose_configuration") {
+      return response(200, "GATE6_CONFIGURATION_DIAGNOSIS", {
+        result: await dependencies.diagnoseConfiguration(),
+      });
+    }
+    let result: ProbeResult;
+    try {
+      result = await dependencies.executeProbe();
+    } catch (error) {
+      if (
+        error instanceof GitHubAppGate6ProbeError ||
+        error instanceof Gate6PreProbeError
+      ) throw error;
+      throw new Gate6PreProbeError("PROBE_INVOCATION");
+    }
+    try {
+      return response(200, "GITHUB_APP_GATE6_PROBE_PASSED", {
+        result: dependencies.projectProbeResult(result),
+      });
+    } catch {
+      throw new Gate6PreProbeError("RESPONSE_PROJECTION");
+    }
   } catch (error) {
     if (error instanceof RequestError) {
       return response(error.status, error.code);
     }
-    return response(502, "GITHUB_APP_GATE6_PROBE_FAILED");
+    if (error instanceof GitHubAppGate6ProbeError) {
+      return response(502, "GITHUB_APP_GATE6_PROBE_FAILED", {
+        failed_phase: error.failedPhase,
+        ...(error.httpStatusClass
+          ? { http_status_class: error.httpStatusClass }
+          : {}),
+      });
+    }
+    if (error instanceof Gate6PreProbeError) {
+      return failureResponse(502, error.failedPhase);
+    }
+    return response(502, "GITHUB_APP_GATE6_PROBE_FAILED", {
+      failed_phase: "UNKNOWN_INTERNAL",
+    });
   }
 }
 

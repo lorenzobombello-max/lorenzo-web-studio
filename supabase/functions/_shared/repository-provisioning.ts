@@ -1,3 +1,9 @@
+import {
+  RepositoryProvisioningClaimDiagnosticError,
+  RepositoryProvisioningProviderDiagnosticError,
+  RepositoryProvisioningRuntimeDiagnosticError,
+} from "./repository-provisioning-diagnostics.ts";
+
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_V2 =
@@ -87,7 +93,7 @@ export type RepositoryProvisioningRequestV2 = Readonly<{
   repositoryName: string;
   visibility: "PRIVATE";
   defaultBranch: "main";
-  bootstrap: "GITHUB_TEMPLATE";
+  bootstrap: "GITHUB_SNAPSHOT";
   starter: RepositoryStarterProvenance;
 }>;
 
@@ -278,6 +284,7 @@ async function recordFailure(
   try {
     await store.fail(operationId, code);
   } catch {
+    return;
   }
 }
 
@@ -400,7 +407,9 @@ export class RepositoryProvisioningServiceV2 {
     command: RepositoryProvisioningCommandV2,
   ): Promise<RepositoryProvisioningResultV2> {
     if (!validCommandV2(command)) {
-      throw new Error("INVALID_REPOSITORY_PROVISIONING_COMMAND_V2");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "INVALID_REPOSITORY_PROVISIONING_COMMAND_V2",
+      );
     }
     const repositoryName = repositoryNameForContext(
       command.websiteWorkContextId,
@@ -410,24 +419,37 @@ export class RepositoryProvisioningServiceV2 {
     let claim: RepositoryProvisioningClaimV2;
     try {
       claim = await this.store.claim(authority);
-    } catch {
-      throw new Error("REPOSITORY_PROVISIONING_CLAIM_FAILED");
+    } catch (error) {
+      if (error instanceof RepositoryProvisioningClaimDiagnosticError) {
+        throw error;
+      }
+      throw new RepositoryProvisioningClaimDiagnosticError(
+        "UNKNOWN_CLAIM_ERROR",
+      );
     }
     if (!claim || typeof claim !== "object" || Array.isArray(claim)) {
-      throw new Error("INVALID_REPOSITORY_PROVISIONING_CLAIM");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "INVALID_REPOSITORY_PROVISIONING_CLAIM",
+      );
     }
     if (claim.state === "IN_PROGRESS") {
       if (!hasExactKeys(claim, ["state"])) {
-        throw new Error("INVALID_REPOSITORY_PROVISIONING_CLAIM");
+        throw new RepositoryProvisioningRuntimeDiagnosticError(
+          "INVALID_REPOSITORY_PROVISIONING_CLAIM",
+        );
       }
-      throw new Error("REPOSITORY_PROVISIONING_IN_PROGRESS");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "REPOSITORY_PROVISIONING_IN_PROGRESS",
+      );
     }
     if (claim.state === "REPLAY") {
       if (
         !hasExactKeys(claim, ["state", "binding"]) ||
         !validBindingV2(claim.binding, repositoryName, command.starter)
       ) {
-        throw new Error("INVALID_REPOSITORY_BINDING_V2");
+        throw new RepositoryProvisioningRuntimeDiagnosticError(
+          "INVALID_REPOSITORY_BINDING_V2",
+        );
       }
       return Object.freeze({ ...claim.binding, replayed: true });
     }
@@ -436,7 +458,9 @@ export class RepositoryProvisioningServiceV2 {
       !hasExactKeys(claim, ["state", "operationId"]) ||
       !UUID_V2.test(claim.operationId)
     ) {
-      throw new Error("INVALID_REPOSITORY_PROVISIONING_CLAIM");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "INVALID_REPOSITORY_PROVISIONING_CLAIM",
+      );
     }
 
     let provisioned: VerifiedRepositoryBindingV2;
@@ -448,16 +472,21 @@ export class RepositoryProvisioningServiceV2 {
         repositoryName,
         visibility: "PRIVATE",
         defaultBranch: "main",
-        bootstrap: "GITHUB_TEMPLATE",
+        bootstrap: "GITHUB_SNAPSHOT",
         starter: command.starter,
       }));
-    } catch {
+    } catch (error) {
       await recordFailure(
         this.store,
         claim.operationId,
         "REPOSITORY_PROVIDER_FAILED",
       );
-      throw new Error("REPOSITORY_PROVIDER_FAILED");
+      if (error instanceof RepositoryProvisioningProviderDiagnosticError) {
+        throw error;
+      }
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "REPOSITORY_PROVIDER_FAILED",
+      );
     }
     if (!validBindingV2(provisioned, repositoryName, command.starter)) {
       await recordFailure(
@@ -465,7 +494,9 @@ export class RepositoryProvisioningServiceV2 {
         claim.operationId,
         "INVALID_REPOSITORY_PROVIDER_RESULT_V2",
       );
-      throw new Error("INVALID_REPOSITORY_PROVIDER_RESULT_V2");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "INVALID_REPOSITORY_PROVIDER_RESULT_V2",
+      );
     }
 
     let bound: VerifiedRepositoryBindingV2;
@@ -484,7 +515,9 @@ export class RepositoryProvisioningServiceV2 {
         claim.operationId,
         "REPOSITORY_BINDING_FAILED",
       );
-      throw new Error("REPOSITORY_BINDING_FAILED");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "REPOSITORY_BINDING_FAILED",
+      );
     }
     if (
       !validBindingV2(bound, repositoryName, command.starter) ||
@@ -495,7 +528,9 @@ export class RepositoryProvisioningServiceV2 {
         claim.operationId,
         "INVALID_REPOSITORY_BINDING_V2",
       );
-      throw new Error("INVALID_REPOSITORY_BINDING_V2");
+      throw new RepositoryProvisioningRuntimeDiagnosticError(
+        "INVALID_REPOSITORY_BINDING_V2",
+      );
     }
     return Object.freeze({ ...bound, replayed: false });
   }

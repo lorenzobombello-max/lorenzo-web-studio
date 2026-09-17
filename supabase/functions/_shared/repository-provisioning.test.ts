@@ -13,6 +13,8 @@ import {
   type RepositoryProvisioningStoreV2,
   type VerifiedRepositoryBindingV2,
 } from "./repository-provisioning.ts";
+import { RepositoryProvisioningClaimDiagnosticError } from "./repository-provisioning-diagnostics.ts";
+import { GitHubRepositoryProviderError } from "./github-repository-provider.ts";
 
 const command: RepositoryProvisioningCommand = Object.freeze({
   websiteWorkspaceId: "d1110000-0000-4000-8000-000000000001",
@@ -311,6 +313,7 @@ function v2Harness(
   };
   return {
     service: new RepositoryProvisioningServiceV2(provider, store),
+    provider,
     store,
     claimCalls,
     providerCalls,
@@ -331,7 +334,7 @@ Deno.test("repository provisioning V2 derives the canonical repository name from
   );
 });
 
-Deno.test("repository provisioning V2 sends the exact template request and binds verified provenance", async () => {
+Deno.test("repository provisioning V2 sends the exact snapshot request and binds verified provenance", async () => {
   const test = v2Harness();
 
   assertEquals(await test.service.provision(v2Command), {
@@ -349,7 +352,7 @@ Deno.test("repository provisioning V2 sends the exact template request and binds
     repositoryName: v2Repository.name,
     visibility: "PRIVATE",
     defaultBranch: "main",
-    bootstrap: "GITHUB_TEMPLATE",
+    bootstrap: "GITHUB_SNAPSHOT",
     starter: v2Command.starter,
   }]);
   assertEquals(test.bindCalls, [{
@@ -372,6 +375,70 @@ Deno.test("repository provisioning V2 replay returns only exact verified provena
   });
   assertEquals(test.providerCalls, []);
   assertEquals(test.bindCalls, []);
+});
+
+Deno.test("repository provisioning V2 preserves only closed claim diagnostics", async () => {
+  const test = v2Harness();
+  const diagnosticStore: RepositoryProvisioningStoreV2 = {
+    ...test.store,
+    claim: () =>
+      Promise.reject(
+        new RepositoryProvisioningClaimDiagnosticError(
+          "CLAIM_RPC_AUTHORITY",
+          "42",
+        ),
+      ),
+  };
+  const diagnostic = await assertRejects(
+    () =>
+      new RepositoryProvisioningServiceV2(
+        test.provider,
+        diagnosticStore,
+      ).provision(v2Command),
+    RepositoryProvisioningClaimDiagnosticError,
+  );
+  assertEquals(diagnostic.phase, "CLAIM_RPC_AUTHORITY");
+  assertEquals(diagnostic.sqlstateClass, "42");
+
+  const unknownStore: RepositoryProvisioningStoreV2 = {
+    ...test.store,
+    claim: () => Promise.reject(new Error("raw database secret")),
+  };
+  const unknown = await assertRejects(
+    () =>
+      new RepositoryProvisioningServiceV2(
+        test.provider,
+        unknownStore,
+      ).provision(v2Command),
+    RepositoryProvisioningClaimDiagnosticError,
+  );
+  assertEquals(unknown.phase, "UNKNOWN_CLAIM_ERROR");
+  assertEquals(JSON.stringify(unknown).includes("raw database secret"), false);
+  assertEquals(test.providerCalls, []);
+});
+
+Deno.test("repository provisioning V2 preserves a closed provider diagnostic", async () => {
+  const test = v2Harness();
+  const diagnostic = await assertRejects(
+    () =>
+      new RepositoryProvisioningServiceV2(
+        {
+          provision: () =>
+            Promise.reject(
+              new GitHubRepositoryProviderError(
+                "GITHUB_STARTER_SNAPSHOT_INVALID",
+              ),
+            ),
+        },
+        test.store,
+      ).provision(v2Command),
+    GitHubRepositoryProviderError,
+  );
+  assertEquals(diagnostic.phase, "GITHUB_STARTER_SNAPSHOT_INVALID");
+  assertEquals(test.failCalls, [{
+    operationId: "d2140000-0000-4000-8000-000000000001",
+    code: "REPOSITORY_PROVIDER_FAILED",
+  }]);
 });
 
 Deno.test("repository provisioning V2 rejects caller-controlled authority and malformed provider provenance", async () => {

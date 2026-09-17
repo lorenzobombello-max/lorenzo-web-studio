@@ -36,7 +36,8 @@ select results_eq(
       ('RETRYABLE_FAILED','VERIFYING'),
       ('RETRY_SCHEDULED','CREATING'),('RETRY_SCHEDULED','VERIFYING'),
       ('BLOCKED','CREATING'),('BLOCKED','VERIFYING'),
-      ('QUARANTINED','VERIFYING'),('QUARANTINED','TERMINAL_FAILED')
+      ('QUARANTINED','VERIFYING'),('QUARANTINED','TERMINAL_FAILED'),
+      ('TERMINAL_FAILED','BOUND')
     ), matrix as (
       select source.state as old_state,target.state as new_state,
         source.state=target.state or exists (
@@ -49,8 +50,8 @@ select results_eq(
       count(*) filter (where expected)::integer,
       bool_and(lws_internal.website_repository_transition_allowed_v1(old_state,new_state)=expected)
     from matrix$$,
-  $$values (100,33,true)$$,
-  'all 100 state pairs match the exact 33-transition allowlist including self-updates'
+  $$values (100,34,true)$$,
+  'all 100 state pairs match the exact 34-transition allowlist including self-updates'
 );
 select has_function(
   'public','claim_website_repository_provisioning_v1',
@@ -567,7 +568,7 @@ select throws_ok(
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )$$,
   '42501','HUMAN_JWT_REQUIRED',
   'repository claim requires a caller JWT'
@@ -584,7 +585,7 @@ select throws_ok(
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )$$,
   '42501','AAL2_REQUIRED',
   'repository claim rejects an owner at aal1'
@@ -601,7 +602,7 @@ select throws_ok(
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )$$,
   '42501','WEBSITE_REPOSITORY_OWNER_REQUIRED',
   'repository claim rejects a non-owner at aal2'
@@ -618,7 +619,7 @@ select throws_ok(
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )$$,
   '42501','WEBSITE_REPOSITORY_OWNER_REQUIRED',
   'repository claim rejects a disabled owner at aal2'
@@ -636,12 +637,12 @@ select throws_ok(
     'c1400000-0000-4000-8000-000000000005','c1300000-0000-4000-8000-000000000005',
     'c1500000-0000-4000-8000-000000000005','lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40))$$,
   '22023','WEBSITE_REPOSITORY_STARTER_OWNER_INVALID',
-  'a production context cannot substitute the isolated test organization'
+  'no context can substitute the LAB organization for the production starter owner'
 );
 select is(
   public.claim_website_repository_provisioning_v1(
     'c1400000-0000-4000-8000-000000000005','c1300000-0000-4000-8000-000000000005',
-    'c1500000-0000-4000-8000-000000000005','lorenzo-web-solutions/website-starter','1.0.0',repeat('1',40)
+    'c1500000-0000-4000-8000-000000000005','lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )->>'repository_owner',
   'lorenzo-web-solutions','production derives only the production organization'
 );
@@ -656,7 +657,7 @@ insert into repository_rpc_results values (
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 select is(
@@ -671,10 +672,10 @@ select results_eq(
   $$values (
     'lorenzo-web-solutions-lab'::text,
     'lws-web-b1300000000040008000000000000001'::text,
-    'lorenzo-web-solutions-lab/website-starter'::text,
+    'lorenzo-web-solutions/lws-website-starter'::text,
     '1.0.0'::text,repeat('1',40)::text,'CREATING'::text
   )$$,
-  'claim derives the test owner and UUID repository name and binds starter provenance'
+  'claim derives the LAB destination and UUID repository name while binding production starter provenance'
 );
 insert into repository_rpc_results values (
   'claim_replay',
@@ -682,7 +683,7 @@ insert into repository_rpc_results values (
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 select is(
@@ -695,7 +696,7 @@ insert into repository_rpc_results values (
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000002',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 select is(
@@ -707,7 +708,7 @@ select throws_ok(
     'b1400000-0000-4000-8000-000000000001',
     'b1300000-0000-4000-8000-000000000001',
     'b1500000-0000-4000-8000-000000000001',
-    'lorenzo-web-solutions-lab/website-starter','1.0.1',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.1',repeat('1',40)
   )$$,
   'P0001','IDEMPOTENCY_CONFLICT',
   'an idempotency key cannot be reused with a different fingerprint'
@@ -759,7 +760,7 @@ select throws_ok(
       'repository_owner','lorenzo-web-solutions-lab',
       'repository_name','lws-web-b1300000000040008000000000000001',
       'repository_visibility','private','default_branch','main',
-      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_source','lorenzo-web-solutions/lws-website-starter',
       'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
       'repository_marker_commit_sha',repeat('2',40)
     )
@@ -779,7 +780,7 @@ select throws_ok(
       'repository_owner','lorenzo-web-solutions-lab',
       'repository_name','lws-web-b1300000000040008000000000000001',
       'repository_visibility','private','default_branch','main',
-      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_source','lorenzo-web-solutions/lws-website-starter',
       'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
       'repository_marker_commit_sha',repeat('2',40)
     )
@@ -816,7 +817,7 @@ select throws_ok(
       'repository_owner','lorenzo-web-solutions-lab',
       'repository_name','lws-web-b1300000000040008000000000000001',
       'repository_visibility','private','default_branch','main',
-      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_source','lorenzo-web-solutions/lws-website-starter',
       'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
       'repository_marker_commit_sha',repeat('2',40)
     ))$$,
@@ -848,7 +849,7 @@ insert into repository_rpc_results values (
       'repository_owner','lorenzo-web-solutions-lab',
       'repository_name','lws-web-b1300000000040008000000000000001',
       'repository_visibility','private','default_branch','main',
-      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_source','lorenzo-web-solutions/lws-website-starter',
       'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
       'repository_marker_commit_sha',repeat('2',40)
     )
@@ -867,6 +868,37 @@ select results_eq(
     'R_kgDORepository610001'::text,repeat('2',40)::text,true)$$,
   'binding persists the exact verified repository identity and marker'
 );
+insert into repository_rpc_results values (
+  'bound_replay',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000001',
+    'b1300000-0000-4000-8000-000000000001',
+    'b1500000-0000-4000-8000-000000000001',
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
+  )
+);
+select results_eq(
+  $$select payload->>'result',payload->>'repository_visibility',
+      payload->>'default_branch',payload->>'repository_marker_commit_sha'
+    from repository_rpc_results where result_name='bound_replay'$$,
+  $$values ('REPLAY'::text,'private'::text,'main'::text,repeat('2',40)::text)$$,
+  'bound replay returns the complete repository verification projection'
+);
+select results_eq(
+  $$select result->>'result',result->>'operation_id',
+      (select count(*)::text from public.website_repository_provisioning_operations
+       where website_work_context_id='b1300000-0000-4000-8000-000000000001')
+    from (select public.claim_website_repository_provisioning_v1(
+      'b1400000-0000-4000-8000-000000000001',
+      'b1300000-0000-4000-8000-000000000001',
+      'b1500000-0000-4000-8000-000000000007',
+      'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
+    ) as result) claimed$$,
+  $$select 'REPLAY'::text,operation_id::text,'1'::text
+    from public.website_repository_provisioning_operations
+    where website_work_context_id='b1300000-0000-4000-8000-000000000001'$$,
+  'a BOUND workspace rejects fresh provisioning under a new idempotency key'
+);
 select throws_ok(
   $$select public.bind_website_repository_v1(
     (select operation_id from public.website_repository_provisioning_operations
@@ -879,7 +911,7 @@ select throws_ok(
       'repository_owner','lorenzo-web-solutions-lab',
       'repository_name','lws-web-b1300000000040008000000000000001',
       'repository_visibility','private','default_branch','main',
-      'starter_source','lorenzo-web-solutions-lab/website-starter',
+      'starter_source','lorenzo-web-solutions/lws-website-starter',
       'starter_version','1.0.0','starter_commit_sha',repeat('1',40),
       'repository_marker_commit_sha',repeat('2',40)
     )
@@ -898,12 +930,13 @@ select results_eq(
   $$select array_agg(key order by key)
     from jsonb_object_keys((select payload from repository_rpc_results where result_name='read')) as key$$,
   $$values (array[
-    'attempt_count','bound_at','claimed_at','external_created_at','failure_code',
-    'first_attempt_at','operation_id','provider_retry_after_at','quarantine_alert_due_at',
+    'attempt_count','bound_at','claimed_at','default_branch','external_created_at',
+    'failure_code','first_attempt_at','operation_id','provider_retry_after_at','quarantine_alert_due_at',
     'quarantine_alerted_at','quarantine_evidence_sha256','quarantine_reason',
     'quarantine_resolution','quarantine_resolved_at','quarantined_at',
-    'repository_external_id','repository_name','repository_node_id',
-    'repository_owner','repository_provider','result','retry_action','retry_at',
+    'repository_external_id','repository_marker_commit_sha','repository_name',
+    'repository_node_id','repository_owner','repository_provider',
+    'repository_visibility','result','retry_action','retry_at',
     'retry_window_expires_at','starter_commit_sha',
     'starter_source','starter_version','state','updated_at','website_work_context_id',
     'website_workspace_id'
@@ -917,7 +950,7 @@ insert into repository_rpc_results values (
     'b1400000-0000-4000-8000-000000000002',
     'b1300000-0000-4000-8000-000000000002',
     'b1500000-0000-4000-8000-000000000003',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 insert into repository_rpc_results values (
@@ -941,7 +974,7 @@ insert into repository_rpc_results values (
     'b1400000-0000-4000-8000-000000000003',
     'b1300000-0000-4000-8000-000000000003',
     'b1500000-0000-4000-8000-000000000004',
-    'lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 insert into repository_rpc_results values (
@@ -1012,7 +1045,7 @@ select throws_ok(
 insert into repository_rpc_results values (
   'provider_claim',public.claim_website_repository_provisioning_v1(
     'b1400000-0000-4000-8000-000000000004','b1300000-0000-4000-8000-000000000004',
-    'b1500000-0000-4000-8000-000000000005','lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'b1500000-0000-4000-8000-000000000005','lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )
 );
 select public.fail_website_repository_provisioning_v1(
@@ -1055,7 +1088,7 @@ select public.fail_website_repository_provisioning_v1(
 select is(
   public.claim_website_repository_provisioning_v1(
     'b1400000-0000-4000-8000-000000000004','b1300000-0000-4000-8000-000000000004',
-    'b1500000-0000-4000-8000-000000000006','lorenzo-web-solutions-lab/website-starter','1.0.0',repeat('1',40)
+    'b1500000-0000-4000-8000-000000000006','lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
   )->>'result','IN_PROGRESS',
   'BLOCKED cannot auto-resume through a new claim'
 );
@@ -1231,6 +1264,72 @@ select throws_ok(
     end $body$;$test$,
   'P0001','WEBSITE_REPOSITORY_TRANSITION_INVALID',
   'terminal states reject structurally valid backward transitions'
+);
+
+create temporary table terminal_fresh_attempt_before as
+select operation_id as terminal_operation_id,
+  (select row_to_json(other_operation)::jsonb
+   from public.website_repository_provisioning_operations as other_operation
+   where other_operation.website_work_context_id='b1300000-0000-4000-8000-000000000003') as other_context_operation,
+  (select count(*)::integer from public.website_repository_provisioning_events
+   where website_work_context_id='b1300000-0000-4000-8000-000000000003') as other_context_event_count
+from public.website_repository_provisioning_operations
+where website_work_context_id='b1300000-0000-4000-8000-000000000004';
+select results_eq(
+  $$select result->>'result',result->>'state',result->>'operation_id',
+      (select count(*)::text from public.website_repository_provisioning_operations
+       where website_work_context_id='b1300000-0000-4000-8000-000000000004')
+    from (select public.claim_website_repository_provisioning_v1(
+      'b1400000-0000-4000-8000-000000000004',
+      'b1300000-0000-4000-8000-000000000004',
+      'b1500000-0000-4000-8000-000000000005',
+      'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
+    ) as result) claimed$$,
+  $$select 'REPLAY'::text,'TERMINAL_FAILED'::text,terminal_operation_id::text,'1'::text
+    from terminal_fresh_attempt_before$$,
+  'the old terminal idempotency key only replays its terminal operation'
+);
+insert into repository_rpc_results values (
+  'fresh_after_terminal',
+  public.claim_website_repository_provisioning_v1(
+    'b1400000-0000-4000-8000-000000000004',
+    'b1300000-0000-4000-8000-000000000004',
+    'b1500000-0000-4000-8000-000000000007',
+    'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
+  )
+);
+select results_eq(
+  $$select payload->>'result',payload->>'state',
+      payload->>'operation_id'<>(select terminal_operation_id::text from terminal_fresh_attempt_before),
+      (select count(*)::integer from public.website_repository_provisioning_operations
+       where website_work_context_id='b1300000-0000-4000-8000-000000000004')
+    from repository_rpc_results where result_name='fresh_after_terminal'$$,
+  $$values ('CLAIMED'::text,'CREATING'::text,true,2)$$,
+  'a new idempotency key creates one fresh CREATING operation after TERMINAL_FAILED'
+);
+select results_eq(
+  $$select result->>'result',result->>'operation_id',
+      (select count(*)::text from public.website_repository_provisioning_operations
+       where website_work_context_id='b1300000-0000-4000-8000-000000000004')
+    from (select public.claim_website_repository_provisioning_v1(
+      'b1400000-0000-4000-8000-000000000004',
+      'b1300000-0000-4000-8000-000000000004',
+      'b1500000-0000-4000-8000-000000000008',
+      'lorenzo-web-solutions/lws-website-starter','1.0.0',repeat('1',40)
+    ) as result) claimed$$,
+  $$select 'IN_PROGRESS'::text,payload->>'operation_id','2'::text
+    from repository_rpc_results where result_name='fresh_after_terminal'$$,
+  'the fresh active CREATING operation blocks another new idempotency key'
+);
+select results_eq(
+  $$select row_to_json(operation)::jsonb,
+      (select count(*)::integer from public.website_repository_provisioning_events
+       where website_work_context_id='b1300000-0000-4000-8000-000000000003')
+    from public.website_repository_provisioning_operations as operation
+    where operation.website_work_context_id='b1300000-0000-4000-8000-000000000003'$$,
+  $$select other_context_operation,other_context_event_count
+    from terminal_fresh_attempt_before$$,
+  'fresh attempt handling has no cross-context operation or event side effects'
 );
 
 select * from finish();

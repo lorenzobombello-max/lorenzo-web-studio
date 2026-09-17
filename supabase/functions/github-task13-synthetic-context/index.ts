@@ -1,17 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
-import { handleGitHubAppGate6Probe } from "./handler.ts";
-import { executeGitHubAppGate6Probe } from "./probe.ts";
-import {
-  createGitHubAppGate6ProbeInput,
-  runGate6PreProbePipeline,
-} from "./preprobe.ts";
-import {
-  diagnoseGate6ProbeConfiguration,
-  initializeGitHubAppJwtSigner,
-  loadGate6ProbeConfig,
-  loadGate6ProbePublishableKey,
-} from "./runtime.ts";
+import { handleGitHubTask13SyntheticContext } from "./handler.ts";
+
+const EXPECTED_SUPABASE_URL = "https://xcsptvntvrizwhskaphr.supabase.co";
 
 function withCors(request: Request, response: Response): Response {
   const headers = new Headers(response.headers);
@@ -19,9 +10,7 @@ function withCors(request: Request, response: Response): Response {
     const [key, value] of Object.entries(
       corsHeaders(request.headers.get("origin")),
     )
-  ) {
-    headers.set(key, value);
-  }
+  ) headers.set(key, value);
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -37,16 +26,21 @@ if (import.meta.main) {
     }
     try {
       const url = Deno.env.get("SUPABASE_URL");
-      if (url !== "https://xcsptvntvrizwhskaphr.supabase.co") {
-        throw new Error("SERVER_CONFIGURATION_ERROR");
-      }
-      const publishableKey = loadGate6ProbePublishableKey();
+      const publishableKeys = JSON.parse(
+        Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "null",
+      ) as Record<string, unknown> | null;
+      const publishableKey = publishableKeys?.default;
+      if (
+        url !== EXPECTED_SUPABASE_URL || typeof publishableKey !== "string" ||
+        !/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishableKey)
+      ) throw new Error("SERVER_CONFIGURATION_ERROR");
+
       const clientFor = (jwt: string) =>
         createClient(url, publishableKey, {
           global: { headers: { Authorization: `Bearer ${jwt}` } },
           auth: { persistSession: false, autoRefreshToken: false },
         });
-      const response = await handleGitHubAppGate6Probe(request, {
+      const response = await handleGitHubTask13SyntheticContext(request, {
         now: Date.now,
         verifyUser: async (jwt) => {
           const { data, error } = await clientFor(jwt).auth.getUser(jwt);
@@ -58,34 +52,21 @@ if (import.meta.main) {
             {},
           );
           if (
-            error || !data || typeof data !== "object" || Array.isArray(data) ||
-            Object.keys(data).length !== 3 || data.role !== "owner" ||
-            data.status !== "ACTIVE" || typeof data.display_name !== "string" ||
-            !data.display_name
+            error || !data || typeof data !== "object" ||
+            Array.isArray(data) || data.role !== "owner" ||
+            data.status !== "ACTIVE"
           ) throw new Error("OWNER_REQUIRED");
         },
-        diagnoseConfiguration: async () => {
-          const diagnosis = diagnoseGate6ProbeConfiguration();
-          return {
-            configuration_valid: diagnosis.configuration_valid,
-            failed_check: diagnosis.failed_check,
-          };
+        create: async () => {
+          const authorization = request.headers.get("authorization") || "";
+          const jwt = authorization.replace(/^Bearer\s+/i, "");
+          const { data, error } = await clientFor(jwt).rpc(
+            "create_task13_synthetic_context_v1",
+            {},
+          );
+          if (error || !data) throw new Error("SYNTHETIC_CONTEXT_FAILED");
+          return data;
         },
-        executeProbe: () => {
-          return runGate6PreProbePipeline({
-            loadConfiguration: loadGate6ProbeConfig,
-            initializeSigner: (config) =>
-              initializeGitHubAppJwtSigner(config.privateKey),
-            initializeDependencies: (config, signer) =>
-              createGitHubAppGate6ProbeInput(
-                config,
-                (_privateKey, appId) => signer(appId),
-                fetch,
-              ),
-            invokeProbe: executeGitHubAppGate6Probe,
-          });
-        },
-        projectProbeResult: (result) => result,
       });
       return withCors(request, response);
     } catch {

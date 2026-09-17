@@ -90,19 +90,20 @@ Rejected because it would imply filesystem, credential, process and terminal cap
 
 ## 5. GitHub App architecture
 
-The GitHub App is owned by the LWS GitHub Organization and installed only on the LWS organization that owns the private template and customer repositories. Installation uses **Only select repositories** and initially selects only the private canonical template. GitHub automatically grants the App access to repositories that the App creates; unrelated LWS and customer repositories therefore remain outside the installation. GitHub Apps have no permissions by default; the installation receives only the repository permissions required by the approved provider operations.
+The GitHub App has two separate installations. The production installation can read only the selected private canonical starter. The LAB installation owns only synthetic test repositories and can create/write/verify a test island. An installation credential never crosses organizations, and private cross-organization template generation is forbidden and unsupported.
 
 Minimum V1 permissions:
 
 | Permission | Level | Purpose |
 | --- | --- | --- |
 | Repository metadata | Read | Verify owner, external ID, name, visibility and default branch |
-| Repository administration | Write | Generate/create the private organization repository |
-| Repository contents | Write | Read template/content provenance and create `.lws/project.json` |
+| Repository administration | Write | LAB-only creation of one empty private organization repository |
+| Repository contents | Read | Production-only immutable starter snapshot read |
+| Repository contents | Write | LAB-only snapshot, marker and verification operations on the captured repository ID |
 
 `Workflows`, `Actions`, `Deployments`, `Pages`, `Issues`, `Pull requests`, `Members`, `Webhooks` and secret-management permissions are not granted in V1. `Workflows: write` becomes relevant only if a later approved command edits `.github/workflows`; the V1 provider must reject that path.
 
-The provider creates a short-lived App JWT from the App ID and private key, exchanges it with the configured installation ID for an installation token, and uses the token only in memory. Installation tokens expire after one hour. Every token request supplies an explicit repository selection and the minimum permissions for that operation. The creation token selects only the canonical template repository ID; after GitHub adds the newly created repository to the installation, marker, read and reconciliation tokens select only the new repository ID. Test-organization contract evidence must prove template generation works with this scope before activation. Failure of that test blocks release and requires owner review of a revised authority design; minting an installation-wide token is not a fallback.
+The provider creates short-lived App JWTs and installation tokens only in memory. Production snapshot tokens select exactly the canonical starter repository ID and grant only Metadata/Contents read. LAB write/readback tokens select exactly the captured LAB repository ID and grant only Metadata read plus Contents write. The sole exception is the explicitly named `LAB_REPOSITORY_CREATE` bootstrap token: before creation no target repository ID exists, so it omits `repository_ids`, grants only Metadata read plus Administration write, is routed only to `POST /orgs/{lab}/repos`, and is discarded immediately after one successful create. It is never an implicit installation-wide fallback. If the LAB installation contains any unrelated repository, policy review must block execution until endpoint and installation isolation are re-established.
 
 GitHub permission categories are coarser than provider methods. Even a repository-scoped token with `Administration: write` or `Contents: write` can technically perform actions that the provider does not expose. Fixed endpoint routing, denylisted destructive methods, request-shape contract tests, short token lifetime and GitHub audit correlation are mandatory compensating controls. The provider has no delete, transfer, archive, visibility-change, branch-rewrite or arbitrary-content method.
 
@@ -118,14 +119,14 @@ The orchestration sequence is:
 2. Claim a durable operation using workspace ID, context ID, command idempotency key and fingerprint.
 3. Derive the repository name and expected owner internally.
 4. Resolve the approved starter release and exact source commit SHA.
-5. Mint a just-in-time installation token.
-6. Generate a private repository from the template default branch with `include_all_branches=false`.
-7. Persist the returned external repository ID and node ID as soon as the durable operation can safely record them.
-8. Verify organization, deterministic name, private visibility, `main`, installation access and generated source tree.
-9. Create `.lws/project.json` serially and capture its commit SHA.
-10. Re-read and verify the context marker.
-11. Bind the exact verified metadata to the locked workspace/context and transition it to `REPOSITORY_READY`.
-12. Emit a redacted audit event and discard credentials.
+5. Mint a production token scoped to the fixed starter repository with Metadata/Contents read, read every source blob for the approved commit into memory, reproduce the release digest, verify repository ID/owner/commit/digest and discard the token.
+6. Mint one explicit LAB pre-repository create token, create exactly one empty private repository and discard the token.
+7. Persist the returned external repository ID and node ID before any content write.
+8. Mint a LAB token scoped to that external repository ID with Metadata read and Contents write.
+9. Write the verified in-memory blobs, tree, commit and `main` ref through fixed Git-data routes.
+10. Create `.lws/project.json` serially in a separate commit and capture its commit SHA.
+11. Re-read and verify installation, organization, external ID, deterministic name, private visibility, `main`, source digest and exact context/operation marker.
+12. Bind the exact verified metadata to the locked workspace/context, transition it to `REPOSITORY_READY`, emit redacted audit and discard the LAB token.
 
 The provider follows redirects only when the target remains HTTPS on an explicit `github.com` or `api.github.com` allowlist. It never accepts a caller-supplied host, owner, template or absolute URL.
 
@@ -255,7 +256,7 @@ The values are non-secret and contain no customer PII. The provider serializes t
 
 Each approved starter release has an immutable semantic version tag and an exact source commit SHA. The provider configuration maps one active semantic version to one reviewed commit on the template default branch.
 
-GitHub template generation does not accept a commit ref. Release publication therefore protects `main` and semantic release tags with GitHub rulesets, disallows force-push/deletion, restricts bypass to audited break-glass owners and freezes starter changes while generation holds an LWS release lock. The provider binds the template repository's immutable external ID, resolves `main`, verifies it equals the approved release SHA immediately before generation, then compares the generated initial tree to the approved source tree before binding. The comparison recursively sorts paths and requires equality of path, Git object type, file mode and blob content hash while excluding no path; the later marker commit is verified separately. A mismatch quarantines the result.
+The provider binds the starter repository's immutable external ID and reads the exact approved commit, not a floating branch. Before any create call it reads every blob, recursively sorts paths and verifies equality of path, Git object type, file mode and SHA-256 content hash against the approved release digest while excluding no path. Only that verified in-memory snapshot may cross into the LAB write phase. The later marker commit is verified separately. Any source mismatch creates zero repositories; any post-create mismatch quarantines the captured LAB external ID.
 
 Workspace metadata records `starter_source`, `starter_version` and exact `starter_commit_sha`. The customer repository's own marker commit SHA is separate provenance.
 
@@ -538,7 +539,7 @@ Stable error families include invalid command, unauthorized context, invalid lif
 
 ### Provider integration tests
 
-Run against a dedicated test organization and test App only after separate approval. Cover successful template generation, private-template denial, token expiry, rate limit, 5xx, timeout after create, same-name foreign repository, missing/mismatched marker, source-tree race and recovery from captured external ID. Cleanup is owner-reviewed or uses a separately approved test-only cleanup command with marker verification.
+Run only after separate approval against the fixed production starter installation and dedicated LAB installation. Cover production read-only scope, complete snapshot verification before create, exactly one LAB create, repository-scoped LAB writes, token expiry, rate limit, 5xx, timeout after create, same-name foreign repository, missing/mismatched marker, source-snapshot mismatch and recovery from captured external ID. Private cross-organization template generation is a required denial case. Cleanup is owner-reviewed or uses a separately approved test-only cleanup command with marker verification.
 
 ### Starter tests
 

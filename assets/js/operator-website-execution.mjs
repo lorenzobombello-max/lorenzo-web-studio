@@ -155,7 +155,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || workspace.website_work_context_id !== expected.websiteWorkContextId
       || workspace.project_id !== expected.projectId
       || workspace.quote_request_id !== expected.quoteRequestId
-      || !["PENDING_REPOSITORY", "READY"].includes(workspace.workspace_state)
+      || !["PENDING_REPOSITORY", "REPOSITORY_READY", "READY"].includes(workspace.workspace_state)
       || workspace.repository_provider !== "GITHUB"
       || !BRANCH.test(String(workspace.default_branch || ""))
       || (workspace.preview_branch !== null && !BRANCH.test(String(workspace.preview_branch)))
