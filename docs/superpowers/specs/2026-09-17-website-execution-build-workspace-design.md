@@ -148,7 +148,7 @@ The database binds quote request to website work context, execution workspace, r
 
 ### GitHub/provider: external repository source
 
-The provider reads only the server-selected repository external ID and canonical commit/ref using server-held credentials. It cannot accept browser repository coordinates. Provider symlinks, submodules, Git links, temporary URLs, and binary objects are metadata only or blocked; they are never followed as filesystem paths.
+The provider reads only the server-selected repository external ID and canonical commit/ref using server-held credentials. It cannot accept browser repository coordinates. Known, structurally valid symlinks, submodules, and Git links are returned only as inert unsupported directory metadata and are never followed. Unknown or malformed provider structures, redirects, canonical-path mismatches, and repository-root escapes fail the current request closed. Temporary URLs are never returned, and binary objects are never returned as content.
 
 ### Local developer machine: separate trusted operator environment
 
@@ -198,6 +198,21 @@ The cockpit remains visible in every valid website-workspace state. The files ar
 
 A state transition away from repository-ready immediately clears the tree, selected file, content, cursors, and local launcher availability. Background refresh failure does not silently convert cached data into current authority; the UI marks it stale and disables further reads until revalidated.
 
+The server projects `repository_failure_category`; the browser never derives it. Before projection, an unknown or unrecognized persisted repository operation is normalized to null. The following precedence is total and is evaluated from top to bottom:
+
+| Priority | Repository operation | `repository_failure_category` |
+|---|---|---|
+| 1 | `QUARANTINED` | `QUARANTINED` |
+| 2 | `BLOCKED` | `BLOCKED` |
+| 3 | `TERMINAL_FAILED` | `TERMINAL` |
+| 4 | `RETRYABLE_FAILED` or `RETRY_SCHEDULED` | `RETRYABLE` |
+| 5 | `CLAIMED`, `CREATING`, `EXTERNAL_CREATED`, `VERIFYING`, or `COMPLETE` | null |
+| 6 | null, including an unknown operation normalized to null | null |
+
+If the workspace is `REPOSITORY_FAILED` without one of the recognized failure operations above, the category is null. This does not mean success: `repository_recovery_guidance` remains responsible for projecting `CONTACT_OWNER` for that state. For contradictory workspace/operation combinations, a recognized failure operation wins according to the precedence above; otherwise the category is null. `capabilities.project_files_read` remains false unless its separately defined exact ready/complete/verified condition passes.
+
+Failure category and recovery guidance are different server projections. A null category never authorizes the browser to infer a category, success, recoverability, or retry authority.
+
 ```text
 FINAL_BUILD_REQUIRES_REPOSITORY=JA
 FINAL_BUILD_REQUIRES_PROJECT_ID=NEE
@@ -210,6 +225,8 @@ PROJECT_FILES_ALLOWED_AT_REPOSITORY_READY=JA
 The existing `commercial-operator-command` gateway remains the transport. The file-read action reuses the precise `read_website_project_file` name from reviewed design history; no deployed endpoint is claimed. Directory listing receives a companion action: `list_website_project_directory`.
 
 Both actions use exact-key validation and return `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Response contracts are versioned and contain no provider URL, credential, installation token, authenticated remote, or local path.
+
+The existing `get_website_execution_workspace_v2(uuid)` RPC remains unchanged for backward compatibility. Phase A introduces the forward-only `get_website_execution_workspace_v3(uuid)` RPC, which owns the new `WebsiteExecutionWorkspaceV3` contract. The commercial operator runtime may switch the Website Execution read route to v3 only during a later authorized Phase A implementation. V2 must not silently emit v3 semantics. Future executable tests must prove `V2_BACKWARD_COMPATIBILITY=PASS` and `V3_EXACT_CONTRACT=PASS`.
 
 ### 11.1 List directory
 
@@ -238,11 +255,56 @@ Success result, conceptually:
   "snapshot": { "commit_sha": "40-or-64-lowercase-hex", "ref_label": "main" },
   "directory": "src/components",
   "entries": [
-    { "name": "Header.astro", "path": "src/components/Header.astro", "kind": "FILE", "size_bytes": 2048, "readability": "TEXT" }
+    { "entry_type": "ENTRY", "name": "Header.astro", "path": "src/components/Header.astro", "kind": "FILE", "size_bytes": 2048, "readability": "READABLE_CANDIDATE", "selectable": true }
   ],
   "next_cursor": null
 }
 ```
+
+A directory/tree listing has metadata only. Before reading a regular blob, the server cannot truthfully know strict UTF-8 validity, byte-derived binary status, or sensitive content discovered from bytes. Therefore a normal unread blob is never labeled `TEXT` or `BINARY_UNSUPPORTED` from tree metadata.
+
+The Phase A directory-entry contract is:
+
+```ts
+type WebsiteProjectDirectoryEntry =
+  | {
+      entry_type: "ENTRY";
+      name: string;
+      path: string;
+      kind: "DIRECTORY" | "FILE" | "UNSUPPORTED";
+      size_bytes: number | null;
+      readability:
+        | "DIRECTORY"
+        | "READABLE_CANDIDATE"
+        | "TOO_LARGE"
+        | "SENSITIVE_BLOCKED"
+        | "UNSUPPORTED";
+      selectable: boolean;
+    }
+  | {
+      entry_type: "BLOCKED_CREDENTIAL";
+      name: "Geblokkeerd bestand";
+      kind: "UNSUPPORTED";
+      readability: "SENSITIVE_BLOCKED";
+      selectable: false;
+    };
+```
+
+The server applies this total directory mapping:
+
+| Provider/tree fact | Projected entry |
+|---|---|
+| Tree/directory | `kind=DIRECTORY`, `readability=DIRECTORY`, `selectable=true` |
+| Ordinary regular blob, safe pathname, declared size at most 1 MiB | `kind=FILE`, `readability=READABLE_CANDIDATE`, `selectable=true` |
+| Ordinary regular blob, safe pathname, provider size null or unknown | `kind=FILE`, `readability=READABLE_CANDIDATE`, `selectable=true`; the authoritative 1 MiB limit still applies before and during the blob read |
+| Ordinary regular blob, safe pathname, provider-declared size greater than 1 MiB | `kind=FILE`, `readability=TOO_LARGE`, `selectable=false` |
+| Blocked credential or sensitive pathname | Exact redacted `BLOCKED_CREDENTIAL` variant; no path, original basename, size, object ID/SHA, or actionable target |
+| Known symlink mode | `kind=UNSUPPORTED`, `readability=UNSUPPORTED`, `selectable=false` |
+| Known commit/submodule/Git-link entry | `kind=UNSUPPORTED`, `readability=UNSUPPORTED`, `selectable=false` |
+
+An unknown or unrecognized provider object type, unknown unsafe mode, malformed metadata, canonical-path mismatch, redirect, or repository-root escape does not produce an inert or partial item. It fails the entire current request closed as a provider-response or path-integrity failure. No directory entry exposes a provider object ID or SHA.
+
+`TEXT` is a post-read success fact. `BINARY_UNSUPPORTED`, `UNSUPPORTED_ENCODING`, `SENSITIVE_FILE_BLOCKED`, and `FILE_TOO_LARGE` are authoritative read outcomes or errors; they are not guessed from normal tree metadata. These states add no browser editor semantics.
 
 The server sorts entries deterministically by directory first and then Unicode code point order of normalized names. One response contains at most 500 entries and at most 512 KiB of serialized response data. Additional pages require an opaque cursor with a five-minute lifetime. An invalid, expired, replayed in a different context, or snapshot-mismatched cursor returns `PROJECT_FILES_CURSOR_INVALID`; an immutable commit no longer available from the provider returns `PROJECT_FILES_SNAPSHOT_UNAVAILABLE`. Directory traversal is lazy; recursive whole-tree export is not a Phase A operation.
 
@@ -295,7 +357,9 @@ Reject:
 - provider responses whose canonical returned path differs from the requested normalized path;
 - any path escaping repository root.
 
-The provider is addressed by repository external ID and immutable commit SHA resolved by the server. A symlink, submodule, Git link, or provider-specific redirect is not traversed. It is returned as inert metadata with `readability: UNSUPPORTED` or rejected.
+The provider is addressed by repository external ID and immutable commit SHA resolved by the server. A known, structurally valid symlink, submodule, or Git-link/commit tree entry is not traversed and is returned only as `kind=UNSUPPORTED`, `readability=UNSUPPORTED`, `selectable=false`. The browser cannot read, follow, or expand it, no symlink target is fetched, and no submodule repository is followed.
+
+An unknown object type, invalid mode/type combination, malformed canonical path, repository-root escape, redirect, or provider canonical-path mismatch fails the entire current request closed. No partial unsafe entry is returned.
 
 ### 12.2 Cross-context isolation
 
@@ -310,13 +374,51 @@ Deny before content return:
 - exact `.env` and `.env.local`;
 - basenames beginning `.env.` except exact `.env.example`, `.env.sample`, and `.env.template`;
 - private-key and keystore forms including `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ed25519`, and analogous private identity files;
-- exact credential stores such as `.git-credentials`, `.netrc`, `.npmrc`, `.pypirc`, `credentials.json`, `service-account.json`, and provider token files;
+- exact credential stores such as `.git-credentials`, `.netrc`, `.npmrc`, `.pypirc`, `credentials.json`, and `service-account.json`;
+- provider-token basenames selected by the deterministic policy below;
 - internal control material under `.git/` and the binding marker `.lws/project.json`;
 - files classified by server policy as credentials, tokens, secrets, or private keys.
 
 `.env.example`, `.env.sample`, and `.env.template` are not denied merely by name. They still pass content inspection. High-confidence secret content such as a private-key header, authenticated remote, access token, or non-dummy credential assignment blocks the entire file. The server returns a stable `SENSITIVE_FILE_BLOCKED` state and never returns partial sensitive content. The policy uses explicit normalized names and content classifiers, not a careless substring match.
 
-Directory listings may show a blocked entry name only when that name itself is not sensitive; credential-store entries use a generic blocked item label. No content preview, size-derived inference beyond the safe DTO, or download link is provided.
+For provider-token matching, the repository-relative safe path and Unicode normalization rules have already been applied. The server inspects the basename only and compares it case-insensitively. A basename is blocked when it consists of an optional leading `.`, a provider name `github`, `gitlab`, `npm`, or `provider`, an optional separator `-`, `_`, or `.`, the literal `token`, and an optional suffix that begins with `-`, `_`, or `.` and otherwise contains only lowercase ASCII letters, digits, `.`, `_`, or `-`. The semantic rule and examples are authoritative; an equivalent implementation regex may be `^\.?(?:github|gitlab|npm|provider)(?:[-_.]?token)(?:[-_.][a-z0-9][a-z0-9._-]*)?$` with case-insensitive matching.
+
+The provider-token policy must block:
+
+```text
+.github-token
+.gitlab-token
+.npm-token
+.provider-token
+github-token
+gitlab-token
+npm-token
+provider-token
+github_token
+github.token
+githubtoken
+.github-token.local
+github-token.backup
+gitlab_token_prod
+npm.token.dev
+PROVIDER-TOKEN
+.GITHUB-TOKEN
+```
+
+It must allow:
+
+```text
+github-actions.yml
+provider-config.json
+npm-package.json
+tokenizer.ts
+github-tokenizer.txt
+gitlab-ci.yml
+package.json
+build-token-view.mjs
+```
+
+Existing separately blocked files such as `.npmrc` and `.git-credentials` remain blocked by their own exact rules. Every blocked credential or sensitive pathname is represented in a directory listing only by the exact generic `BLOCKED_CREDENTIAL` variant. No original basename, path, content preview, size, object ID/SHA, actionable target, or download link is provided.
 
 ## 13. File limits and content classification
 
@@ -454,7 +556,12 @@ Future tests must prove:
 - request exactness rejects repository/workspace/project/ref/credential fields;
 - traversal, absolute, encoded, null, Unicode ambiguity, and provider path mismatch are rejected;
 - secret filenames and high-confidence secret content are denied;
-- oversized, binary, unsupported encoding, symlink, submodule, and Git-link objects return deterministic safe states;
+- directory listings use only `DIRECTORY`, `READABLE_CANDIDATE`, `TOO_LARGE`, `SENSITIVE_BLOCKED`, and `UNSUPPORTED`, while `TEXT` and byte-derived failures occur only after an authoritative read;
+- known symlink, submodule, and Git-link objects return inert non-selectable unsupported entries, while unknown/malformed objects fail the whole request closed;
+- the total repository-failure-category projection and browser non-inference rule hold for every workspace/operation combination;
+- every provider-token must-block and must-allow basename example is enforced case-insensitively after normalization;
+- `get_website_execution_workspace_v2(uuid)` remains backward-compatible and `get_website_execution_workspace_v3(uuid)` emits only the exact v3 contract;
+- oversized, binary, and unsupported encoding reads return deterministic safe states;
 - cursor expiry/context/snapshot binding, provider timeout/throttling/malformed output, and classifier outage fail closed;
 - provider errors and temporary URLs do not leak;
 - no mutation/provider-write method is reachable.
