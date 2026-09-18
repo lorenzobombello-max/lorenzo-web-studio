@@ -424,6 +424,13 @@ test("non-ready and malformed current workspace states fail closed", () => {
     currentWorkspaceFixture("UNKNOWN"),
     currentWorkspaceFixture("REPOSITORY_READY", { provisioned_by: null }),
     currentWorkspaceFixture("REPOSITORY_READY", { provisioned_at: null }),
+    currentWorkspaceFixture("REPOSITORY_READY", { repository_owner: null }),
+    currentWorkspaceFixture("REPOSITORY_READY", { repository_name: null }),
+    currentWorkspaceFixture("REPOSITORY_READY", { repository_owner: "../other" }),
+    currentWorkspaceFixture("REPOSITORY_READY", { repository_name: "../other" }),
+    currentWorkspaceFixture("REPOSITORY_READY", {
+      repository_url: "https://github.com/client-selected/repository",
+    }),
   ]) {
     assert.throws(() => validateWebsiteExecutionWorkspace({
       ...base,

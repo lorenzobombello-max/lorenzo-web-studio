@@ -1,7 +1,7 @@
 import {
   createOperatorAutoRefresh,
   createOperatorRefreshGenerationGuard,
-} from "./operator-auto-refresh.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-auto-refresh.mjs?v=20260917-pre-project-workspace-r2";
 import {
   createOperatorDossierAuthority,
   dossierReference,
@@ -14,13 +14,13 @@ import {
   quoteRequestIdFromRequirementsBoardSlot,
   requirementsInvalidationMatches,
   validateProjectRequirementsBoard,
-} from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
-import { projectWorkspaceRequest } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-project-requirements.mjs?v=20260917-pre-project-workspace-r2";
+import { projectWorkspaceRequest } from "./operator-project-workspace.mjs?v=20260917-pre-project-workspace-r2";
 import {
   validateWebsiteExecutionWorkspace,
   websiteExecutionRequest,
   websiteExecutionSlot,
-} from "./operator-website-execution.mjs?v=20260913-requirements-wiring-r1";
+} from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 
 const FILTERS = Object.freeze([
   ["ALL", "Alle"],

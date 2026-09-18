@@ -11,7 +11,7 @@ import {
   workspaceChannelName,
   workspaceReservationWindowName,
 } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
-import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260912-dossier-continuity-project-r1";
+import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260917-pre-project-workspace-r2";
 
 async function requestLocalMasterLock(navigatorObject) {
   if (!navigatorObject?.locks?.request) return { acquired: false, release() {} };

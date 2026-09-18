@@ -1,7 +1,7 @@
 import {
   createOperatorAutoRefresh,
   createOperatorRefreshGenerationGuard,
-} from "./operator-auto-refresh.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-auto-refresh.mjs?v=20260917-pre-project-workspace-r2";
 import {
   createOperatorDossierAuthority,
   dossierReference,
@@ -15,14 +15,14 @@ import {
   projectWorkspaceWithAssignment,
   quoteRequestIdFromProjectWorkspaceSlot,
   startProjectAndReload,
-} from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-project-workspace.mjs?v=20260917-pre-project-workspace-r2";
 import {
   projectRequirementsRequest,
   projectRequirementsSummary,
   requirementsBoardSlot,
   requirementsInvalidationMatches,
-} from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260912-dossier-continuity-project-r1";
+} from "./operator-project-requirements.mjs?v=20260917-pre-project-workspace-r2";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 
 const PROJECT_CHILD_ROLES = new Set(["owner"]);
 

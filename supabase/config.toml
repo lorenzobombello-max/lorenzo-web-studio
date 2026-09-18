@@ -64,3 +64,12 @@ verify_jwt = false
 [functions.commercial-operator-command]
 verify_jwt = false
 static_files = ["./functions/commercial-operator-command/assets/*.docx"]
+
+[functions.github-app-gate6-probe]
+verify_jwt = false
+
+[functions.github-task13-synthetic-context]
+verify_jwt = false
+
+[functions.github-task13-test-island]
+verify_jwt = false

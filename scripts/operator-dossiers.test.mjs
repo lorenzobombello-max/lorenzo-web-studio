@@ -354,19 +354,20 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
   assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
-  const dossierCacheIdentity = "20260912-project-refresh-retention-r1";
-  const windowGuardCacheIdentity = "20260913-user-gesture-handoff-r1";
-  const windowRegistryCacheIdentity = "20260912-dossier-continuity-project-r1";
-  const dossierCssCacheIdentity = "20260912-dossier-continuity-project-r1";
-  const dashboardGuardCacheIdentity = "20260913-user-gesture-handoff-r1";
-  const dashboardModuleCacheIdentity = "20260912-dossier-continuity-project-r1";
-  const dashboardCssCacheIdentity = "20260912-dossier-continuity-project-r1";
+  const dashboardDossierCacheIdentity = "20260917-pre-project-workspace-r2";
+  const registryDossierCacheIdentity = "20260912-project-refresh-retention-r1";
+  const windowGuardCacheIdentity = "20260917-pre-project-workspace-r2";
+  const windowRegistryCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dossierCssCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dashboardGuardCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dashboardModuleCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dashboardCssCacheIdentity = "20260917-pre-project-workspace-r2";
   assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${dashboardGuardCacheIdentity}`));
   assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${dashboardModuleCacheIdentity}`));
-  assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
+  assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dashboardDossierCacheIdentity}`));
   assert.ok(childHtml.includes(`operator-window-guard.mjs?v=${windowGuardCacheIdentity}`));
   assert.ok(windowGuard.includes(`operator-module-registry.mjs?v=${windowRegistryCacheIdentity}`));
-  assert.ok(registry.includes(`operator-dossiers.mjs?v=${dossierCacheIdentity}`));
+  assert.ok(registry.includes(`operator-dossiers.mjs?v=${registryDossierCacheIdentity}`));
   assert.ok(dashboardHtml.includes(`operator-dashboard.css?v=${dashboardCssCacheIdentity}`));
   assert.ok(childHtml.includes(`operator-dashboard.css?v=${dossierCssCacheIdentity}`));
   const source = await read("assets/js/operator-dossiers.mjs");
@@ -518,7 +519,7 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
     read("operator/dashboard/index.html"),
   ]);
   assert.match(source, />Actief<\/button><button[^>]+>Gearchiveerd<\/button>/);
-  assert.match(html, /operator-dashboard\.css\?v=20260912-dossier-continuity-project-r1/);
+  assert.match(html, /operator-dashboard\.css\?v=20260917-pre-project-workspace-r2/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\][^{]*\{[^}]*animation:dossiers-zone-heartbeat 4\.8s ease-in-out infinite/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
   for (const accent of ["#c79828", "var(--turquoise)", "var(--green)", "var(--red)"]) {
@@ -782,10 +783,10 @@ test("Dossiers wires VAT remediation and cache versions without a dashboard dupl
   assert.match(source, /buildVatReadinessAction\(\s*"request_vat_turnover_refresh"/);
   assert.match(source, /async function executeVatRemediation[\s\S]*await options\.requireAal2\(\)[\s\S]*await authority\.gateway\(request\)[\s\S]*await refreshWebsiteQuotationAuthorities/);
   assert.doesNotMatch(source, /approve_quotation_vat_review|governed_turnover_minor\s*:|classification_code\s*:/);
-  assert.match(html, /operator-dashboard\.css\?v=20260912-dossier-continuity-project-r1/);
-  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260913-user-gesture-handoff-r1/);
-  assert.match(guard, /operator-dashboard\.js\?v=20260912-dossier-continuity-project-r1/);
-  assert.match(dashboard, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);
+  assert.match(html, /operator-dashboard\.css\?v=20260917-pre-project-workspace-r2/);
+  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260917-pre-project-workspace-r2/);
+  assert.match(guard, /operator-dashboard\.js\?v=20260917-pre-project-workspace-r2/);
+  assert.match(dashboard, /operator-dossiers\.mjs\?v=20260917-pre-project-workspace-r2/);
   assert.match(registry, /operator-dossiers\.mjs\?v=20260912-project-refresh-retention-r1/);
   assert.doesNotMatch(dashboard, /authorize_website_quotation_pricing_decision|websiteQuotationPricingPresentation/);
   assert.match(distScript, /"assets\/js\/operator-vat-readiness\.mjs"/);

@@ -223,7 +223,7 @@ test("standalone AAL2 route exposes no RPC, fetch, callback, enrollment, or muta
   assert.doesNotMatch(standalone, /enroll\(|\.rpc\(|fetch\(|callback|invoke|action/);
   assert.match(guard, /mountOperatorAal2VerificationButton\(\{ controller: mfaController \}\)/);
   assert.match(guard, /operator-mfa\.mjs\?v=20260906-aal2-standalone-r1/);
-  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260912-dossier-continuity-project-r1/);
+  assert.match(html, /operator-dashboard-guard\.mjs\?v=20260917-pre-project-workspace-r2/);
 });
 
 test("database migration wraps every direct critical RPC and protects Auth UUID binding", async () => {

@@ -134,14 +134,37 @@ test("recruitment owner workspace exposes bounded content and separate lifecycle
   assert.match(publicationDialog, /class="operator-modal--action-confirm"/);
   assert.match(recruitment, /Rekrutering publiceren\?/);
   assert.match(recruitment, /Rekrutering offline zetten\?/);
-  assert.doesNotMatch(workspace, /kandidaat|testprofiel|testtoewijzing|contract/i);
+  assert.doesNotMatch(workspace, /Deze module biedt later ruimte voor kandidaatbeheer, testprofielen, testtoewijzingen en resultaten\./i);
+  assert.doesNotMatch(workspace, /Synthetic Kandidaat|test@example\.invalid|Ada Lovelace|ada@example\.test|a1800000-0000-4000-8000-00000000009[123]|fa[23]00000-0000-4000-8000-000000000001/i);
+  assert.doesNotMatch(workspace, /\b(?:contract_id|employee_id|workforce_id)\b/i);
   assert.match(script, /initializeOperatorRecruitment\(document, client, currentIdentity, \{ onAuthorizationFailure \}\)/);
   assert.match(recruitment, /export function initializeOperatorRecruitment/);
   assert.match(recruitment, /createRecruitmentVacancyController\(\{ execute, onChange: render \}\)/);
   assert.match(recruitment, /client\.rpc\(name, parameters\)/);
   assert.doesNotMatch(recruitment, /commercial-operator-command|recruitment-public|sdf-qualification/);
   assert.match(css, /\.recruitment-vacancy-list \{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(css, /@media \(max-width:800px\)[^{]*\{[^}]*\.recruitment-heading \{ flex-direction:column; \}/);
+  const responsiveMediaQueries = [...css.matchAll(/@media\s*\(\s*max-width\s*:\s*800px\s*\)/g)];
+  assert.notEqual(responsiveMediaQueries.length, 0);
+  const responsiveRules = responsiveMediaQueries.flatMap((responsiveMedia)=>{
+    const mediaOpenIndex = css.indexOf("{", responsiveMedia.index + responsiveMedia[0].length);
+    assert.notEqual(mediaOpenIndex, -1);
+    let mediaDepth = 1;
+    let mediaCloseIndex = mediaOpenIndex + 1;
+    while (mediaDepth > 0 && mediaCloseIndex < css.length) {
+      if (css[mediaCloseIndex] === "{") mediaDepth += 1;
+      if (css[mediaCloseIndex] === "}") mediaDepth -= 1;
+      mediaCloseIndex += 1;
+    }
+    assert.equal(mediaDepth, 0);
+    return [...css.slice(mediaOpenIndex + 1, mediaCloseIndex - 1).matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+  });
+  const recruitmentHeadingRule = responsiveRules.find(([, selectors])=>selectors.split(",").some((selector)=>selector.trim() === ".recruitment-heading"));
+  assert.ok(recruitmentHeadingRule);
+  const declarations = new Map(recruitmentHeadingRule[2].split(";").map((declaration)=>{
+    const separator = declaration.indexOf(":");
+    return separator < 0 ? null : [declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim()];
+  }).filter(Boolean));
+  assert.equal(declarations.get("flex-direction"), "column");
 });
 
 test("all operator dialogs use one exclusive responsive modal type authority", async () => {
@@ -164,6 +187,10 @@ test("all operator dialogs use one exclusive responsive modal type authority", a
     ["dossierLifecycleDialog", "operator-modal--action-confirm"],
     ["dossierPurgeDialog", "operator-modal--action-confirm"],
     ["sdfDossierPurgeDialog", "operator-modal--action-confirm"],
+    ["recruitmentCandidateDialog", "operator-modal--compact"],
+    ["recruitmentReviewDialog", "operator-modal--compact"],
+    ["recruitmentOpenApplicationDetailDialog", "operator-modal--reading"],
+    ["recruitmentOpenApplicationProfileDialog", "operator-modal--compact"],
   ]);
   const dialogs = [...html.matchAll(/<dialog\b[^>]*>/g)].map(([tag])=>({
     tag,
@@ -209,11 +236,11 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const guardUrl = html.match(/src="([^"]*operator-dashboard-guard\.mjs[^"]*)"/)?.[1];
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
-    "/assets/css/operator-dashboard.css?v=20260912-dossier-continuity-project-r1",
-    "/assets/js/operator-dashboard-guard.mjs?v=20260912-dossier-continuity-project-r1",
-    "./operator-dashboard.js?v=20260912-dossier-continuity-project-r1",
+    "/assets/css/operator-dashboard.css?v=20260917-pre-project-workspace-r2",
+    "/assets/js/operator-dashboard-guard.mjs?v=20260917-pre-project-workspace-r2",
+    "./operator-dashboard.js?v=20260917-pre-project-workspace-r2",
   ]);
-  for (const [url, release] of [[cssUrl, "20260912-dossier-continuity-project-r1"], [guardUrl, "20260912-dossier-continuity-project-r1"], [dashboardUrl, "20260912-dossier-continuity-project-r1"]]) {
+  for (const [url, release] of [[cssUrl, "20260917-pre-project-workspace-r2"], [guardUrl, "20260917-pre-project-workspace-r2"], [dashboardUrl, "20260917-pre-project-workspace-r2"]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));

@@ -133,7 +133,7 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("project-")) {
-      const { initializeOperatorProjectWorkspace } = await import("./operator-project-workspace-child.mjs?v=20260912-dossier-continuity-project-r1");
+      const { initializeOperatorProjectWorkspace } = await import("./operator-project-workspace-child.mjs?v=20260917-pre-project-workspace-r2");
       return initializeOperatorProjectWorkspace(root, client, identity, {
         slotKey,
         onInvalidate,
