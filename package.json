@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "supabase:bootstrap:local": "node scripts/supabase-local-bootstrap.mjs",
     "test:page-end": "node --test scripts/page-end-footer.test.mjs",
     "test:visual-contract": "node --test scripts/public-visual-contract.test.mjs"
   },
