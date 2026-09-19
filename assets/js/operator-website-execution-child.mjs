@@ -15,9 +15,9 @@ import {
   websiteExecutionView,
 } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 import {
-  projectRequirementsRequest,
-  requirementsBoardSlot,
   requirementsInvalidationMatches,
+  validateWebsiteRequirementsBoard,
+  websiteRequirementsBoardRequest,
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
 import {
   mountWebsiteProjectFilesTree,
@@ -33,6 +33,21 @@ const WEBSITE_PROJECT_FILE_ACTIONS = new Set([
   "list_website_project_directory",
   "read_website_project_file",
 ]);
+
+async function websiteRequirementsGateway(client, request) {
+  if (request?.action !== "get_website_requirements_board") {
+    throw new Error("WEBSITE_REQUIREMENTS_ACTION_NOT_ALLOWED");
+  }
+  const response = await client.functions.invoke("commercial-operator-command", {
+    body: request,
+  });
+  if (response?.error) throw response.error;
+  const body = response?.data;
+  if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
+    throw new Error(body?.code || "INVALID_WEBSITE_REQUIREMENTS_RESPONSE");
+  }
+  return body.result;
+}
 
 async function websiteProjectFilesGateway(client, request) {
   if (!request || !WEBSITE_PROJECT_FILE_ACTIONS.has(request.action)) {
@@ -118,7 +133,7 @@ function childMarkup() {
           </dl>
           <p data-website-requirements-preview></p>
         </div>
-        <button type="button" class="secondary-action" data-website-action="requirements">Takenbord openen</button>
+        <button type="button" class="secondary-action" data-website-action="requirements" disabled aria-disabled="true" title="Beschikbaar in een volgende fase">Takenbord openen</button>
       </section>
       <section class="website-execution__board" aria-labelledby="websiteTechnicalTitle">
         <div class="website-execution__board-heading"><div><p class="eyebrow">Development references</p><h2 id="websiteTechnicalTitle">Technische werkruimte</h2></div><span class="badge badge--active" data-website-build>UNKNOWN</span></div>
@@ -144,23 +159,41 @@ function childMarkup() {
   </section>`;
 }
 
-function renderRequirementsSummary(workspace, summary) {
+function renderRequirementsSummary(workspace, summaryState) {
   const empty = workspace.querySelector("[data-website-requirements-empty]");
   const content = workspace.querySelector("[data-website-requirements-content]");
-  if (summary.state === "empty") {
-    empty.textContent = summary.message;
+  const panel = workspace.querySelector("[data-website-requirements-panel]");
+  panel.dataset.websiteRequirementsState = summaryState.state;
+  if (["LOADING", "ERROR"].includes(summaryState.state)) {
+    empty.textContent = summaryState.state === "LOADING"
+      ? "Websitevereisten laden..."
+      : "Websitevereisten konden niet veilig worden geladen.";
+    empty.hidden = false;
+    content.hidden = true;
+    return;
+  }
+  const summary = summaryState.summary;
+  if (["NO_BOARD", "INTAKE_NOT_ELIGIBLE"].includes(summary.state)) {
+    empty.textContent = summary.state === "NO_BOARD"
+      ? "Nog geen Website Requirements-board beschikbaar."
+      : "De intake is nog niet geschikt voor Website Requirements.";
     empty.hidden = false;
     content.hidden = true;
     return;
   }
   empty.hidden = true;
   content.hidden = false;
-  workspace.querySelector("[data-website-requirements-progress]").textContent = summary.progress;
+  workspace.querySelector("[data-website-requirements-progress]").textContent =
+    `${String(summary.completed).padStart(2, "0")} / ${String(summary.total).padStart(2, "0")}`;
   workspace.querySelector("[data-website-requirements-completed]").textContent = summary.completed;
   workspace.querySelector("[data-website-requirements-open]").textContent = summary.open;
   workspace.querySelector("[data-website-requirements-blocked]").textContent = summary.blocked;
   workspace.querySelector("[data-website-requirements-preview]").textContent =
-    `Preview gereed: ${summary.readyForPreview ? "JA" : "NEE"}`;
+    summaryState.state === "STALE"
+      ? "Verouderde gegevens: vernieuwen is mislukt."
+      : summary.review_required
+      ? "Controle vereist na een gewijzigde intake."
+      : "Website Requirements zijn actueel.";
 }
 
 function setLink(workspace, name, href) {
@@ -181,7 +214,7 @@ function renderChild(workspace, state) {
   }
   empty.hidden = true;
   content.hidden = false;
-  const { context, assignment, summary, view } = state;
+  const { context, assignment, requirementsState, view } = state;
   const contextFields = {
     customer: context.customerName,
     dossier: context.dossierReference,
@@ -204,7 +237,7 @@ function renderChild(workspace, state) {
   notice.textContent = view.message;
   notice.hidden = !view.message;
   workspace.querySelector("[data-website-build]").textContent = view.buildResult || "NIET GEKOPPELD";
-  renderRequirementsSummary(workspace, summary);
+  renderRequirementsSummary(workspace, requirementsState);
   setLink(workspace, "github", view.links.github);
   workspace.querySelector("[data-website-action=\"provision\"]").hidden = !(
     state.canProvision && context.mode === "PRE_PROJECT" && view.state === "empty"
@@ -268,19 +301,14 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       if (projection.context_revision !== context.websiteWorkRevision) {
         throw new Error("WEBSITE_WORKSPACE_REVISION_MISMATCH");
       }
-      const summary = projection.mode === "OFFICIAL_PROJECT"
-        ? websiteRequirementsSummary(
-          await authority.gateway(projectRequirementsRequest(context)),
-          context,
-        )
-        : websiteRequirementsSummary(projection.requirements, context);
       if (!refreshGeneration.isCurrent(selection)) return false;
+      const previousRequirementsSummary = currentSnapshot?.requirementsState?.summary || null;
       const nextSnapshot = Object.freeze({
         state: "ready",
         context,
         assignment,
         projection,
-        summary,
+        requirementsState: Object.freeze({ state: "LOADING", summary: null }),
         view: websiteExecutionView(projection),
         canProvision: identity.role === "owner",
       });
@@ -298,6 +326,38 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         recoveryGuidance: projection.workspace?.repository_recovery_guidance || null,
       }));
       renderChild(workspace, currentSnapshot);
+      try {
+        const requirementsContext = Object.freeze({
+          quoteRequestId: context.quoteRequestId,
+          websiteWorkContextId: context.websiteWorkContextId,
+        });
+        const rawRequirements = await websiteRequirementsGateway(
+          client,
+          websiteRequirementsBoardRequest(requirementsContext),
+        );
+        const requirements = validateWebsiteRequirementsBoard(
+          rawRequirements,
+          requirementsContext,
+        );
+        if (!refreshGeneration.isCurrent(selection)) return false;
+        const summary = websiteRequirementsSummary(requirements);
+        currentSnapshot = Object.freeze({
+          ...currentSnapshot,
+          requirementsState: Object.freeze({
+            state: summary.state,
+            summary,
+          }),
+        });
+      } catch {
+        if (!refreshGeneration.isCurrent(selection)) return false;
+        currentSnapshot = Object.freeze({
+          ...currentSnapshot,
+          requirementsState: previousRequirementsSummary
+            ? Object.freeze({ state: "STALE", summary: previousRequirementsSummary })
+            : Object.freeze({ state: "ERROR", summary: null }),
+        });
+      }
+      renderRequirementsSummary(workspace, currentSnapshot.requirementsState);
       return true;
     } catch (error) {
       if (!refreshGeneration.isCurrent(selection)) return false;
@@ -366,9 +426,6 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
     if (action === "files") void projectFiles.activate();
-    if (action === "requirements" && currentSnapshot) {
-      options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId));
-    }
     if (action === "back" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {
       options.requestOpen?.("dossiers", `project-${currentSnapshot.context.quoteRequestId}`);
     }

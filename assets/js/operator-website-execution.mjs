@@ -1,5 +1,3 @@
-import { projectRequirementsSummary } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
-
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WEBSITE_SLOT = /^website-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
@@ -279,14 +277,45 @@ export function websiteExecutionView(value) {
   });
 }
 
-export function websiteRequirementsSummary(value, expected) {
-  if (expected?.mode === "PRE_PROJECT") {
-    if (!exactKeys(value, ["state", "message"])
-      || value.state !== "NOT_AVAILABLE"
-      || value.message !== "Requirements volgen na intake-sync.") {
-      throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
-    }
-    return Object.freeze({ state: "empty", heading: "PROJECTVEREISTEN", message: value.message });
+export function websiteRequirementsSummary(value) {
+  if (!Object.isFrozen(value) || !Object.isFrozen(value.items) ||
+    (value.board !== null && !Object.isFrozen(value.board)) ||
+    !Object.isFrozen(value.progress)) {
+    throw new Error("UNVALIDATED_WEBSITE_REQUIREMENTS_RESPONSE");
   }
-  return projectRequirementsSummary(value, expected);
+  if (value.empty_state === "NO_BOARD") {
+    return Object.freeze({
+      state: "NO_BOARD",
+      requirements_board_id: null,
+      board_revision: null,
+      completed: 0,
+      total: 0,
+      open: 0,
+      blocked: 0,
+      review_required: false,
+    });
+  }
+  if (value.empty_state === "INTAKE_NOT_ELIGIBLE") {
+    return Object.freeze({
+      state: "INTAKE_NOT_ELIGIBLE",
+      requirements_board_id: null,
+      board_revision: null,
+      completed: null,
+      total: null,
+      open: null,
+      blocked: null,
+      review_required: false,
+    });
+  }
+  const reviewRequired = value.board.sync_state === "REVIEW_REQUIRED";
+  return Object.freeze({
+    state: reviewRequired ? "REVIEW_REQUIRED" : "READY",
+    requirements_board_id: value.board.requirements_board_id,
+    board_revision: value.board.revision,
+    completed: value.progress.required_completed,
+    total: value.progress.required_total,
+    open: value.progress.required_open,
+    blocked: value.progress.required_blocked,
+    review_required: reviewRequired,
+  });
 }

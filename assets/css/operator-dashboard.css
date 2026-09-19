@@ -834,6 +834,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .website-project-files__text:focus-visible { outline:3px solid var(--turquoise-deep); outline-offset:-3px; }
 .dossiers-project [data-project-start]:disabled { cursor:not-allowed; opacity:.55; }
 .website-execution__requirements { min-width:0; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:5px solid var(--turquoise); border-radius:6px; background:var(--white); }
+.website-execution__requirements[data-website-requirements-state="LOADING"] { border-left-color:#8a979d; }
+.website-execution__requirements[data-website-requirements-state="ERROR"] { border-left-color:var(--danger); background:#fff7f6; }
+.website-execution__requirements[data-website-requirements-state="REVIEW_REQUIRED"],.website-execution__requirements[data-website-requirements-state="STALE"] { border-left-color:#b7791f; background:#fffaf0; }
+.website-execution__requirements [data-website-action="requirements"]:disabled { cursor:not-allowed; opacity:.55; }
 .project-workspace-requirements { min-width:0; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:5px solid var(--turquoise); border-radius:6px; background:var(--white); }
 .website-execution__requirements h2,.project-workspace-requirements h3 { margin:.1rem 0 .7rem; color:var(--navy); font-size:1rem; }
 .website-execution__requirements-progress { display:block; color:var(--navy); font-size:1.65rem; line-height:1.1; white-space:nowrap; }

@@ -11,11 +11,17 @@ import {
   requirementsBoardSlot,
   validateProjectRequirementsBoard,
 } from "../assets/js/operator-project-requirements.mjs";
+import * as requirementsModule from "../assets/js/operator-project-requirements.mjs";
 
 const quoteRequestId = "a1100000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
 const boardId = "a1800000-0000-4000-8000-000000000003";
 const operatorId = "a1800000-0000-4000-8000-000000000004";
+const websiteWorkContextId = "a1800000-0000-4000-8000-000000000005";
+const websiteRequirementId = "a1800000-0000-4000-8000-000000000006";
+const websiteIntakeId = "a1800000-0000-4000-8000-000000000007";
+const websiteSyncRunId = "a1800000-0000-4000-8000-000000000008";
+const idempotencyKey = "a1800000-0000-4000-8000-000000000009";
 const statuses = [
   "PENDING", "ACTIVE", "BLOCKED", "COMPLETED", "COMPLETED", "COMPLETED",
   "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED",
@@ -110,6 +116,357 @@ function projection(overrides = {}) {
 function validated(value = projection()) {
   return validateProjectRequirementsBoard(value, { quoteRequestId, projectId });
 }
+
+function websiteRequirement(overrides = {}) {
+  return {
+    requirement_id: websiteRequirementId,
+    item_number: 1,
+    title: "Homepage",
+    description: "Bouw de goedgekeurde homepage.",
+    category: "PAGE",
+    source: {
+      authority_type: "WEBSITE_INTAKE",
+      source_key: "pages.home",
+      intake_id: websiteIntakeId,
+      intake_revision: 3,
+      submitted_at: "2026-09-19T10:00:00Z",
+      mapping_version: 1,
+    },
+    linked_page_or_module: "/",
+    status: "ACTIVE",
+    completion_mode: "OPERATOR",
+    sort_order: 0,
+    required: true,
+    started_at: "2026-09-19T10:05:00Z",
+    completed_at: null,
+    verification_result: "NOT_APPLICABLE",
+    blocked_reason: null,
+    revision: 2,
+    source_review_state: "CURRENT",
+    permitted_actions: ["block_website_requirement", "complete_website_requirement"],
+    ...overrides,
+  };
+}
+
+function websiteBoard(overrides = {}) {
+  return {
+    contract_version: 1,
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    project_id: null,
+    phase: "PRE_PROJECT",
+    context: {
+      customer: "Atelier Noord",
+      dossier_reference: "LWS-AAN-2026-0042",
+      assigned_operator: { operator_id: operatorId, display_name: "Noor Janssens" },
+    },
+    board: {
+      requirements_board_id: boardId,
+      sync_state: "CURRENT",
+      revision: 14,
+      mapping_version: 1,
+      current_intake_id: websiteIntakeId,
+      current_intake_revision: 3,
+      current_intake_snapshot_sha256: "a".repeat(64),
+    },
+    items: [websiteRequirement()],
+    progress: {
+      required_total: 1,
+      required_completed: 0,
+      required_open: 1,
+      required_blocked: 0,
+      review_pending: 0,
+    },
+    readiness: {
+      ready_for_preview: false,
+      readiness: "BLOCKED",
+      reason: "REQUIRED_REQUIREMENTS_OPEN",
+    },
+    empty_state: null,
+    ...overrides,
+  };
+}
+
+test("Task 6 exports the exact Website Requirements client contract", () => {
+  for (const name of [
+    "websiteRequirementsBoardRequest",
+    "websiteRequirementsSyncRequest",
+    "websiteRequirementStartRequest",
+    "websiteRequirementBlockRequest",
+    "websiteRequirementCompleteRequest",
+    "websiteRequirementReopenRequest",
+    "websiteRequirementAcceptSourceChangeRequest",
+    "websiteRequirementKeepExistingSourceRequest",
+    "websiteRequirementRetireSourceRequest",
+    "validateWebsiteRequirementsBoard",
+    "validateWebsiteRequirementsSyncResult",
+    "validateWebsiteRequirementMutationResult",
+    "createWebsiteRequirementMutationIntent",
+  ]) assert.equal(typeof requirementsModule[name], "function", name);
+});
+
+test("all nine Website builders emit only their exact Task 5 keysets", () => {
+  const context = { quoteRequestId, websiteWorkContextId };
+  const mutation = {
+    ...context,
+    requirementId: websiteRequirementId,
+    expectedRevision: 2,
+    idempotencyKey,
+  };
+  const cases = [
+    [requirementsModule.websiteRequirementsBoardRequest, context, {
+      action: "get_website_requirements_board",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+    }],
+    [requirementsModule.websiteRequirementsSyncRequest, {
+      ...context, expectedBoardRevision: 14, idempotencyKey,
+    }, {
+      action: "sync_website_requirements_from_intake",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      expected_board_revision: 14,
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementStartRequest, mutation, {
+      action: "start_website_requirement",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementBlockRequest, {
+      ...mutation, reason: "  Wacht op inhoud.  ",
+    }, {
+      action: "block_website_requirement",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      reason: "Wacht op inhoud.",
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementCompleteRequest, {
+      ...mutation, attestation: { attestation: "  Handmatig gecontroleerd.  " },
+    }, {
+      action: "complete_website_requirement",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      attestation: { attestation: "Handmatig gecontroleerd." },
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementReopenRequest, {
+      ...mutation, reason: "  Hercontrole nodig.  ",
+    }, {
+      action: "reopen_website_requirement",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      reason: "Hercontrole nodig.",
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementAcceptSourceChangeRequest, {
+      ...mutation, reason: "  Nieuwe intake geaccepteerd.  ",
+    }, {
+      action: "accept_website_requirement_source_change",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      reason: "Nieuwe intake geaccepteerd.",
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementKeepExistingSourceRequest, {
+      ...mutation, reason: "Bestaande definitie behouden.",
+    }, {
+      action: "keep_existing_website_requirement_source",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      reason: "Bestaande definitie behouden.",
+      idempotency_key: idempotencyKey,
+    }],
+    [requirementsModule.websiteRequirementRetireSourceRequest, {
+      ...mutation, reason: "Requirement vervallen.",
+    }, {
+      action: "retire_website_requirement_source",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      requirement_id: websiteRequirementId,
+      expected_revision: 2,
+      reason: "Requirement vervallen.",
+      idempotency_key: idempotencyKey,
+    }],
+  ];
+  assert.equal(cases.length, 9);
+  for (const [builder, input, expectedRequest] of cases) {
+    const request = builder(input);
+    assert.deepEqual(request, expectedRequest);
+    assert.equal(Object.isFrozen(request), true);
+    assert.equal("project_id" in request, false);
+    assert.equal("resolution" in request, false);
+  }
+});
+
+test("Website builders reject malformed, bounded and surplus authority input", () => {
+  assert.throws(() => requirementsModule.websiteRequirementsBoardRequest({
+    quoteRequestId, websiteWorkContextId, projectId,
+  }), /INVALID_WEBSITE_REQUIREMENTS_REQUEST/);
+  assert.throws(() => requirementsModule.websiteRequirementsSyncRequest({
+    quoteRequestId, websiteWorkContextId, expectedBoardRevision: -1, idempotencyKey,
+  }), /INVALID_WEBSITE_REQUIREMENTS_REQUEST/);
+  assert.throws(() => requirementsModule.websiteRequirementBlockRequest({
+    quoteRequestId, websiteWorkContextId, requirementId: websiteRequirementId,
+    expectedRevision: 2, idempotencyKey, reason: " ",
+  }), /INVALID_WEBSITE_REQUIREMENTS_REQUEST/);
+  assert.throws(() => requirementsModule.websiteRequirementCompleteRequest({
+    quoteRequestId, websiteWorkContextId, requirementId: websiteRequirementId,
+    expectedRevision: 2, idempotencyKey,
+    attestation: { attestation: "Geldig", source_reference: "forbidden" },
+  }), /INVALID_WEBSITE_REQUIREMENTS_REQUEST/);
+});
+
+test("Website board validator is exact, correlated, deeply frozen and server-action only", () => {
+  const expected = { quoteRequestId, websiteWorkContextId };
+  const projection = requirementsModule.validateWebsiteRequirementsBoard(websiteBoard(), expected);
+  assert.equal(Object.isFrozen(projection), true);
+  assert.equal(Object.isFrozen(projection.items[0].permitted_actions), true);
+  assert.deepEqual(projection.items[0].permitted_actions, [
+    "block_website_requirement", "complete_website_requirement",
+  ]);
+  assert.throws(() => requirementsModule.validateWebsiteRequirementsBoard({
+    ...websiteBoard(), leak: "secret",
+  }, expected), /INVALID_WEBSITE_REQUIREMENTS_RESPONSE/);
+  assert.throws(() => requirementsModule.validateWebsiteRequirementsBoard({
+    ...websiteBoard(), website_work_context_id: crypto.randomUUID(),
+  }, expected), /WEBSITE_REQUIREMENTS_BINDING_MISMATCH/);
+  const unknownAction = websiteBoard();
+  unknownAction.items[0].permitted_actions = ["approve_website_requirement"];
+  assert.throws(() => requirementsModule.validateWebsiteRequirementsBoard(
+    unknownAction, expected,
+  ), /INVALID_WEBSITE_REQUIREMENTS_RESPONSE/);
+});
+
+test("Website board validator accepts both closed empty states and rejects bad arithmetic", () => {
+  const expected = { quoteRequestId, websiteWorkContextId };
+  for (const empty_state of ["NO_BOARD", "INTAKE_NOT_ELIGIBLE"]) {
+    const empty = websiteBoard({
+      board: null,
+      items: [],
+      progress: {
+        required_total: 0, required_completed: 0, required_open: 0,
+        required_blocked: 0, review_pending: 0,
+      },
+      readiness: {
+        ready_for_preview: false,
+        readiness: "UNKNOWN",
+        reason: empty_state,
+      },
+      empty_state,
+    });
+    assert.equal(requirementsModule.validateWebsiteRequirementsBoard(
+      empty, expected,
+    ).empty_state, empty_state);
+  }
+  const inconsistent = websiteBoard();
+  inconsistent.progress.required_completed = 1;
+  assert.throws(() => requirementsModule.validateWebsiteRequirementsBoard(
+    inconsistent, expected,
+  ), /INVALID_WEBSITE_REQUIREMENTS_PROGRESS/);
+});
+
+test("Website sync and mutation validators enforce exact response correlation", () => {
+  const expected = { quoteRequestId, websiteWorkContextId };
+  const sync = {
+    contract_version: 1,
+    outcome: "SYNCED",
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    requirements_board_id: boardId,
+    board_revision: 15,
+    intake_id: websiteIntakeId,
+    intake_revision: 3,
+    intake_sha256: "b".repeat(64),
+    mapping_version: 1,
+    sync_run_id: websiteSyncRunId,
+    replayed: false,
+    review_required: false,
+    counts: {
+      created: 1, updated: 0, unchanged: 0, retired: 0,
+      change_pending: 0, removal_pending: 0, revived: 0,
+    },
+  };
+  assert.equal(requirementsModule.validateWebsiteRequirementsSyncResult(
+    sync, expected,
+  ).board_revision, 15);
+  assert.throws(() => requirementsModule.validateWebsiteRequirementsSyncResult({
+    ...sync, counts: { ...sync.counts, unknown: 1 },
+  }, expected), /INVALID_WEBSITE_REQUIREMENTS_RESPONSE/);
+
+  const mutation = {
+    contract_version: 1,
+    command: "START",
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    requirements_board_id: boardId,
+    requirement_id: websiteRequirementId,
+    previous_status: "PENDING",
+    status: "ACTIVE",
+    previous_source_review_state: "CURRENT",
+    source_review_state: "CURRENT",
+    resolution: null,
+    requirement_revision: 3,
+    board_revision: 15,
+    replayed: false,
+  };
+  assert.equal(requirementsModule.validateWebsiteRequirementMutationResult(
+    mutation,
+    { ...expected, requirementId: websiteRequirementId, action: "start_website_requirement" },
+  ).command, "START");
+  assert.throws(() => requirementsModule.validateWebsiteRequirementMutationResult(
+    { ...mutation, resolution: "ACCEPT_CHANGE" },
+    { ...expected, requirementId: websiteRequirementId, action: "start_website_requirement" },
+  ), /INVALID_WEBSITE_REQUIREMENTS_RESPONSE/);
+});
+
+test("Website mutation intent creates one immutable UUID-bound request per new intent", () => {
+  let calls = 0;
+  const builder = (input) => {
+    calls += 1;
+    return requirementsModule.websiteRequirementStartRequest(input);
+  };
+  const builderArguments = {
+    quoteRequestId,
+    websiteWorkContextId,
+    requirementId: websiteRequirementId,
+    expectedRevision: 2,
+  };
+  const intent = requirementsModule.createWebsiteRequirementMutationIntent(
+    builder,
+    builderArguments,
+    () => idempotencyKey,
+  );
+  assert.equal(calls, 1);
+  assert.equal(intent.idempotencyKey, idempotencyKey);
+  assert.equal(intent.request.idempotency_key, idempotencyKey);
+  assert.equal(Object.isFrozen(intent), true);
+  assert.equal(Object.isFrozen(intent.request), true);
+  assert.equal(intent.request, intent.request);
+  const nextKey = "a1800000-0000-4000-8000-000000000010";
+  const next = requirementsModule.createWebsiteRequirementMutationIntent(
+    builder,
+    builderArguments,
+    () => nextKey,
+  );
+  assert.notEqual(next, intent);
+  assert.equal(next.idempotencyKey, nextKey);
+  assert.notEqual(next.request, intent.request);
+});
 
 const registrySource = readFileSync(
   new URL("../assets/js/operator-module-registry.mjs", import.meta.url),

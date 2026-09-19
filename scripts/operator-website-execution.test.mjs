@@ -14,10 +14,7 @@ import {
   websiteExecutionView,
 } from "../assets/js/operator-website-execution.mjs";
 import { createOperatorDossierAuthority } from "../assets/js/operator-dossiers.mjs";
-import {
-  requirementsChildContext,
-} from "../assets/js/operator-project-requirements-child.mjs";
-import { requirementsBoardSlot } from "../assets/js/operator-project-requirements.mjs";
+import * as requirementsModule from "../assets/js/operator-project-requirements.mjs";
 
 const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
@@ -231,61 +228,46 @@ function requirementsProjection(overrides = {}) {
   return {
     contract_version: 1,
     quote_request_id: quoteRequestId,
-    project_id: projectId,
+    website_work_context_id: websiteWorkContextId,
+    project_id: null,
+    phase: "PRE_PROJECT",
     context: {
       customer: "Acme",
       dossier_reference: "LWS-AAN-2026-0042",
-      project_reference: projectId,
       assigned_operator: null,
     },
     board: {
       requirements_board_id: "a1800000-0000-4000-8000-000000000003",
-      status: "FINALIZED",
-      revision: 1,
-      finalized_at: "2026-09-10T10:00:00Z",
+      sync_state: "CURRENT",
+      revision: 12,
+      mapping_version: 1,
+      current_intake_id: "a1800000-0000-4000-8000-000000000007",
+      current_intake_revision: 3,
+      current_intake_snapshot_sha256: "a".repeat(64),
     },
-    items: [
-      ...Array.from({ length: 8 }, (_, index) => requirement(index + 1, "COMPLETED")),
-      ...Array.from({ length: 3 }, (_, index) => requirement(index + 9, "PENDING")),
-      requirement(12, "BLOCKED"),
-    ],
-    empty_state: null,
-    readiness: {
+    items: [],
+    progress: {
       required_total: 12,
       required_completed: 8,
       required_open: 3,
       required_blocked: 1,
-      active_requirement_id: null,
-      active_item_number: null,
+      review_pending: 0,
+    },
+    empty_state: null,
+    readiness: {
       ready_for_preview: false,
       readiness: "BLOCKED",
-      reason: "REQUIREMENTS_OPEN",
+      reason: "REQUIRED_REQUIREMENTS_OPEN",
     },
-    actions: { can_create_board: false, can_create_item: false, can_finalize: false },
     ...overrides,
   };
 }
 
-function requirement(itemNumber, status) {
-  return {
-    requirement_id: `b1800000-0000-4000-8000-${String(itemNumber).padStart(12, "0")}`,
-    item_number: itemNumber,
-    title: `Requirement ${itemNumber}`,
-    description: "Server-authoritative requirement.",
-    category: "TECHNICAL",
-    source: { authority_type: "ACCEPTED_PROJECT_SCOPE", label: "Scope" },
-    linked_page_or_module: null,
-    status,
-    completion_mode: "OPERATOR",
-    sort_order: itemNumber,
-    required: true,
-    started_at: null,
-    completed_at: status === "COMPLETED" ? "2026-09-10T11:00:00Z" : null,
-    verification_result: "UNKNOWN",
-    blocked_reason: status === "BLOCKED" ? "Klantinhoud ontbreekt." : null,
-    revision: 1,
-    permitted_actions: [],
-  };
+function validatedRequirements(overrides = {}) {
+  return requirementsModule.validateWebsiteRequirementsBoard(
+    requirementsProjection(overrides),
+    { quoteRequestId, websiteWorkContextId },
+  );
 }
 
 test("website slot and request retain the exact dossier context", () => {
@@ -361,15 +343,16 @@ test("PRE_PROJECT V3 validation is exact and context-bound", () => {
   );
 });
 
-test("Website child branches PRE_PROJECT without Project or Requirements authority", async () => {
+test("Website child reads Website Requirements independently in both phases", async () => {
   const [child, website] = await Promise.all([
     read("assets/js/operator-website-execution-child.mjs"),
     read("assets/js/operator-website-execution.mjs"),
   ]);
   assert.doesNotMatch(child, /projectWorkspaceRequest/);
   assert.match(child, /websiteExecutionRequest\(detail\)/);
-  assert.match(child, /projection\.mode === "OFFICIAL_PROJECT"[^]*projectRequirementsRequest\(context\)/);
-  assert.match(child, /: websiteRequirementsSummary\(projection\.requirements, context\)/);
+  assert.match(child, /websiteRequirementsBoardRequest\(requirementsContext\)/);
+  assert.match(child, /validateWebsiteRequirementsBoard\([^]*rawRequirements,[^]*requirementsContext/);
+  assert.doesNotMatch(child, /projectRequirementsRequest|projectRequirementsSummary/);
   assert.match(website, /Requirements volgen na intake-sync\./);
   assert.match(child, /data-website-mode/);
   assert.match(child, /data-website-briefing/);
@@ -515,10 +498,11 @@ test("Website managed child retains lifecycle, safe actions, and explicit denial
   assert.doesNotMatch(child, /localStorage|sessionStorage|window\.open|vscode:\/\/file/i);
 });
 
-test("Website Workspace opens Requirements through the bounded sibling context", async () => {
+test("Website Workspace exposes no Task 7 navigation authority", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
   assert.match(child, /data-website-action="requirements"/);
-  assert.match(child, /requirementsBoardSlot\(currentSnapshot\.context\.quoteRequestId\)/);
+  assert.match(child, /data-website-action="requirements" disabled aria-disabled="true"/);
+  assert.doesNotMatch(child, /requirementsBoardSlot|action === "requirements"[^]*requestOpen/);
   assert.match(child, /options\.requestOpen\?\.\("dossiers"/);
   assert.doesNotMatch(child, /window\.open|location\.reload/);
 });
@@ -541,120 +525,95 @@ test("commercial command dispatch uses the exact caller-scoped Website RPC", asy
   assert.doesNotMatch(branch, /p_project_id/);
 });
 
-test("Website Requirements summary accepts only validated exact project and quote data", () => {
-  assert.deepEqual(websiteRequirementsSummary(requirementsProjection(), expected), {
-    state: "ready",
-    heading: "PROJECTVEREISTEN",
+test("Website Requirements summary accepts only validated Website board data", () => {
+  assert.deepEqual(websiteRequirementsSummary(validatedRequirements()), {
+    state: "READY",
+    requirements_board_id: "a1800000-0000-4000-8000-000000000003",
+    board_revision: 12,
     completed: 8,
     total: 12,
     open: 3,
     blocked: 1,
-    readyForPreview: false,
-    progress: "08 / 12",
+    review_required: false,
   });
-  assert.throws(() => websiteRequirementsSummary({
-    ...requirementsProjection(),
-    project_id: crypto.randomUUID(),
-  }, expected), /PROJECT_REQUIREMENTS_BINDING_MISMATCH/);
-  assert.throws(() => websiteRequirementsSummary({
-    ...requirementsProjection(),
-    quote_request_id: crypto.randomUUID(),
-  }, expected), /PROJECT_REQUIREMENTS_BINDING_MISMATCH/);
-  assert.throws(() => websiteRequirementsSummary({
-    ...requirementsProjection(),
-    readiness: { ...requirementsProjection().readiness, required_completed: 9 },
-  }, expected), /INVALID_PROJECT_REQUIREMENTS_PROGRESS/);
+  assert.throws(
+    () => websiteRequirementsSummary(requirementsProjection()),
+    /UNVALIDATED_WEBSITE_REQUIREMENTS_RESPONSE/,
+  );
 });
 
-test("Website Requirements summary exposes explicit no-board and preview-ready states", () => {
-  const empty = requirementsProjection({
+test("Website Requirements summary exposes both exact empty states", () => {
+  const progress = {
+    required_total: 0,
+    required_completed: 0,
+    required_open: 0,
+    required_blocked: 0,
+    review_pending: 0,
+  };
+  const noBoard = validatedRequirements({
     board: null,
     items: [],
     empty_state: "NO_BOARD",
-    readiness: {
-      required_total: 0,
-      required_completed: 0,
-      required_open: 0,
-      required_blocked: 0,
-      active_requirement_id: null,
-      active_item_number: null,
-      ready_for_preview: false,
-      readiness: "UNKNOWN",
-      reason: "NO_BOARD",
-    },
-    actions: { can_create_board: true, can_create_item: false, can_finalize: false },
+    progress,
   });
-  assert.deepEqual(websiteRequirementsSummary(empty, expected), {
-    state: "empty",
-    heading: "PROJECTVEREISTEN",
-    message: "Nog geen projectvereisten beschikbaar.",
+  assert.deepEqual(websiteRequirementsSummary(noBoard), {
+    state: "NO_BOARD", requirements_board_id: null, board_revision: null,
+    completed: 0, total: 0, open: 0, blocked: 0, review_required: false,
   });
-  const items = Array.from({ length: 12 }, (_, index) => requirement(index + 1, "COMPLETED"));
-  const ready = requirementsProjection({
-    items,
-    readiness: {
-      required_total: 12,
-      required_completed: 12,
-      required_open: 0,
-      required_blocked: 0,
-      active_requirement_id: null,
-      active_item_number: null,
-      ready_for_preview: true,
-      readiness: "READY",
-      reason: "REQUIREMENTS_READY",
-    },
+  const ineligible = validatedRequirements({
+    board: null, items: [], empty_state: "INTAKE_NOT_ELIGIBLE", progress,
   });
-  assert.equal(websiteRequirementsSummary(ready, expected).readyForPreview, true);
+  assert.deepEqual(websiteRequirementsSummary(ineligible), {
+    state: "INTAKE_NOT_ELIGIBLE", requirements_board_id: null, board_revision: null,
+    completed: null, total: null, open: null, blocked: null, review_required: false,
+  });
 });
 
 test("refreshed server DTO replaces Website Requirements summary without client state", () => {
-  const before = websiteRequirementsSummary(requirementsProjection(), expected);
-  const items = [
-    ...Array.from({ length: 9 }, (_, index) => requirement(index + 1, "COMPLETED")),
-    ...Array.from({ length: 2 }, (_, index) => requirement(index + 10, "PENDING")),
-    requirement(12, "BLOCKED"),
-  ];
-  const after = websiteRequirementsSummary(requirementsProjection({
-    items,
-    readiness: {
+  const before = websiteRequirementsSummary(validatedRequirements());
+  const after = websiteRequirementsSummary(validatedRequirements({
+    board: { ...requirementsProjection().board, sync_state: "REVIEW_REQUIRED", revision: 13 },
+    progress: {
       required_total: 12,
       required_completed: 9,
       required_open: 2,
       required_blocked: 1,
-      active_requirement_id: null,
-      active_item_number: null,
-      ready_for_preview: false,
-      readiness: "BLOCKED",
-      reason: "REQUIREMENTS_OPEN",
+      review_pending: 1,
     },
-  }), expected);
-  assert.equal(before.progress, "08 / 12");
-  assert.equal(after.progress, "09 / 12");
+  }));
+  assert.equal(before.completed, 8);
+  assert.equal(after.completed, 9);
   assert.equal(after.open, 2);
+  assert.equal(after.state, "REVIEW_REQUIRED");
+  assert.equal(after.review_required, true);
   assert.notEqual(after, before);
   assert.equal(Object.isFrozen(after), true);
 });
 
-test("Website child fetches and renders summary through existing refresh and managed sibling flow", async () => {
+test("Website child fetches and renders an independent localized summary", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
-  assert.match(child, /projectRequirementsRequest\(context\)/);
+  assert.match(child, /websiteRequirementsBoardRequest\(requirementsContext\)/);
   assert.match(child, /Promise\.all\(\[[^]*websiteExecutionRequest\(detail\)[^]*get_dossier_assignment/);
-  assert.match(child, /validateWebsiteExecutionWorkspace\(rawWorkspace, context\)[^]*projection\.mode === "OFFICIAL_PROJECT"[^]*projectRequirementsRequest\(context\)/);
+  assert.match(child, /validateWebsiteExecutionWorkspace\(rawWorkspace, context\)[^]*validateWebsiteRequirementsBoard\([^]*rawRequirements,[^]*requirementsContext/);
   assert.match(child, /data-website-requirements-progress/);
   assert.match(child, /data-website-requirements-open/);
   assert.match(child, /data-website-requirements-blocked/);
   assert.match(child, /data-website-requirements-preview/);
-  assert.match(child, /summary,/);
+  assert.match(child, /requirementsState:/);
   assert.equal(child.indexOf("function renderRequirementsSummary"), child.lastIndexOf("function renderRequirementsSummary"));
   assert.equal(child.indexOf("function renderRequirementsSummary") < child.indexOf("function setLink"), true);
   assert.match(child, /data-website-action="requirements"/);
-  assert.match(child, /requirementsBoardSlot\(currentSnapshot\.context\.quoteRequestId\)/);
-  assert.doesNotMatch(child, /window\.open|location\.reload|items\.filter|items\.reduce/);
+  assert.match(child, /"LOADING"[^]*"ERROR"[^]*"STALE"/);
+  assert.doesNotMatch(child, /projectRequirementsRequest|projectRequirementsSummary|requirementsBoardSlot|window\.open|location\.reload|items\.filter|items\.reduce/);
 });
 
 test("Website Requirements summary has compact responsive no-overflow contracts", async () => {
   const css = await read("assets/css/operator-dashboard.css");
   assert.match(css, /\.website-execution__requirements \{[^}]*min-width:0[^}]*overflow:hidden/);
+  for (const state of ["LOADING", "ERROR", "REVIEW_REQUIRED", "STALE"]) {
+    assert.match(css, new RegExp(`data-website-requirements-state="${state}"`));
+  }
+  assert.match(css, /data-website-action="requirements"\]:disabled/);
   assert.match(css, /\.website-execution__requirements-progress \{[^}]*white-space:nowrap/);
   assert.match(css, /@media \(max-width:900px\)[^{]*\{[^}]*\.website-execution__requirements-facts \{[^}]*grid-template-columns:repeat\(2/);
   assert.match(css, /@media \(max-width:540px\)[^{]*\{[^}]*\.website-execution__requirements-facts \{[^}]*grid-template-columns:1fr/);
@@ -682,32 +641,10 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
   );
 });
 
-test("PRE_PROJECT Website opens the existing Requirements managed sibling with the same work context", async () => {
+test("PRE_PROJECT Website keeps the future Requirements control inert", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
-  const detail = {
-    quote_request_id: quoteRequestId,
-    request_kind: "website",
-    application_reference: "LWS-AAN-2026-0042",
-    project: null,
-    website_work: preProjectWork,
-  };
-  assert.equal(requirementsBoardSlot(quoteRequestId), `req-${quoteRequestId}`);
-  assert.deepEqual(requirementsChildContext(detail, quoteRequestId), {
-    quoteRequestId,
-    projectId: null,
-    conceptId,
-    websiteWorkContextId,
-    websiteWorkRevision: 1,
-    mode: "PRE_PROJECT",
-    dossierReference: "LWS-AAN-2026-0042",
-    customerName: "Niet beschikbaar",
-  });
-  assert.doesNotMatch(child, /button[^>]*data-website-requirements-open/);
-  assert.doesNotMatch(child, /querySelector\("\[data-website-requirements-open\]"\)\.hidden/);
-  assert.match(
-    child,
-    /action === "requirements"[^]*requestOpen\?\.\("dossiers", requirementsBoardSlot/,
-  );
+  assert.match(child, /data-website-action="requirements" disabled aria-disabled="true"/);
+  assert.doesNotMatch(child, /requirementsBoardSlot|action === "requirements"/);
 });
 
 const provisionControlHarness = `<!doctype html><html><body><main data-dossiers-workspace></main><script type="module">
@@ -719,6 +656,8 @@ const mode = params.get("mode") || "PRE_PROJECT";
 const hasWorkspace = params.get("workspace") === "present";
 window.task8Events = [];
 window.task8Requests = [];
+window.task6Requests = [];
+window.task6Fail = params.get("requirements") === "error";
 window.open = () => window.task8Events.push("window.open");
 const quoteRequestId = "${quoteRequestId}";
 const projectId = mode === "OFFICIAL_PROJECT" ? "${projectId}" : null;
@@ -726,7 +665,7 @@ const conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
 const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner" } } : null;
 const projection = { contract_version: 3, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
-const requirements = { contract_version: 1, quote_request_id: quoteRequestId, project_id: projectId, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", project_reference: projectId, assigned_operator: null }, board: null, items: [], empty_state: "NO_BOARD", readiness: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, active_requirement_id: null, active_item_number: null, ready_for_preview: false, readiness: "UNKNOWN", reason: "NO_BOARD" }, actions: { can_create_board: true, can_create_item: false, can_finalize: false } };
+const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
 const snapshot = { commit_sha: "a".repeat(40), ref_label: "main" };
 const directoryResult = (request) => {
   let entries;
@@ -752,7 +691,7 @@ const directoryResult = (request) => {
   }
   return { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, directory: request.path, entries, next_cursor: nextCursor };
 };
-const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_project_requirements_board") result = requirements; else if (body.action === "list_website_project_directory") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); result = directoryResult(body); } else if (body.action === "read_website_project_file") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } }; } return { data: { ok: true, result }, error: null }; } } };
+const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_website_requirements_board") { window.task6Requests.push(structuredClone(body)); if (params.get("requirementsDelay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); if (window.task6Fail) return { data: null, error: new Error("requirements unavailable") }; result = requirements; } else if (body.action === "list_website_project_directory") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); result = directoryResult(body); } else if (body.action === "read_website_project_file") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } }; } return { data: { ok: true, result }, error: null }; } } };
 const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
 window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => { window.task8Events.push("aal2"); } });
 </script></body></html>`;
@@ -809,6 +748,93 @@ async function openTask8Page(browser, server, query = "") {
   await page.waitForFunction(() => document.querySelector("[data-website-content]")?.hidden === false);
   return page;
 }
+
+test("Website Requirements renders loading, review and the disabled Task 7 control", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const loadingPage = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=present&requirementsDelay=1",
+    );
+    const loadingPanel = loadingPage.locator("[data-website-requirements-panel]");
+    assert.equal(await loadingPanel.getAttribute("data-website-requirements-state"), "LOADING");
+    assert.match(await loadingPanel.textContent(), /Websitevereisten laden/);
+    await loadingPage.waitForFunction(() =>
+      document.querySelector("[data-website-requirements-panel]")?.dataset.websiteRequirementsState === "READY");
+    assert.deepEqual(await loadingPage.evaluate(() => window.task6Requests[0]), {
+      action: "get_website_requirements_board",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+    });
+    const openControl = loadingPage.locator('[data-website-action="requirements"]');
+    assert.equal(await openControl.isVisible(), true);
+    assert.equal(await openControl.isDisabled(), true);
+    await loadingPage.close();
+
+    const reviewPage = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=OFFICIAL_PROJECT&workspace=present&requirements=review",
+    );
+    await reviewPage.waitForFunction(() =>
+      document.querySelector("[data-website-requirements-panel]")?.dataset.websiteRequirementsState === "REVIEW_REQUIRED");
+    assert.match(await reviewPage.locator("[data-website-requirements-panel]").textContent(), /Controle vereist/);
+    await reviewPage.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Website Requirements failure stays local and preserves Projectbestanden", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=present&requirements=error",
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-requirements-panel]")?.dataset.websiteRequirementsState === "ERROR");
+    assert.equal(await page.locator("[data-website-content]").isVisible(), true);
+    assert.match(await page.locator("[data-website-requirements-panel]").textContent(), /niet veilig worden geladen/);
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForFunction(() => window.task8Requests.length === 1);
+    assert.equal(await page.locator(".website-project-files__row").count() > 0, true);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("failed Website Requirements refresh keeps the last server summary stale", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=present",
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-requirements-panel]")?.dataset.websiteRequirementsState === "READY");
+    await page.evaluate(() => { window.task6Fail = true; });
+    await page.evaluate(() => window.controller.refresh());
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-requirements-panel]")?.dataset.websiteRequirementsState === "STALE");
+    const panel = page.locator("[data-website-requirements-panel]");
+    assert.match(await panel.textContent(), /00 \/ 00/);
+    assert.match(await panel.textContent(), /Verouderde gegevens/);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 
 test("Projectbestanden activates one internal host with exact owner AAL2 root intent", async () => {
   const server = await serveProvisionControlHarness();
