@@ -3,6 +3,7 @@
 Date: 2026-09-19
 Status: planning complete; controller review required before implementation
 Planning base: `98fd210487f2a712278eb070f0051a3f822b9ce3` (`feat(website): render safe project file content`)
+Task 8 contract correction base: `db3ccb9b6d735ce0221089dfbdcf2909be6f9aa3` (`feat(website): detach context requirements worklist`)
 Production main observed during planning: `17e2411f2608e5ec079ae73f51d3265efce3b68f`
 Scope: local implementation plan only. This document authorizes no feature code, migration execution, database mutation, push, Edge deploy, or Pages deploy.
 
@@ -562,7 +563,7 @@ reopen_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id
 resolve_website_requirement_source_change_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_resolution text, p_reason text, p_idempotency_key uuid) -> jsonb
 get_website_requirement_verification_authority_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint) -> jsonb
 record_website_requirement_verification_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_rule_key text, p_rule_version integer, p_result text, p_evidence_reference jsonb, p_idempotency_key uuid) -> jsonb
-promote_website_concept_v1(quote_request_id uuid, website_work_context_id uuid, project_id uuid, expected_context_revision bigint, idempotency_key uuid) -> jsonb
+promote_website_concept_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_expected_context_revision bigint, p_idempotency_key uuid) -> jsonb
 ```
 
 Task 5 exposes exactly these nine browser Edge actions and no generic source-resolution action:
@@ -829,18 +830,223 @@ Responsive behavior reuses only the existing 900px and 540px CSS breakpoints, wi
 
 ## 9. PRE_PROJECT to OFFICIAL_PROJECT continuity
 
-The future promotion command is one transaction under active owner + AAL2 authority:
+Task 8 promotes exactly one existing Website work context from `PRE_PROJECT` to `OFFICIAL_PROJECT`. It creates no new Website context, Website workspace, Website Requirements board, requirement item, verification history, repository binding, Project Files state, or quote identity. Promotion is not a commercial release and performs no invoice, payment, commercial release, publication, deployment, repository write, Project Files write, GitHub write, Finance mutation, or mail/provider side effect.
 
-1. Lock request, concept, context, official commercial project, Website workspace, and Website requirements board.
-2. Prove the commercial project has valid accepted quotation lineage for exactly the same `quote_request_id` without changing any commercial Requirements invariant.
-3. Require expected context revision and reject mismatched/existing project binding.
-4. Set concept `PROMOTED` and `promoted_project_id`; update the same context to `OFFICIAL_PROJECT` and its project ID.
-5. Update the existing Website workspace's compatibility `project_id` under its context guard, preserving `website_workspace_id`, repository identity, binding, and Project Files state.
-6. Do not update the Website requirements board identity or item identities. Its context FK and quote binding remain valid automatically.
-7. Append immutable promotion evidence referencing the same board ID/revision and counts. Do not copy or synthesize completed work.
-8. Invalidate existing `website-*` and `req-*` slots; both re-resolve the same context/board under the new phase.
+### 9.1 Role, caller, and server-derived project authority
 
-The Website context board remains the Website worklist after promotion. The pre-existing commercial Project Requirements board remains a separate accepted-commercial-scope authority and is neither merged into nor substituted for the Website board. If both exist, API/UI labels and readiness consumers keep their meanings explicit: Website execution progress comes from the context board; commercial release gates continue to use the commercial board. Promotion records lineage and reports divergence for review but never rewrites either history.
+Promotion is caller-JWT-only and requires an active `owner` at AAL2. Admin, operations manager, assigned operator, and every other role are denied. Frontend MFA is only a UX gate; the RPC remains final authority. Task 8 uses no service role.
+
+The browser never supplies `project_id`. The Edge layer never trusts browser project authority. The server resolves exactly one canonical eligible `commercial_projects.project_id` through the existing accepted quotation, issuance, approval, and acceptance lineage for the same `quote_request_id`. The canonical project must exist; the issuance belongs to that project and has status `ISSUED`; approval and acceptance belong to the same quote request and Website dossier; and no cross-dossier binding may occur. Payment, invoice, project release, and commercial release are not prerequisites. Zero eligible projects raises `WEBSITE_PROMOTION_PROJECT_NOT_FOUND`; more than one raises `WEBSITE_PROMOTION_PROJECT_AMBIGUOUS`. Arbitrary selection is forbidden.
+
+### 9.2 Exact browser action, request, and RPC
+
+The exact browser action is `promote_website_concept`. Its request has exactly these root keys and no others:
+
+```text
+action
+quote_request_id
+website_work_context_id
+expected_context_revision
+idempotency_key
+```
+
+`action` is exactly `promote_website_concept`; both identities and the idempotency key are UUIDs; `expected_context_revision` is a safe integer at least 1. Missing, surplus, or malformed keys fail closed. Forbidden browser authority includes at minimum `project_id`, `concept_id`, `actor`, `actor_id`, `role`, `operator_id`, `customer_id`, `requirements_board_id`, `website_workspace_id`, `repository_ref`, `commit_sha`, `commercially_released`, `payment_state`, `quotation_id`, and `acceptance_id`.
+
+The exact RPC is:
+
+```text
+public.promote_website_concept_v1(
+  p_quote_request_id uuid,
+  p_website_work_context_id uuid,
+  p_expected_context_revision bigint,
+  p_idempotency_key uuid
+) returns jsonb
+```
+
+There is no `p_project_id`. The only browser concurrency authority is `expected_context_revision`; the browser sends no board revision, workspace binding revision, concept revision, or project revision.
+
+### 9.3 Exact response contract
+
+The RPC and Edge validator use exactly these response root keys:
+
+```text
+contract_version
+outcome
+quote_request_id
+website_work_context_id
+concept_id
+project_id
+previous_phase
+phase
+previous_context_revision
+context_revision
+website_workspace_id
+workspace_binding_revision
+requirements_board_id
+requirements_board_revision
+promotion_event_id
+promoted_at
+replayed
+```
+
+`contract_version=1`, `outcome='PROMOTED'`, `previous_phase='PRE_PROJECT'`, and `phase='OFFICIAL_PROJECT'`. Quote and context IDs exactly match the request. `previous_context_revision` equals the requested expected revision and `context_revision=previous_context_revision+1`. Concept, project, and promotion event IDs are UUIDs; `promoted_at` is a valid timestamp; `replayed` is boolean.
+
+`website_workspace_id` and `workspace_binding_revision` are either both null or both non-null. When non-null, the workspace ID is a UUID and binding revision is a safe integer at least 1. `requirements_board_id` and `requirements_board_revision` follow the same paired-nullability rule; when non-null, the board ID is a UUID and revision is a safe integer at least 1. Missing, surplus, malformed, or request-uncorrelated response data fails closed.
+
+### 9.4 Promotion command ledger and idempotency
+
+Task 8 creates `public.website_concept_promotion_commands` as the server-only idempotency ledger with at least exactly these columns:
+
+```text
+idempotency_key uuid primary key
+request_fingerprint_sha256 text not null
+actor_id uuid not null
+quote_request_id uuid not null
+website_work_context_id uuid not null
+expected_context_revision bigint not null
+status text not null
+response_payload jsonb null
+promotion_event_id uuid null
+created_at timestamptz not null
+completed_at timestamptz null
+```
+
+Allowed status values are exactly `PENDING` and `COMPLETED`. No browser/runtime role receives direct insert, update, delete, or read authority; only the reviewed server/RPC path owns the ledger.
+
+The server computes the canonical fingerprint over exactly contract version 1, action `promote_website_concept`, server-derived `actor_id`, `quote_request_id`, `website_work_context_id`, and `expected_context_revision`. The browser never computes it. The same idempotency key and same fingerprint after successful promotion performs no write and creates no audit event; it returns the same logical result with `replayed=true`. Initial success returns `replayed=false`. The same key with another fingerprint raises `WEBSITE_CONCEPT_PROMOTION_IDEMPOTENCY_CONFLICT`. A new key after the context is already `OFFICIAL_PROJECT` is not replay: it raises `WEBSITE_CONCEPT_ALREADY_PROMOTED`, creates no audit row, and performs no write.
+
+### 9.5 Immutable promotion audit
+
+Task 8 creates append-only `public.website_work_context_promotion_events` with at least exactly these columns:
+
+```text
+promotion_event_id uuid primary key
+event_type text not null
+quote_request_id uuid not null
+website_work_context_id uuid not null
+concept_id uuid not null
+project_id uuid not null
+actor_id uuid not null
+previous_phase text not null
+phase text not null
+previous_context_revision bigint not null
+context_revision bigint not null
+created_at timestamptz not null
+```
+
+`event_type` is exactly `WEBSITE_WORK_CONTEXT_PROMOTED`, `previous_phase='PRE_PROJECT'`, and `phase='OFFICIAL_PROJECT'`. One successful initial promotion creates exactly one event. Same-key replay and every failure create none. Browser/runtime roles cannot update or delete history.
+
+### 9.6 Exact continuity and mutations
+
+Promotion preserves exactly the same `quote_request_id`, `website_work_context_id`, optional `website_workspace_id`, optional `requirements_board_id`, every `requirement_id`, all sync-history identities, existing requirement-event identities, verification/evidence identities, repository-binding identities, and Project Files identities/state. It creates no copy, replacement, merge, or synthesized completion.
+
+The existing Website concept changes only its relevant promotion fields: `concept_status` uses the existing promoted schema value, `promoted_project_id` becomes the server-derived project, `promoted_at` changes, `revision` increments by one, and `updated_at` changes. No concept is created.
+
+The existing Website work context changes exactly as follows: `phase` changes from `PRE_PROJECT` to `OFFICIAL_PROJECT`; `project_id` changes from null to the server-derived project; `revision` increments by one; and `updated_at` changes. Its ID and quote binding remain unchanged.
+
+If a Website execution workspace exists, only compatibility `project_id` changes from null to the official project; `updated_at` may change. Its ID, `binding_revision`, `workspace_state`, repository owner/name and full repository identity, preview branch/URL, last commit SHA, repository provenance, and Project Files provenance/state remain unchanged. If no workspace exists, promotion may still succeed and creates none.
+
+If a Website Requirements board exists, its ID, revision, state, rows, progress, and history remain unchanged. Every requirement keeps its ID, revision, status, active state, `source_review_state`, and evidence. Permitted actions are reprojected after refresh and are not copied or persisted by promotion. If no board exists, promotion may still succeed and creates none.
+
+Existing verification rows, evidence hashes, `observed_at`, repository evidence, workspace/binding evidence, and immutable history remain unchanged. Promotion does not invalidate evidence, require reverification, create a verification PASS, bypass the trusted verifier, or ingest verification.
+
+Website Requirements remain the `req-<quote_request_id>` authority. Commercial Project Requirements remain the independent `project-req-<quote_request_id>` authority. Promotion never creates a commercial board from the Website board and never converts or merges either authority.
+
+### 9.7 Concurrency, transaction, and lock order
+
+`expected_context_revision` must exactly equal the locked `website_work_contexts.revision` while phase is `PRE_PROJECT`; a mismatch raises `CONCURRENT_MODIFICATION`. After successful caller authentication, owner/AAL2 checks, and closed input validation, the exact transaction order is:
+
+1. Resolve canonical idempotency ledger identity and fingerprint.
+2. Handle same-key replay or fingerprint conflict.
+3. Lock the exact `website_work_contexts` row `FOR UPDATE`.
+4. Lock the exact `website_concepts` row `FOR UPDATE`.
+5. Resolve and lock exactly one canonical eligible `commercial_projects` row `FOR UPDATE`.
+6. Validate accepted quotation, issuance, approval, acceptance, and dossier lineage.
+7. Lock the existing `website_execution_workspaces` row `FOR UPDATE` when present.
+8. Lock the existing `website_requirements_boards` row `FOR UPDATE` when present.
+9. Validate `PRE_PROJECT`, null project binding, exact context/dossier identity, and expected context revision.
+10. Update the Website concept.
+11. Update the Website work context.
+12. Bind existing workspace `project_id` when a workspace exists.
+13. Insert exactly one `WEBSITE_WORK_CONTEXT_PROMOTED` event.
+14. Construct the exact response.
+15. Mark the command ledger `COMPLETED` and store the response/event identity.
+16. Return.
+
+All work occurs in one SQL transaction. Promotion is atomic; partial promotion is impossible. Failure rolls back concept, context, workspace, event, and completed-command state. There is no completed command row or promotion event after failure.
+
+### 9.8 Exact backend errors and safe Edge mapping
+
+The Edge layer exposes only these mappings:
+
+| HTTP/code | Exact backend messages |
+|---|---|
+| 403, `OPERATOR_NOT_AUTHORIZED` | `AAL2_REQUIRED`, `WEBSITE_CONCEPT_PROMOTION_ACCESS_DENIED`, `WEBSITE_CONCEPT_PROMOTION_ROLE_DENIED` |
+| 404, `NOT_FOUND` | `WEBSITE_WORK_CONTEXT_NOT_FOUND`, `WEBSITE_CONCEPT_NOT_FOUND`, `WEBSITE_PROMOTION_PROJECT_NOT_FOUND` |
+| 409, `CONCURRENT_MODIFICATION` | `CONCURRENT_MODIFICATION` |
+| 409, `IDEMPOTENCY_CONFLICT` | `WEBSITE_CONCEPT_PROMOTION_IDEMPOTENCY_CONFLICT` |
+| 400, `INVALID_REQUEST` | `INVALID_WEBSITE_CONCEPT_PROMOTION`, `INVALID_WEBSITE_CONCEPT_PROMOTION_ARGUMENT` |
+| 409, `COMMAND_REJECTED` | `WEBSITE_CONCEPT_NOT_PRE_PROJECT`, `WEBSITE_CONCEPT_ALREADY_PROMOTED`, `WEBSITE_PROMOTION_PROJECT_AMBIGUOUS`, `WEBSITE_PROMOTION_LINEAGE_MISMATCH`, `WEBSITE_PROMOTION_PROJECT_NOT_ELIGIBLE`, `WEBSITE_PROMOTION_CONTEXT_MISMATCH`, `WEBSITE_PROMOTION_WORKSPACE_MISMATCH` |
+
+Every other backend error maps to HTTP 500 `INTERNAL_ERROR`. No SQLSTATE, query, stack, raw backend body/message, provider detail, or secret crosses the browser boundary.
+
+### 9.9 Edge parser, validator, and caller-JWT dispatch
+
+Task 8 modifies both `commercial-operator-command/handler.ts` and `index.ts`. The handler adds the closed `promote_website_concept` type/parser, exact-key rejection, private exact response validator, and safe error mapping. The index adds caller-JWT dispatch to `promote_website_concept_v1` with exactly `p_quote_request_id`, `p_website_work_context_id`, `p_expected_context_revision`, and `p_idempotency_key`. It sends no `p_project_id` and uses no service role.
+
+### 9.10 Frontend builders and immutable intent
+
+`assets/js/operator-website-execution.mjs` adds exactly these exports:
+
+- `websiteConceptPromotionRequest`
+- `validateWebsiteConceptPromotionResult`
+- `createWebsiteConceptPromotionIntent`
+
+`websiteConceptPromotionRequest` accepts `quoteRequestId`, `websiteWorkContextId`, `expectedContextRevision`, and `idempotencyKey`, and returns the exact frozen section 9.2 browser request without `project_id`. `validateWebsiteConceptPromotionResult` validates the exact section 9.3 shape, paired nullability, invariants, and request correlation; unknown or missing keys fail closed.
+
+`createWebsiteConceptPromotionIntent(context, randomUUID = crypto.randomUUID)` calls `randomUUID` exactly once and returns a frozen object with exactly `idempotencyKey`, `request`, `quoteRequestId`, `websiteWorkContextId`, and `expectedContextRevision`. Those values and the request are immutable. Retrying the same returned intent reuses the same request and key. A newly confirmed intent receives a new UUID.
+
+### 9.11 Promotion UI and AAL2 flow
+
+Promotion UI exists only in the Website Execution Workspace in `assets/js/operator-website-execution-child.mjs`; the Website Requirements child never initiates promotion. The exact button label is `Naar officieel project`. Convenience visibility requires browser identity role `owner` and the current validated context mode `PRE_PROJECT`; it is hidden for non-owner and `OFFICIAL_PROJECT`. Browser visibility is not authority. The button is disabled during `PENDING` or active ambiguous retry execution, and parallel promotion intents are forbidden.
+
+Exact UI copy is:
+
+- Confirmation: `Website-context promoveren naar het officiële project? De bestaande werkruimte, Website Requirements, historie en verificaties blijven behouden. Dit maakt geen factuur, betaling, publicatie of deployment aan.`
+- Pending: `Website-context wordt gekoppeld aan het officiële project.`
+- Success: `Website-context is gekoppeld aan het officiële project.`
+- Generic failure: `Promotie kon niet veilig worden uitgevoerd.`
+- Ambiguous result: `Uitkomst niet bevestigd. Opnieuw proberen gebruikt dezelfde veilige promotieaanvraag.`
+- Retry button: `Opnieuw proberen`
+
+Every first attempt and every retry calls `options.requireAal2()` before gateway execution. If it is missing or rejects, make no gateway call, discard an unexecuted new intent, and show a safe authorization message. After AAL2 and before gateway execution, recheck that the child is not disposed and the current server-derived snapshot still has the same quote ID, same Website work-context ID, `mode='PRE_PROJECT'`, and the same context revision as the intent. Otherwise send no request.
+
+### 9.12 Retry, definitive errors, and authoritative refresh
+
+Retain the same intent only for network failure without a definitive response, timeout without a definitive response, HTTP 500 `INTERNAL_ERROR`, or HTTP 500 `SERVER_RESPONSE_INVALID`. Discard it after validated success, explicit cancellation before send, context/slot switch, HTTP 400 `INVALID_REQUEST`, HTTP 403 `OPERATOR_NOT_AUTHORIZED`, HTTP 404 `NOT_FOUND`, HTTP 409 `CONCURRENT_MODIFICATION`, HTTP 409 `IDEMPOTENCY_CONFLICT`, or HTTP 409 `COMMAND_REJECTED`.
+
+Exact frontend safe messages are:
+
+| Browser result | Exact copy |
+|---|---|
+| 400 `INVALID_REQUEST` | `Aanvraag is ongeldig. Vernieuw de Website Workspace en probeer opnieuw.` |
+| 403 `OPERATOR_NOT_AUTHORIZED` | `Je hebt geen toestemming om deze Website-context te promoveren.` |
+| 404 `NOT_FOUND` | `Het officiële project of de Website-context is niet meer beschikbaar.` |
+| 409 `CONCURRENT_MODIFICATION` | `De Website-context is gewijzigd. De werkruimte wordt vernieuwd.` |
+| 409 `IDEMPOTENCY_CONFLICT` | `Deze promotieaanvraag kon niet veilig worden herhaald. De werkruimte wordt vernieuwd.` |
+| 409 `COMMAND_REJECTED` | `Promotie is niet meer toegestaan. De werkruimte wordt vernieuwd.` |
+
+`NOT_FOUND`, `CONCURRENT_MODIFICATION`, `IDEMPOTENCY_CONFLICT`, and `COMMAND_REJECTED` discard the intent and trigger an authoritative Website Workspace refresh.
+
+After validated success and a current-context check: discard the promotion intent; show the exact success copy; authoritatively refresh Website Execution; re-resolve application detail, context, and workspace; require `mode='OFFICIAL_PROJECT'` and the same `website_work_context_id`; then publish the existing `dossiers` invalidation. If authoritative success occurred but local refresh fails, do not restore PRE_PROJECT, publish invalidation, and show exactly `Promotie uitgevoerd, maar de Website Workspace kon niet veilig worden vernieuwd.` The next valid refresh determines server state.
+
+### 9.13 Slot, stale-response, logout, and revoke continuity
+
+The Website Execution slot remains `website-<quote_request_id>` and Website Requirements remains `req-<quote_request_id>`. No child recreation is required. The existing Task 7 Requirements child performs no promotion; existing `dossiers` invalidation, auto-refresh, and server context re-resolution refresh the same singleton and same board in place. Task 8 opens no Project Workspace automatically; generic invalidation may refresh an already open dossier child.
+
+The immutable promotion intent binds `quoteRequestId`, `websiteWorkContextId`, `expectedContextRevision`, request, and idempotency key. If the child is disposed, workspace is revoked/locked, slot/context changes, or server-derived context mismatches before response application, the result does not update the current UI and the pending intent is not transferred. A validated success may still publish generic `dossiers` invalidation.
+
+Logout and revoke reuse existing workspace `LOCK` and `SHUTDOWN`; Task 8 adds no custom promotion messaging protocol and retains no sensitive promotion state after revoke.
 
 ## 10. Exact implementation file map
 
@@ -1071,26 +1277,37 @@ Existing commercial migration files are reference-only and must not be modified.
 
 **FILES**
 - CREATE: `supabase/migrations/20260919104000_add_website_requirements_promotion_continuity_v1.sql`; `supabase/tests/website_requirements_promotion_v1.sql`
-- MODIFY: `supabase/functions/commercial-operator-command/handler.ts`; `supabase/functions/commercial-operator-command/handler.test.ts`; `scripts/operator-project-requirements.test.mjs`; `scripts/operator-website-execution.test.mjs`; `scripts/operator-workspace.test.mjs`
+- MODIFY exactly: `supabase/functions/commercial-operator-command/handler.ts`; `supabase/functions/commercial-operator-command/handler.test.ts`; `supabase/functions/commercial-operator-command/index.ts`; `assets/js/operator-website-execution.mjs`; `assets/js/operator-website-execution-child.mjs`; `scripts/operator-project-requirements.test.mjs`; `scripts/operator-website-execution.test.mjs`; `scripts/operator-workspace.test.mjs`
 - TEST: promotion, concept, workspace, commercial Requirements, and frontend phase-switch suites
 
 **INTERFACES**
-- Owner+AAL2 `promote_website_concept` Edge intent and `promote_website_concept_v1` RPC; same context/workspace/board projection after phase switch; slot invalidation.
+- Exact section 9 owner+AAL2 `promote_website_concept` browser intent; server-derived canonical project; caller-JWT `promote_website_concept_v1` dispatch; closed request/result validation; promotion command ledger; append-only promotion audit; same context/workspace/board projection after phase switch; Website Workspace UI; slot invalidation.
 
 **RED TEST FIRST**
-- Prove valid accepted commercial lineage is required for promotion, but not for prior PRE_PROJECT work. Assert same context/workspace/board/item IDs, revisions/progress/evidence/events, exact quote binding, idempotent replay, stale/cross-dossier rejection, and rollback on injected failure.
+- pgTAP proves owner+AAL2 success; server-derived project with no browser project authority; valid accepted lineage; same context/workspace/board/item IDs; unchanged board/item revisions, verification/history, repository binding, and binding revision; concept/context revision increments; only workspace `project_id` changes; promotion without workspace or board succeeds without creating either; same-key replay creates no event/write; same-key changed fingerprint conflicts; new key after success is rejected as already promoted; stale expected context revision; zero/multiple eligible project; cross-dossier mismatch; wrong phase; non-owner; AAL1; and injected-failure full rollback.
+- Edge tests prove the closed request parser; surplus `project_id` rejection; exact response validator and request correlation; caller-JWT dispatch with exact RPC arguments; safe error mapping; unknown-error redaction; and absence of service-role authority.
+- Frontend tests prove owner/PRE_PROJECT button visibility; OFFICIAL_PROJECT and non-owner hiding; exact confirmation/status/error copy; request without `project_id`; AAL2 and post-AAL2 context recheck; one immutable intent; same-key ambiguous retry; definitive discard; safe errors and required refresh; successful same-context OFFICIAL_PROJECT refetch; authoritative-success/local-refresh failure; ignored stale response after context switch; unchanged `website-*` and `req-*` slots; promotion-free Requirements child with in-place refresh; and zero Project Files, repository, or GitHub writes.
 
 **IMPLEMENTATION**
-- Implement the single transaction in section 9. Add no copy path and no automatic commercial release, invoice/payment, publication, or commercial Requirements mutation.
+- Implement section 9 without deviation. Add the two exact migration tables and exact caller-JWT RPC transaction; derive the project server-side; preserve every Website identity, board/item revision, verification, repository binding, and Project Files state; add the exact handler parser/validator/error mapping and index dispatch; add the three Website Execution exports and promotion UI with exact AAL2/retry/stale/success behavior. Add no copy path, service role, automatic Project Workspace open, commercial release, invoice/payment, publication/deployment, commercial Requirements mutation, verification ingestion, Project Files write, repository write, or GitHub write.
 
 **GREEN TESTS**
 - `npx supabase test db supabase/tests/website_requirements_promotion_v1.sql`
-- `npx supabase test db supabase/tests/website_concept_pre_project_v1.sql supabase/tests/website_execution_workspace_v1.sql supabase/tests/project_requirements_board_v1.sql`
+- `npx supabase test db supabase/tests/website_requirement_verification_v1.sql`
+- `npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql`
+- `npx supabase test db supabase/tests/website_requirements_intake_sync_v1.sql`
+- `npx supabase test db supabase/tests/website_requirements_foundation_v1.sql`
+- `npx supabase test db supabase/tests/website_concept_pre_project_v1.sql`
+- `npx supabase test db supabase/tests/website_execution_workspace_v1.sql`
+- `npx supabase test db supabase/tests/project_requirements_board_v1.sql`
 - `deno test --allow-env --allow-read supabase/functions/commercial-operator-command/handler.test.ts`
-- `node --test scripts/operator-project-requirements.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-workspace.test.mjs`
+- `deno check supabase/functions/commercial-operator-command/handler.ts`
+- `deno check supabase/functions/commercial-operator-command/index.ts`
+- `node --test scripts/operator-project-requirements.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-workspace.test.mjs scripts/operator-website-project-files.test.mjs`
 
 **SECURITY / SCOPE GATE**
-- Before/after table snapshots prove no copied board/item/history, no commercial invariant weakening, and no Finance/mail/provider/publication side effect.
+- Before/after table snapshots prove no copied board/item/history, no commercial invariant weakening, and no Finance/mail/provider/publication side effect. Local database bootstrap, if required, uses only `supabase/local-bootstrap/operator-auth-identities.sql` and never an ad-hoc `auth.users` insert.
+- Require `TASK8_CONTRACT_UNAMBIGUOUS=JA`, `FILE_SCOPE_FULLY_EXPLICIT=JA`, `PROMOTION_TRIGGER_FULLY_EXPLICIT=JA`, `PROMOTION_RPC_FULLY_EXPLICIT=JA`, `PROMOTION_REQUEST_FULLY_EXPLICIT=JA`, `PROMOTION_RESPONSE_FULLY_EXPLICIT=JA`, `PROJECT_ID_SERVER_DERIVED=JA`, `ROLE_MODEL_FULLY_EXPLICIT=JA`, `AAL2_MODEL_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_MODEL_FULLY_EXPLICIT=JA`, `CONCURRENCY_MODEL_FULLY_EXPLICIT=JA`, `TRANSACTION_MODEL_FULLY_EXPLICIT=JA`, `COMMERCIAL_LINEAGE_FULLY_EXPLICIT=JA`, `CONTEXT_CONTINUITY_FULLY_EXPLICIT=JA`, `WORKSPACE_CONTINUITY_FULLY_EXPLICIT=JA`, `BOARD_CONTINUITY_FULLY_EXPLICIT=JA`, `VERIFICATION_CONTINUITY_FULLY_EXPLICIT=JA`, `AUDIT_MODEL_FULLY_EXPLICIT=JA`, `FRONTEND_TRIGGER_FULLY_EXPLICIT=JA`, `FRONTEND_SUCCESS_FLOW_FULLY_EXPLICIT=JA`, `STALE_RESPONSE_MODEL_FULLY_EXPLICIT=JA`, `ERROR_MAPPING_FULLY_EXPLICIT=JA`, `INDEX_DISPATCH_SCOPE_EXPLICIT=JA`, `TASK9_BOUNDARY_FULLY_EXPLICIT=JA`, and `SERVICE_ROLE_USED=NEE` before implementation proceeds.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): preserve requirements on promotion`
