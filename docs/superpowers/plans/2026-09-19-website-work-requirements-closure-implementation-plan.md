@@ -1504,11 +1504,184 @@ TASK10_DEPLOYS=0
 
 ### 13.3 Separate Task 11 release gate
 
-Only after Task 10 passes and a controller separately authorizes Task 11 may the original Phase A Task 11 from the September 17 plan run. Its database list must include all six new Website Requirements pgTAP files and the commercial Requirements regression. Its Deno list must include the verification suite. Its frontend list must include Requirements singleton/state synchronization. Preserve the original ancestry/baseline checks, exact assertion counts, public-page regressions, no-write proof, and checkpoint format.
+Only after Task 10 passes and a controller separately authorizes Task 11 may the original Phase A Task 11 from the September 17 plan run. Task 11 is a closed local release gate. It preserves the original ancestry/baseline checks, exact assertion counts, public-page regressions, no-write proof, and checkpoint commit, while replacing every conflicting or incomplete original Task 11 file-scope, command-matrix, checkpoint, failure-repair, and release-boundary instruction with this section.
 
-Update `docs/superpowers/checkpoints/2026-09-17-website-execution-project-files-phase-a-verification.md` only during Task 11 with both Project Files and Requirements Closure evidence. Set `DEPLOY_AUTHORIZED=NEE` and `PUSH_AUTHORIZED=NEE` unless a later controller authorization explicitly changes them.
+#### 13.3.1 Exact Task 11 file and commit scope
 
-Task 11 is a separate local release gate with its own checkpoint commit. Task 11 does not authorize a push, deployment, remote migration, remote database mutation, repository provisioning, or production action. Even after Task 11 passes, only a later controller-reviewed and separately authorized action may consider push, main promotion, remote migrations, Edge deployment, or Pages production deployment.
+```text
+TASK11_CREATE_FILES=docs/superpowers/checkpoints/2026-09-17-website-execution-project-files-phase-a-verification.md
+TASK11_MODIFY_FILES=GEEN
+TASK11_DELETE_FILES=GEEN
+TASK11_EXPECTED_CHANGED_FILE_COUNT=1
+TASK11_PRODUCT_CODE_FILES_CHANGED=0
+TASK11_TEST_FILES_CHANGED=0
+TASK11_MIGRATION_FILES_CHANGED=0
+TASK11_COMMIT_REQUIRED=JA
+TASK11_COMMIT_COUNT=1
+TASK11_EXACT_COMMIT_SUBJECT=docs(website): verify project files phase a
+```
+
+The checkpoint does not exist and is not tracked before Task 11. Task 11 must create it; `UPDATE` is not an allowed file operation. Before the checkpoint commit, exactly that one path may be untracked or changed and no other path may differ from `HEAD`. Commit exactly that path with the exact subject above. After the commit, the worktree must be clean. Task 11 changes no product code, test, migration, handler, shared runtime, frontend, lockfile, generated file, or other documentation file.
+
+#### 13.3.2 Exact canonical Task 11 command matrix
+
+Run exactly these 19 commands in this order. Do not omit, combine, split, substitute, or add a matrix command. Command 19 is an intentional dedicated provider/no-write gate even though command 13 also runs the provider test file.
+
+```text
+TASK11_COMMAND_COUNT=19
+TASK11_COMMAND_1=npx supabase db reset
+TASK11_COMMAND_2=npx supabase test db supabase/tests/website_requirements_foundation_v1.sql
+TASK11_COMMAND_3=npx supabase test db supabase/tests/website_requirements_intake_sync_v1.sql
+TASK11_COMMAND_4=npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql
+TASK11_COMMAND_5=npx supabase test db supabase/tests/website_requirement_verification_v1.sql
+TASK11_COMMAND_6=npx supabase test db supabase/tests/website_requirements_promotion_v1.sql
+TASK11_COMMAND_7=npx supabase test db supabase/tests/website_requirements_security_release_v1.sql
+TASK11_COMMAND_8=npx supabase test db supabase/tests/project_requirements_board_v1.sql
+TASK11_COMMAND_9=npx supabase test db supabase/tests/website_concept_pre_project_v1.sql
+TASK11_COMMAND_10=npx supabase test db supabase/tests/website_execution_workspace_v1.sql
+TASK11_COMMAND_11=npx supabase test db supabase/tests/website_project_files_phase_a_v1.sql
+TASK11_COMMAND_12=npx supabase test db supabase/tests/operator_mfa_aal2_authority_v1.sql
+TASK11_COMMAND_13=deno test --allow-env supabase/functions/_shared/website-requirement-verification.test.ts supabase/functions/_shared/website-project-files-policy.test.ts supabase/functions/_shared/website-project-files-cursor.test.ts supabase/functions/_shared/website-project-files-provider.test.ts supabase/functions/_shared/website-project-files-service.test.ts
+TASK11_COMMAND_14=deno test --allow-env --allow-read supabase/functions/commercial-operator-command/handler.test.ts
+TASK11_COMMAND_15=deno check supabase/functions/commercial-operator-command/index.ts
+TASK11_COMMAND_16=node --test scripts/operator-project-requirements.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-website-project-files.test.mjs scripts/operator-workspace.test.mjs
+TASK11_COMMAND_17=npm run test:page-end
+TASK11_COMMAND_18=npm run test:visual-contract
+TASK11_COMMAND_19=deno test --allow-env supabase/functions/_shared/website-project-files-provider.test.ts --filter "provider exposes no write method"
+```
+
+An exit code of zero with zero executed tests is not a PASS. Command 19 must execute at least one test and must report that every exposed provider operation is read-only.
+
+#### 13.3.3 Local reset bootstrap and tooling-only lock recovery
+
+Command 1 may use only the existing repository-approved local auth bootstrap. Ad hoc inserts into `auth.users` and `docker exec`/`psql` mutation of `auth.users` are forbidden. If reset stops on the known local `OP_01_AUTH_ACCOUNT_MISMATCH` invariant, only the existing repository-approved recovery mechanism may be used. Do not alter a product migration. These local command-1 recovery steps do not increase `TASK11_COMMAND_COUNT` above 19.
+
+Task 11 may contain no final `deno.lock` change. If and only if a Deno command adds exclusively the previously proven tooling-only Playwright workspace entry, inspect the diff read-only, confirm that no other file changed, restore only `deno.lock` to `HEAD`, refresh its index state if necessary, and require a clean baseline before continuing. Any different lock diff or any additional changed path requires immediate STOP. Do not restore any other file.
+
+#### 13.3.4 Exact mandatory checkpoint schema
+
+The Task 11 checkpoint must contain every field below exactly once unless the field explicitly requires a list. No field may be omitted. Ellipses below mean the freshly observed exact value or complete evidence, never a placeholder.
+
+```text
+PHASE_A_TASK11_RESULT=PASS
+CHECKPOINT_FILE=docs/superpowers/checkpoints/2026-09-17-website-execution-project-files-phase-a-verification.md
+ORIGIN_MAIN=...
+CANDIDATE_HEAD=...
+MERGE_BASE=...
+COMMITS_AHEAD_OF_ORIGIN_MAIN=...
+CANDIDATE_COMMIT_LIST=complete origin/main..candidate list
+V118_SOURCE_RELATION=...
+PREREQUISITE_ANCESTRY=8/8_PASS
+REQUIREMENTS_CLOSURE_STATUS=CLOSED_PASS
+TASK10_STATUS=CLOSED_PASS
+TASK10_ASSERTIONS=906/906_PASS
+TASK11_COMMAND_COUNT=19
+TASK11_COMMAND_1_RESULT=PASS + exact count/output
+TASK11_COMMAND_2_RESULT=PASS + exact count/output
+TASK11_COMMAND_3_RESULT=PASS + exact count/output
+TASK11_COMMAND_4_RESULT=PASS + exact count/output
+TASK11_COMMAND_5_RESULT=PASS + exact count/output
+TASK11_COMMAND_6_RESULT=PASS + exact count/output
+TASK11_COMMAND_7_RESULT=PASS + exact count/output
+TASK11_COMMAND_8_RESULT=PASS + exact count/output
+TASK11_COMMAND_9_RESULT=PASS + exact count/output
+TASK11_COMMAND_10_RESULT=PASS + exact count/output
+TASK11_COMMAND_11_RESULT=PASS + exact count/output
+TASK11_COMMAND_12_RESULT=PASS + exact count/output
+TASK11_COMMAND_13_RESULT=PASS + exact count/output
+TASK11_COMMAND_14_RESULT=PASS + exact count/output
+TASK11_COMMAND_15_RESULT=PASS + exact count/output
+TASK11_COMMAND_16_RESULT=PASS + exact count/output
+TASK11_COMMAND_17_RESULT=PASS + exact count/output
+TASK11_COMMAND_18_RESULT=PASS + exact count/output
+TASK11_COMMAND_19_RESULT=PASS + exact count/output
+TASK11_TOTAL_ASSERTION_COUNT=exact actual total
+SYNTHETIC_TWO_CONTEXT_FIXTURE=PASS
+CROSS_CONTEXT_ISOLATION=PASS
+BOARD_SUBSTITUTION=PASS
+CONTEXT_SUBSTITUTION=PASS
+INTAKE_SUBSTITUTION=PASS
+ITEM_SUBSTITUTION=PASS
+VERIFICATION_ID_SUBSTITUTION=PASS
+SOURCE_CHANGE_SUBSTITUTION=PASS
+PROMOTION_SUBSTITUTION=PASS
+REQUIREMENTS_TO_PROJECT_FILES_NO_WRITE=PASS
+PROJECT_FILES_TO_REQUIREMENTS_NO_WRITE=PASS
+CALLER_JWT_BOUNDARY=PASS
+OWNER_AAL2_BOUNDARY=PASS
+CANONICAL_BINDING=PASS
+CURSOR_ISOLATION=PASS
+RESOURCE_LIMITS=PASS
+LEASE_LIFECYCLE=PASS
+PROVIDER_READ_ONLY_GRAPH=PASS
+REPOSITORY_CREATE_CALLS=0
+REPOSITORY_WRITE_CALLS=0
+GITHUB_POST_CALLS=0
+GITHUB_PATCH_CALLS=0
+GITHUB_PUT_CALLS=0
+GITHUB_DELETE_CALLS=0
+PRODUCT_FLOW_COMMITS=0
+PUSHES=0
+BUILDS=0
+PREVIEWS=0
+PUBLICATIONS=0
+DEPLOYS=0
+REMOTE_MIGRATIONS=0
+REMOTE_DATABASE_MUTATIONS=0
+PRODUCTION_RELEASE_ACTIONS=0
+BASELINE_DEBT=exact recorded status
+IMPLEMENTATION_SHAS=relevant Phase A and Requirements Closure implementation/verification SHAs
+WORKTREE_CLEAN_BEFORE=JA
+WORKTREE_CLEAN_BEFORE_COMMIT=JA except exactly the checkpoint file
+DENO_LOCK_CHANGED=NEE
+GIT_DIFF_CHECK=PASS
+TASK11_CHANGED_FILE_COUNT=1
+PUSH_AUTHORIZED=NEE
+DEPLOY_AUTHORIZED=NEE
+REMOTE_MIGRATION_AUTHORIZED=NEE
+REMOTE_DATABASE_MUTATION_AUTHORIZED=NEE
+PRODUCTION_RELEASE_AUTHORIZED=NEE
+SEPARATE_OWNER_CONTROLLER_RELEASE_AUTH_REQUIRED=JA
+```
+
+#### 13.3.5 Exact PASS criteria
+
+Task 11 passes only when all of the following are true:
+
+- All 19 commands were actually executed in order and all 19 passed.
+- Command 19 executed at least one test.
+- Fresh exact assertion counts and command outputs were recorded.
+- Prerequisite ancestry is exactly `8/8_PASS`; the baseline and merge-base are stable and explained.
+- Every foreign substitution fails closed without metadata, result, cursor reuse, stale UI content, or write.
+- Both no-write directions pass and every mutation/release counter is exactly zero.
+- Correct lease release and the read-only provider graph are proven.
+- The checkpoint contains the complete schema from section 13.3.4.
+- Before commit, exactly the checkpoint file is changed or untracked, `git diff --check` passes, and `deno.lock` is unchanged.
+- Exactly one checkpoint commit with the exact subject is created and the post-commit worktree is clean.
+
+#### 13.3.6 Closed STOP and repair model
+
+```text
+ANY_FAILURE_REQUIRES_STOP=JA
+NEW_CONTROLLER_AUTHORIZATION_REQUIRED=JA
+```
+
+Stop immediately on any test or regression failure; unexplained assertion-count or baseline difference; ancestry or merge-base drift; foreign authority acceptance; isolation or no-write snapshot failure; nonzero mutation or release counter; resource, cursor, or lease failure; provider leak; incomplete checkpoint; unexpected dirty worktree; unknown `deno.lock` drift; or product, security, or authority defect.
+
+Task 11 performs no repair. It may not change product code, tests, migrations, handlers, shared runtime, frontend code, contracts, or the baseline, and it may not use the checkpoint to document a failure away. Every older Task 11 instruction that permits a spontaneous repair is overridden. After STOP, no repair or Task 11 restart may occur without a new controller decision and explicit authorization.
+
+#### 13.3.7 Exact release boundary
+
+```text
+TASK11_PASS_AUTHORIZES_PUSH=NEE
+TASK11_PASS_AUTHORIZES_DEPLOY=NEE
+TASK11_PASS_AUTHORIZES_REMOTE_MIGRATION=NEE
+TASK11_PASS_AUTHORIZES_REMOTE_DB_MUTATION=NEE
+TASK11_PASS_AUTHORIZES_PRODUCTION_RELEASE=NEE
+SEPARATE_OWNER_CONTROLLER_RELEASE_AUTH_REQUIRED=JA
+```
+
+Task 11 is local-only. Even after Task 11 passes, push/main promotion, remote migrations, Edge deployment, Pages deployment, repository provisioning, production database mutation, and every other production action remain blocked until a later owner/controller review separately authorizes the exact action.
 
 ## 14. Design self-review and stop gates
 
