@@ -74,6 +74,8 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_workspace",
   "get_website_execution_workspace",
   "provision_website_execution_workspace",
+  "list_website_project_directory",
+  "read_website_project_file",
   "start_website_concept",
   "start_project_work",
   "get_project_requirements_board",
@@ -414,6 +416,17 @@ export type WebsiteExecutionWorkspaceProvisionActionInput = Readonly<{
   quote_request_id: string;
   idempotency_key: string;
 }>;
+export type WebsiteProjectDirectoryActionInput = Readonly<{
+  action: "list_website_project_directory";
+  quote_request_id: string;
+  path: string;
+  cursor: string | null;
+}>;
+export type WebsiteProjectFileActionInput = Readonly<{
+  action: "read_website_project_file";
+  quote_request_id: string;
+  path: string;
+}>;
 export type QuotationBusinessApprovalPromotionActionInput = Readonly<{
   action: "promote_quotation_business_draft_to_approval";
   intake_id: string;
@@ -480,6 +493,14 @@ type CommercialOperatorDependencies = Readonly<{
     input: Record<string, unknown>,
     actorAuthUserId: string,
   ): PromiseLike<unknown>;
+  executeWebsiteProjectDirectoryList(
+    jwt: string,
+    input: WebsiteProjectDirectoryActionInput,
+  ): PromiseLike<unknown>;
+  executeWebsiteProjectFileRead(
+    jwt: string,
+    input: WebsiteProjectFileActionInput,
+  ): PromiseLike<unknown>;
   consumeRateLimit(
     jwt: string,
     projectId: string,
@@ -524,6 +545,7 @@ function response(
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
         "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
       },
     },
   );
@@ -1089,6 +1111,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id"])
     : action === "provision_website_execution_workspace"
     ? new Set(["action", "quote_request_id", "idempotency_key"])
+    : action === "list_website_project_directory"
+    ? new Set(["action", "quote_request_id", "path", "cursor"])
+    : action === "read_website_project_file"
+    ? new Set(["action", "quote_request_id", "path"])
     : action === "start_website_concept"
     ? new Set([
       "action", "quote_request_id", "expected_website_work_revision",
@@ -1867,6 +1893,30 @@ function validateApplicationAction(value: UnvalidatedInput) {
       idempotency_key: idempotencyKey,
     };
   }
+  if (action === "list_website_project_directory") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      typeof value.path !== "string" ||
+      !(value.cursor === null || typeof value.cursor === "string")
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      path: value.path,
+      cursor: value.cursor,
+    } as WebsiteProjectDirectoryActionInput;
+  }
+  if (action === "read_website_project_file") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      typeof value.path !== "string"
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      path: value.path,
+    } as WebsiteProjectFileActionInput;
+  }
   if (action === "get_website_execution_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
@@ -2105,6 +2155,35 @@ function validateApplicationAction(value: UnvalidatedInput) {
 }
 function mapDatabaseError(error: unknown) {
   const code = error instanceof Error ? error.message : "INTERNAL";
+  const projectFileStatuses = new Map<string, number>([
+    ["INVALID_REQUEST", 400],
+    ["INVALID_PROJECT_PATH", 400],
+    ["PROJECT_FILES_CURSOR_INVALID", 400],
+    ["OPERATOR_NOT_AUTHORIZED", 403],
+    ["SENSITIVE_FILE_BLOCKED", 403],
+    ["PROJECT_DIRECTORY_NOT_FOUND", 404],
+    ["PROJECT_FILE_NOT_FOUND", 404],
+    ["REPOSITORY_NOT_READY", 409],
+    ["REPOSITORY_BINDING_MISSING", 409],
+    ["REPOSITORY_BINDING_STALE", 409],
+    ["REPOSITORY_REF_MISMATCH", 409],
+    ["PROJECT_FILES_SNAPSHOT_UNAVAILABLE", 409],
+    ["PROJECT_PATH_KIND_MISMATCH", 409],
+    ["FILE_TOO_LARGE", 413],
+    ["BINARY_UNSUPPORTED", 415],
+    ["UNSUPPORTED_ENCODING", 415],
+    ["PROJECT_FILES_RATE_LIMITED", 429],
+    ["PROJECT_FILES_CONCURRENCY_LIMITED", 429],
+    ["PROJECT_FILES_PROVIDER_UNAVAILABLE", 503],
+    ["PROJECT_FILES_PROVIDER_TIMEOUT", 503],
+    ["PROJECT_FILES_PROVIDER_THROTTLED", 503],
+    ["PROJECT_FILES_PROVIDER_RESPONSE_INVALID", 503],
+    ["PROJECT_FILES_PROVIDER_CONFIGURATION_ERROR", 503],
+    ["PROJECT_FILES_CURSOR_CONFIGURATION_ERROR", 503],
+    ["SENSITIVE_CLASSIFICATION_UNAVAILABLE", 503],
+  ]);
+  const projectFileStatus = projectFileStatuses.get(code);
+  if (projectFileStatus !== undefined) return response(projectFileStatus, code);
   if (
     [
       "HUMAN_JWT_REQUIRED",
@@ -2137,6 +2216,7 @@ function mapDatabaseError(error: unknown) {
       "DOSSIER_DOCUMENT_NOT_DOWNLOADABLE",
       "DOSSIER_DOCUMENT_SOURCE_INVALID",
       "WEBSITE_WORKSPACE_OWNER_REQUIRED",
+      "WEBSITE_REPOSITORY_OWNER_REQUIRED",
     ].includes(code)
   ) return response(403, "OPERATOR_NOT_AUTHORIZED");
   if (
@@ -2155,6 +2235,9 @@ function mapDatabaseError(error: unknown) {
     ].includes(code)
   ) return response(409, code);
   if (code === "WEBSITE_CONCEPT_DOSSIER_NOT_FOUND") return response(404, code);
+  if (code === "WEBSITE_WORKSPACE_NOT_FOUND") {
+    return response(409, "REPOSITORY_BINDING_MISSING");
+  }
   if (code === "WEBSITE_CONCEPT_OWNER_REQUIRED") {
     return response(403, "OPERATOR_NOT_AUTHORIZED");
   }
@@ -2749,6 +2832,16 @@ export async function handleCommercialOperator(
         await deps.authorizeApplicationReader(jwt);
       }
       const input = validateApplicationAction(parsed);
+      if (
+        input.action === "list_website_project_directory" ||
+        input.action === "read_website_project_file"
+      ) {
+        try {
+          requireOperatorAal2(claims, sub);
+        } catch {
+          throw new RequestError(403, "OPERATOR_NOT_AUTHORIZED");
+        }
+      }
       if (input.action === "permanently_delete_pending_intake") {
         requireOperatorAal2(claims, sub);
       }
@@ -2818,6 +2911,20 @@ export async function handleCommercialOperator(
       }
       if (input.action === "get_application_facets_v2") {
         const result = await deps.executeApplicationFacetsV2(jwt, user.id, input);
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "list_website_project_directory") {
+        const result = await deps.executeWebsiteProjectDirectoryList(
+          jwt,
+          input as WebsiteProjectDirectoryActionInput,
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "read_website_project_file") {
+        const result = await deps.executeWebsiteProjectFileRead(
+          jwt,
+          input as WebsiteProjectFileActionInput,
+        );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
       const result = await deps.executeApplicationAction(jwt, input, user.id);

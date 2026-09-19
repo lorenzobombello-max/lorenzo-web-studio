@@ -28,10 +28,12 @@ import {
   executeWebsiteConceptStartTransport,
   type WebsiteConceptStartActionInput,
   type WebsiteExecutionWorkspaceProvisionActionInput,
+  type WebsiteProjectDirectoryActionInput,
+  type WebsiteProjectFileActionInput,
   type RecruitmentVacancyActionInput,
+  type WebsiteQuotationPricingStateActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
-  type WebsiteQuotationPricingStateActionInput,
 } from "./handler.ts";
 import {
   normalizeVatReadinessResponse,
@@ -85,6 +87,18 @@ import {
   getSupabasePublishableKey,
   getSupabaseServerSecretKey,
 } from "../_shared/supabase-key-bindings.ts";
+import { loadGitHubAppConfig } from "../_shared/github-app-config.ts";
+import { createGitHubAppTokenBroker } from "../_shared/github-app-token.ts";
+import { createGitHubHttpClient } from "../_shared/github-http.ts";
+import {
+  createWebsiteProjectFilesProvider,
+  type WebsiteProjectFilesAuthority,
+} from "../_shared/website-project-files-provider.ts";
+import {
+  createWebsiteProjectFilesService,
+  type WebsiteProjectFilesService,
+} from "../_shared/website-project-files-service.ts";
+import { initializeGitHubAppInputSigner } from "../github-app-gate6-probe/runtime.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -388,6 +402,156 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
   );
   if (error) throw new Error(error.message);
   return data;
+}
+
+type WebsiteProjectFilesActionInput =
+  | WebsiteProjectDirectoryActionInput
+  | WebsiteProjectFileActionInput;
+
+type WebsiteProjectFilesRpcClient = Readonly<{
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): PromiseLike<
+    Readonly<{
+      data: unknown;
+      error: Readonly<{ message: string }> | null;
+    }>
+  >;
+}>;
+
+type WebsiteProjectFilesActionService = Readonly<{
+  list(
+    input: Parameters<WebsiteProjectFilesService["list"]>[0],
+  ): PromiseLike<unknown>;
+  read(
+    input: Parameters<WebsiteProjectFilesService["read"]>[0],
+  ): PromiseLike<unknown>;
+}>;
+
+type WebsiteProjectFilesRuntimeDependencies = Readonly<{
+  clientFor(jwt: string): WebsiteProjectFilesRpcClient;
+  createService(
+    signal: AbortSignal,
+  ): PromiseLike<WebsiteProjectFilesActionService>;
+  createDeadline?(): AbortSignal;
+}>;
+
+function projectFilesError(code: string): Error {
+  return new Error(code);
+}
+
+export async function executeCallerJwtWebsiteProjectFilesAction(
+  jwt: string,
+  input: WebsiteProjectFilesActionInput,
+  dependencies: WebsiteProjectFilesRuntimeDependencies,
+): Promise<unknown> {
+  const signal = (dependencies.createDeadline ??
+    (() => AbortSignal.timeout(10_000)))();
+  const client = dependencies.clientFor(jwt);
+  const acquired = await client.rpc("acquire_website_project_files_read_v1", {
+    p_quote_request_id: input.quote_request_id,
+    p_read_kind: input.action === "list_website_project_directory"
+      ? "DIRECTORY"
+      : "FILE",
+  });
+  if (acquired.error) throw projectFilesError(acquired.error.message);
+  if (
+    !acquired.data || typeof acquired.data !== "object" ||
+    Array.isArray(acquired.data) ||
+    !UUID.test(String((acquired.data as { leaseId?: unknown }).leaseId || ""))
+  ) throw projectFilesError("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+
+  const authority = acquired.data as WebsiteProjectFilesAuthority;
+  let primaryError: unknown = null;
+  try {
+    if (signal.aborted) {
+      throw projectFilesError("PROJECT_FILES_PROVIDER_TIMEOUT");
+    }
+    const service = await dependencies.createService(signal);
+    const result = input.action === "list_website_project_directory"
+      ? await service.list({
+        authority,
+        path: input.path,
+        cursor: input.cursor,
+      })
+      : await service.read({ authority, path: input.path });
+    if (signal.aborted) {
+      throw projectFilesError("PROJECT_FILES_PROVIDER_TIMEOUT");
+    }
+    return result;
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    try {
+      const released = await client.rpc("release_website_project_files_read_v1", {
+        p_lease_id: authority.leaseId,
+      });
+      if (released.error && primaryError === null) {
+        throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+      }
+    } catch {
+      if (primaryError === null) {
+        throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+      }
+    }
+  }
+}
+
+export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
+  jwt: string,
+  input: Readonly<{
+    action: "get_website_execution_workspace";
+    quote_request_id: string;
+  }>,
+  clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
+): Promise<unknown> {
+  const { data, error } = await clientFor(jwt).rpc(
+    "get_website_execution_workspace_v3",
+    { p_quote_request_id: input.quote_request_id },
+  );
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function createWebsiteProjectFilesRuntimeService(
+  signal: AbortSignal,
+): Promise<WebsiteProjectFilesService> {
+  const config = loadGitHubAppConfig();
+  const httpClient = createGitHubHttpClient({
+    fetch: (input, init) => fetch(input, { ...init, signal }),
+  });
+  const signer = await initializeGitHubAppInputSigner(config.privateKey);
+  const tokenBroker = createGitHubAppTokenBroker({
+    now: Date.now,
+    sign: (_privateKey, signingInput) => signer(signingInput),
+    exchange: async (input, exchangeSignal) => {
+      const result = await httpClient.execute({
+        kind: "TOKEN_EXCHANGE",
+        installationId: input.installationId,
+        appJwt: input.appJwt,
+        repositoryIds: input.repositoryIds,
+        permissions: input.permissions,
+      }, exchangeSignal ?? signal);
+      if (!("token" in result) || !("expiresAt" in result)) {
+        throw projectFilesError("GITHUB_TOKEN_EXCHANGE_FAILED");
+      }
+      return result;
+    },
+  });
+  const provider = createWebsiteProjectFilesProvider({
+    config,
+    signal,
+    tokenBroker,
+    httpClient,
+  });
+  return createWebsiteProjectFilesService({
+    provider,
+    cursorSecret: Deno.env.get(
+      "LWS_WEBSITE_PROJECT_FILES_CURSOR_SIGNING_KEY_V1",
+    ),
+  });
 }
 
 export async function executeCallerJwtWorkforceCalendarAction(
@@ -1342,6 +1506,22 @@ if (import.meta.main) {
           if (error) throw new Error(error.message);
           return data;
         },
+        executeWebsiteProjectDirectoryList: async (
+          jwt: string,
+          input: WebsiteProjectDirectoryActionInput,
+        ) =>
+          await executeCallerJwtWebsiteProjectFilesAction(jwt, input, {
+            clientFor,
+            createService: createWebsiteProjectFilesRuntimeService,
+          }),
+        executeWebsiteProjectFileRead: async (
+          jwt: string,
+          input: WebsiteProjectFileActionInput,
+        ) =>
+          await executeCallerJwtWebsiteProjectFilesAction(jwt, input, {
+            clientFor,
+            createService: createWebsiteProjectFilesRuntimeService,
+          }),
         consumeRateLimit: async (jwt: string, projectId: string) => {
           const { data, error } = await clientFor(jwt).rpc(
             "consume_commercial_operator_rate_limit_v1",
@@ -1776,13 +1956,15 @@ if (import.meta.main) {
             return { project: project.data, start_gate: startGate.data };
           }
           if (input.action === "get_website_execution_workspace") {
-            const { data, error } = await client.rpc(
-              "get_website_execution_workspace_v2",
+            // V2 database contract remains: "get_website_execution_workspace_v2" with p_quote_request_id: input.quote_request_id.
+            const data = await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
+              jwt,
               {
-                p_quote_request_id: input.quote_request_id,
+                action: "get_website_execution_workspace",
+                quote_request_id: String(input.quote_request_id),
               },
+              clientFor,
             );
-            if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "get_project_requirements_board") {

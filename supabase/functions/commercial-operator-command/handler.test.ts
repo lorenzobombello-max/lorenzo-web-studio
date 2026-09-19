@@ -38,12 +38,14 @@ import {
   executeCallerJwtQuotationVatReadinessAction,
   executeCallerJwtWebsiteConceptStartAction,
   executeCallerJwtWebsiteExecutionWorkspaceProvisionAction,
-  executeCallerJwtWorkforceCalendarAction,
+  executeCallerJwtWebsiteExecutionWorkspaceReadAction,
   executeApplicationDetailRead,
+  executeCallerJwtWebsiteProjectFilesAction,
+  executeCallerJwtWorkforceCalendarAction,
   executeCustomerRequestUploadInboxPromotionAction,
+  executeWebsiteQuotationPricingStateAction,
   executeQuotationBusinessApprovalPromotionAction,
   executeQuotationBusinessDraftAction,
-  executeWebsiteQuotationPricingStateAction,
   executeServiceRoleDossierDocumentAction,
   normalizePendingSeenStateItems,
   normalizeWebsitePendingItems,
@@ -356,6 +358,8 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       },
       consumeRateLimit: async () => ({ allowed: true, retry_after_seconds: 0 }),
       executeCommand: async () => ({ command: true }),
+      executeWebsiteProjectDirectoryList: async () => ({ entries: [] }),
+      executeWebsiteProjectFileRead: async () => ({ file: {} }),
       executeApplicationAction: async (
         token: string,
         input: Record<string, unknown>,
@@ -439,6 +443,47 @@ const websiteWorkspaceProvisionRequest = {
   quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
   idempotency_key: websiteWorkspaceProvisionFixtures[0].idempotency_key,
 };
+
+const websiteProjectDirectoryRequest = {
+  action: "list_website_project_directory" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  path: "",
+  cursor: null,
+};
+
+const websiteProjectFileRequest = {
+  action: "read_website_project_file" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  path: "src/main.ts",
+};
+
+const projectFileAuthorityFields = [
+  "website_work_context_id",
+  "website_workspace_id",
+  "project_id",
+  "repository_provider",
+  "repository_owner",
+  "repository_name",
+  "repository_external_id",
+  "repository_node_id",
+  "repository_installation_id",
+  "binding_revision",
+  "repository_ref",
+  "ref",
+  "branch",
+  "commit",
+  "commit_sha",
+  "default_branch",
+  "marker_operation_id",
+  "provider_host",
+  "provider_url",
+  "credential",
+  "token",
+  "jwt",
+  "local_path",
+  "workspace_path",
+  "unknown",
+] as const;
 
 const pricingStateRequest = {
   action: "get_website_quotation_pricing_state" as const,
@@ -677,6 +722,590 @@ Deno.test("Website workspace provision maps authority and eligibility errors nar
     assertEquals(response.status, status, databaseCode);
     assertEquals(await response.json(), { ok: false, code: responseCode }, databaseCode);
   }
+});
+
+Deno.test("project directory accepts only bounded browser intent", async () => {
+  const result = { entries: [], next_cursor: null };
+  const accepted = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectDirectoryList: async () => result,
+  });
+  const acceptedResponse = await handleCommercialOperator(
+    request(websiteProjectDirectoryRequest, ownerAal2Jwt),
+    accepted.deps,
+  );
+  assertEquals(acceptedResponse.status, 200);
+  assertEquals(
+    acceptedResponse.headers.get("content-type"),
+    "application/json",
+  );
+  assertEquals(acceptedResponse.headers.get("cache-control"), "no-store");
+  assertEquals(acceptedResponse.headers.get("referrer-policy"), "no-referrer");
+  assertEquals(
+    acceptedResponse.headers.get("x-content-type-options"),
+    "nosniff",
+  );
+  assertEquals(await acceptedResponse.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result,
+  });
+
+  for (
+    const input of [
+      {
+        action: websiteProjectDirectoryRequest.action,
+        quote_request_id: websiteProjectDirectoryRequest.quote_request_id,
+        path: "",
+      },
+      { ...websiteProjectDirectoryRequest, quote_request_id: "invalid" },
+      { ...websiteProjectDirectoryRequest, path: 1 },
+      { ...websiteProjectDirectoryRequest, cursor: 1 },
+    ]
+  ) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(input), harness.deps)).status,
+      400,
+    );
+  }
+  for (const field of projectFileAuthorityFields) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(
+        request({ ...websiteProjectDirectoryRequest, [field]: "forbidden" }),
+        harness.deps,
+      )).status,
+      400,
+      field,
+    );
+  }
+});
+
+Deno.test("project file read accepts only bounded browser intent", async () => {
+  const result = { file: { path: "src/main.ts", content: "safe" } };
+  const accepted = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectFileRead: async () => result,
+  });
+  const acceptedResponse = await handleCommercialOperator(
+    request(websiteProjectFileRequest, ownerAal2Jwt),
+    accepted.deps,
+  );
+  assertEquals(acceptedResponse.status, 200);
+  assertEquals(await acceptedResponse.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result,
+  });
+
+  for (
+    const input of [
+      {
+        action: websiteProjectFileRequest.action,
+        quote_request_id: websiteProjectFileRequest.quote_request_id,
+      },
+      { ...websiteProjectFileRequest, quote_request_id: "invalid" },
+      { ...websiteProjectFileRequest, path: null },
+    ]
+  ) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(input), harness.deps)).status,
+      400,
+    );
+  }
+  for (const field of projectFileAuthorityFields) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(
+        request({ ...websiteProjectFileRequest, [field]: "forbidden" }),
+        harness.deps,
+      )).status,
+      400,
+      field,
+    );
+  }
+});
+
+Deno.test("project files require owner AAL2 before service dispatch", async () => {
+  for (
+    const [token, verifyUser] of [
+      [
+        ownerAal1Jwt,
+        async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+      ],
+      [
+        createUnsignedTestJwt({
+          sub: userId,
+          role: "authenticated",
+          aal: "aal2",
+          exp: 4102444800,
+        }),
+        async () => ({ id: userId }),
+      ],
+      [
+        createUnsignedTestJwt({
+          sub: userId,
+          role: "service_role",
+          aal: "aal2",
+          exp: 4102444800,
+        }),
+        async () => ({ id: userId }),
+      ],
+      [
+        createUnsignedTestJwt({
+          sub: userId,
+          role: "authenticated",
+          aal: "aal2",
+          exp: 1,
+        }),
+        async () => ({ id: userId }),
+      ],
+      [jwt, async () => null],
+    ] as const
+  ) {
+    let dispatches = 0;
+    const harness = dependencies({
+      verifyUser,
+      executeWebsiteProjectDirectoryList: async () => {
+        dispatches++;
+        return {};
+      },
+    });
+    const response = await handleCommercialOperator(
+      request(websiteProjectDirectoryRequest, token),
+      harness.deps,
+    );
+    assertEquals(response.status === 401 || response.status === 403, true);
+    assertEquals(dispatches, 0);
+  }
+  const missing = new Request("https://example.test", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://lorenzowebsolutions.be",
+    },
+    body: JSON.stringify(websiteProjectDirectoryRequest),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      missing,
+      dependencies().deps,
+    )).status,
+    401,
+  );
+});
+
+Deno.test("project files preserve caller JWT authority", async () => {
+  const seen: string[] = [];
+  const harness = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectDirectoryList: async (token: string) => {
+      seen.push(token);
+      return {};
+    },
+    executeWebsiteProjectFileRead: async (token: string) => {
+      seen.push(token);
+      return {};
+    },
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectDirectoryRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectFileRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(seen, [ownerAal2Jwt, ownerAal2Jwt]);
+});
+
+Deno.test("project file errors map without provider leakage", async () => {
+  for (
+    const [code, status] of [
+      ["INVALID_REQUEST", 400],
+      ["INVALID_PROJECT_PATH", 400],
+      ["PROJECT_FILES_CURSOR_INVALID", 400],
+      ["SENSITIVE_FILE_BLOCKED", 403],
+      ["PROJECT_DIRECTORY_NOT_FOUND", 404],
+      ["PROJECT_FILE_NOT_FOUND", 404],
+      ["REPOSITORY_NOT_READY", 409],
+      ["REPOSITORY_BINDING_MISSING", 409],
+      ["REPOSITORY_BINDING_STALE", 409],
+      ["REPOSITORY_REF_MISMATCH", 409],
+      ["PROJECT_FILES_SNAPSHOT_UNAVAILABLE", 409],
+      ["PROJECT_PATH_KIND_MISMATCH", 409],
+      ["FILE_TOO_LARGE", 413],
+      ["BINARY_UNSUPPORTED", 415],
+      ["UNSUPPORTED_ENCODING", 415],
+      ["PROJECT_FILES_RATE_LIMITED", 429],
+      ["PROJECT_FILES_CONCURRENCY_LIMITED", 429],
+      ["PROJECT_FILES_PROVIDER_UNAVAILABLE", 503],
+      ["PROJECT_FILES_PROVIDER_TIMEOUT", 503],
+      ["PROJECT_FILES_PROVIDER_THROTTLED", 503],
+      ["PROJECT_FILES_PROVIDER_RESPONSE_INVALID", 503],
+      ["PROJECT_FILES_CURSOR_CONFIGURATION_ERROR", 503],
+      ["SENSITIVE_CLASSIFICATION_UNAVAILABLE", 503],
+    ] as const
+  ) {
+    const response = await handleCommercialOperator(
+      request(websiteProjectFileRequest, ownerAal2Jwt),
+      dependencies({
+        verifyUser: async () => ({
+          id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+        }),
+        executeWebsiteProjectFileRead: async () => {
+          const error = new Error(code);
+          Object.assign(error, {
+            token: "ghs_provider_secret",
+            request_id: "provider-request-id",
+            body: "provider body",
+            url: "https://api.github.test/repository",
+          });
+          throw error;
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status, code);
+    const serialized = await response.text();
+    assertEquals(JSON.parse(serialized), { ok: false, code }, code);
+    for (
+      const leaked of [
+        "ghs_",
+        "provider-request-id",
+        "provider body",
+        "api.github.test",
+        "stack",
+      ]
+    ) {
+      assertEquals(serialized.includes(leaked), false, `${code}:${leaked}`);
+    }
+  }
+});
+
+Deno.test("project read actions cannot dispatch mutation dependencies", async () => {
+  let genericDispatches = 0;
+  const harness = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeApplicationAction: async () => {
+      genericDispatches++;
+      throw new Error("MUTATION_DISPATCH_FORBIDDEN");
+    },
+    executeWebsiteProjectDirectoryList: async () => ({ entries: [] }),
+    executeWebsiteProjectFileRead: async () => ({ file: {} }),
+  });
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectDirectoryRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectFileRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(genericDispatches, 0);
+  const source = await Deno.readTextFile(
+    new URL("./index.ts", import.meta.url),
+  );
+  const runtime = source.slice(
+    source.indexOf(
+      "export async function executeCallerJwtWebsiteProjectFilesAction",
+    ),
+    source.indexOf(
+      "export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction",
+    ),
+  );
+  for (
+    const forbidden of [
+      "CREATE_REPOSITORY",
+      "CREATE_BLOB",
+      "CREATE_TREE",
+      "CREATE_COMMIT",
+      "CREATE_REF",
+      "UPDATE_REF",
+      "WRITE_PROJECT_MARKER",
+      "RepositoryProvisioningServiceV2",
+      "build",
+      "preview",
+      "publication",
+      "serviceClient",
+      "retry",
+    ]
+  ) assertEquals(runtime.includes(forbidden), false, forbidden);
+  assertEquals(runtime.match(/AbortSignal\.timeout\(10_000\)/g)?.length, 1);
+  assertEquals(
+    source.includes("fetch(input, { ...init, signal })"),
+    true,
+  );
+});
+
+const websiteProjectAuthority = {
+  leaseId: "c1e00000-0000-4000-8000-000000000001",
+  actorAuthUserId: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  quoteRequestId: websiteProjectDirectoryRequest.quote_request_id,
+  websiteWorkContextId: "c1c00000-0000-4000-8000-000000000001",
+  websiteWorkspaceId: "c1d00000-0000-4000-8000-000000000001",
+  bindingRevision: 1,
+  repositoryProvider: "GITHUB" as const,
+  repositoryOwner: "lorenzo-test",
+  repositoryName: "website-project",
+  repositoryExternalId: "123456789",
+  repositoryNodeId: "R_kgDOExample",
+  defaultBranch: "main",
+  repositoryRef: "heads/main",
+  refLabel: "main",
+  markerOperationId: "c1f00000-0000-4000-8000-000000000001",
+  expiresAt: "2099-01-01T00:00:15.000Z",
+};
+
+function projectFilesRuntime(overrides: Record<string, unknown> = {}) {
+  const events: string[] = [];
+  const callerJwts: string[] = [];
+  let signalCount = 0;
+  const controller = new AbortController();
+  const dependencies = {
+    clientFor: (token: string) => {
+      callerJwts.push(token);
+      return {
+        rpc: async (name: string, args: Record<string, unknown>) => {
+          events.push(`${name}:${JSON.stringify(args)}`);
+          if (name === "acquire_website_project_files_read_v1") {
+            return { data: websiteProjectAuthority, error: null };
+          }
+          return { data: null, error: null };
+        },
+      };
+    },
+    createDeadline: () => {
+      signalCount++;
+      return controller.signal;
+    },
+    createService: async (signal: AbortSignal) => {
+      assertEquals(signal, controller.signal);
+      return {
+        list: async () => {
+          events.push("service.list");
+          return { entries: [] };
+        },
+        read: async () => {
+          events.push("service.read");
+          return { file: { content: "safe" } };
+        },
+      };
+    },
+    ...overrides,
+  };
+  return {
+    callerJwts,
+    controller,
+    dependencies,
+    events,
+    signalCount: () => signalCount,
+  };
+}
+
+Deno.test("project files runtime acquires services and releases exactly once", async () => {
+  for (
+    const [input, readKind, serviceEvent] of [
+      [websiteProjectDirectoryRequest, "DIRECTORY", "service.list"],
+      [websiteProjectFileRequest, "FILE", "service.read"],
+    ] as const
+  ) {
+    const runtime = projectFilesRuntime();
+    await executeCallerJwtWebsiteProjectFilesAction(
+      ownerAal2Jwt,
+      input,
+      runtime.dependencies,
+    );
+    assertEquals(runtime.signalCount(), 1);
+    assertEquals(runtime.callerJwts, [ownerAal2Jwt]);
+    assertEquals(runtime.events, [
+      `acquire_website_project_files_read_v1:${
+        JSON.stringify({
+          p_quote_request_id: input.quote_request_id,
+          p_read_kind: readKind,
+        })
+      }`,
+      serviceEvent,
+      `release_website_project_files_read_v1:${
+        JSON.stringify({
+          p_lease_id: websiteProjectAuthority.leaseId,
+        })
+      }`,
+    ]);
+  }
+});
+
+Deno.test("project files runtime releases on every acquired failure and preserves primary errors", async () => {
+  for (
+    const primaryCode of [
+      "INVALID_PROJECT_PATH",
+      "PROJECT_FILES_PROVIDER_UNAVAILABLE",
+      "PROJECT_FILES_PROVIDER_TIMEOUT",
+      "UNEXPECTED_READ_FAILURE",
+    ]
+  ) {
+    const runtime = projectFilesRuntime({
+      createService: async () => ({
+        list: async () => {
+          throw new Error(primaryCode);
+        },
+        read: async () => {
+          throw new Error(primaryCode);
+        },
+      }),
+      clientFor: (token: string) => {
+        runtime.callerJwts.push(token);
+        return {
+          rpc: async (name: string) => {
+            runtime.events.push(name);
+            if (name === "acquire_website_project_files_read_v1") {
+              return { data: websiteProjectAuthority, error: null };
+            }
+            throw new Error("RELEASE_RAW_FAILURE");
+          },
+        };
+      },
+    });
+    await assertRejects(
+      () =>
+        executeCallerJwtWebsiteProjectFilesAction(
+          ownerAal2Jwt,
+          websiteProjectFileRequest,
+          runtime.dependencies,
+        ),
+      Error,
+      primaryCode,
+    );
+    assertEquals(runtime.events, [
+      "acquire_website_project_files_read_v1",
+      "release_website_project_files_read_v1",
+    ]);
+  }
+});
+
+Deno.test("project files acquire failure dispatches neither service nor release", async () => {
+  let services = 0;
+  const runtime = projectFilesRuntime({
+    clientFor: () => ({
+      rpc: async (name: string) => {
+        runtime.events.push(name);
+        return { data: null, error: { message: "PROJECT_FILES_RATE_LIMITED" } };
+      },
+    }),
+    createService: async () => {
+      services++;
+      throw new Error("SERVICE_MUST_NOT_START");
+    },
+  });
+  await assertRejects(
+    () =>
+      executeCallerJwtWebsiteProjectFilesAction(
+        ownerAal2Jwt,
+        websiteProjectDirectoryRequest,
+        runtime.dependencies,
+      ),
+    Error,
+    "PROJECT_FILES_RATE_LIMITED",
+  );
+  assertEquals(runtime.events, ["acquire_website_project_files_read_v1"]);
+  assertEquals(services, 0);
+});
+
+Deno.test("project files share one cumulative ten second deadline", async () => {
+  for (const elapsed of [9_999, 10_000]) {
+    let services = 0;
+    const runtime = projectFilesRuntime({
+      clientFor: (token: string) => {
+        runtime.callerJwts.push(token);
+        return {
+          rpc: async (name: string) => {
+            runtime.events.push(name);
+            if (name === "acquire_website_project_files_read_v1") {
+              if (elapsed >= 10_000) runtime.controller.abort();
+              return { data: websiteProjectAuthority, error: null };
+            }
+            return { data: null, error: null };
+          },
+        };
+      },
+      createService: async () => ({
+        list: async () => {
+          services++;
+          return {};
+        },
+        read: async () => {
+          services++;
+          return {};
+        },
+      }),
+    });
+    if (elapsed === 9_999) {
+      await executeCallerJwtWebsiteProjectFilesAction(
+        ownerAal2Jwt,
+        websiteProjectDirectoryRequest,
+        runtime.dependencies,
+      );
+      assertEquals(services, 1);
+    } else {
+      await assertRejects(
+        () =>
+          executeCallerJwtWebsiteProjectFilesAction(
+            ownerAal2Jwt,
+            websiteProjectDirectoryRequest,
+            runtime.dependencies,
+          ),
+        Error,
+        "PROJECT_FILES_PROVIDER_TIMEOUT",
+      );
+      assertEquals(services, 0);
+    }
+    assertEquals(runtime.signalCount(), 1);
+    assertEquals(
+      runtime.events.filter((event) =>
+        event === "release_website_project_files_read_v1"
+      ).length,
+      1,
+    );
+  }
+});
+
+Deno.test("Website Execution read uses v3 and v118 provisioning remains present", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
+    jwt,
+    {
+      action: "get_website_execution_workspace",
+      quote_request_id: websiteProjectFileRequest.quote_request_id,
+    },
+    () => ({
+      rpc: async (name, args) => {
+        calls.push({ name, args });
+        return { data: {}, error: null };
+      },
+    }),
+  );
+  assertEquals(calls, [{
+    name: "get_website_execution_workspace_v3",
+    args: { p_quote_request_id: websiteProjectFileRequest.quote_request_id },
+  }]);
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  assertEquals(
+    source.includes("provision_website_execution_workspace_v1"),
+    true,
+  );
 });
 
 Deno.test("Website concept start transport forwards only command RPC arguments", async () => {
@@ -1178,7 +1807,9 @@ Deno.test("commercial operator command disables its legacy gateway JWT check", a
 });
 
 Deno.test("commercial operator command uses only modern key bindings", async () => {
-  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  const source = await Deno.readTextFile(
+    new URL("./index.ts", import.meta.url),
+  );
   assertEquals(source.includes('getSupabaseServerSecretKey("default")'), true);
   assertEquals(source.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
   assertEquals(
@@ -3977,11 +4608,7 @@ Deno.test("quotation business approval promotion accepts only authority-minimal 
       ...quotationPromotionRequest,
       [authoritativeField]: "injected",
     };
-    assertEquals(
-      (await handleCommercialOperator(request(invalid), invalidHarness.deps))
-        .status,
-      400,
-    );
+    assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
     assertEquals(invalidHarness.calls.length, 0);
   }
 });
@@ -4039,7 +4666,11 @@ Deno.test("SDF quotation issuance accepts only frozen authority locators", async
     { ...sdfQuotationIssuanceRequest, delivery_status: "SENT" },
   ]) {
     const invalidHarness = dependencies();
-    assertEquals((await handleCommercialOperator(request(invalid), invalidHarness.deps)).status, 400);
+    assertEquals(
+      (await handleCommercialOperator(request(invalid), invalidHarness.deps))
+        .status,
+      400,
+    );
     assertEquals(invalidHarness.calls.length, 0);
   }
 });
@@ -4456,10 +5087,7 @@ Deno.test("quotation business approval promotion exposes only stable public erro
 
 Deno.test("pending-intake list uses preflight and returns only the safe DTO", async () => {
   const harness = dependencies();
-  const response = await handleCommercialOperator(
-    request({ action: "list_pending_intakes" }),
-    harness.deps,
-  );
+  const response = await handleCommercialOperator(request({ action: "list_pending_intakes" }), harness.deps);
   assertEquals(response.status, 200);
   assertEquals(harness.events, ["preflight", "caller-jwt", "pending", "ACTIVE"]);
   const body = await response.json();
@@ -4653,7 +5281,10 @@ Deno.test("pending-intake list accepts the canonical SDF delivery DTO", async ()
       })],
     }),
   });
-  const response = await handleCommercialOperator(request({ action: "list_pending_intakes" }), harness.deps);
+  const response = await handleCommercialOperator(
+    request({ action: "list_pending_intakes" }),
+    harness.deps,
+  );
   assertEquals(response.status, 200);
   const item = (await response.json()).result.items[0];
   assertEquals(item.sdf_package, "groei");
