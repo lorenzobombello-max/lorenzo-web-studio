@@ -15,6 +15,7 @@ import {
   websiteExecutionView,
 } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 import {
+  requirementsBoardSlot,
   requirementsInvalidationMatches,
   validateWebsiteRequirementsBoard,
   websiteRequirementsBoardRequest,
@@ -133,7 +134,7 @@ function childMarkup() {
           </dl>
           <p data-website-requirements-preview></p>
         </div>
-        <button type="button" class="secondary-action" data-website-action="requirements" disabled aria-disabled="true" title="Beschikbaar in een volgende fase">Takenbord openen</button>
+        <button type="button" class="secondary-action" data-website-action="requirements">Requirements openen</button>
       </section>
       <section class="website-execution__board" aria-labelledby="websiteTechnicalTitle">
         <div class="website-execution__board-heading"><div><p class="eyebrow">Development references</p><h2 id="websiteTechnicalTitle">Technische werkruimte</h2></div><span class="badge badge--active" data-website-build>UNKNOWN</span></div>
@@ -426,6 +427,12 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
     if (action === "files") void projectFiles.activate();
+    if (action === "requirements" && currentSnapshot?.context) {
+      options.requestOpen?.(
+        "dossiers",
+        requirementsBoardSlot(currentSnapshot.context.quoteRequestId),
+      );
+    }
     if (action === "back" && currentSnapshot?.context.mode === "OFFICIAL_PROJECT") {
       options.requestOpen?.("dossiers", `project-${currentSnapshot.context.quoteRequestId}`);
     }

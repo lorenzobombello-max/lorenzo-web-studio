@@ -22,6 +22,7 @@ const websiteRequirementId = "a1800000-0000-4000-8000-000000000006";
 const websiteIntakeId = "a1800000-0000-4000-8000-000000000007";
 const websiteSyncRunId = "a1800000-0000-4000-8000-000000000008";
 const idempotencyKey = "a1800000-0000-4000-8000-000000000009";
+const websiteConceptId = "a1800000-0000-4000-8000-000000000010";
 const statuses = [
   "PENDING", "ACTIVE", "BLOCKED", "COMPLETED", "COMPLETED", "COMPLETED",
   "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED",
@@ -490,26 +491,73 @@ const dashboardCss = readFileSync(
 );
 
 test("requirements module is registered as a managed dossiers child", async () => {
-  assert.match(registrySource, /startsWith\("req-"\)[\s\S]*operator-project-requirements-child\.mjs/);
+  const commercialIndex = registrySource.indexOf('startsWith("project-req-")');
+  const websiteIndex = registrySource.indexOf('startsWith("req-")');
+  const websiteWorkspaceIndex = registrySource.indexOf('startsWith("website-")');
+  const projectIndex = registrySource.indexOf('startsWith("project-")');
+  assert.equal(commercialIndex >= 0, true);
+  assert.equal(commercialIndex < websiteIndex, true);
+  assert.equal(websiteIndex < websiteWorkspaceIndex, true);
+  assert.equal(websiteWorkspaceIndex < projectIndex, true);
+  const requirementsRoutes = registrySource.slice(commercialIndex, websiteWorkspaceIndex);
+  assert.equal((requirementsRoutes.match(/initializeOperatorProjectRequirements/g) || []).length, 4);
+  assert.equal((requirementsRoutes.match(/requireAal2/g) || []).length, 2);
   const child = await import("../assets/js/operator-project-requirements-child.mjs");
   assert.equal(typeof child.initializeOperatorProjectRequirements, "function");
 });
 
-test("requirements child binds server detail to the exact slot quote and project", async () => {
-  const { requirementsChildContext, requirementsChildDetailRequest } =
+test("Task 7 keeps Website and commercial Requirements slots closed and separate", () => {
+  assert.equal(requirementsModule.requirementsBoardSlot(quoteRequestId.toUpperCase()), `req-${quoteRequestId}`);
+  assert.equal(requirementsModule.projectRequirementsBoardSlot(quoteRequestId.toUpperCase()), `project-req-${quoteRequestId}`);
+  assert.equal(requirementsModule.projectRequirementsBoardSlot(quoteRequestId).length, 48);
+  assert.equal(requirementsModule.quoteRequestIdFromRequirementsBoardSlot(`req-${quoteRequestId}`), quoteRequestId);
+  assert.equal(requirementsModule.quoteRequestIdFromRequirementsBoardSlot(`project-req-${quoteRequestId}`), null);
+  assert.equal(requirementsModule.quoteRequestIdFromProjectRequirementsBoardSlot(`project-req-${quoteRequestId}`), quoteRequestId);
+  assert.equal(requirementsModule.quoteRequestIdFromProjectRequirementsBoardSlot(`req-${quoteRequestId}`), null);
+  assert.equal(requirementsModule.projectRequirementsInvalidationMatches(`project-req-${quoteRequestId}`, quoteRequestId), true);
+  assert.equal(requirementsModule.projectRequirementsInvalidationMatches(`project-req-${crypto.randomUUID()}`, quoteRequestId), false);
+  assert.equal(requirementsModule.projectRequirementsInvalidationMatches(`req-${quoteRequestId}`, quoteRequestId), true);
+  assert.throws(() => requirementsModule.projectRequirementsBoardSlot("bad"), /INVALID_PROJECT_REQUIREMENTS_BOARD_SLOT/);
+});
+
+test("requirements child derives one of two modes only from a validated slot", async () => {
+  const { requirementsChildContext, requirementsChildDetailRequest, requirementsChildMode } =
     await import("../assets/js/operator-project-requirements-child.mjs");
   assert.deepEqual(requirementsChildDetailRequest(requirementsBoardSlot(quoteRequestId)), {
     action: "get_application_detail",
     quote_request_id: quoteRequestId,
   });
+  assert.deepEqual(requirementsChildDetailRequest(requirementsModule.projectRequirementsBoardSlot(quoteRequestId)), {
+    action: "get_application_detail",
+    quote_request_id: quoteRequestId,
+  });
+  assert.equal(requirementsChildMode(`req-${quoteRequestId}`), "WEBSITE");
+  assert.equal(requirementsChildMode(`project-req-${quoteRequestId}`), "COMMERCIAL_PROJECT");
+  assert.equal(requirementsChildMode(`project-${quoteRequestId}`), null);
   assert.deepEqual(requirementsChildContext({
     quote_request_id: quoteRequestId,
     request_kind: "website",
     application_reference: "LWS-AAN-2026-0042",
-    project: { project_id: projectId },
-  }, quoteRequestId, { customer: { company: "Atelier Noord" } }), {
+    project: null,
+    website_work: {
+      state: "PRE_PROJECT",
+      quote_request_id: quoteRequestId,
+      concept_id: websiteConceptId,
+      project_id: null,
+      website_work_context_id: websiteWorkContextId,
+      mode: "PRE_PROJECT",
+      briefing_status: "COMPLETE",
+      commercially_released: false,
+      revision: 3,
+      permitted_actions: ["OPEN_WEBSITE"],
+    },
+  }, quoteRequestId, { customer: { company: "Atelier Noord" } }, "WEBSITE"), {
     quoteRequestId,
-    projectId,
+    projectId: null,
+    conceptId: websiteConceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 3,
+    mode: "PRE_PROJECT",
     dossierReference: "LWS-AAN-2026-0042",
     customerName: "Atelier Noord",
   });
@@ -518,11 +566,17 @@ test("requirements child binds server detail to the exact slot quote and project
     quote_request_id: quoteRequestId,
     request_kind: "website",
     application_reference: "LWS-AAN-2026-0042",
-    project: { project_id: crypto.randomUUID() },
-  }, quoteRequestId, null, projectId), /PROJECT_REQUIREMENTS_BINDING_MISMATCH/);
+    project: null,
+    website_work: {
+      state: "PRE_PROJECT", quote_request_id: quoteRequestId, concept_id: crypto.randomUUID(),
+      project_id: null, website_work_context_id: websiteWorkContextId, mode: "PRE_PROJECT",
+      briefing_status: "COMPLETE", commercially_released: false, revision: 1,
+      permitted_actions: ["OPEN_WEBSITE"],
+    },
+  }, quoteRequestId, null, "COMMERCIAL_PROJECT"), /PROJECT_REQUIREMENTS_BINDING_MISMATCH/);
 });
 
-test("requirements child reuses Task 7, invalidation and bounded sibling opening only", () => {
+test("requirements child contains both isolated authority paths and no Website prompt", () => {
   const childSource = readFileSync(
     new URL("../assets/js/operator-project-requirements-child.mjs", import.meta.url),
     "utf8",
@@ -530,11 +584,20 @@ test("requirements child reuses Task 7, invalidation and bounded sibling opening
   assert.match(childSource, /operator-project-requirements\.mjs/);
   assert.match(childSource, /createOperatorDossierAuthority/);
   assert.match(childSource, /createOperatorAutoRefresh/);
-  assert.match(childSource, /options\.requestOpen\?\.\("dossiers",\s*websiteExecutionSlot/);
+  assert.match(childSource, /WEBSITE/);
+  assert.match(childSource, /COMMERCIAL_PROJECT/);
+  assert.match(childSource, /websiteRequirementsBoardRequest/);
+  assert.match(childSource, /validateWebsiteRequirementsBoard/);
+  assert.match(childSource, /projectRequirementsRequest/);
   assert.match(childSource, /runProjectRequirementMutation\(\{/);
   assert.match(childSource, /options\.onInvalidate\?\.\(moduleKey\)/);
-  assert.doesNotMatch(childSource, /window\.open|location\.reload/);
-  assert.doesNotMatch(childSource, /identity\?\.role|completion_mode\s*===/);
+  assert.match(childSource, /options\.requireAal2/);
+  assert.match(childSource, /createWebsiteRequirementMutationIntent/);
+  assert.match(childSource, /Uitkomst niet bevestigd\. Opnieuw proberen gebruikt dezelfde veilige aanvraag\./);
+  assert.match(childSource, /Actie uitgevoerd, maar het bord kon niet veilig worden vernieuwd\./);
+  assert.match(childSource, /data-requirements-form/);
+  assert.doesNotMatch(childSource, /window\.open|location\.reload|\.prompt\?\.|\.prompt\(/);
+  assert.doesNotMatch(childSource, /record_website_requirement_verification|projectRequirementsRequest\([^)]*website/i);
 });
 
 test("successful requirement mutation refreshes authority then invalidates every sibling", async () => {
@@ -584,13 +647,17 @@ test("Requirements invalidation is exact-quote scoped and shared by all three ch
   assert.equal(requirementsInvalidationMatches(`req-${quoteRequestId}`, quoteRequestId), true);
   assert.equal(requirementsInvalidationMatches(`req-${crypto.randomUUID()}`, quoteRequestId), false);
   assert.equal(requirementsInvalidationMatches("main", quoteRequestId), true);
-  for (const source of [requirementsChildSource, websiteChildSource, projectChildSource]) {
+  assert.equal(requirementsModule.projectRequirementsInvalidationMatches(
+    `project-req-${quoteRequestId}`, quoteRequestId,
+  ), true);
+  for (const source of [requirementsChildSource, websiteChildSource]) {
     assert.match(source, /invalidationSlotKey/);
     assert.match(source, /requirementsInvalidationMatches\(invalidationSlotKey/);
     assert.match(source, /createOperatorAutoRefresh/);
     assert.match(source, /if \((?:background && )?current/);
     assert.doesNotMatch(source, /location\.reload|record_preview_ready/);
   }
+  assert.match(projectChildSource, /projectRequirementsInvalidationMatches\(invalidationSlotKey/);
   const windowGuard = readFileSync(
     new URL("../assets/js/operator-window-guard.mjs", import.meta.url),
     "utf8",
@@ -890,10 +957,25 @@ test("Requirements cards have stable readable no-shift layout contracts", () => 
 
 test("Requirements layout declares 1440, 900 and 390-safe overflow behavior", () => {
   assert.match(dashboardCss, /\.project-requirements-workspace,\.project-requirements\s*\{[^}]*width:100%[^}]*min-width:0/);
-  assert.match(dashboardCss, /@media \(max-width:900px\)[^{]*\{[^}]*\.project-requirements__cards\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(dashboardCss, /@media \(max-width:540px\)[^{]*\{[^}]*\.project-requirements__cards\s*\{[^}]*grid-template-columns:1fr/);
+  assert.match(dashboardCss, /@media \(max-width:900px\)[^{]*\{[^}]*\.project-requirements__cards\s*\{[^}]*grid-template-columns:1fr/);
+  assert.match(dashboardCss, /@media \(max-width:540px\)[^{]*\{[^}]*\.project-requirements__form-actions[^}]*width:100%/);
   assert.match(dashboardCss, /\.project-requirements__card\s*\{[^}]*min-width:0[^}]*overflow:hidden/);
-  assert.doesNotMatch(requirementsChildSource, /window\.open|location\.reload|identity\?\.role|completion_mode\s*===/);
+  assert.match(dashboardCss, /\.project-requirements__form[^}]*min-width:0/);
+  assert.doesNotMatch(requirementsChildSource, /window\.open|location\.reload|completion_mode\s*===/);
+});
+
+test("Website Requirements interaction copy and accessibility are closed", () => {
+  for (const copy of [
+    "WEBSITE REQUIREMENTS", "Intake synchroniseren", "Start", "Blokkeren", "Afronden",
+    "Heropenen", "Wijziging aanvaarden", "Bestaande vereiste behouden",
+    "Vereiste uitfaseren", "Reden blokkering", "Uitvoeringsbevestiging",
+    "Reden heropening", "Reden wijziging aanvaarden",
+    "Reden bestaande vereiste behouden", "Reden vereiste uitfaseren",
+    "Wijzigingen uit de intake moeten eerst beoordeeld worden.", "Opnieuw proberen",
+  ]) assert.equal(requirementsChildSource.includes(copy), true, copy);
+  assert.match(requirementsChildSource, /role="status" aria-live="polite"/);
+  assert.match(requirementsChildSource, /\.focus\(\)/);
+  assert.match(requirementsChildSource, /event\.key === "Escape"/);
 });
 
 test("Requirements visual CSS has a coherent managed-window cache key", () => {

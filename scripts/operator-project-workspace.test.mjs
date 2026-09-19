@@ -219,7 +219,8 @@ test("Project opening and mounting stay inside the existing managed dossiers chi
 
 test("Project Workspace exposes the server-context Requirements sibling request", () => {
   assert.match(projectWorkspaceMarkup(), /data-project-requirements-open/);
-  assert.match(childSource, /requirementsBoardSlot\(currentContext\.quoteRequestId\)/);
+  assert.match(childSource, /projectRequirementsBoardSlot\(currentContext\.quoteRequestId\)/);
+  assert.doesNotMatch(childSource, /requestOpen\?\.\("dossiers",\s*requirementsBoardSlot/);
   assert.match(childSource, /data-project-requirements-open/);
   assert.match(childSource, /options\.requestOpen\?\.\("dossiers"/);
 });

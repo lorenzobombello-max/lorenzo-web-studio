@@ -855,6 +855,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:540px) { .project-workspace-requirements__facts { grid-template-columns:1fr; } }
 .project-requirements-workspace,.project-requirements { width:100%; min-width:0; box-sizing:border-box; }
 .project-requirements [hidden] { display:none; }
+.project-requirements__toolbar { margin:1rem 0; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.75rem; }
+.project-requirements__toolbar .primary-action { margin:0; }
+.project-requirements__banner { margin:1rem 0; padding:.75rem .9rem; color:#694b13; border:1px solid #d8bd82; border-left:5px solid var(--amber); background:#fff8e8; font-weight:750; overflow-wrap:anywhere; }
+.project-requirements__message { min-height:1.5rem; margin:.75rem 0; color:var(--muted); overflow-wrap:anywhere; }
+.project-requirements__retry-actions { margin:.75rem 0; display:flex; flex-wrap:wrap; gap:.55rem; }
 .project-requirements__progress { margin:1rem 0; display:flex; align-items:baseline; gap:.65rem; }
 .project-requirements__progress strong { color:var(--navy); font-size:clamp(1.8rem,4vw,2.8rem); line-height:1; }
 .project-requirements__progress span { color:var(--muted); font-size:.72rem; font-weight:800; text-transform:uppercase; }
@@ -867,6 +872,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .project-requirements__card h2 { color:var(--navy); font-size:1rem; line-height:1.35; }
 .project-requirements__card p { color:var(--muted); font-size:.78rem; line-height:1.45; }
 .project-requirements__card button { width:fit-content; max-width:100%; margin-top:auto; white-space:normal; }
+.project-requirements__card-actions { margin-top:auto; display:flex; flex-wrap:wrap; align-items:flex-end; gap:.45rem; }
+.project-requirements__card-actions button { margin-top:0; }
+.project-requirements__form { width:100%; min-width:0; margin-top:.35rem; padding-top:.75rem; display:grid; gap:.65rem; border-top:1px solid var(--line); }
+.project-requirements__form label { min-width:0; display:grid; gap:.35rem; color:var(--navy); font-size:.76rem; font-weight:800; }
+.project-requirements__form textarea { width:100%; min-width:0; max-width:100%; padding:.65rem; resize:vertical; color:var(--text); border:1px solid var(--line-strong); border-radius:4px; background:var(--white); }
+.project-requirements__form-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.45rem; }
+.project-requirements__form-actions button { margin-top:0; }
 .project-requirements__card--completed { border-color:#8ab99d; background:#f3faf6; box-shadow:inset 0 0 0 1px rgba(37,115,87,.1); animation:none; }
 .project-requirements__card--completed::before { display:none; content:""; animation:none; }
 .project-requirements__card--active { border-color:var(--green); background:#f3faf6; animation:project-requirement-active-pulse 4.8s ease-in-out infinite; }
@@ -875,8 +887,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .project-requirements__card--blocked { border-color:var(--amber); background:#fff8e8; box-shadow:inset 0 0 0 1px rgba(136,98,28,.12); animation:none; }
 .project-requirements__card--blocked p:last-of-type { color:#694b13; font-weight:750; }
 @keyframes project-requirement-active-pulse { 0%,100% { background:#f3faf6; box-shadow:inset 0 0 0 1px rgba(37,115,87,.2),0 0 0 rgba(37,115,87,0); } 50% { background:#e1f3e8; box-shadow:inset 0 0 0 2px rgba(37,115,87,.5),0 0 18px rgba(37,115,87,.22); } }
-@media (max-width:900px) { .project-requirements__cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:540px) { .project-requirements__cards { grid-template-columns:1fr; } .project-requirements__card { min-height:0; } }
+@media (max-width:900px) { .project-requirements__cards { grid-template-columns:1fr; } }
+@media (max-width:540px) { .project-requirements__form-actions { width:100%; justify-content:stretch; } .project-requirements__form-actions button { width:100%; } }
+@media (max-width:540px) { .project-requirements__toolbar { align-items:stretch; flex-direction:column; } .project-requirements__toolbar .primary-action { width:100%; } .project-requirements__card { min-height:0; } }
 @media (prefers-reduced-motion:reduce) { .project-requirements__card--active { animation:none!important; } .project-requirements__card--active::before { display:none; animation:none!important; } }
 .dossiers-actions { display:grid; gap:1rem; }
 .dossiers-actions[hidden],.dossiers-actions [hidden],[data-dossiers-pending-retention][hidden] { display:none; }

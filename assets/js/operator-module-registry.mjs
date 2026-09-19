@@ -113,6 +113,16 @@ export const OPERATOR_MODULE_DESCRIPTORS = Object.freeze(descriptors.map((descri
 const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descriptor.moduleKey, descriptor]));
 const standaloneInitializers = new Map([
   ["dossiers", async ({ root, client, identity, onInvalidate, onAuthorizationFailure, requireAal2, requestOpen, slotKey })=>{
+    if (String(slotKey || "").startsWith("project-req-")) {
+      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20260913-requirements-wiring-r1");
+      return initializeOperatorProjectRequirements(root, client, identity, {
+        slotKey,
+        onInvalidate,
+        onAuthorizationFailure,
+        requestOpen,
+        requireAal2,
+      });
+    }
     if (String(slotKey || "").startsWith("req-")) {
       const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20260913-requirements-wiring-r1");
       return initializeOperatorProjectRequirements(root, client, identity, {
@@ -120,6 +130,7 @@ const standaloneInitializers = new Map([
         onInvalidate,
         onAuthorizationFailure,
         requestOpen,
+        requireAal2,
       });
     }
     if (String(slotKey || "").startsWith("website-")) {

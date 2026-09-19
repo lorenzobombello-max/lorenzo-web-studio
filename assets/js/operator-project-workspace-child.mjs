@@ -17,10 +17,10 @@ import {
   startProjectAndReload,
 } from "./operator-project-workspace.mjs?v=20260917-pre-project-workspace-r2";
 import {
+  projectRequirementsBoardSlot,
+  projectRequirementsInvalidationMatches,
   projectRequirementsRequest,
   projectRequirementsSummary,
-  requirementsBoardSlot,
-  requirementsInvalidationMatches,
 } from "./operator-project-requirements.mjs?v=20260917-pre-project-workspace-r2";
 import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
 
@@ -179,7 +179,7 @@ export function initializeOperatorProjectWorkspace(root, client, identity, optio
   let currentView = null;
 
   async function refresh({ background = false, invalidationSlotKey } = {}) {
-    if (!requirementsInvalidationMatches(invalidationSlotKey, detailRequest.quote_request_id)) {
+    if (!projectRequirementsInvalidationMatches(invalidationSlotKey, detailRequest.quote_request_id)) {
       return false;
     }
     const selection = refreshGeneration.begin();
@@ -271,7 +271,7 @@ export function initializeOperatorProjectWorkspace(root, client, identity, optio
       options.requestOpen?.("dossiers", websiteExecutionSlot(currentContext.quoteRequestId));
     }
     if (target?.hasAttribute("data-project-requirements-open") && currentContext) {
-      options.requestOpen?.("dossiers", requirementsBoardSlot(currentContext.quoteRequestId));
+      options.requestOpen?.("dossiers", projectRequirementsBoardSlot(currentContext.quoteRequestId));
     }
   };
   workspace.addEventListener("click", click);

@@ -498,11 +498,13 @@ test("Website managed child retains lifecycle, safe actions, and explicit denial
   assert.doesNotMatch(child, /localStorage|sessionStorage|window\.open|vscode:\/\/file/i);
 });
 
-test("Website Workspace exposes no Task 7 navigation authority", async () => {
+test("Website Workspace exposes only the Task 7 managed Requirements route", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
   assert.match(child, /data-website-action="requirements"/);
-  assert.match(child, /data-website-action="requirements" disabled aria-disabled="true"/);
-  assert.doesNotMatch(child, /requirementsBoardSlot|action === "requirements"[^]*requestOpen/);
+  assert.doesNotMatch(child, /data-website-action="requirements" disabled aria-disabled="true"/);
+  assert.match(child, /requirementsBoardSlot\(currentSnapshot\.context\.quoteRequestId\)/);
+  assert.match(child, /action === "requirements"[^]*requestOpen\?\.\("dossiers"/);
+  assert.doesNotMatch(child, /De volledige Website Requirements-werkruimte wordt in de volgende stap geactiveerd\./);
   assert.match(child, /options\.requestOpen\?\.\("dossiers"/);
   assert.doesNotMatch(child, /window\.open|location\.reload/);
 });
@@ -604,7 +606,7 @@ test("Website child fetches and renders an independent localized summary", async
   assert.equal(child.indexOf("function renderRequirementsSummary") < child.indexOf("function setLink"), true);
   assert.match(child, /data-website-action="requirements"/);
   assert.match(child, /"LOADING"[^]*"ERROR"[^]*"STALE"/);
-  assert.doesNotMatch(child, /projectRequirementsRequest|projectRequirementsSummary|requirementsBoardSlot|window\.open|location\.reload|items\.filter|items\.reduce/);
+  assert.doesNotMatch(child, /projectRequirementsRequest|projectRequirementsSummary|window\.open|location\.reload|items\.filter|items\.reduce/);
 });
 
 test("Website Requirements summary has compact responsive no-overflow contracts", async () => {
@@ -641,10 +643,11 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
   );
 });
 
-test("PRE_PROJECT Website keeps the future Requirements control inert", async () => {
+test("PRE_PROJECT Website activates the canonical Requirements child route", async () => {
   const child = await read("assets/js/operator-website-execution-child.mjs");
-  assert.match(child, /data-website-action="requirements" disabled aria-disabled="true"/);
-  assert.doesNotMatch(child, /requirementsBoardSlot|action === "requirements"/);
+  assert.doesNotMatch(child, /data-website-action="requirements" disabled aria-disabled="true"/);
+  assert.match(child, /requirementsBoardSlot/);
+  assert.match(child, /action === "requirements"/);
 });
 
 const provisionControlHarness = `<!doctype html><html><body><main data-dossiers-workspace></main><script type="module">
@@ -657,6 +660,7 @@ const hasWorkspace = params.get("workspace") === "present";
 window.task8Events = [];
 window.task8Requests = [];
 window.task6Requests = [];
+window.task7Opens = [];
 window.task6Fail = params.get("requirements") === "error";
 window.open = () => window.task8Events.push("window.open");
 const quoteRequestId = "${quoteRequestId}";
@@ -693,7 +697,7 @@ const directoryResult = (request) => {
 };
 const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_website_requirements_board") { window.task6Requests.push(structuredClone(body)); if (params.get("requirementsDelay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); if (window.task6Fail) return { data: null, error: new Error("requirements unavailable") }; result = requirements; } else if (body.action === "list_website_project_directory") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); result = directoryResult(body); } else if (body.action === "read_website_project_file") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } }; } return { data: { ok: true, result }, error: null }; } } };
 const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
-window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => { window.task8Events.push("aal2"); } });
+window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => { window.task8Events.push("aal2"); }, requestOpen: (moduleKey, slotKey) => { window.task7Opens.push({ moduleKey, slotKey }); return true; } });
 </script></body></html>`;
 
 function serveProvisionControlHarness() {
@@ -749,7 +753,7 @@ async function openTask8Page(browser, server, query = "") {
   return page;
 }
 
-test("Website Requirements renders loading, review and the disabled Task 7 control", async () => {
+test("Website Requirements renders loading, review and the active Task 7 control", async () => {
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
@@ -770,7 +774,12 @@ test("Website Requirements renders loading, review and the disabled Task 7 contr
     });
     const openControl = loadingPage.locator('[data-website-action="requirements"]');
     assert.equal(await openControl.isVisible(), true);
-    assert.equal(await openControl.isDisabled(), true);
+    assert.equal(await openControl.isDisabled(), false);
+    await openControl.click();
+    assert.deepEqual(await loadingPage.evaluate(() => window.task7Opens), [{
+      moduleKey: "dossiers",
+      slotKey: `req-${quoteRequestId}`,
+    }]);
     await loadingPage.close();
 
     const reviewPage = await openTask8Page(

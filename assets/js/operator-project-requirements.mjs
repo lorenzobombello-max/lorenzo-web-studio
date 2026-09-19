@@ -1,6 +1,7 @@
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUIREMENTS_SLOT = /^req-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const PROJECT_REQUIREMENTS_SLOT = /^project-req-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const STATUSES = new Set(["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"]);
 const MODES = new Set(["AUTO", "OPERATOR", "HYBRID", "EXTERNAL"]);
 const CATEGORIES = new Set([
@@ -507,10 +508,28 @@ export function quoteRequestIdFromRequirementsBoardSlot(slotKey) {
   return REQUIREMENTS_SLOT.exec(String(slotKey || ""))?.[1]?.toLowerCase() || null;
 }
 
+export function projectRequirementsBoardSlot(quoteRequestId) {
+  if (!UUID.test(String(quoteRequestId || ""))) {
+    fail("INVALID_PROJECT_REQUIREMENTS_BOARD_SLOT");
+  }
+  return `project-req-${String(quoteRequestId).toLowerCase()}`;
+}
+
+export function quoteRequestIdFromProjectRequirementsBoardSlot(slotKey) {
+  return PROJECT_REQUIREMENTS_SLOT.exec(String(slotKey || ""))?.[1]?.toLowerCase() || null;
+}
+
 export function requirementsInvalidationMatches(slotKey, expectedQuoteRequestId) {
   const value = String(slotKey || "");
   if (!value.startsWith("req-")) return true;
   return quoteRequestIdFromRequirementsBoardSlot(value) ===
+    String(expectedQuoteRequestId || "").toLowerCase();
+}
+
+export function projectRequirementsInvalidationMatches(slotKey, expectedQuoteRequestId) {
+  const value = String(slotKey || "");
+  if (!value.startsWith("project-req-")) return true;
+  return quoteRequestIdFromProjectRequirementsBoardSlot(value) ===
     String(expectedQuoteRequestId || "").toLowerCase();
 }
 
