@@ -148,8 +148,8 @@ Additional required constraints:
 - At most one `ACTIVE` current requirement per Website work context, matching the current worklist interaction model.
 - Definitions and identities cannot be directly rewritten after work starts. Events and verifications cannot be updated or deleted.
 - Forced RLS on all five tables; no table privileges for `public`, `anon`, `authenticated`, or `service_role`.
-- Command guards permit writes only through reviewed functions. Security-definer functions use fixed search paths and re-resolve the human JWT or trusted verifier.
-- Verification ingestion grants function execution only to the trusted backend principal; it is absent from browser routing. This does not grant that principal direct table authority or permit a browser to supply service-role credentials.
+- Command guards permit writes only through reviewed functions. Security-definer functions use fixed search paths and re-resolve the human JWT or exact trusted verifier authority.
+- Verification ingestion grants `record_website_requirement_verification_v1` execution only to `service_role`; it is absent from browser routing. In addition to the EXECUTE grant boundary, both Task 4 RPCs require server-resolved `auth.jwt()->>'role' = 'service_role'` and otherwise raise `TRUSTED_WEBSITE_REQUIREMENTS_VERIFIER_REQUIRED`. The record RPC writes `verified_by='SYSTEM:website_requirements_verifier'` and rejects browser, owner, operations-manager, admin, operator, and other authenticated-human direct ingestion. `service_role` retains no direct table privileges and its credential may never cross the browser boundary.
 - None of the five Website requirements roots has a commercial `project_id` authority or an accepted-quotation, quotation-approval, invoice, payment, or commercial-project FK. PRE_PROJECT remains valid while the context and workspace project IDs are null and `commercially_released = false`.
 
 ### 3.2 Authorization policy
@@ -161,9 +161,9 @@ Additional required constraints:
 | Resolve source change | Caller JWT; `ACTIVE` owner or operations manager; AAL2; exact dossier/context/requirement; expected requirement revision; idempotency key. |
 | Start/block; complete OPERATOR portion | Caller JWT; `ACTIVE` owner or operations manager, or `ACTIVE` operator whose exact active dossier assignment matches `quote_request_id`; admin is denied; AAL2; server-projected action; expected requirement revision; idempotency key. |
 | Reopen/correct | Caller JWT; `ACTIVE` owner or operations manager only; admin and operator are denied; AAL2; reason; expected requirement revision; idempotency key. |
-| AUTO verification ingestion | Trusted backend verifier only, never a browser intent; exact closed evidence envelope and rule registry; actor/workspace/context binding revalidated. |
+| AUTO/HYBRID verification ingestion | `service_role` only through `record_website_requirement_verification_v1`, never a browser intent; `verified_by='SYSTEM:website_requirements_verifier'`; exact closed evidence envelope and rule registry; context/requirement/workspace/binding/ref/commit/source authority revalidated under lock. |
 | HYBRID completion | Current PASS verification plus authorized human attestation; neither half alone completes. |
-| EXTERNAL completion | PASS from an approved external evidence adapter; authorized lifecycle actors may block, management may reopen, and no human actor may fabricate external PASS. |
+| EXTERNAL completion | Fail closed in Task 4 v1 with `UNKNOWN_WEBSITE_REQUIREMENT_RULE`. The v1 EXTERNAL registry is empty; no browser, human actor, generic provider, or adapter can complete an EXTERNAL requirement without a later controller-approved provider-specific contract. |
 
 For Task 3, `management` means exactly `owner` or `operations_manager`. It never includes admin or operator. All Task 3 mutations require AAL2. The primary authority is always exact `website_work_context_id + quote_request_id`; `project_id` is nullable informational read context only and is never accepted or derived as mutation authority.
 
@@ -339,6 +339,8 @@ REOPEN is allowed only from `COMPLETED + CURRENT` by management with AAL2 and a 
 
 Task 3 performs no verification ingestion. Evidence invalidation is represented by the new requirement revision, clearing current evidence where required, resetting verification result where required, and appending `WEBSITE_REQUIREMENT_EVIDENCE_INVALIDATED`. Existing verification rows are never changed or deleted. Task 4 later treats currentness as revision-bound.
 
+For Task 4, every successful non-replay verification mutation increments the requirement revision and board revision exactly once and leaves the work-context revision unchanged. The inserted immutable verification row stores the resulting new requirement revision. A current HYBRID PASS enables the Task 3 human completion at that revision. That completion increments the requirement again, making the PASS historical for new mutations. For readiness of the already completed HYBRID item only, that PASS remains completion evidence when its revision equals current requirement revision minus one and the matching `WEBSITE_REQUIREMENT_COMPLETED` event metadata has `previous_revision` equal to the verification revision and `new_revision` equal to current requirement revision; rule, source, workspace, binding, ref, commit, and expiry must still be coherent.
+
 ### 5.3 Source proposal authority and resolution
 
 Source resolution never accepts `proposed_definition`, source hash, or `source_reference` from the browser. The server obtains the proposal only from an immutable Task 2 sync run matching the current board's `requirements_board_id`, `current_intake_id`, `current_intake_revision`, `current_intake_snapshot_sha256`, and `mapping_version`. Its `proposed_changes` must contain exactly one entry matching both target `requirement_id` and `source_key`, with an action compatible with the current source-review state; otherwise it fails closed with `WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND` or `WEBSITE_REQUIREMENT_SOURCE_STATE_MISMATCH` as applicable.
@@ -361,8 +363,11 @@ Readiness has exactly `ready_for_preview`, `readiness`, and `reason`. `readiness
 2. `review_pending > 0` or board review state: false, `BLOCKED`, `REQUIREMENTS_REVIEW_REQUIRED`.
 3. `required_total = 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENTS_MISSING`.
 4. `required_blocked > 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENT_BLOCKED`.
-5. `required_open > 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENTS_OPEN`.
-6. Otherwise: `ready_for_preview=true`, `READY`, `ALL_REQUIRED_REQUIREMENTS_COMPLETED`.
+5. Any `required=true`, `source_review_state='CURRENT'`, `status='COMPLETED'` HYBRID or AUTO item without valid completion evidence: false, `BLOCKED`, `REQUIREMENT_VERIFICATION_STALE`.
+6. `required_open > 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENTS_OPEN`.
+7. Otherwise: `ready_for_preview=true`, `READY`, `ALL_REQUIRED_REQUIREMENTS_COMPLETED`.
+
+Progress keys and arithmetic remain exactly unchanged. A completed OPERATOR item continues to use the Task 3 human-attestation model and is not subject to the Task 4 verification-currentness gate.
 
 ### 5.5 Permitted actions
 
@@ -407,35 +412,139 @@ The exact SQLSTATE/message pairs are: `22023/INVALID_WEBSITE_REQUIREMENT_COMMAND
 
 ## 6. Evidence-driven automatic checkoff
 
-### 6.1 Rule ownership
+### 6.1 Closed v1 rule registry
 
-Create a closed internal rule registry keyed by `(completion_rule_key, completion_rule_version)`. A rule declares allowed mode, evidence type, required workspace states, freshness policy, and evaluator. Unknown/disabled/version-mismatched rules return `UNKNOWN` and cannot complete.
+The internal registry is closed and keyed by `(completion_rule_key, completion_rule_version)`. Task 4 v1 contains exactly these four entries and no others:
 
-Initial reviewed rules should be deliberately small:
+| Rule key/version | Allowed modes | Evidence type | Persisted target interpretation | Freshness |
+|---|---|---|---|---|
+| `website_route_present` v1 | `HYBRID` | `REPOSITORY_ROUTE` | `linked_page_or_module` is a canonical repository-relative directory path. | No time expiry; exact current workspace, binding, ref, commit, source hash, and requirement revision. |
+| `website_module_present` v1 | `HYBRID` | `REPOSITORY_FILE` | `linked_page_or_module` is a canonical repository-relative file path. | No time expiry; the same exact authority/currentness checks. |
+| `website_test_suite_passed` v1 | `AUTO`, `HYBRID` | `TEST_RUN` | `linked_page_or_module` is `suite_id`, matching `^[a-z][a-z0-9_-]{0,79}$`; `suite_version=1`. | 24 hours. |
+| `approved_content_present` v1 | `HYBRID` | `CONTENT_MARKER` | `linked_page_or_module` is a canonical repository-relative readable-text file path. | No time expiry; the same exact authority/currentness checks. |
 
-| Rule | Eligible use | Evidence and result |
-|---|---|---|
-| `website_route_present` v1 | Generated page item, `HYBRID` | Server Project Files provider resolves the expected route in the current canonical tree. This proves route presence only, not copy/design correctness. |
-| `website_module_present` v1 | Explicit technical module, `HYBRID` | Expected allowlisted file/module exists at canonical commit. |
-| `website_test_suite_passed` v1 | Technical acceptance item, `AUTO`/`HYBRID` | Trusted test run records suite ID/version, PASS, canonical commit, and workspace binding. |
-| `approved_content_present` v1 | Narrow content marker, `HYBRID` | Server classifier proves a versioned safe marker at canonical commit; semantic quality remains operator-owned. |
-| approved provider rules | Domain/hosting/integration item, `EXTERNAL` | Trusted provider adapter proves exact configured resource without exposing credentials. |
+The exact Task 4 v1 evidence-type set is `REPOSITORY_ROUTE`, `REPOSITORY_FILE`, `TEST_RUN`, and `CONTENT_MARKER`. `EXTERNAL_PROVIDER` does not exist. The EXTERNAL registry is empty because no provider-specific resource identity/configuration is authoritatively bound to a Website requirement. Every EXTERNAL rule key/version, including generic names such as `approved_provider_resource`, `generic_provider`, or `external_resource`, fails with `UNKNOWN_WEBSITE_REQUIREMENT_RULE`. Future EXTERNAL support requires a separate controller-approved provider-specific rule and adapter contract.
 
-Most goals, branding, copy quality, customer preference, and subjective design requirements remain `OPERATOR`. No broad "file exists means customer requirement complete" rule is permitted.
+Task 4 does not convert OPERATOR requirements to HYBRID or AUTO and does not add rules to existing Task 2 items. Task 2 generated items remain `completion_mode='OPERATOR'`. Most goals, branding, copy quality, customer preference, and subjective design requirements therefore remain human-owned. No broad file-existence rule proves subjective completion.
 
-### 6.2 Evidence envelope and completion
+### 6.2 Common evidence reference and hash
 
-Every verification binds:
+Every verification uses an exact `evidence_reference` object with keys `contract_version`, `evidence_type`, `website_work_context_id`, `website_workspace_id`, `binding_revision`, `repository_ref`, `commit_sha`, `requirement_source_sha256`, `observed_at`, and `details`; no extra key is allowed. `contract_version=1`. The trusted evaluator assembles all common values server-side. Browser input determines none of context, workspace, binding revision, repository ref, commit SHA, source hash, or result.
 
-- `website_work_context_id` and `website_workspace_id`;
-- current workspace `binding_revision`;
-- server-resolved current canonical commit SHA and repository marker/binding identity where applicable;
-- requirement ID/revision and source hash;
-- completion rule key/version;
-- result (`PASS`, `FAIL`, `UNKNOWN`, `NOT_APPLICABLE`);
-- opaque safe `evidence_reference`, evidence SHA-256, verifier identity, and timestamp.
+Common binding requires:
 
-The verifier obtains commit and binding from server authority after acquiring the same read lease/budget controls as Project Files. Browser-selected commit/ref is rejected. A PASS atomically appends verification and invokes the transition core for an eligible `AUTO` item or an `EXTERNAL` item backed by its approved provider adapter. `HYBRID` stores PASS and enables human completion. FAIL/UNKNOWN never complete. Binding revision, canonical commit, rule version, source hash, or requirement revision changes make prior PASS non-current; history remains immutable.
+- evidence context equals the target requirement context;
+- evidence workspace equals the current bound Website workspace;
+- evidence binding revision equals current workspace binding revision;
+- evidence repository ref equals the current database-authorized full repository ref;
+- provider-resolved canonical commit equals both evidence `commit_sha` and current database-bound `website_execution_workspaces.last_commit_sha`;
+- evidence source hash equals current lowercase `website_requirements.source_value_sha256`;
+- `observed_at` is RFC3339 UTC.
+
+`evidence_sha256` is lowercase SHA-256 over UTF-8 canonical JSON of exactly `evidence_reference`: object keys lexicographically sorted, array order preserved, no insignificant whitespace, and strings normalized. An existing helper may be reused only after byte-equivalence is proven with test vectors; otherwise Task 4 creates a private helper and matching vectors. The existing requirement storage column `website_requirements.evidence_summary` stores the current safe `evidence_reference`; references in lifecycle behavior to current `evidence_reference` mean this existing column and do not authorize a second column.
+
+### 6.3 Exact evidence details and evaluation
+
+`REPOSITORY_ROUTE.details` has exactly `path`, `object_type`, and `object_sha`. `path` is the normalized rule target, `object_type='tree'`, and `object_sha` is lowercase 40-hex. PASS means that target tree exists in the exact canonical snapshot. Authoritative not-found or path-kind mismatch is FAIL. Provider unavailable, timeout, throttle, or unsafe/unavailable provider state is UNKNOWN.
+
+`REPOSITORY_FILE.details` has exactly `path`, `object_type`, and `object_sha`. `path` is the normalized rule target, `object_type='blob'`, and `object_sha` is lowercase 40-hex. PASS means that target blob exists in the exact canonical snapshot. Authoritative not-found or path-kind mismatch is FAIL. Provider unavailable, timeout, throttle, or a sensitive/unsafe target that cannot be authoritatively read is UNKNOWN.
+
+`TEST_RUN.details` has exactly `suite_id`, `suite_version`, and `run_id`. `suite_id` equals the validated rule target, `suite_version=1`, and `run_id` is safe opaque text of 1..120 characters. Result is exactly PASS, FAIL, or UNKNOWN and comes only from `TrustedWebsiteTestRunSource`, bound to context, workspace, binding, repository ref, commit, suite ID, and suite version. `observed_at` is at most five minutes in the future and no more than 24 hours old at record time; `expires_at=observed_at + interval '24 hours'`.
+
+`CONTENT_MARKER.details` has exactly `path`, `marker_key`, `marker_version`, and `marker_sha256`. `path` is the normalized target, `marker_key='LWS_APPROVED_CONTENT'`, `marker_version=1`, and `marker_sha256` is lowercase SHA-256 of the exact UTF-8 bytes of the required trimmed line `LWS_APPROVED_CONTENT_V1:<current lowercase source_value_sha256>`. PASS means that exact marker line exists in a safely readable UTF-8 file. A safely present file without the marker is FAIL. Provider/content-classifier unavailability or a target that cannot be read safely is UNKNOWN.
+
+For REPOSITORY_ROUTE, REPOSITORY_FILE, and CONTENT_MARKER, `observed_at` must be within minus five through plus five minutes of record time and `expires_at` is null. These types have no independent time expiry.
+
+### 6.4 Exact currentness and HYBRID completion evidence
+
+A verification PASS is current only when all conditions hold: `source_review_state='CURRENT'`; current requirement rule key/version equals verification rule key/version; verification result is PASS; verification requirement revision equals current requirement revision; evidence source hash, context, workspace, binding revision, repository ref, and commit equal current authority; expiry is null or future; and evidence type is the exact registered type for the rule.
+
+Every successful non-replay verification mutation increments requirement and board revision by exactly one, leaves work-context revision unchanged, and writes that resulting requirement revision into the immutable verification row. Old rows remain history and never count as current for a new mutation.
+
+HYBRID PASS does not auto-complete. It stores current PASS and enables the Task 3 authorized human completion. Task 3 then increments the requirement revision, so that PASS becomes historical for new mutations. For readiness of that already completed HYBRID item only, the latest matching PASS remains completion evidence if its requirement revision equals current revision minus one and matching `WEBSITE_REQUIREMENT_COMPLETED` event metadata has `previous_revision` equal to that PASS revision and `new_revision` equal to current revision. Rule, source, workspace, binding, ref, commit, evidence type, and expiry must remain coherent. This exception proves only the completed HYBRID transition; it never makes the old PASS current for another mutation.
+
+Task 3 `WEBSITE_REQUIREMENT_EVIDENCE_INVALIDATED` remains the mutation event for reopen/source invalidation. Time expiry and workspace, binding, ref, or commit drift without mutation create no event; currentness simply becomes false.
+
+### 6.5 Result handling and automatic completion
+
+Task 4 verification rows contain only PASS, FAIL, or UNKNOWN. NOT_APPLICABLE is a requirement projection state and is never inserted as a Task 4 verification row. OPERATOR completion remains entirely under the Task 3 human-attestation contract, with no required verification or automatic completion.
+
+Only `website_test_suite_passed` v1 may use AUTO. A PASS may be recorded for a CURRENT requirement in PENDING, ACTIVE, BLOCKED, or COMPLETED state. For PENDING, ACTIVE, or BLOCKED AUTO PASS, atomically set status COMPLETED, `completed_at=now`, `completed_by='SYSTEM:website_requirements_verifier'`, `blocked_reason=null`, current evidence to the safe evidence reference, and `verification_result='PASS'`; preserve `started_at`; set `auto_completed=true`. For an already COMPLETED AUTO item, preserve `completed_at` and `completed_by`, refresh current verification/evidence and PASS state, and set `auto_completed=false`; there is no new lifecycle transition.
+
+FAIL or UNKNOWN may be recorded for any eligible non-OPERATOR rule. They never reopen or complete, preserve lifecycle status and completion timestamps/actor, set current evidence to the safe evidence reference, set requirement verification result to FAIL or UNKNOWN, increment requirement and board revision exactly once, and set `auto_completed=false`.
+
+Task 4 v1 never completes EXTERNAL because its registry is empty. An EXTERNAL key/version fails before verification insertion with `UNKNOWN_WEBSITE_REQUIREMENT_RULE`.
+
+### 6.6 Trusted evaluator and Project Files boundary
+
+`website-requirement-verification.ts` implements deterministic evaluation using existing read-only Project Files provider and policy primitives. It defines an injected read-only `TrustedWebsiteTestRunSource` whose return object has exactly `suiteId`, `suiteVersion`, `runId`, `result`, and `observedAt`; result is PASS, FAIL, or UNKNOWN. Its input binds exactly context, workspace, binding, repository ref, commit, suite, and suite version. Task 4 executes no shell command, accepts no browser test result, and adds no production wiring outside its four files.
+
+Repository evaluation resolves exactly one provider snapshot from the database-authorized `repositoryRef`, performs at most one bounded target lookup/read, applies existing sensitive-path/content policy, obeys the existing operation-wide timeout, and performs no recursive repository scan. Provider/network reads occur before the SQL mutation transaction. The SQL RPC then revalidates every authority against locked database rows. The provider-resolved commit must exactly equal current workspace `last_commit_sha`; Task 4 never changes `last_commit_sha`.
+
+Task 4 adds no GitHub writer and performs no repository creation, file write, commit, push, build, publish, release, invoice, payment, Project Files mutation, or other provider mutation. PASS/FAIL/UNKNOWN derives only from deterministic Project Files facts or `TrustedWebsiteTestRunSource`; AI never decides authoritative PASS.
+
+### 6.7 Verification authority projection
+
+Task 4 adds service-role-only stable SECURITY DEFINER function:
+
+```text
+public.get_website_requirement_verification_authority_v1(
+  p_quote_request_id uuid,
+  p_website_work_context_id uuid,
+  p_requirement_id uuid,
+  p_expected_revision bigint
+) returns jsonb
+```
+
+Its exact root keys are `contract_version`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `requirement_id`, `requirement_revision`, `completion_mode`, `rule_key`, `rule_version`, `source_value_sha256`, `source_review_state`, `verification_target`, and `workspace`. `contract_version=1`.
+
+`verification_target` has exactly `kind` and `value`. Kind is DIRECTORY_PATH for `website_route_present`, FILE_PATH for `website_module_present` and `approved_content_present`, or SUITE_ID for `website_test_suite_passed`. Value derives only from persisted `linked_page_or_module` and is validated by its rule.
+
+`workspace` has exactly `website_workspace_id`, `binding_revision`, `repository_provider`, `repository_owner`, `repository_name`, `repository_external_id`, `repository_node_id`, `repository_ref`, `ref_label`, `last_commit_sha`, `workspace_state`, and `repository_operation_state`. It contains no token, secret, installation credential, or provider request ID. It requires `workspace_state='REPOSITORY_READY'`, `repository_operation_state='COMPLETE'`, `repository_provider='GITHUB'`, and complete repository identity/binding; otherwise it fails `WEBSITE_REQUIREMENT_WORKSPACE_NOT_READY`.
+
+### 6.8 Record RPC and result
+
+The exact VOLATILE SECURITY DEFINER RPC with fixed search path is:
+
+```text
+public.record_website_requirement_verification_v1(
+  p_quote_request_id uuid,
+  p_website_work_context_id uuid,
+  p_requirement_id uuid,
+  p_expected_revision bigint,
+  p_rule_key text,
+  p_rule_version integer,
+  p_result text,
+  p_evidence_reference jsonb,
+  p_idempotency_key uuid
+) returns jsonb
+```
+
+Only `service_role` receives EXECUTE; both Task 4 RPCs additionally require `auth.jwt()->>'role' = 'service_role'`; direct authenticated/browser invocation is denied. The record RPC revalidates trusted authority and always records `verified_by='SYSTEM:website_requirements_verifier'`.
+
+Result has exactly `contract_version`, `verification_id`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `requirement_id`, `requirement_revision`, `board_revision`, `rule_key`, `rule_version`, `result`, `status`, `auto_completed`, and `replayed`; no extra keys. Contract version is 1.
+
+### 6.9 Verification idempotency
+
+Task 4 creates `public.website_requirement_verification_commands` with exact core columns `operation_id uuid primary key`, `quote_request_id uuid not null`, `website_work_context_id uuid not null`, `requirements_board_id uuid not null`, `requirement_id uuid not null`, `idempotency_key uuid not null`, `request_fingerprint char(64) not null`, `result jsonb not null`, and `created_at timestamptz not null default clock_timestamp()`. Its composite requirement/board/context/quote FK targets the exact Website requirement authority. `idempotency_key` is unique. It has forced RLS, no direct privileges for public, anon, authenticated, or service_role, and is written only by the trusted verification core.
+
+The canonical fingerprint contains exactly contract version 1, `verified_by='SYSTEM:website_requirements_verifier'`, quote request ID, work-context ID, requirement ID, expected requirement revision, rule key, rule version, result, and evidence SHA-256. Same key and fingerprint returns the stored result with `replayed=true` before stale-revision rejection and causes no verification row, event, revision increment, or auto completion. Same key with another fingerprint raises `P0001/WEBSITE_REQUIREMENT_VERIFICATION_IDEMPOTENCY_CONFLICT`.
+
+### 6.10 Locking and mutation order
+
+The exact SQL order is: verify service_role/trusted principal; advisory transaction lock on idempotency key; context row FOR UPDATE; board row FOR UPDATE; requirement row FOR UPDATE; current Website workspace/binding row FOR UPDATE; revalidate rule/source/workspace/binding/ref/commit/evidence; insert immutable verification; update requirement exactly once; update board revision exactly once; append events; insert idempotency result. Stale expected requirement revision raises `40001/CONCURRENT_MODIFICATION`. This serialization prevents concurrent duplicate PASS, lost revisions, duplicate automatic completion, and duplicate events.
+
+### 6.11 Task 4 events
+
+Task 4 emits exactly `WEBSITE_REQUIREMENT_VERIFICATION_RECORDED` for every successful non-replay verification and `WEBSITE_REQUIREMENT_AUTO_COMPLETED` only when that mutation changes PENDING, ACTIVE, or BLOCKED to COMPLETED. Actor is `SYSTEM:website_requirements_verifier`.
+
+Every Task 4 event metadata object has exactly `verification_id`, `requirements_board_id`, `requirement_id`, `rule_key`, `rule_version`, `evidence_type`, `evidence_sha256`, `result`, `previous_status`, `new_status`, `previous_revision`, `new_revision`, `board_revision`, and `auto_completed`. It contains no raw evidence, file content, provider error/body/token/request ID, or other secret.
+
+### 6.12 Exact Task 4 errors
+
+The exact SQLSTATE/message pairs are `42501/TRUSTED_WEBSITE_REQUIREMENTS_VERIFIER_REQUIRED`, `22023/INVALID_WEBSITE_REQUIREMENT_VERIFICATION_COMMAND`, `22023/UNKNOWN_WEBSITE_REQUIREMENT_RULE`, `22023/INVALID_WEBSITE_REQUIREMENT_VERIFICATION_EVIDENCE`, `22023/WEBSITE_REQUIREMENT_VERIFICATION_STALE`, `P0001/WEBSITE_REQUIREMENT_NOT_FOUND`, `P0001/WEBSITE_REQUIREMENTS_BOARD_NOT_FOUND`, `P0001/WEBSITE_REQUIREMENT_VERIFICATION_IDEMPOTENCY_CONFLICT`, `40001/CONCURRENT_MODIFICATION`, `23514/WEBSITE_REQUIREMENT_RULE_MISMATCH`, `23514/WEBSITE_REQUIREMENT_WORKSPACE_MISMATCH`, `23514/WEBSITE_REQUIREMENT_BINDING_MISMATCH`, `23514/WEBSITE_REQUIREMENT_REF_MISMATCH`, `23514/WEBSITE_REQUIREMENT_COMMIT_MISMATCH`, `23514/WEBSITE_REQUIREMENT_SOURCE_MISMATCH`, `55000/WEBSITE_REQUIREMENT_SOURCE_REVIEW_REQUIRED`, `55000/WEBSITE_REQUIREMENT_VERIFICATION_MODE_UNSUPPORTED`, and `55000/WEBSITE_REQUIREMENT_WORKSPACE_NOT_READY`.
+
+Task 4 operates entirely on the PRE_PROJECT Website root and must not require or mutate a commercial project, commercial requirements root, quote commercial state, invoice, payment, build, publish, or release authority. It adds no browser intent and no production routing: only Task 5 may expose the already-defined human lifecycle intents through the existing browser Edge boundary, while both verification RPCs remain server-only and unavailable through that boundary.
 
 ## 7. PRE_PROJECT API and Edge contracts
 
@@ -449,7 +558,8 @@ block_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id 
 complete_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_attestation jsonb, p_idempotency_key uuid) -> jsonb
 reopen_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_reason text, p_idempotency_key uuid) -> jsonb
 resolve_website_requirement_source_change_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_resolution text, p_reason text, p_idempotency_key uuid) -> jsonb
-record_website_requirement_verification_v1(verification envelope...) -> jsonb
+get_website_requirement_verification_authority_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint) -> jsonb
+record_website_requirement_verification_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_rule_key text, p_rule_version integer, p_result text, p_evidence_reference jsonb, p_idempotency_key uuid) -> jsonb
 promote_website_concept_v1(quote_request_id uuid, website_work_context_id uuid, project_id uuid, expected_context_revision bigint, idempotency_key uuid) -> jsonb
 ```
 
@@ -653,20 +763,20 @@ Existing commercial migration files are reference-only and must not be modified.
 - TEST: new pgTAP and Deno verification suites; Project Files provider/service regressions
 
 **INTERFACES**
-- Closed rule registry/evaluator; trusted `record_website_requirement_verification_v1`; evidence envelope tied to canonical workspace snapshot.
+- Exact service-role-only authority projection and verification RPC from sections 6.7-6.8; four-entry closed rule registry; exact evidence schemas/hash/currentness; immutable verification plus verification-command ledger; Task 3 transition/readiness bridge.
 
 **RED TEST FIRST**
-- Reject browser caller, browser-selected SHA/ref, stale binding/revision/commit, unknown rule/version, cross-context workspace, mismatched source hash, and insufficient evidence. Prove AUTO PASS completes, approved-provider EXTERNAL PASS completes, an operator cannot fabricate EXTERNAL completion, FAIL/UNKNOWN do not complete, HYBRID requires both halves, and reopen invalidates without deleting history.
+- Assert exact rule/type registry and every evidence details schema/hash vector. Reject browser/human caller, browser-selected SHA/ref/result, stale or substituted context/workspace/binding/ref/commit/source/requirement revision, unknown/mismatched rule/version/mode, unsafe target, malformed timing, wrong workspace state, NOT_APPLICABLE rows, and insufficient evidence. Prove exact replay/conflict and lock behavior; AUTO PASS status matrix; FAIL/UNKNOWN preservation; HYBRID current PASS plus human completion bridge; completed-HYBRID readiness evidence; EXTERNAL v1 fail-closed; exact revisions/results/events/errors; immutable history; PRE_PROJECT with no commercial dependency; and no commercial authority change.
 
 **IMPLEMENTATION**
-- Implement only reviewed v1 rules. Reuse Project Files read policy/provider boundaries and server canonical commit resolution; add no repository mutation dependency. Task 4, not Task 3, owns verification ingestion, AUTO PASS, EXTERNAL PASS, repository evidence, test-run evidence, and automatic completion. Task 3 only permits HYBRID human completion when a current PASS already exists.
+- Implement sections 6.1-6.12 exactly. Reuse Project Files read policy/provider boundaries, resolve one bounded canonical snapshot before the SQL transaction, and revalidate all authority under the exact SQL locks. Task 4 owns trusted verification ingestion, repository/test evidence, AUTO PASS completion, and the HYBRID PASS bridge. It does not convert Task 2 OPERATOR items, execute tests, add production wiring, create an EXTERNAL adapter/rule, or mutate repositories/providers/commercial authority.
 
 **GREEN TESTS**
 - `npx supabase test db supabase/tests/website_requirement_verification_v1.sql`
 - `deno test --allow-env supabase/functions/_shared/website-requirement-verification.test.ts supabase/functions/_shared/website-project-files-policy.test.ts supabase/functions/_shared/website-project-files-provider.test.ts supabase/functions/_shared/website-project-files-service.test.ts`
 
 **SECURITY / SCOPE GATE**
-- Static dependency and runtime spies show verification can read bounded evidence but cannot create repositories, write files, commit/push, build, publish, release, invoice, or pay.
+- Static dependency and runtime spies show at most one snapshot resolve and one bounded target read, with no recursive scan, and prove verification cannot create repositories, write files, commit/push, build, publish, release, invoice, or pay. Require `TASK4_CONTRACT_UNAMBIGUOUS=JA`, `RULE_REGISTRY_FULLY_EXPLICIT=JA`, `EVIDENCE_SCHEMAS_FULLY_EXPLICIT=JA`, `EVIDENCE_HASH_MODEL_FULLY_EXPLICIT=JA`, `CURRENTNESS_MODEL_FULLY_EXPLICIT=JA`, `TRUSTED_CALLER_MODEL_FULLY_EXPLICIT=JA`, `AUTO_COMPLETION_MODEL_FULLY_EXPLICIT=JA`, `HYBRID_COMPLETION_BRIDGE_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_MODEL_FULLY_EXPLICIT=JA`, `LOCK_MODEL_FULLY_EXPLICIT=JA`, `EVENT_MODEL_FULLY_EXPLICIT=JA`, `ERROR_MODEL_FULLY_EXPLICIT=JA`, `RESULT_JSON_FULLY_EXPLICIT=JA`, `PROJECT_FILES_BOUNDARY_FULLY_EXPLICIT=JA`, `TASK5_BOUNDARY_PRESERVED=JA`, and `EXTERNAL_V1_FAIL_CLOSED=JA`.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): verify requirement completion evidence`
@@ -817,9 +927,12 @@ Planned implementation task count: 9. Planned green-path implementation commit c
 | `SOURCE_RESOLUTION` | Resolve CHANGE_PENDING and REMOVAL_PENDING through every resolution and lifecycle state | Exact proposal authority, preserve/reset behavior, evidence invalidation, no delete, and one unresolved item keeps REVIEW_REQUIRED |
 | `TASK3_IDEMPOTENCY` | Replay each lifecycle/source command and reuse each key with changed fingerprint | Exact stored result without writes; conflict code; no duplicate event or revision increment |
 | `TASK3_BOARD_PROJECTION` | Read absent/current/review boards under every role/assignment | Exact closed root/context/board/item/source/progress/readiness/action DTO; denied callers receive no metadata |
-| `AUTHORITATIVE_AUTO_CHECKOFF` | Trusted PASS vs browser claim | Trusted current PASS can complete AUTO; browser cannot |
-| `AUTHORITATIVE_EXTERNAL_CHECKOFF` | Approved adapter PASS vs operator/browser claim | Trusted current provider PASS can complete EXTERNAL; operator/browser cannot |
-| `AUTO_EVIDENCE_BOUND_TO_CURRENT_WORKSPACE` | Substitute context/workspace/binding/commit/rule versions | Every stale/substituted envelope fails closed |
+| `AUTHORITATIVE_AUTO_CHECKOFF` | Trusted `website_test_suite_passed` v1 PASS vs browser claim over PENDING/ACTIVE/BLOCKED/COMPLETED | Exact AUTO status matrix; browser cannot ingest or choose result/ref/SHA |
+| `AUTHORITATIVE_EXTERNAL_CHECKOFF` | Every EXTERNAL key/version, including generic provider names | `UNKNOWN_WEBSITE_REQUIREMENT_RULE`; no verification or completion; v1 registry remains empty |
+| `AUTO_EVIDENCE_BOUND_TO_CURRENT_WORKSPACE` | Substitute context/workspace/binding/ref/commit/source/requirement/rule versions and expiry | Every stale/substituted envelope fails closed with its exact Task 4 error |
+| `TASK4_EVIDENCE_SCHEMAS` | Evaluate all four evidence types, exact detail keys, timing bounds, canonical hash vectors, PASS/FAIL/UNKNOWN | Exact deterministic result; NOT_APPLICABLE insertion and surplus/malformed evidence rejected |
+| `TASK4_VERIFICATION_IDEMPOTENCY` | Replay before stale check; same key with changed fingerprint; concurrent duplicate PASS | Stored replay only; exact conflict; one verification/update/event/result and no duplicate completion |
+| `TASK4_HYBRID_COMPLETION_BRIDGE` | Current PASS, Task 3 human completion, subsequent readiness and new mutation attempt | PASS enables but does not complete; prior-revision PASS proves only matching completed transition and is not current for mutation |
 | `MANUAL_CORRECTION_REOPEN` | Reopen completed AUTO/OPERATOR/HYBRID items | PENDING, evidence non-current, progress recalculated, history retained |
 | `AUDIT_HISTORY` | Query immutable events/sync/verifications | Complete ordered history; update/delete denied |
 | `CROSS_DOSSIER_ISOLATION` | Context A with every identity from B | No metadata/result/write; stable denial |
