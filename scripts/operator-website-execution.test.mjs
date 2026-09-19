@@ -507,7 +507,7 @@ test("Website managed child retains lifecycle, safe actions, and explicit denial
   assert.match(child, /Geen toegang tot deze Website Workspace/);
   assert.match(child, /rel="noopener noreferrer"/);
   assert.match(child, /Open GitHub/);
-  assert.match(child, /Open Preview/);
+  assert.doesNotMatch(child, /Open Preview|Open in VS Code Web/);
   assert.match(child, /Projectbestanden/);
   assert.match(child, /Terug naar Project/);
   assert.match(projectChild, /data-project-website-open/);
@@ -717,6 +717,9 @@ const params = new URLSearchParams(location.search);
 const role = params.get("role") || "owner";
 const mode = params.get("mode") || "PRE_PROJECT";
 const hasWorkspace = params.get("workspace") === "present";
+window.task8Events = [];
+window.task8Requests = [];
+window.open = () => window.task8Events.push("window.open");
 const quoteRequestId = "${quoteRequestId}";
 const projectId = mode === "OFFICIAL_PROJECT" ? "${projectId}" : null;
 const conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
@@ -724,9 +727,34 @@ const detail = { quote_request_id: quoteRequestId, request_kind: "website", appl
 const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner" } } : null;
 const projection = { contract_version: 3, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, project_id: projectId, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", project_reference: projectId, assigned_operator: null }, board: null, items: [], empty_state: "NO_BOARD", readiness: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, active_requirement_id: null, active_item_number: null, ready_for_preview: false, readiness: "UNKNOWN", reason: "NO_BOARD" }, actions: { can_create_board: true, can_create_item: false, can_finalize: false } };
-const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_project_requirements_board") result = requirements; return { data: { ok: true, result }, error: null }; } } };
+const snapshot = { commit_sha: "a".repeat(40), ref_label: "main" };
+const directoryResult = (request) => {
+  let entries;
+  let nextCursor = null;
+  if (request.path === "src") {
+    entries = [{ entry_type: "ENTRY", name: "nested.js", path: "src/nested.js", kind: "FILE", size_bytes: 8, readability: "READABLE_CANDIDATE", selectable: true }];
+  } else if (request.cursor === "opaque-next") {
+    entries = [{ entry_type: "ENTRY", name: "z-last.txt", path: "z-last.txt", kind: "FILE", size_bytes: 3, readability: "READABLE_CANDIDATE", selectable: true }];
+  } else if (params.get("empty") === "1") {
+    entries = [];
+  } else if (params.get("page") === "500") {
+    entries = Array.from({ length: 500 }, (_, index) => ({ entry_type: "ENTRY", name: \`file-\${String(index).padStart(3, "0")}.txt\`, path: \`file-\${String(index).padStart(3, "0")}.txt\`, kind: "FILE", size_bytes: index, readability: "READABLE_CANDIDATE", selectable: true }));
+    nextCursor = "opaque-next";
+  } else {
+    entries = [
+      { entry_type: "ENTRY", name: "src", path: "src", kind: "DIRECTORY", size_bytes: null, readability: "DIRECTORY", selectable: true },
+      { entry_type: "ENTRY", name: "README.md", path: "README.md", kind: "FILE", size_bytes: 12, readability: "READABLE_CANDIDATE", selectable: true },
+      { entry_type: "ENTRY", name: "archive.zip", path: "archive.zip", kind: "FILE", size_bytes: 2000000, readability: "TOO_LARGE", selectable: false },
+      { entry_type: "ENTRY", name: "linked", path: "linked", kind: "UNSUPPORTED", size_bytes: null, readability: "UNSUPPORTED", selectable: false },
+      { entry_type: "BLOCKED_CREDENTIAL", name: "Geblokkeerd bestand", kind: "UNSUPPORTED", readability: "SENSITIVE_BLOCKED", selectable: false },
+    ];
+    nextCursor = "opaque-next";
+  }
+  return { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, directory: request.path, entries, next_cursor: nextCursor };
+};
+const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_project_requirements_board") result = requirements; else if (body.action === "list_website_project_directory") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); result = directoryResult(body); } else if (body.action === "read_website_project_file") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } }; } return { data: { ok: true, result }, error: null }; } } };
 const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
-window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => {} });
+window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => { window.task8Events.push("aal2"); } });
 </script></body></html>`;
 
 function serveProvisionControlHarness() {
@@ -772,6 +800,177 @@ test("provision control follows owner PRE_PROJECT empty-workspace render state",
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+async function openTask8Page(browser, server, query = "") {
+  const address = server.address();
+  const page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${address.port}/__provision-control-harness?${query}`);
+  await page.waitForFunction(() => document.querySelector("[data-website-content]")?.hidden === false);
+  return page;
+}
+
+test("Projectbestanden activates one internal host with exact owner AAL2 root intent", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present");
+    assert.equal(await page.locator("[data-website-project-files]").count(), 1);
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForFunction(() => window.task8Requests.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.task8Requests[0]), {
+      action: "list_website_project_directory",
+      quote_request_id: quoteRequestId,
+      path: "",
+      cursor: null,
+    });
+    assert.deepEqual(await page.evaluate(() => window.task8Events.slice(0, 2)), ["aal2", "gateway"]);
+    assert.equal(await page.evaluate(() => document.querySelector("[data-website-project-files]").contains(document.activeElement)), true);
+    assert.equal(await page.locator('[data-website-link="github"]').getAttribute("href"),
+      "https://github.com/lws-studio/lws-web-2099-0001");
+    assert.equal(await page.locator('[data-website-link="preview"], [data-website-link="vscode"]').count(), 0);
+    assert.equal(await page.evaluate(() => window.task8Events.includes("window.open")), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("owner-ineligible Projectbestanden remains visible and makes zero file requests", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=operator&mode=PRE_PROJECT&workspace=present");
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForTimeout(30);
+    assert.deepEqual(await page.evaluate(() => window.task8Requests), []);
+    assert.deepEqual(await page.evaluate(() => window.task8Events), []);
+    assert.match(await page.locator(".website-project-files__status").textContent(), /geen toegang|niet beschikbaar/i);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Projectbestanden expands lazily and renders exact inert redacted entry behavior", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present");
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForSelector('.website-project-files__row--directory');
+    const initialLabels = await page.locator(".website-project-files__row").allTextContents();
+    assert.deepEqual(initialLabels.slice(0, 2), ["src", "README.md"]);
+    await page.getByRole("treeitem", { name: /Map src/ }).click();
+    await page.waitForFunction(() => window.task8Requests.some((request) => request.path === "src"));
+    assert.deepEqual(await page.evaluate(() => window.task8Requests.at(-1)), {
+      action: "list_website_project_directory",
+      quote_request_id: quoteRequestId,
+      path: "src",
+      cursor: null,
+    });
+    assert.equal(await page.getByText("nested.js", { exact: true }).count(), 1);
+    const inert = page.locator(".website-project-files__row--inert");
+    assert.equal(await inert.count(), 3);
+    assert.equal(await inert.locator("button, a").count(), 0);
+    const blocked = page.getByText("Geblokkeerd bestand", { exact: true });
+    assert.equal(await blocked.count(), 1);
+    assert.equal(await blocked.evaluate((node) => [...node.attributes].some((attribute) => /env|npmrc|sha|path/i.test(attribute.value))), false);
+    assert.equal((await page.locator("[data-website-project-files]").textContent()).includes("TEXT"), false);
+    assert.equal((await page.locator("[data-website-project-files]").textContent()).includes("BINARY_UNSUPPORTED"), false);
+    await page.getByRole("treeitem", { name: /README\.md/ }).click();
+    await page.waitForFunction(() => window.task8Requests.some((request) => request.action === "read_website_project_file"));
+    assert.equal(await page.locator("[data-project-file-content], .website-project-files__content").count(), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Projectbestanden supports 500-entry pagination, opaque continuation and canonical refresh", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&page=500");
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForFunction(() => document.querySelectorAll(".website-project-files__row").length === 500);
+    await page.getByRole("button", { name: "Meer laden" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".website-project-files__row").length === 501);
+    assert.deepEqual(await page.evaluate(() => window.task8Requests[1]), {
+      action: "list_website_project_directory",
+      quote_request_id: quoteRequestId,
+      path: "",
+      cursor: "opaque-next",
+    });
+    await page.locator(".website-project-files__refresh").click();
+    await page.waitForFunction(() => window.task8Requests.length === 3);
+    assert.deepEqual(await page.evaluate(() => window.task8Requests[2]), {
+      action: "list_website_project_directory",
+      quote_request_id: quoteRequestId,
+      path: "",
+      cursor: null,
+    });
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Projectbestanden empty, loading lockout, keyboard focus and mobile overflow are stable", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const emptyPage = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&empty=1");
+    await emptyPage.locator('[data-website-action="files"]').click();
+    await emptyPage.waitForSelector('.website-project-files__empty:not([hidden])');
+    assert.match(await emptyPage.locator(".website-project-files__empty").textContent(), /geen bestanden/i);
+    await emptyPage.close();
+
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&delay=1");
+    await page.setViewportSize({ width: 375, height: 740 });
+    const trigger = page.locator('[data-website-action="files"]');
+    await trigger.press("Enter");
+    await trigger.click();
+    await page.waitForFunction(() => window.task8Requests.length === 1);
+    assert.equal(await page.locator(".website-project-files__refresh").isDisabled(), true);
+    await page.waitForSelector('.website-project-files__row');
+    await page.locator('.website-project-files__row--directory').focus();
+    assert.equal(await page.locator('.website-project-files__row--directory').evaluate((node) => node === document.activeElement), true);
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+      host: document.querySelector("[data-website-project-files]").scrollWidth,
+      hostClient: document.querySelector("[data-website-project-files]").clientWidth,
+    }));
+    assert.equal(dimensions.document <= dimensions.viewport, true);
+    assert.equal(dimensions.host <= dimensions.hostClient + 1, true);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Task 8 keeps one Website child and adds no files build editor or workspace slot", async () => {
+  const [child, registry, css] = await Promise.all([
+    read("assets/js/operator-website-execution-child.mjs"),
+    read("assets/js/operator-module-registry.mjs"),
+    read("assets/css/operator-dashboard.css"),
+  ]);
+  assert.match(child, /mountWebsiteProjectFilesTree/);
+  assert.equal((child.match(/data-website-project-files/g) || []).length, 1);
+  assert.match(child, /WEBSITE_PROJECT_FILE_ACTIONS\.has\(request\.action\)/);
+  assert.match(child, /client\.functions\.invoke\("commercial-operator-command"/);
+  assert.doesNotMatch(child, /scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
+  assert.doesNotMatch(child, /Open Preview|Open in VS Code Web|data-website-link="(?:preview|vscode)"/);
+  assert.doesNotMatch(child, /window\.open|vscode\.dev|github\.dev/);
+  assert.equal((registry.match(/startsWith\("website-"\)/g) || []).length, 1);
+  assert.doesNotMatch(registry, /startsWith\("(?:files|build|editor)-"\)/);
+  assert.match(css, /\.website-project-files/);
 });
 
 const repositoryOperationStates = [

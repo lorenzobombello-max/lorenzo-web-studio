@@ -374,6 +374,9 @@ export function createWebsiteProjectFilesController(options) {
     getState: () => state,
     loadDirectory,
     readFile,
+    reset() {
+      state = initialState(available);
+    },
     setDirectoryExpanded(path, expanded) {
       if (normalizedPath(path, false) === null || typeof expanded !== "boolean") {
         return fail("INVALID_WEBSITE_PROJECT_DIRECTORY_STATE");
@@ -390,6 +393,279 @@ export function createWebsiteProjectFilesController(options) {
         selectableFile: value.entry_type === "ENTRY"
           && value.readability === "READABLE_CANDIDATE" && value.selectable,
       });
+    },
+  });
+}
+
+const TREE_CONTEXT_KEYS = [
+  "quoteRequestId", "websiteWorkContextId", "projectFilesRead",
+  "workspaceState", "repositoryOperationState", "failureCategory",
+  "recoveryGuidance",
+];
+
+function treeContextValid(value) {
+  return exactKeys(value, TREE_CONTEXT_KEYS)
+    && UUID.test(String(value.quoteRequestId || ""))
+    && UUID.test(String(value.websiteWorkContextId || ""))
+    && typeof value.projectFilesRead === "boolean"
+    && [
+      null, "PENDING_REPOSITORY", "REPOSITORY_PROVISIONING",
+      "REPOSITORY_READY", "REPOSITORY_FAILED", "READY",
+    ].includes(value.workspaceState)
+    && [
+      null, "CLAIMED", "CREATING", "EXTERNAL_CREATED", "VERIFYING",
+      "RETRYABLE_FAILED", "RETRY_SCHEDULED", "BLOCKED", "QUARANTINED",
+      "TERMINAL_FAILED", "COMPLETE",
+    ].includes(value.repositoryOperationState)
+    && [null, "RETRYABLE", "BLOCKED", "QUARANTINED", "TERMINAL"]
+      .includes(value.failureCategory)
+    && [
+      null, "WAIT", "REFRESH_LATER", "CONTACT_OWNER",
+      "RECONCILIATION_REQUIRED",
+    ].includes(value.recoveryGuidance);
+}
+
+function lifecycleMessage(context, ownerEligible) {
+  if (!ownerEligible) return "Geen toegang tot Projectbestanden.";
+  if (!context) return "Technische werkruimte nog niet beschikbaar.";
+  if (context.repositoryOperationState === "QUARANTINED") {
+    return "Repository-identiteit vereist reconciliatie.";
+  }
+  if (context.repositoryOperationState === "BLOCKED") {
+    return "Repositorytoegang is geblokkeerd.";
+  }
+  if (context.workspaceState === "PENDING_REPOSITORY") {
+    return "Repository wordt voorbereid.";
+  }
+  if (context.workspaceState === "REPOSITORY_PROVISIONING") {
+    return "Repository wordt gekoppeld.";
+  }
+  if (context.workspaceState === "REPOSITORY_FAILED") {
+    return "Repository is niet beschikbaar. Neem contact op met de eigenaar.";
+  }
+  if (context.workspaceState === "READY") {
+    return "Repositorybinding moet worden geverifieerd.";
+  }
+  if (!context.projectFilesRead) return "Projectbestanden zijn niet beschikbaar.";
+  return "Selecteer een map of bestand.";
+}
+
+function element(documentTarget, tagName, className, text = null) {
+  const node = documentTarget.createElement(tagName);
+  if (className) node.className = className;
+  if (text !== null) node.textContent = text;
+  return node;
+}
+
+export function mountWebsiteProjectFilesTree(host, options) {
+  if (!host?.ownerDocument || !exactKeys(options, [
+    "gateway", "requireAal2", "ownerEligible",
+  ]) || typeof options.gateway !== "function"
+    || typeof options.requireAal2 !== "function"
+    || typeof options.ownerEligible !== "boolean") {
+    return fail("INVALID_WEBSITE_PROJECT_FILES_TREE");
+  }
+
+  const documentTarget = host.ownerDocument;
+  const heading = element(documentTarget, "div", "website-project-files__heading");
+  const headingText = element(documentTarget, "div", null);
+  headingText.append(
+    element(documentTarget, "p", "eyebrow", "Repository"),
+    element(documentTarget, "h2", null, "Projectbestanden"),
+  );
+  const refreshButton = element(
+    documentTarget, "button", "secondary-action website-project-files__refresh",
+    "Vernieuwen",
+  );
+  refreshButton.type = "button";
+  heading.append(headingText, refreshButton);
+  const status = element(documentTarget, "p", "website-project-files__status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  const empty = element(
+    documentTarget, "p", "website-project-files__empty", "Geen bestanden in deze map.",
+  );
+  empty.hidden = true;
+  const tree = element(documentTarget, "div", "website-project-files__tree");
+  tree.setAttribute("role", "tree");
+  tree.setAttribute("aria-label", "Projectbestanden");
+  host.replaceChildren(heading, status, empty, tree);
+
+  let context = null;
+  let controller = null;
+  let busy = false;
+  let disposed = false;
+
+  function available() {
+    return options.ownerEligible && context?.projectFilesRead === true;
+  }
+
+  function createController() {
+    if (!context) return null;
+    return createWebsiteProjectFilesController({
+      quoteRequestId: context.quoteRequestId,
+      websiteWorkContextId: context.websiteWorkContextId,
+      ownerEligible: options.ownerEligible,
+      projectFilesRead: context.projectFilesRead,
+      requireAal2: options.requireAal2,
+      gateway: options.gateway,
+    });
+  }
+
+  function appendDirectory(parent, path, depth) {
+    const directory = controller?.getState().directories[path];
+    if (!directory) return;
+    const expanded = new Set(controller.getState().expandedDirectories);
+    for (const entry of directory.entries) {
+      const behavior = controller.entryBehavior(entry);
+      if (behavior.expandable) {
+        const button = element(
+          documentTarget, "button",
+          "website-project-files__row website-project-files__row--directory",
+          entry.name,
+        );
+        button.type = "button";
+        button.disabled = busy;
+        button.setAttribute("role", "treeitem");
+        button.setAttribute("aria-level", String(depth + 1));
+        button.setAttribute("aria-expanded", String(expanded.has(entry.path)));
+        button.setAttribute("aria-label", `Map ${entry.name} ${
+          expanded.has(entry.path) ? "inklappen" : "uitklappen"
+        }`);
+        button.addEventListener("click", () => {
+          if (busy || disposed) return;
+          if (expanded.has(entry.path)) {
+            controller.setDirectoryExpanded(entry.path, false);
+            render();
+            return;
+          }
+          controller.setDirectoryExpanded(entry.path, true);
+          if (controller.getState().directories[entry.path]) render();
+          else void perform(() => controller.loadDirectory({
+            path: entry.path,
+            cursor: null,
+          }));
+        });
+        parent.append(button);
+        if (expanded.has(entry.path)) {
+          const group = element(documentTarget, "div", "website-project-files__group");
+          group.setAttribute("role", "group");
+          appendDirectory(group, entry.path, depth + 1);
+          parent.append(group);
+        }
+      } else if (behavior.selectableFile) {
+        const button = element(
+          documentTarget, "button",
+          "website-project-files__row website-project-files__row--file",
+          entry.name,
+        );
+        button.type = "button";
+        button.disabled = busy;
+        button.setAttribute("role", "treeitem");
+        button.setAttribute("aria-level", String(depth + 1));
+        button.setAttribute("aria-label", `Bestand ${entry.name} selecteren`);
+        button.addEventListener("click", () => {
+          if (!busy && !disposed) void perform(() => controller.readFile(entry.path));
+        });
+        parent.append(button);
+      } else {
+        const row = element(
+          documentTarget, "div",
+          "website-project-files__row website-project-files__row--inert",
+          entry.name,
+        );
+        row.setAttribute("role", "treeitem");
+        row.setAttribute("aria-level", String(depth + 1));
+        row.setAttribute("aria-disabled", "true");
+        parent.append(row);
+      }
+    }
+    if (directory.nextCursor) {
+      const more = element(
+        documentTarget, "button", "website-project-files__more", "Meer laden",
+      );
+      more.type = "button";
+      more.disabled = busy;
+      more.addEventListener("click", () => {
+        if (!busy && !disposed) void perform(() => controller.loadDirectory({
+          path,
+          cursor: directory.nextCursor,
+        }));
+      });
+      parent.append(more);
+    }
+  }
+
+  function render() {
+    if (disposed) return;
+    const state = controller?.getState();
+    refreshButton.disabled = busy || !available();
+    status.textContent = busy ? "Projectbestanden laden..."
+      : state?.status === "provider_unavailable" ? "Provider tijdelijk niet beschikbaar."
+      : state?.status === "not_found" ? "Map of bestand niet gevonden."
+      : state?.status === "stale_binding" ? "Repositorybinding is gewijzigd. Vernieuw de lijst."
+      : state?.status === "failure" ? "Projectbestanden konden niet veilig worden geladen."
+      : lifecycleMessage(context, options.ownerEligible);
+    tree.replaceChildren();
+    appendDirectory(tree, "", 0);
+    empty.hidden = state?.status !== "empty";
+  }
+
+  async function perform(operation) {
+    if (busy || disposed || !available() || !controller) return false;
+    busy = true;
+    const pending = operation();
+    render();
+    try {
+      await pending;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  async function refresh() {
+    if (!controller || !available()) return false;
+    controller.reset();
+    render();
+    return perform(() => controller.loadDirectory({ path: "", cursor: null }));
+  }
+
+  refreshButton.addEventListener("click", () => void refresh());
+  render();
+
+  return freeze({
+    activate() {
+      if (disposed) return Promise.resolve(false);
+      host.focus({ preventScroll: true });
+      if (!available() || busy) {
+        render();
+        return Promise.resolve(false);
+      }
+      if (controller.getState().directories[""]) {
+        render();
+        return Promise.resolve(true);
+      }
+      return perform(() => controller.loadDirectory({ path: "", cursor: null }));
+    },
+    updateContext(value) {
+      if (value !== null && !treeContextValid(value)) {
+        return fail("INVALID_WEBSITE_PROJECT_FILES_TREE_CONTEXT");
+      }
+      context = value === null ? null : frozenClone(value);
+      controller = createController();
+      busy = false;
+      render();
+    },
+    refresh,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      controller = null;
+      host.replaceChildren();
     },
   });
 }

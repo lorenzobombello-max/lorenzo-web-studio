@@ -19,6 +19,9 @@ import {
   requirementsBoardSlot,
   requirementsInvalidationMatches,
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
+import {
+  mountWebsiteProjectFilesTree,
+} from "./operator-website-project-files.mjs?v=20260919-project-files-tree-r1";
 
 const WEBSITE_CHILD_ROLES = new Set([
   "owner",
@@ -26,6 +29,25 @@ const WEBSITE_CHILD_ROLES = new Set([
   "operations_manager",
   "operator",
 ]);
+const WEBSITE_PROJECT_FILE_ACTIONS = new Set([
+  "list_website_project_directory",
+  "read_website_project_file",
+]);
+
+async function websiteProjectFilesGateway(client, request) {
+  if (!request || !WEBSITE_PROJECT_FILE_ACTIONS.has(request.action)) {
+    throw new Error("WEBSITE_PROJECT_FILES_ACTION_NOT_ALLOWED");
+  }
+  const response = await client.functions.invoke("commercial-operator-command", {
+    body: request,
+  });
+  if (response?.error) throw response.error;
+  const body = response?.data;
+  if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
+    throw new Error(body?.code || "INVALID_WEBSITE_PROJECT_FILES_RESPONSE");
+  }
+  return body.result;
+}
 
 export function websiteChildDetailRequest(slotKey) {
   const quoteRequestId = quoteRequestIdFromWebsiteExecutionSlot(slotKey);
@@ -110,11 +132,10 @@ function childMarkup() {
         </dl>
       </section>
       </div>
+      <section class="website-project-files" data-website-project-files tabindex="-1" aria-label="Projectbestanden"></section>
       <nav class="website-execution__actions" aria-label="Website werkruimte acties">
         <button type="button" class="primary-action primary-action--compact" data-website-action="provision" hidden>Technische werkruimte starten</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
-        <a class="secondary-action" data-website-link="preview" target="_blank" rel="noopener noreferrer">Open Preview</a>
-        <a class="secondary-action" data-website-link="vscode" target="_blank" rel="noopener noreferrer">Open in VS Code Web</a>
         <button type="button" class="secondary-action" data-website-action="files">Projectbestanden</button>
         <button type="button" class="secondary-action" data-website-action="back" data-website-project-back>Terug naar Project</button>
       </nav>
@@ -185,8 +206,6 @@ function renderChild(workspace, state) {
   workspace.querySelector("[data-website-build]").textContent = view.buildResult || "NIET GEKOPPELD";
   renderRequirementsSummary(workspace, summary);
   setLink(workspace, "github", view.links.github);
-  setLink(workspace, "preview", view.links.preview);
-  setLink(workspace, "vscode", view.links.vscode);
   workspace.querySelector("[data-website-action=\"provision\"]").hidden = !(
     state.canProvision && context.mode === "PRE_PROJECT" && view.state === "empty"
   );
@@ -206,6 +225,16 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   const authority = createOperatorDossierAuthority(client, {
     onAuthorizationFailure: options.onAuthorizationFailure,
   });
+  const projectFiles = mountWebsiteProjectFilesTree(
+    workspace.querySelector(".website-project-files"),
+    {
+      gateway: (request) => websiteProjectFilesGateway(client, request),
+      requireAal2: typeof options.requireAal2 === "function"
+        ? options.requireAal2
+        : async () => { throw new Error("OPERATOR_AAL2_REQUIRED"); },
+      ownerEligible: identity.role === "owner",
+    },
+  );
   let disposed = false;
   const refreshGeneration = createOperatorRefreshGenerationGuard();
   let currentSnapshot = null;
@@ -253,6 +282,16 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         canProvision: identity.role === "owner",
       });
       currentSnapshot = nextSnapshot;
+      projectFiles.updateContext(Object.freeze({
+        quoteRequestId: context.quoteRequestId,
+        websiteWorkContextId: context.websiteWorkContextId,
+        projectFilesRead: projection.workspace?.capabilities.project_files_read === true,
+        workspaceState: projection.workspace?.workspace_state || null,
+        repositoryOperationState:
+          projection.workspace?.repository_operation_state || null,
+        failureCategory: projection.workspace?.repository_failure_category || null,
+        recoveryGuidance: projection.workspace?.repository_recovery_guidance || null,
+      }));
       renderChild(workspace, currentSnapshot);
       return true;
     } catch (error) {
@@ -262,6 +301,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       );
       if (denied) {
         currentSnapshot = null;
+        projectFiles.updateContext(null);
         renderChild(workspace, {
           state: "denied",
           message: "Geen toegang tot deze Website Workspace.",
@@ -278,6 +318,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         state: "error",
         message: "Website workspace kon niet veilig worden geladen.",
       });
+      projectFiles.updateContext(null);
       return false;
     }
   }
@@ -318,11 +359,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const action = target?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
-    if (action === "files") {
-      const development = workspace.querySelector("[data-website-development]");
-      development?.scrollIntoView({ block: "start", behavior: "smooth" });
-      development?.focus({ preventScroll: true });
-    }
+    if (action === "files") void projectFiles.activate();
     if (action === "requirements" && currentSnapshot) {
       options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId));
     }
@@ -348,6 +385,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       refreshGeneration.dispose();
       autoRefresh.dispose();
       workspace.removeEventListener("click", click);
+      projectFiles.dispose();
       authority.dispose();
       currentSnapshot = null;
       workspace.replaceChildren();

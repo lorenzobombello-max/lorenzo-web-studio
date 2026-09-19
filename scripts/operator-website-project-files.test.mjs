@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import * as projectFilesModule from "../assets/js/operator-website-project-files.mjs";
 import {
   createWebsiteProjectFilesController,
   validateWebsiteProjectDirectory,
@@ -373,5 +374,50 @@ test("repository content has no persistence surface", async () => {
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|caches\.|serviceWorker/i);
   assert.doesNotMatch(source, /location\.|URLSearchParams|history\.|pushState|replaceState/i);
   assert.doesNotMatch(source, /vscode\.dev|github\.dev|vscode:\/\//i);
-  assert.doesNotMatch(source, /document\.|querySelector|createElement|innerHTML/i);
+  assert.match(source, /createElement/);
+  assert.match(source, /textContent/);
+  assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|\beval\(|new Function/);
+});
+
+test("Task 8 exports one safe internal tree mount without a content pane", async () => {
+  assert.equal(typeof projectFilesModule.mountWebsiteProjectFilesTree, "function");
+  const source = await readFile(new URL(
+    "../assets/js/operator-website-project-files.mjs",
+    import.meta.url,
+  ), "utf8");
+  assert.match(source, /website-project-files__tree/);
+  assert.match(source, /website-project-files__row/);
+  assert.match(source, /website-project-files__status/);
+  assert.match(source, /website-project-files__refresh/);
+  assert.doesNotMatch(source, /website-project-files__content|data-project-file-content/);
+  assert.doesNotMatch(source, /window\.open|requestOpen|reserve|register/i);
+});
+
+test("controller reset clears stale tree selection and pagination", async () => {
+  const harness = controllerHarness([
+    directoryFixture({ next_cursor: "opaque-next" }),
+  ]);
+  await harness.controller.loadDirectory({ path: "", cursor: null });
+  harness.controller.setDirectoryExpanded("src", true);
+  harness.controller.reset();
+  assert.deepEqual(harness.controller.getState(), {
+    status: "idle",
+    directories: {},
+    expandedDirectories: [],
+    selectedPath: null,
+    currentTreeSnapshot: null,
+    currentFileSnapshot: null,
+    currentFile: null,
+    pendingFileSnapshot: null,
+    refreshRootRequired: false,
+  });
+});
+
+test("Task 8 styles provide bounded focusable responsive tree dimensions", async () => {
+  const css = await readFile(new URL("../assets/css/operator-dashboard.css", import.meta.url), "utf8");
+  assert.match(css, /\.website-project-files\s*\{[^}]*min-width:0/);
+  assert.match(css, /\.website-project-files__tree\s*\{[^}]*overflow:auto/);
+  assert.match(css, /\.website-project-files__row[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /\.website-project-files[^}]*:focus-visible/);
+  assert.match(css, /@media \(max-width:540px\)[^]*\.website-project-files/);
 });
