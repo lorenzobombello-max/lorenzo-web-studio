@@ -222,9 +222,6 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   if (!workspace) throw new Error("WEBSITE_WORKSPACE_HOST_REQUIRED");
   workspace.className = "module-shell project-child-workspace website-execution-workspace";
   workspace.innerHTML = childMarkup();
-  const authority = createOperatorDossierAuthority(client, {
-    onAuthorizationFailure: options.onAuthorizationFailure,
-  });
   const projectFiles = mountWebsiteProjectFilesTree(
     workspace.querySelector(".website-project-files"),
     {
@@ -235,6 +232,12 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       ownerEligible: identity.role === "owner",
     },
   );
+  const authority = createOperatorDossierAuthority(client, {
+    onAuthorizationFailure: (code) => {
+      projectFiles.clearAuthorityState("authorization_failure");
+      options.onAuthorizationFailure?.(code);
+    },
+  });
   let disposed = false;
   const refreshGeneration = createOperatorRefreshGenerationGuard();
   let currentSnapshot = null;
@@ -285,6 +288,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       projectFiles.updateContext(Object.freeze({
         quoteRequestId: context.quoteRequestId,
         websiteWorkContextId: context.websiteWorkContextId,
+        websiteWorkspaceId: projection.workspace?.website_workspace_id || null,
+        bindingRevision: projection.workspace?.binding_revision || null,
         projectFilesRead: projection.workspace?.capabilities.project_files_read === true,
         workspaceState: projection.workspace?.workspace_state || null,
         repositoryOperationState:
@@ -309,6 +314,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         return false;
       }
       if (currentSnapshot) {
+        projectFiles.markUnavailable();
         workspace.querySelector("[data-website-message]").textContent = background
           ? "De achtergrondvernieuwing kon niet veilig worden geladen."
           : "Website workspace kon niet veilig worden vernieuwd.";

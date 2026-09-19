@@ -178,7 +178,8 @@ function errorCode(error) {
 function statusForError(code) {
   if ([
     "PROJECT_FILES_ACCESS_DENIED", "OPERATOR_NOT_AUTHORIZED",
-    "WEBSITE_REPOSITORY_OWNER_REQUIRED",
+    "WEBSITE_REPOSITORY_OWNER_REQUIRED", "OPERATOR_AAL2_REQUIRED",
+    "AUTHENTICATION_REQUIRED", "INVALID_JWT", "OPERATOR_REVOKED",
   ].includes(code)) {
     return "access_denied";
   }
@@ -240,6 +241,10 @@ export function createWebsiteProjectFilesController(options) {
     state = freeze({ ...state, ...changes });
   }
 
+  function clearAuthorityState(status = available ? "idle" : "access_denied") {
+    state = freeze({ ...initialState(available), status });
+  }
+
   function clearPagination() {
     const directories = Object.fromEntries(Object.entries(state.directories)
       .map(([path, directory]) => [path, { ...directory, nextCursor: null }]));
@@ -247,13 +252,18 @@ export function createWebsiteProjectFilesController(options) {
   }
 
   function deny() {
-    state = initialState(false);
+    clearAuthorityState("access_denied");
     return fail("PROJECT_FILES_ACCESS_DENIED");
   }
 
   function handleError(error) {
+    const status = statusForError(errorCode(error));
+    if (status === "access_denied" || status === "stale_binding") {
+      clearAuthorityState(status);
+      throw error;
+    }
     update({
-      status: statusForError(errorCode(error)),
+      status,
       currentFile: null,
       currentFileSnapshot: null,
     });
@@ -363,7 +373,12 @@ export function createWebsiteProjectFilesController(options) {
         pendingFileSnapshot: freeze({ ...result.snapshot, result }),
         refreshRootRequired: true,
       });
-      await loadDirectory({ path: "", cursor: null }, false);
+      try {
+        await loadDirectory({ path: "", cursor: null }, false);
+      } catch (error) {
+        clearAuthorityState(statusForError(errorCode(error)));
+        throw error;
+      }
       return result;
     } catch (error) {
       return handleError(error);
@@ -374,8 +389,9 @@ export function createWebsiteProjectFilesController(options) {
     getState: () => state,
     loadDirectory,
     readFile,
+    clearAuthorityState,
     reset() {
-      state = initialState(available);
+      clearAuthorityState();
     },
     setDirectoryExpanded(path, expanded) {
       if (normalizedPath(path, false) === null || typeof expanded !== "boolean") {
@@ -398,7 +414,8 @@ export function createWebsiteProjectFilesController(options) {
 }
 
 const TREE_CONTEXT_KEYS = [
-  "quoteRequestId", "websiteWorkContextId", "projectFilesRead",
+  "quoteRequestId", "websiteWorkContextId", "websiteWorkspaceId",
+  "bindingRevision", "projectFilesRead",
   "workspaceState", "repositoryOperationState", "failureCategory",
   "recoveryGuidance",
 ];
@@ -407,6 +424,10 @@ function treeContextValid(value) {
   return exactKeys(value, TREE_CONTEXT_KEYS)
     && UUID.test(String(value.quoteRequestId || ""))
     && UUID.test(String(value.websiteWorkContextId || ""))
+    && (value.websiteWorkspaceId === null
+      || UUID.test(String(value.websiteWorkspaceId || "")))
+    && (value.bindingRevision === null
+      || Number.isSafeInteger(value.bindingRevision) && value.bindingRevision >= 1)
     && typeof value.projectFilesRead === "boolean"
     && [
       null, "PENDING_REPOSITORY", "REPOSITORY_PROVISIONING",
@@ -450,6 +471,35 @@ function lifecycleMessage(context, ownerEligible) {
   return "Selecteer een map of bestand.";
 }
 
+function stateMessage(status) {
+  return status === "access_denied" ? "Geen toegang tot Projectbestanden."
+    : status === "provider_unavailable" ? "Provider tijdelijk niet beschikbaar."
+    : status === "not_found" ? "Bestand niet gevonden."
+    : status === "sensitive" ? "Dit bestand is beveiligd en kan niet worden getoond."
+    : status === "binary" ? "Binaire bestanden worden niet weergegeven."
+    : status === "unsupported_encoding" ? "Deze tekstcodering wordt niet ondersteund."
+    : status === "oversized" ? "Dit bestand is te groot om weer te geven."
+    : status === "stale_binding" ? "Repositorybinding of snapshot is gewijzigd. Vernieuw de lijst."
+    : status === "failure" ? "Projectbestanden konden niet veilig worden geladen."
+    : null;
+}
+
+function eligibleContext(context, ownerEligible) {
+  return ownerEligible && context?.projectFilesRead === true
+    && context.workspaceState === "REPOSITORY_READY"
+    && context.repositoryOperationState === "COMPLETE"
+    && UUID.test(String(context.websiteWorkspaceId || ""))
+    && Number.isSafeInteger(context.bindingRevision);
+}
+
+function sameAuthority(left, right) {
+  return left !== null && right !== null
+    && left.quoteRequestId === right.quoteRequestId
+    && left.websiteWorkContextId === right.websiteWorkContextId
+    && left.websiteWorkspaceId === right.websiteWorkspaceId
+    && left.bindingRevision === right.bindingRevision;
+}
+
 function element(documentTarget, tagName, className, text = null) {
   const node = documentTarget.createElement(tagName);
   if (className) node.className = className;
@@ -489,15 +539,30 @@ export function mountWebsiteProjectFilesTree(host, options) {
   const tree = element(documentTarget, "div", "website-project-files__tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Projectbestanden");
-  host.replaceChildren(heading, status, empty, tree);
+  const contentPane = element(
+    documentTarget, "section", "website-project-files__content-pane",
+  );
+  contentPane.hidden = true;
+  const contentPath = element(
+    documentTarget, "h3", "website-project-files__path",
+  );
+  const contentMetadata = element(
+    documentTarget, "p", "website-project-files__metadata",
+  );
+  const content = element(documentTarget, "pre", "website-project-files__text");
+  content.tabIndex = 0;
+  contentPane.append(contentPath, contentMetadata, content);
+  host.replaceChildren(heading, status, empty, tree, contentPane);
 
   let context = null;
   let controller = null;
   let busy = false;
   let disposed = false;
+  let authorityValid = false;
+  let authorityStatus = "access_denied";
 
   function available() {
-    return options.ownerEligible && context?.projectFilesRead === true;
+    return authorityValid && eligibleContext(context, options.ownerEligible);
   }
 
   function createController() {
@@ -596,19 +661,55 @@ export function mountWebsiteProjectFilesTree(host, options) {
     }
   }
 
+  function renderContent(state) {
+    const result = state?.currentFile;
+    const coherent = result
+      && state.currentTreeSnapshot?.commit_sha === result.snapshot.commit_sha
+      && state.currentFileSnapshot?.commit_sha === result.snapshot.commit_sha;
+    contentPane.hidden = !coherent;
+    content.hidden = !coherent;
+    if (!coherent) {
+      contentPath.textContent = "";
+      contentMetadata.textContent = "";
+      content.textContent = "";
+      return;
+    }
+    contentPath.textContent = result.file.path;
+    contentMetadata.textContent = [
+      `${result.file.size_bytes} bytes`,
+      result.file.encoding,
+      result.file.media_type,
+      result.repository.display_name,
+      result.snapshot.ref_label,
+      result.snapshot.commit_sha,
+    ].join(" · ");
+    content.textContent = result.file.content;
+  }
+
   function render() {
     if (disposed) return;
     const state = controller?.getState();
     refreshButton.disabled = busy || !available();
+    const currentStatus = state?.status || authorityStatus;
     status.textContent = busy ? "Projectbestanden laden..."
-      : state?.status === "provider_unavailable" ? "Provider tijdelijk niet beschikbaar."
-      : state?.status === "not_found" ? "Map of bestand niet gevonden."
-      : state?.status === "stale_binding" ? "Repositorybinding is gewijzigd. Vernieuw de lijst."
-      : state?.status === "failure" ? "Projectbestanden konden niet veilig worden geladen."
-      : lifecycleMessage(context, options.ownerEligible);
+      : stateMessage(currentStatus)
+        || lifecycleMessage(context, options.ownerEligible);
     tree.replaceChildren();
     appendDirectory(tree, "", 0);
     empty.hidden = state?.status !== "empty";
+    renderContent(state);
+  }
+
+  function clearAuthorityState(reason = "access_denied") {
+    const nextStatus = [
+      "provider_unavailable", "stale_binding", "failure",
+    ].includes(reason) ? reason : "access_denied";
+    controller?.clearAuthorityState(nextStatus);
+    controller = null;
+    authorityValid = false;
+    authorityStatus = nextStatus;
+    busy = false;
+    render();
   }
 
   async function perform(operation) {
@@ -620,6 +721,9 @@ export function mountWebsiteProjectFilesTree(host, options) {
       await pending;
       return true;
     } catch {
+      if (controller?.getState().status === "access_denied") {
+        clearAuthorityState("access_denied");
+      }
       return false;
     } finally {
       busy = false;
@@ -655,16 +759,30 @@ export function mountWebsiteProjectFilesTree(host, options) {
       if (value !== null && !treeContextValid(value)) {
         return fail("INVALID_WEBSITE_PROJECT_FILES_TREE_CONTEXT");
       }
-      context = value === null ? null : frozenClone(value);
-      controller = createController();
-      busy = false;
+      const nextContext = value === null ? null : frozenClone(value);
+      const unchanged = sameAuthority(context, nextContext)
+        && available() && eligibleContext(nextContext, options.ownerEligible);
+      if (!unchanged) clearAuthorityState(
+        nextContext && eligibleContext(nextContext, options.ownerEligible)
+          ? "stale_binding" : "access_denied",
+      );
+      context = nextContext;
+      if (!unchanged && eligibleContext(context, options.ownerEligible)) {
+        controller = createController();
+        authorityValid = true;
+        authorityStatus = "idle";
+      }
       render();
+    },
+    clearAuthorityState,
+    markUnavailable() {
+      clearAuthorityState("provider_unavailable");
     },
     refresh,
     dispose() {
       if (disposed) return;
+      clearAuthorityState("access_denied");
       disposed = true;
-      controller = null;
       host.replaceChildren();
     },
   });

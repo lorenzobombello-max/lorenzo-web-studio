@@ -827,6 +827,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .website-project-files__row:focus-visible,.website-project-files__refresh:focus-visible,.website-project-files__more:focus-visible { outline:3px solid var(--turquoise-deep); outline-offset:-3px; }
 .website-project-files__row:disabled,.website-project-files__refresh:disabled,.website-project-files__more:disabled { cursor:wait; opacity:.58; }
 .website-project-files__more { width:100%; min-height:2.5rem; border:0; color:var(--turquoise-deep); background:var(--paper); font-weight:800; }
+.website-project-files__content-pane { min-width:0; max-width:100%; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:4px solid var(--turquoise-deep); background:var(--white); }
+.website-project-files__path { margin:0; color:var(--navy); font-size:1rem; overflow-wrap:anywhere; word-break:break-word; }
+.website-project-files__metadata { margin:.4rem 0 .75rem; color:var(--muted); font-size:.75rem; overflow-wrap:anywhere; word-break:break-word; }
+.website-project-files__text { width:100%; min-width:0; max-width:100%; max-height:30rem; margin:0; padding:.85rem; overflow:auto; color:var(--text); border:1px solid var(--line); background:#f7f9fa; font:400 .82rem/1.55 "IBM Plex Mono","Cascadia Code",monospace; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+.website-project-files__text:focus-visible { outline:3px solid var(--turquoise-deep); outline-offset:-3px; }
 .dossiers-project [data-project-start]:disabled { cursor:not-allowed; opacity:.55; }
 .website-execution__requirements { min-width:0; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:5px solid var(--turquoise); border-radius:6px; background:var(--white); }
 .project-workspace-requirements { min-width:0; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:5px solid var(--turquoise); border-radius:6px; background:var(--white); }
@@ -842,7 +847,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:900px) { .website-execution__development { grid-template-columns:1fr; } }
 @media (max-width:900px) { .project-workspace-requirements__facts { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:540px) { .website-execution__requirements-facts { grid-template-columns:1fr; } }
-@media (max-width:540px) { .website-project-files { width:100%; max-width:100%; } .website-project-files__heading { align-items:stretch; flex-direction:column; } .website-project-files__refresh { width:100%; } .website-project-files__tree { max-height:20rem; } .website-project-files__group { padding-left:.55rem; } }
+@media (max-width:540px) { .website-project-files { width:100%; max-width:100%; } .website-project-files__heading { align-items:stretch; flex-direction:column; } .website-project-files__refresh { width:100%; } .website-project-files__tree { max-height:20rem; } .website-project-files__group { padding-left:.55rem; } .website-project-files__content-pane { padding:.7rem; } .website-project-files__text { max-height:22rem; padding:.65rem; } }
 @media (max-width:540px) { .project-workspace-requirements__facts { grid-template-columns:1fr; } }
 .project-requirements-workspace,.project-requirements { width:100%; min-width:0; box-sizing:border-box; }
 .project-requirements [hidden] { display:none; }
