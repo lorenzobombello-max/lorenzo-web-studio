@@ -1427,7 +1427,7 @@ Run this exact alignment matrix after the two test edits:
 npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql
 npx supabase test db supabase/tests/website_requirements_security_release_v1.sql
 npx supabase test db supabase/tests/website_project_files_phase_a_v1.sql
-deno test --allow-env supabase/functions/_shared/website-project-files-provider.test.ts --filter "Phase A provider dependency graph exposes read operations only"
+deno test --allow-env supabase/functions/_shared/website-project-files-provider.test.ts --filter "provider exposes no write method"
 ```
 
 All four commands must pass. The lifecycle suite must prove all three foreign source-resolution attempts fail closed without writes. The security-release regression must retain its two-context Requirements-to-repository/provider/workspace no-write snapshot. The Project Files suite must prove its expanded Requirements snapshot remains exactly equal. The filtered provider test must report zero reachable repository/provision/build/preview/publication mutation calls.
