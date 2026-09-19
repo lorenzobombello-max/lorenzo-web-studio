@@ -201,6 +201,35 @@ Deno.test("GitHub App broker signs a short-lived JWT and requests one exact repo
   }]);
 });
 
+Deno.test("GitHub App broker issues production-compatible project-file read scope only", async () => {
+  for (const target of ["TEST", "PRODUCTION"] as const) {
+    const organization = target === "TEST"
+      ? "lorenzo-web-solutions-lab"
+      : "lorenzo-web-solutions";
+    const test = harness({
+      token: INSTALLATION_TOKEN,
+      expiresAt: "2026-09-13T12:55:00.000Z",
+      repositorySelection: "selected",
+      permissions: { metadata: "read", contents: "read" },
+    });
+    await test.broker.issue(
+      config(target),
+      request({
+        target,
+        organization,
+        operation: "WEBSITE_PROJECT_FILES_READ",
+      }),
+      authority({ target, organization }),
+    );
+    assertEquals(test.exchangeCalls, [{
+      installationId: "654321",
+      appJwt: (test.exchangeCalls[0] as { appJwt: string }).appJwt,
+      repositoryIds: [CUSTOMER_REPOSITORY_ID],
+      permissions: { metadata: "read", contents: "read" },
+    }]);
+  }
+});
+
 Deno.test("GitHub App broker classifies token authority validation", async () => {
   const test = harness();
   const error = await assertRejects(

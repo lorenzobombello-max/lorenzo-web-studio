@@ -20,6 +20,7 @@ const MAX_CLOCK_SKEW_MS = 60 * 1000;
 
 export type GitHubTokenOperation =
   | "STARTER_SNAPSHOT_READ"
+  | "WEBSITE_PROJECT_FILES_READ"
   | "LAB_REPOSITORY_CREATE"
   | "LAB_REPOSITORY_READ"
   | "LAB_REPOSITORY_WRITE";
@@ -59,7 +60,10 @@ export type GitHubInstallationTokenLease = Readonly<{
 export type GitHubAppTokenBrokerDependencies = Readonly<{
   now(): number;
   sign(privateKey: string, signingInput: string): Promise<Uint8Array>;
-  exchange(input: GitHubTokenExchangeInput): Promise<unknown>;
+  exchange(
+    input: GitHubTokenExchangeInput,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
 }>;
 
 export type GitHubTokenExchangeFailureKind =
@@ -138,6 +142,7 @@ function validAuthority(
     request.organization !== config.organization ||
     ![
       "STARTER_SNAPSHOT_READ",
+      "WEBSITE_PROJECT_FILES_READ",
       "LAB_REPOSITORY_CREATE",
       "LAB_REPOSITORY_READ",
       "LAB_REPOSITORY_WRITE",
@@ -159,6 +164,7 @@ function validAuthority(
     return request.target === "PRODUCTION" &&
       request.repositoryIds[0] === config.templateRepositoryId;
   }
+  if (request.operation === "WEBSITE_PROJECT_FILES_READ") return true;
   return request.target === "TEST";
 }
 
@@ -169,6 +175,9 @@ function permissionsFor(
     return Object.freeze({ metadata: "read", contents: "read" });
   }
   if (operation === "LAB_REPOSITORY_READ") {
+    return Object.freeze({ metadata: "read", contents: "read" });
+  }
+  if (operation === "WEBSITE_PROJECT_FILES_READ") {
     return Object.freeze({ metadata: "read", contents: "read" });
   }
   if (operation === "LAB_REPOSITORY_CREATE") {
@@ -316,6 +325,7 @@ export function createGitHubAppTokenBroker(
       config: GitHubAppConfig,
       request: GitHubTokenRequest,
       authority: GitHubTokenAuthority,
+      signal?: AbortSignal,
     ): Promise<GitHubInstallationTokenLease> {
       if (!validAuthority(config, request, authority)) {
         throw new GitHubTokenBrokerError(
@@ -349,12 +359,15 @@ export function createGitHubAppTokenBroker(
       const permissions = permissionsFor(request.operation);
       let rawResponse: unknown;
       try {
-        rawResponse = await dependencies.exchange(Object.freeze({
-          installationId: config.installationId,
-          appJwt,
-          repositoryIds: Object.freeze([...request.repositoryIds]),
-          permissions,
-        }));
+        rawResponse = await dependencies.exchange(
+          Object.freeze({
+            installationId: config.installationId,
+            appJwt,
+            repositoryIds: Object.freeze([...request.repositoryIds]),
+            permissions,
+          }),
+          signal,
+        );
       } catch (error) {
         throw normalizedExchangeError(error);
       }

@@ -125,6 +125,118 @@ function repositoryInstallationProof(): GitHubHttpOperation {
   };
 }
 
+Deno.test("GitHub HTTP project-file reads use authorized ref, non-recursive tree, and shared signal", async () => {
+  const seen: Array<{ url: string; signal: AbortSignal | null | undefined }> =
+    [];
+  const signal = new AbortController().signal;
+  const client = createGitHubHttpClient({
+    fetch(input, init) {
+      const url = String(input);
+      seen.push({ url, signal: init?.signal });
+      if (url.includes("/git/ref/")) {
+        return Promise.resolve(json({
+          ref: "refs/heads/release/approved",
+          object: { type: "commit", sha: SHA },
+        }));
+      }
+      return Promise.resolve(json({
+        sha: TREE_SHA,
+        truncated: false,
+        tree: [{ path: "src", mode: "040000", type: "tree", sha: CONTENT_SHA }],
+      }));
+    },
+  });
+
+  const ref = await client.execute(
+    operation({
+      kind: "WEBSITE_PROJECT_FILES_READ_REF",
+      owner: OWNER,
+      repository: REPOSITORY,
+      ref: "heads/release/approved",
+      token: TOKEN,
+    }),
+    signal,
+  );
+  const tree = await client.execute(
+    operation({
+      kind: "WEBSITE_PROJECT_FILES_READ_TREE",
+      owner: OWNER,
+      repository: REPOSITORY,
+      treeRef: TREE_SHA,
+      token: TOKEN,
+    }),
+    signal,
+  );
+
+  assertEquals(ref, { ref: "refs/heads/release/approved", commitSha: SHA });
+  assertEquals(tree, {
+    sha: TREE_SHA,
+    truncated: false,
+    entries: [{ path: "src", mode: "040000", type: "tree", sha: CONTENT_SHA }],
+  });
+  assertEquals(seen.map((value) => value.url), [
+    `${"https://api.github.com"}/repos/${OWNER}/${REPOSITORY}/git/ref/heads/release/approved`,
+    `${"https://api.github.com"}/repos/${OWNER}/${REPOSITORY}/git/trees/${TREE_SHA}`,
+  ]);
+  assert(seen.every((value) => value.signal === signal));
+});
+
+Deno.test("GitHub HTTP project-file reads deny redirects without a second attempt", async () => {
+  let attempts = 0;
+  const client = createGitHubHttpClient({
+    fetch() {
+      attempts++;
+      return Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://api.github.com/redirected" },
+        }),
+      );
+    },
+  });
+  await assertRejects(
+    () =>
+      client.execute(
+        operation({
+          kind: "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA",
+          owner: OWNER,
+          repository: REPOSITORY,
+          token: TOKEN,
+        }),
+        new AbortController().signal,
+      ),
+    GitHubHttpError,
+    "GITHUB_HTTP_REDIRECT_DENIED",
+  );
+  assertEquals(attempts, 1);
+});
+
+Deno.test("GitHub HTTP project-file ref read rejects ambiguous refs before fetch", async () => {
+  let attempts = 0;
+  const client = createGitHubHttpClient({
+    fetch() {
+      attempts++;
+      return Promise.resolve(json({}));
+    },
+  });
+  await assertRejects(
+    () =>
+      client.execute(
+        operation({
+          kind: "WEBSITE_PROJECT_FILES_READ_REF",
+          owner: OWNER,
+          repository: REPOSITORY,
+          ref: "heads/../main",
+          token: TOKEN,
+        }),
+        new AbortController().signal,
+      ),
+    GitHubHttpError,
+    "GITHUB_HTTP_OPERATION_INVALID",
+  );
+  assertEquals(attempts, 0);
+});
+
 Deno.test("GitHub HTTP proves one exact repository installation with an App JWT", async () => {
   const requests: Request[] = [];
   const client = createGitHubHttpClient({

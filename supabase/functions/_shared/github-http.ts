@@ -26,6 +26,8 @@ const NUMERIC_ID = /^[1-9][0-9]{0,29}$/;
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const REPOSITORY = /^[A-Za-z0-9._-]{1,100}$/;
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const REF =
+  /^(?:heads|tags)\/[A-Za-z0-9](?:[A-Za-z0-9._\/-]{0,253}[A-Za-z0-9])?$/;
 const APP_JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const MAX_CLOCK_SKEW_MILLISECONDS = 60 * 1000;
@@ -53,6 +55,40 @@ export type GitHubHttpOperation =
     appJwt: string;
   }>
   | (RepositoryCoordinates & Readonly<{ kind: "REPOSITORY_METADATA" }>)
+  | (
+    & RepositoryCoordinates
+    & Readonly<{
+      kind: "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA";
+    }>
+  )
+  | (
+    & RepositoryCoordinates
+    & Readonly<{
+      kind: "WEBSITE_PROJECT_FILES_READ_REF";
+      ref: string;
+    }>
+  )
+  | (
+    & RepositoryCoordinates
+    & Readonly<{
+      kind: "WEBSITE_PROJECT_FILES_READ_TREE";
+      treeRef: string;
+    }>
+  )
+  | (
+    & RepositoryCoordinates
+    & Readonly<{
+      kind: "WEBSITE_PROJECT_FILES_READ_MARKER";
+      ref: string;
+    }>
+  )
+  | (
+    & RepositoryCoordinates
+    & Readonly<{
+      kind: "WEBSITE_PROJECT_FILES_READ_COMMIT";
+      commitSha: string;
+    }>
+  )
   | (
     & RepositoryCoordinates
     & Readonly<{
@@ -198,7 +234,7 @@ export type GitHubHttpResult =
     size: number;
   }>
   | Readonly<{ sha: string }>
-  | Readonly<{ ref: "refs/heads/main"; commitSha: string }>
+  | Readonly<{ ref: string; commitSha: string }>
   | Readonly<{
     path: ".lws/bootstrap.json";
     contentSha: string;
@@ -337,7 +373,10 @@ export function getValidatedGitHubHttpRefReadDiagnostic(
 }
 
 export type GitHubHttpClient = Readonly<{
-  execute(operation: GitHubHttpOperation): Promise<GitHubHttpResult>;
+  execute(
+    operation: GitHubHttpOperation,
+    signal?: AbortSignal,
+  ): Promise<GitHubHttpResult>;
 }>;
 
 export type GitHubHttpClientDependencies = Readonly<{
@@ -372,6 +411,15 @@ function validCoordinates(value: RepositoryCoordinates): boolean {
 
 function validRepositoryName(value: string): boolean {
   return REPOSITORY.test(value) && value !== "." && value !== "..";
+}
+
+function validRef(value: string): boolean {
+  return REF.test(value) && !value.includes("..") &&
+    !value.includes("@{") && !value.endsWith(".") &&
+    !value.endsWith(".lock") &&
+    value.split("/").every((segment) =>
+      segment !== "" && segment !== "." && segment !== ".."
+    );
 }
 
 function validNumericId(value: unknown): value is string {
@@ -521,6 +569,94 @@ function prepare(
         project: projectRepository,
       };
     }
+    case "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA": {
+      if (
+        !exactKeys(operation, ["kind", "owner", "repository", "token"]) ||
+        !validCoordinates(operation)
+      ) return invalidOperation();
+      return {
+        url: `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}`,
+        init: getRequest(operation.token),
+        responseBytes: SMALL_RESPONSE_BYTES,
+        project: projectRepository,
+      };
+    }
+    case "WEBSITE_PROJECT_FILES_READ_REF": {
+      if (
+        !exactKeys(operation, [
+          "kind",
+          "owner",
+          "repository",
+          "ref",
+          "token",
+        ]) ||
+        !validCoordinates(operation) || !validRef(operation.ref)
+      ) return invalidOperation();
+      return {
+        url:
+          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/ref/${operation.ref}`,
+        init: getRequest(operation.token),
+        responseBytes: SMALL_RESPONSE_BYTES,
+        project: (value) => projectRefRead(value, `refs/${operation.ref}`),
+      };
+    }
+    case "WEBSITE_PROJECT_FILES_READ_TREE": {
+      if (
+        !exactKeys(operation, [
+          "kind",
+          "owner",
+          "repository",
+          "treeRef",
+          "token",
+        ]) ||
+        !validCoordinates(operation) || !SHA.test(operation.treeRef)
+      ) return invalidOperation();
+      return {
+        url:
+          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/trees/${operation.treeRef}`,
+        init: getRequest(operation.token),
+        responseBytes: TREE_RESPONSE_BYTES,
+        project: projectTree,
+      };
+    }
+    case "WEBSITE_PROJECT_FILES_READ_MARKER": {
+      if (
+        !exactKeys(operation, [
+          "kind",
+          "owner",
+          "repository",
+          "ref",
+          "token",
+        ]) ||
+        !validCoordinates(operation) || !SHA.test(operation.ref)
+      ) return invalidOperation();
+      return {
+        url:
+          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/contents/.lws/project.json?ref=${operation.ref}`,
+        init: getRequest(operation.token),
+        responseBytes: MARKER_BYTES,
+        project: projectMarkerRead,
+      };
+    }
+    case "WEBSITE_PROJECT_FILES_READ_COMMIT": {
+      if (
+        !exactKeys(operation, [
+          "kind",
+          "owner",
+          "repository",
+          "commitSha",
+          "token",
+        ]) ||
+        !validCoordinates(operation) || !SHA.test(operation.commitSha)
+      ) return invalidOperation();
+      return {
+        url:
+          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/commits/${operation.commitSha}`,
+        init: getRequest(operation.token),
+        responseBytes: SMALL_RESPONSE_BYTES,
+        project: projectCommit,
+      };
+    }
     case "READ_REF": {
       if (
         !exactKeys(operation, [
@@ -536,7 +672,7 @@ function prepare(
           `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/ref/${operation.ref}`,
         init: getRequest(operation.token),
         responseBytes: SMALL_RESPONSE_BYTES,
-        project: projectRefRead,
+        project: (value) => projectRefRead(value, "refs/heads/main"),
       };
     }
     case "REPOSITORY_EMPTY_PROOF": {
@@ -1107,12 +1243,12 @@ function projectRepository(value: unknown): GitHubRepositoryMetadata {
   });
 }
 
-function projectRefRead(value: unknown): GitHubHttpResult {
+function projectRefRead(value: unknown, expectedRef: string): GitHubHttpResult {
   if (!isRecord(value)) return invalidResponse();
   const ref = Object.getOwnPropertyDescriptor(value, "ref");
   const object = Object.getOwnPropertyDescriptor(value, "object");
   if (
-    !ref || !("value" in ref) || ref.value !== "refs/heads/main" ||
+    !ref || !("value" in ref) || ref.value !== expectedRef ||
     !object || !("value" in object) || !isRecord(object.value)
   ) return invalidResponse();
   const type = Object.getOwnPropertyDescriptor(object.value, "type");
@@ -1123,7 +1259,7 @@ function projectRefRead(value: unknown): GitHubHttpResult {
     !SHA.test(sha.value)
   ) return invalidResponse();
   return Object.freeze({
-    ref: "refs/heads/main" as const,
+    ref: expectedRef,
     commitSha: sha.value,
   });
 }
@@ -1473,16 +1609,37 @@ export function createGitHubHttpClient(
   const now = dependencies.now ?? Date.now;
 
   return Object.freeze({
-    async execute(operation: GitHubHttpOperation): Promise<GitHubHttpResult> {
+    async execute(
+      operation: GitHubHttpOperation,
+      signal?: AbortSignal,
+    ): Promise<GitHubHttpResult> {
       const tokenExchange = isRecord(operation) &&
         operation.kind === "TOKEN_EXCHANGE";
+      const projectFilesRead = isRecord(operation) &&
+        typeof operation.kind === "string" &&
+        operation.kind.startsWith("WEBSITE_PROJECT_FILES_");
+      if (projectFilesRead && !(signal instanceof AbortSignal)) {
+        throw new GitHubHttpError("GITHUB_HTTP_OPERATION_INVALID");
+      }
       const request = prepare(operation, now);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMilliseconds);
-      const init = { ...request.init, signal: controller.signal };
+      const controller = projectFilesRead ? null : new AbortController();
+      const timeout = controller === null
+        ? null
+        : setTimeout(() => controller.abort(), timeoutMilliseconds);
+      const requestSignal = projectFilesRead ? signal : controller!.signal;
+      const init = { ...request.init, signal: requestSignal };
       try {
         let response = await dependencies.fetch(request.url, init);
         if (isRedirect(response)) {
+          if (projectFilesRead) {
+            throw new GitHubHttpError(
+              "GITHUB_HTTP_REDIRECT_DENIED",
+              null,
+              null,
+              undefined,
+              "HTTP_STATUS",
+            );
+          }
           const target = allowedRedirect(
             response.headers.get("location"),
             String(init.method),
@@ -1543,7 +1700,7 @@ export function createGitHubHttpClient(
         );
       } catch (error) {
         if (isTrustedGitHubHttpError(error)) throw error;
-        if (controller.signal.aborted) {
+        if (requestSignal?.aborted) {
           throw new GitHubHttpError(
             "GITHUB_HTTP_TIMEOUT",
             null,
@@ -1560,7 +1717,7 @@ export function createGitHubHttpClient(
           "HTTP_REQUEST",
         );
       } finally {
-        clearTimeout(timeout);
+        if (timeout !== null) clearTimeout(timeout);
       }
     },
   });

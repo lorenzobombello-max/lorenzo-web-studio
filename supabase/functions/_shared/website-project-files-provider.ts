@@ -1,0 +1,458 @@
+import type { GitHubAppConfig } from "./github-app-config.ts";
+import type {
+  GitHubInstallationTokenLease,
+  GitHubTokenAuthority,
+  GitHubTokenRequest,
+} from "./github-app-token.ts";
+import type { GitHubHttpOperation, GitHubHttpResult } from "./github-http.ts";
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const NUMERIC_ID = /^[1-9][0-9]{0,29}$/;
+const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+const REPOSITORY = /^[A-Za-z0-9._-]{1,100}$/;
+const NODE_ID = /^[A-Za-z0-9_=-]{1,128}$/;
+const SHA = /^[0-9a-f]{40}$/;
+const REF =
+  /^(?:heads|tags)\/[A-Za-z0-9](?:[A-Za-z0-9._\/-]{0,253}[A-Za-z0-9])?$/;
+const TOKEN = /^(?:ghs_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})$/;
+
+export type WebsiteProjectFilesAuthority = Readonly<{
+  leaseId: string;
+  actorAuthUserId: string;
+  quoteRequestId: string;
+  websiteWorkContextId: string;
+  websiteWorkspaceId: string;
+  bindingRevision: number;
+  repositoryProvider: "GITHUB";
+  repositoryOwner: string;
+  repositoryName: string;
+  repositoryExternalId: string;
+  repositoryNodeId: string;
+  defaultBranch: string;
+  repositoryRef: string;
+  refLabel: string;
+  markerOperationId: string;
+  expiresAt: string;
+}>;
+
+export type ProviderTreeEntry = Readonly<{
+  name: string;
+  canonicalPath: string;
+  mode: string;
+  objectType: "blob" | "tree" | "commit";
+  objectSha: string;
+  size: number | null;
+}>;
+
+export type WebsiteProjectFilesSnapshot = Readonly<{
+  commitSha: string;
+  rootTreeSha: string;
+  repositoryDisplayName: string;
+}>;
+
+export type WebsiteProjectFilesDirectory = Readonly<{
+  directoryTreeSha: string;
+  entries: readonly ProviderTreeEntry[];
+}>;
+
+export type WebsiteProjectFilesProvider = Readonly<{
+  resolveSnapshot(
+    authority: WebsiteProjectFilesAuthority,
+  ): Promise<WebsiteProjectFilesSnapshot>;
+  listDirectory(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      commitSha: string;
+      rootTreeSha: string;
+      directoryTreeSha: string | null;
+      path: string;
+    }>,
+  ): Promise<WebsiteProjectFilesDirectory>;
+}>;
+
+export class WebsiteProjectFilesProviderError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "WebsiteProjectFilesProviderError";
+  }
+}
+
+type ProviderDependencies = Readonly<{
+  config: GitHubAppConfig;
+  signal: AbortSignal;
+  tokenBroker: Readonly<{
+    issue(
+      config: GitHubAppConfig,
+      request: GitHubTokenRequest,
+      authority: GitHubTokenAuthority,
+      signal?: AbortSignal,
+    ): Promise<GitHubInstallationTokenLease>;
+  }>;
+  httpClient: Readonly<{
+    execute(
+      operation: GitHubHttpOperation,
+      signal?: AbortSignal,
+    ): Promise<GitHubHttpResult>;
+  }>;
+}>;
+
+function fail(code: string): never {
+  throw new WebsiteProjectFilesProviderError(code);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function exactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index]);
+}
+
+function validRef(value: string): boolean {
+  return REF.test(value) && !value.includes("..") &&
+    !value.includes("@{") && !value.endsWith(".") &&
+    !value.endsWith(".lock") &&
+    value.split("/").every((segment) =>
+      segment !== "" && segment !== "." && segment !== ".."
+    );
+}
+
+function validAuthority(
+  value: WebsiteProjectFilesAuthority,
+  config: GitHubAppConfig,
+): boolean {
+  if (!isRecord(value)) return false;
+  return exactKeys(value, [
+    "leaseId",
+    "actorAuthUserId",
+    "quoteRequestId",
+    "websiteWorkContextId",
+    "websiteWorkspaceId",
+    "bindingRevision",
+    "repositoryProvider",
+    "repositoryOwner",
+    "repositoryName",
+    "repositoryExternalId",
+    "repositoryNodeId",
+    "defaultBranch",
+    "repositoryRef",
+    "refLabel",
+    "markerOperationId",
+    "expiresAt",
+  ]) && UUID.test(value.leaseId) && UUID.test(value.actorAuthUserId) &&
+    UUID.test(value.quoteRequestId) && UUID.test(value.websiteWorkContextId) &&
+    UUID.test(value.websiteWorkspaceId) && UUID.test(value.markerOperationId) &&
+    Number.isSafeInteger(value.bindingRevision) && value.bindingRevision > 0 &&
+    value.repositoryProvider === "GITHUB" &&
+    OWNER.test(value.repositoryOwner) &&
+    value.repositoryOwner === config.organization &&
+    REPOSITORY.test(value.repositoryName) &&
+    NUMERIC_ID.test(value.repositoryExternalId) &&
+    NODE_ID.test(value.repositoryNodeId) &&
+    value.defaultBranch.length > 0 &&
+    value.repositoryRef === `heads/${value.defaultBranch}` &&
+    validRef(value.repositoryRef) && value.refLabel === value.defaultBranch &&
+    Number.isFinite(Date.parse(value.expiresAt));
+}
+
+function normalize(error: unknown): never {
+  if (error instanceof WebsiteProjectFilesProviderError) throw error;
+  const code = isRecord(error) && typeof error.code === "string"
+    ? error.code
+    : error instanceof Error
+    ? error.message
+    : "";
+  if (code.includes("TIMEOUT") || code.includes("ABORT")) {
+    return fail("PROJECT_FILES_PROVIDER_TIMEOUT");
+  }
+  if (code.includes("RATE_LIMIT") || code.includes("THROTTL")) {
+    return fail("PROJECT_FILES_PROVIDER_THROTTLED");
+  }
+  if (code.includes("NOT_FOUND") || code.includes("GONE")) {
+    return fail("PROJECT_FILES_SNAPSHOT_UNAVAILABLE");
+  }
+  return fail("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+}
+
+function decodeMarker(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+  try {
+    const bytes = Uint8Array.from(
+      atob(value),
+      (character) => character.charCodeAt(0),
+    );
+    const parsed = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    );
+    if (!isRecord(parsed)) {
+      return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof WebsiteProjectFilesProviderError) throw error;
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+}
+
+function projectMetadata(
+  value: unknown,
+  authority: WebsiteProjectFilesAuthority,
+): string {
+  if (!isRecord(value)) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  if (
+    value.repositoryId !== authority.repositoryExternalId ||
+    value.nodeId !== authority.repositoryNodeId ||
+    value.owner !== authority.repositoryOwner ||
+    value.name !== authority.repositoryName ||
+    value.fullName !==
+      `${authority.repositoryOwner}/${authority.repositoryName}` ||
+    value.private !== true || value.defaultBranch !== authority.defaultBranch
+  ) return fail("REPOSITORY_BINDING_STALE");
+  return value.fullName;
+}
+
+function projectRef(
+  value: unknown,
+  authority: WebsiteProjectFilesAuthority,
+): string {
+  if (
+    !isRecord(value) || value.ref !== `refs/${authority.repositoryRef}` ||
+    typeof value.commitSha !== "string" || !SHA.test(value.commitSha)
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  return value.commitSha;
+}
+
+function projectCommit(value: unknown, expectedSha: string): string {
+  if (
+    !isRecord(value) || value.sha !== expectedSha ||
+    typeof value.treeSha !== "string" || !SHA.test(value.treeSha)
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  return value.treeSha;
+}
+
+function verifyMarker(
+  value: unknown,
+  authority: WebsiteProjectFilesAuthority,
+  expectedEnvironment: "TEST" | "PRODUCTION",
+): void {
+  if (
+    !isRecord(value) || value.path !== ".lws/project.json" ||
+    value.encoding !== "base64" || typeof value.sha !== "string" ||
+    !SHA.test(value.sha) || !Number.isSafeInteger(value.size) ||
+    (value.size as number) < 1 || (value.size as number) > 65_536
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  const marker = decodeMarker(value.contentBase64);
+  if (
+    marker.schema_version !== 1 ||
+    marker.environment !== expectedEnvironment ||
+    marker.organization !== authority.repositoryOwner ||
+    marker.website_work_context_id !== authority.websiteWorkContextId ||
+    marker.repository_provisioning_operation_id !== authority.markerOperationId
+  ) return fail("REPOSITORY_BINDING_STALE");
+}
+
+function validName(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 255 &&
+    !value.includes("/") && !value.includes("\\") && value !== "." &&
+    value !== ".." &&
+    value.normalize("NFC") === value && value.normalize("NFKC") === value;
+}
+
+function projectTree(
+  value: unknown,
+  expectedTree: string,
+  path: string,
+): readonly ProviderTreeEntry[] {
+  if (
+    !isRecord(value) || value.sha !== expectedTree ||
+    value.truncated !== false ||
+    !Array.isArray(value.entries)
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  return Object.freeze(value.entries.map((raw) => {
+    if (
+      !isRecord(raw) || !validName(raw.path) || typeof raw.mode !== "string" ||
+      typeof raw.type !== "string" || typeof raw.sha !== "string" ||
+      !SHA.test(raw.sha)
+    ) {
+      return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+    }
+    const validMode = raw.type === "tree" && raw.mode === "040000" ||
+      raw.type === "commit" && raw.mode === "160000" ||
+      raw.type === "blob" && ["100644", "100755", "120000"].includes(raw.mode);
+    if (!validMode) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+    if (
+      raw.size !== undefined && raw.size !== null &&
+      (!Number.isSafeInteger(raw.size) || (raw.size as number) < 0)
+    ) {
+      return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+    }
+    return Object.freeze({
+      name: raw.path,
+      canonicalPath: path ? `${path}/${raw.path}` : raw.path,
+      mode: raw.mode,
+      objectType: raw.type as "blob" | "tree" | "commit",
+      objectSha: raw.sha,
+      size: typeof raw.size === "number" ? raw.size : null,
+    });
+  }));
+}
+
+export function createWebsiteProjectFilesProvider(
+  dependencies: ProviderDependencies,
+): WebsiteProjectFilesProvider {
+  if (
+    !dependencies || typeof dependencies !== "object" || !dependencies.config ||
+    !(dependencies.signal instanceof AbortSignal) ||
+    typeof dependencies.tokenBroker?.issue !== "function" ||
+    typeof dependencies.httpClient?.execute !== "function"
+  ) return fail("PROJECT_FILES_PROVIDER_CONFIGURATION_ERROR");
+
+  async function access(
+    authority: WebsiteProjectFilesAuthority,
+  ): Promise<string> {
+    if (!validAuthority(authority, dependencies.config)) {
+      return fail("REPOSITORY_BINDING_STALE");
+    }
+    try {
+      const lease = await dependencies.tokenBroker.issue(
+        dependencies.config,
+        Object.freeze({
+          websiteWorkContextId: authority.websiteWorkContextId,
+          target: dependencies.config.target,
+          organization: authority.repositoryOwner,
+          operation: "WEBSITE_PROJECT_FILES_READ",
+          repositoryIds: Object.freeze([authority.repositoryExternalId]),
+        }),
+        Object.freeze({
+          websiteWorkContextId: authority.websiteWorkContextId,
+          target: dependencies.config.target,
+          organization: authority.repositoryOwner,
+          repositoryIds: Object.freeze([authority.repositoryExternalId]),
+        }),
+        dependencies.signal,
+      );
+      if (!TOKEN.test(lease.token)) {
+        return fail("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+      }
+      return lease.token;
+    } catch (error) {
+      return normalize(error);
+    }
+  }
+
+  async function execute(
+    operation: GitHubHttpOperation,
+  ): Promise<GitHubHttpResult> {
+    try {
+      return await dependencies.httpClient.execute(
+        operation,
+        dependencies.signal,
+      );
+    } catch (error) {
+      return normalize(error);
+    }
+  }
+
+  function coordinates(authority: WebsiteProjectFilesAuthority, token: string) {
+    return {
+      owner: authority.repositoryOwner,
+      repository: authority.repositoryName,
+      token,
+    };
+  }
+
+  return Object.freeze({
+    async resolveSnapshot(authority) {
+      const token = await access(authority);
+      const base = coordinates(authority, token);
+      const repositoryDisplayName = projectMetadata(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA",
+          ...base,
+        }),
+        authority,
+      );
+      const commitSha = projectRef(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_READ_REF",
+          ...base,
+          ref: authority.repositoryRef,
+        }),
+        authority,
+      );
+      const rootTreeSha = projectCommit(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_READ_COMMIT",
+          ...base,
+          commitSha,
+        }),
+        commitSha,
+      );
+      verifyMarker(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_READ_MARKER",
+          ...base,
+          ref: commitSha,
+        }),
+        authority,
+        dependencies.config.target,
+      );
+      return Object.freeze({ commitSha, rootTreeSha, repositoryDisplayName });
+    },
+
+    async listDirectory(input) {
+      if (
+        !isRecord(input) ||
+        !validAuthority(input.authority, dependencies.config) ||
+        !SHA.test(input.commitSha) || !SHA.test(input.rootTreeSha) ||
+        input.directoryTreeSha !== null && !SHA.test(input.directoryTreeSha) ||
+        typeof input.path !== "string"
+      ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      const token = await access(input.authority);
+      const base = coordinates(input.authority, token);
+      let treeSha = input.directoryTreeSha ?? input.rootTreeSha;
+      if (input.directoryTreeSha === null && input.path !== "") {
+        let traversed = "";
+        for (const segment of input.path.split("/")) {
+          if (!validName(segment)) {
+            return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+          }
+          const level = projectTree(
+            await execute({
+              kind: "WEBSITE_PROJECT_FILES_READ_TREE",
+              ...base,
+              treeRef: treeSha,
+            }),
+            treeSha,
+            traversed,
+          );
+          const next = level.find((entry) => entry.name === segment);
+          if (!next || next.objectType !== "tree" || next.mode !== "040000") {
+            return fail("PROJECT_FILES_SNAPSHOT_UNAVAILABLE");
+          }
+          treeSha = next.objectSha;
+          traversed = traversed ? `${traversed}/${segment}` : segment;
+        }
+      }
+      const entries = projectTree(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_READ_TREE",
+          ...base,
+          treeRef: treeSha,
+        }),
+        treeSha,
+        input.path,
+      );
+      return Object.freeze({ directoryTreeSha: treeSha, entries });
+    },
+  });
+}
