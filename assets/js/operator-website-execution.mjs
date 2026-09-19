@@ -6,6 +6,21 @@ const WEBSITE_SLOT = /^website-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][
 const GITHUB_SEGMENT = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?$/;
 const BRANCH = /^(?:main|develop|work\/[a-z0-9][a-z0-9-]{0,39})$/;
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+const WORKSPACE_STATES = [
+  "PENDING_REPOSITORY", "REPOSITORY_PROVISIONING", "REPOSITORY_READY",
+  "REPOSITORY_FAILED", "READY",
+];
+const REPOSITORY_OPERATION_STATES = [
+  null, "CLAIMED", "CREATING", "EXTERNAL_CREATED", "VERIFYING",
+  "RETRYABLE_FAILED", "RETRY_SCHEDULED", "BLOCKED", "QUARANTINED",
+  "TERMINAL_FAILED", "COMPLETE",
+];
+const REPOSITORY_FAILURE_CATEGORIES = [
+  null, "RETRYABLE", "BLOCKED", "QUARANTINED", "TERMINAL",
+];
+const REPOSITORY_RECOVERY_GUIDANCE = [
+  null, "WAIT", "REFRESH_LATER", "CONTACT_OWNER", "RECONCILIATION_REQUIRED",
+];
 const WEBSITE_WORK_KEYS = [
   "state", "quote_request_id", "concept_id", "project_id",
   "website_work_context_id", "mode", "briefing_status",
@@ -17,13 +32,14 @@ const ROOT_KEYS = [
   "commercially_released", "project", "start_gate", "workspace", "requirements",
 ];
 const WORKSPACE_KEYS = [
-  "website_workspace_id", "website_work_context_id", "project_id", "quote_request_id",
-  "repository_provider", "repository_owner", "repository_name", "default_branch",
-  "preview_branch", "preview_url", "last_commit_sha", "last_commit_at",
-  "last_build_result", "last_build_at", "binding_revision", "created_at", "updated_at",
-];
-const CURRENT_WORKSPACE_KEYS = [
-  ...WORKSPACE_KEYS, "workspace_state", "provisioned_by", "provisioned_at",
+  "website_workspace_id", "website_work_context_id", "project_id",
+  "quote_request_id", "workspace_state", "repository_operation_state",
+  "repository_failure_category", "repository_recovery_guidance",
+  "repository_provider", "repository_owner", "repository_name",
+  "repository_navigation_url", "default_branch", "preview_branch",
+  "preview_url", "last_commit_sha", "last_commit_at", "last_build_result",
+  "last_build_at", "binding_revision", "provisioned_by", "provisioned_at",
+  "created_at", "updated_at", "capabilities",
 ];
 
 function exactKeys(value, keys) {
@@ -99,16 +115,22 @@ export function websiteExecutionProvisionRequest(value) {
   });
 }
 
-export function safeWebsiteExecutionLinks(repositoryOwner, repositoryName) {
-  if (!GITHUB_SEGMENT.test(String(repositoryOwner || "")) ||
-    !GITHUB_SEGMENT.test(String(repositoryName || ""))) {
-    throw new Error("INVALID_WEBSITE_REPOSITORY_REFERENCE");
+function safeRepositoryNavigationUrl(value, repositoryOwner, repositoryName) {
+  if (value === null && repositoryOwner === null && repositoryName === null) return null;
+  if (!GITHUB_SEGMENT.test(String(repositoryOwner || ""))
+    || !GITHUB_SEGMENT.test(String(repositoryName || ""))
+    || typeof value !== "string") {
+    throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
   }
-  const path = `${encodeURIComponent(repositoryOwner)}/${encodeURIComponent(repositoryName)}`;
-  return Object.freeze({
-    github: `https://github.com/${path}`,
-    vscode: `https://vscode.dev/github/${path}`,
-  });
+  const url = new URL(value);
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  if (url.protocol !== "https:" || url.hostname !== "github.com"
+    || url.port || url.username || url.password || url.search || url.hash
+    || pathSegments.length !== 2
+    || pathSegments[0] !== repositoryOwner || pathSegments[1] !== repositoryName) {
+    throw new Error("INVALID_WEBSITE_EXECUTION_URL");
+  }
+  return url.href;
 }
 
 export function validateWebsiteExecutionWorkspace(value, expected) {
@@ -122,7 +144,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
         || (expected?.conceptId !== null && !UUID.test(String(expected?.conceptId || "")))))) {
     throw new Error("INVALID_WEBSITE_EXECUTION_CONTEXT");
   }
-  if (!exactKeys(value, ROOT_KEYS) || value.contract_version !== 2
+  if (!exactKeys(value, ROOT_KEYS) || value.contract_version !== 3
     || value.mode !== expected.mode
     || value.quote_request_id !== expected.quoteRequestId
     || value.website_work_context_id !== expected.websiteWorkContextId
@@ -152,17 +174,15 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
   let workspace = null;
   if (value.workspace !== null) {
     workspace = value.workspace;
-    const legacyWorkspace = exactKeys(workspace, WORKSPACE_KEYS);
-    const currentWorkspace = exactKeys(workspace, CURRENT_WORKSPACE_KEYS);
-    if ((!legacyWorkspace && !currentWorkspace)
+    if (!exactKeys(workspace, WORKSPACE_KEYS)
       || !UUID.test(String(workspace.website_workspace_id || ""))
       || workspace.website_work_context_id !== expected.websiteWorkContextId
       || workspace.project_id !== expected.projectId
       || workspace.quote_request_id !== expected.quoteRequestId
-      || (currentWorkspace
-        && (!["PENDING_REPOSITORY", "READY", "REPOSITORY_READY"].includes(workspace.workspace_state)
-          || !UUID.test(String(workspace.provisioned_by || ""))
-          || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null))
+      || !WORKSPACE_STATES.includes(workspace.workspace_state)
+      || !REPOSITORY_OPERATION_STATES.includes(workspace.repository_operation_state)
+      || !REPOSITORY_FAILURE_CATEGORIES.includes(workspace.repository_failure_category)
+      || !REPOSITORY_RECOVERY_GUIDANCE.includes(workspace.repository_recovery_guidance)
       || workspace.repository_provider !== "GITHUB"
       || !BRANCH.test(String(workspace.default_branch || ""))
       || (workspace.preview_branch !== null && !BRANCH.test(String(workspace.preview_branch)))
@@ -171,23 +191,21 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || ![null, "PASS", "FAIL", "UNKNOWN"].includes(workspace.last_build_result)
       || !validTimestamp(workspace.last_build_at)
       || !Number.isSafeInteger(workspace.binding_revision) || workspace.binding_revision < 1
+      || !UUID.test(String(workspace.provisioned_by || ""))
+      || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null
       || !validTimestamp(workspace.created_at) || workspace.created_at === null
-      || !validTimestamp(workspace.updated_at) || workspace.updated_at === null) {
-      throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
-    }
-    if (currentWorkspace && workspace.workspace_state === "PENDING_REPOSITORY") {
-      if (workspace.repository_owner !== null || workspace.repository_name !== null
-        || workspace.preview_branch !== null || workspace.preview_url !== null
-        || workspace.last_commit_sha !== null || workspace.last_commit_at !== null
-        || workspace.last_build_result !== null || workspace.last_build_at !== null) {
-        throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
-      }
-    } else if (!GITHUB_SEGMENT.test(String(workspace.repository_owner || ""))
-      || !GITHUB_SEGMENT.test(String(workspace.repository_name || ""))) {
+      || !validTimestamp(workspace.updated_at) || workspace.updated_at === null
+      || !exactKeys(workspace.capabilities, ["project_files_read"])
+      || typeof workspace.capabilities.project_files_read !== "boolean") {
       throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
     }
     workspace = {
       ...workspace,
+      repository_navigation_url: safeRepositoryNavigationUrl(
+        workspace.repository_navigation_url,
+        workspace.repository_owner,
+        workspace.repository_name,
+      ),
       preview_url: optionalHttpsUrl(workspace.preview_url),
     };
   }
@@ -213,7 +231,7 @@ export function websiteExecutionView(value) {
       preview: "Preview nog niet beschikbaar",
       production: productionUrl || "Production URL nog niet beschikbaar",
       commit: "Nog geen commit geregistreerd",
-      links: Object.freeze({ github: null, vscode: null, preview: null, production: productionUrl }),
+      links: Object.freeze({ github: null, preview: null, production: productionUrl }),
     });
   }
   const workspace = value.workspace;
@@ -233,19 +251,16 @@ export function websiteExecutionView(value) {
       buildResult: "PENDING",
       links: Object.freeze({
         github: null,
-        vscode: null,
         preview: null,
         production: productionUrl,
       }),
     });
   }
-  const links = safeWebsiteExecutionLinks(
-    workspace.repository_owner,
-    workspace.repository_name,
-  );
   return Object.freeze({
-    state: "ready",
-    message: "",
+    state: workspace.workspace_state === "REPOSITORY_READY"
+        && workspace.capabilities.project_files_read ? "ready" : "repository_unavailable",
+    message: workspace.workspace_state === "REPOSITORY_READY"
+        && workspace.capabilities.project_files_read ? "" : "Projectbestanden niet beschikbaar.",
     modeLabel: value.mode === "PRE_PROJECT" ? "Voorlopig concept" : "Officieel project",
     briefingLabel: value.briefing_status,
     releaseLabel: value.commercially_released
@@ -257,7 +272,7 @@ export function websiteExecutionView(value) {
     commit: workspace.last_commit_sha || "Nog geen commit geregistreerd",
     buildResult: workspace.last_build_result || "UNKNOWN",
     links: Object.freeze({
-      ...links,
+      github: workspace.repository_navigation_url,
       preview: workspace.preview_url,
       production: productionUrl,
     }),

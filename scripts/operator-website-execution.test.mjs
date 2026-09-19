@@ -7,7 +7,6 @@ import { chromium } from "@playwright/test";
 import {
   websiteExecutionProvisionRequest,
   quoteRequestIdFromWebsiteExecutionSlot,
-  safeWebsiteExecutionLinks,
   websiteRequirementsSummary,
   validateWebsiteExecutionWorkspace,
   websiteExecutionRequest,
@@ -35,7 +34,7 @@ const root = new URL("../", import.meta.url);
 const rootPath = decodeURIComponent(root.pathname).replace(/^\/(?:([A-Za-z]:))/, "$1");
 const read = (path) => readFile(new URL(path, root), "utf8");
 const base = {
-  contract_version: 2,
+  contract_version: 3,
   mode: "OFFICIAL_PROJECT",
   quote_request_id: quoteRequestId,
   concept_id: null,
@@ -64,14 +63,28 @@ const officialWork = {
 };
 
 function workspaceFixture(overrides = {}) {
+  const workspaceState = overrides.workspace_state || "REPOSITORY_READY";
+  const operationState = Object.hasOwn(overrides, "repository_operation_state")
+    ? overrides.repository_operation_state : "COMPLETE";
+  const lifecycle = serverLifecycleProjection(workspaceState, operationState);
+  const repositoryOwner = Object.hasOwn(overrides, "repository_owner")
+    ? overrides.repository_owner : "lws-studio";
+  const repositoryName = Object.hasOwn(overrides, "repository_name")
+    ? overrides.repository_name : "lws-web-2026-0042";
   return {
     website_workspace_id: "a1800000-0000-4000-8000-000000000006",
     website_work_context_id: websiteWorkContextId,
     project_id: projectId,
     quote_request_id: quoteRequestId,
+    workspace_state: workspaceState,
+    repository_operation_state: operationState,
+    repository_failure_category: lifecycle.repository_failure_category,
+    repository_recovery_guidance: lifecycle.repository_recovery_guidance,
     repository_provider: "GITHUB",
-    repository_owner: "lws-studio",
-    repository_name: "lws-web-2026-0042",
+    repository_owner: repositoryOwner,
+    repository_name: repositoryName,
+    repository_navigation_url: repositoryOwner && repositoryName
+      ? `https://github.com/${repositoryOwner}/${repositoryName}` : null,
     default_branch: "main",
     preview_branch: "develop",
     preview_url: "https://preview.example.com/build/42#private",
@@ -80,8 +93,11 @@ function workspaceFixture(overrides = {}) {
     last_build_result: "PASS",
     last_build_at: "2026-09-12T12:01:00Z",
     binding_revision: 1,
+    provisioned_by: "a1800000-0000-4000-8000-000000000010",
+    provisioned_at: "2026-09-12T10:00:00Z",
     created_at: "2026-09-12T10:00:00Z",
     updated_at: "2026-09-12T12:01:00Z",
+    capabilities: { project_files_read: lifecycle.project_files_read },
     ...overrides,
   };
 }
@@ -89,8 +105,6 @@ function workspaceFixture(overrides = {}) {
 function currentWorkspaceFixture(workspaceState, overrides = {}) {
   return workspaceFixture({
     workspace_state: workspaceState,
-    provisioned_by: "a1800000-0000-4000-8000-000000000010",
-    provisioned_at: "2026-09-12T10:00:00Z",
     ...overrides,
   });
 }
@@ -108,8 +122,8 @@ const preProjectWork = {
   permitted_actions: ["OPEN_WEBSITE"],
 };
 
-const preProjectV2 = {
-  contract_version: 2,
+const preProjectV3 = {
+  contract_version: 3,
   mode: "PRE_PROJECT",
   quote_request_id: quoteRequestId,
   concept_id: conceptId,
@@ -187,17 +201,22 @@ test("PRE_PROJECT pending workspace is context-bound without fake repository dat
     mode: "PRE_PROJECT",
   };
   const projection = validateWebsiteExecutionWorkspace({
-    ...preProjectV2,
+    ...preProjectV3,
     workspace: currentWorkspaceFixture("PENDING_REPOSITORY", {
       project_id: null,
+      repository_operation_state: null,
+      repository_failure_category: null,
+      repository_recovery_guidance: "WAIT",
       repository_owner: null,
       repository_name: null,
+      repository_navigation_url: null,
       preview_branch: null,
       preview_url: null,
       last_commit_sha: null,
       last_commit_at: null,
       last_build_result: null,
       last_build_at: null,
+      capabilities: { project_files_read: false },
     }),
   }, context);
   const view = websiteExecutionView(projection);
@@ -314,7 +333,7 @@ test("PRE_PROJECT request uses only the stable dossier locator", () => {
   }), /INVALID_WEBSITE_EXECUTION_CONTEXT/);
 });
 
-test("PRE_PROJECT V2 validation is exact and context-bound", () => {
+test("PRE_PROJECT V3 validation is exact and context-bound", () => {
   const context = {
     quoteRequestId,
     projectId: null,
@@ -323,7 +342,7 @@ test("PRE_PROJECT V2 validation is exact and context-bound", () => {
     websiteWorkRevision: 1,
     mode: "PRE_PROJECT",
   };
-  const projection = validateWebsiteExecutionWorkspace(preProjectV2, context);
+  const projection = validateWebsiteExecutionWorkspace(preProjectV3, context);
   const view = websiteExecutionView(projection);
   assert.equal(projection.mode, "PRE_PROJECT");
   assert.equal(view.modeLabel, "Voorlopig concept");
@@ -331,11 +350,11 @@ test("PRE_PROJECT V2 validation is exact and context-bound", () => {
   assert.equal(view.briefingLabel, "COMPLETE");
   assert.equal(projection.requirements.message, "Requirements volgen na intake-sync.");
   for (const malformed of [
-    { ...preProjectV2, unknown: true },
-    { ...preProjectV2, commercially_released: true },
-    { ...preProjectV2, website_work_context_id: crypto.randomUUID() },
-    { ...preProjectV2, project_id: crypto.randomUUID() },
-    { ...preProjectV2, requirements: { state: "EMPTY", message: "Other" } },
+    { ...preProjectV3, unknown: true },
+    { ...preProjectV3, commercially_released: true },
+    { ...preProjectV3, website_work_context_id: crypto.randomUUID() },
+    { ...preProjectV3, project_id: crypto.randomUUID() },
+    { ...preProjectV3, requirements: { state: "EMPTY", message: "Other" } },
   ]) assert.throws(
     () => validateWebsiteExecutionWorkspace(malformed, context),
     /INVALID_WEBSITE_EXECUTION_RESPONSE|WEBSITE_WORKSPACE_BINDING_MISMATCH/,
@@ -381,11 +400,11 @@ test("empty workspace and missing preview/production states are explicit", () =>
     preview: "Preview nog niet beschikbaar",
     production: "Production URL nog niet beschikbaar",
     commit: "Nog geen commit geregistreerd",
-    links: { github: null, vscode: null, preview: null, production: null },
+    links: { github: null, preview: null, production: null },
   });
 });
 
-test("repository metadata renders safe GitHub and VS Code Web links", () => {
+test("repository metadata uses only server-projected GitHub navigation", () => {
   const projection = validateWebsiteExecutionWorkspace({
     ...base,
     project: {
@@ -400,27 +419,28 @@ test("repository metadata renders safe GitHub and VS Code Web links", () => {
   assert.equal(view.preview, "https://preview.example.com/build/42");
   assert.equal(view.production, "https://www.example.com/");
   assert.equal(view.links.github, "https://github.com/lws-studio/lws-web-2026-0042");
-  assert.equal(view.links.vscode, "https://vscode.dev/github/lws-studio/lws-web-2026-0042");
+  assert.equal(Object.hasOwn(view.links, "vscode"), false);
   assert.equal(JSON.stringify(projection).includes("token"), false);
 });
 
-test("READY and REPOSITORY_READY retain repository actions", () => {
-  for (const workspaceState of ["READY", "REPOSITORY_READY"]) {
+test("only server-capable REPOSITORY_READY enables project files", () => {
+  for (const [workspaceState, expectedState] of [
+    ["READY", "repository_unavailable"],
+    ["REPOSITORY_READY", "ready"],
+  ]) {
     const projection = validateWebsiteExecutionWorkspace({
       ...base,
       workspace: currentWorkspaceFixture(workspaceState),
     }, expected);
     const view = websiteExecutionView(projection);
-    assert.equal(view.state, "ready");
+    assert.equal(view.state, expectedState);
     assert.equal(view.links.github, "https://github.com/lws-studio/lws-web-2026-0042");
-    assert.equal(view.links.vscode, "https://vscode.dev/github/lws-studio/lws-web-2026-0042");
+    assert.equal(Object.hasOwn(view.links, "vscode"), false);
   }
 });
 
-test("non-ready and malformed current workspace states fail closed", () => {
+test("malformed current workspace states fail closed", () => {
   for (const workspace of [
-    currentWorkspaceFixture("PENDING_REPOSITORY"),
-    currentWorkspaceFixture("REPOSITORY_FAILED"),
     currentWorkspaceFixture("UNKNOWN"),
     currentWorkspaceFixture("REPOSITORY_READY", { provisioned_by: null }),
     currentWorkspaceFixture("REPOSITORY_READY", { provisioned_at: null }),
@@ -440,8 +460,6 @@ test("non-ready and malformed current workspace states fail closed", () => {
 });
 
 test("unsafe repository and URL references are rejected", () => {
-  assert.throws(() => safeWebsiteExecutionLinks("lws-studio", "../other"),
-    /INVALID_WEBSITE_REPOSITORY_REFERENCE/);
   assert.throws(() => validateWebsiteExecutionWorkspace({
     ...base,
     workspace: workspaceFixture({
@@ -490,7 +508,6 @@ test("Website managed child retains lifecycle, safe actions, and explicit denial
   assert.match(child, /rel="noopener noreferrer"/);
   assert.match(child, /Open GitHub/);
   assert.match(child, /Open Preview/);
-  assert.match(child, /Open in VS Code Web/);
   assert.match(child, /Projectbestanden/);
   assert.match(child, /Terug naar Project/);
   assert.match(projectChild, /data-project-website-open/);
@@ -519,7 +536,8 @@ test("commercial command dispatch uses the exact caller-scoped Website RPC", asy
   const index = await read("supabase/functions/commercial-operator-command/index.ts");
   assert.match(handler, /"get_website_execution_workspace"/);
   const branch = index.match(/if \(input\.action === "get_website_execution_workspace"\) \{[^]*?return data;\s*\}/)?.[0] || "";
-  assert.match(branch, /"get_website_execution_workspace_v2"[^]*p_quote_request_id: input\.quote_request_id/);
+  assert.match(branch, /executeCallerJwtWebsiteExecutionWorkspaceReadAction/);
+  assert.match(index, /"get_website_execution_workspace_v3"[^]*p_quote_request_id: input\.quote_request_id/);
   assert.doesNotMatch(branch, /p_project_id/);
 });
 
@@ -703,8 +721,8 @@ const quoteRequestId = "${quoteRequestId}";
 const projectId = mode === "OFFICIAL_PROJECT" ? "${projectId}" : null;
 const conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
-const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z" } : null;
-const projection = { contract_version: 2, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
+const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner" } } : null;
+const projection = { contract_version: 3, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, project_id: projectId, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", project_reference: projectId, assigned_operator: null }, board: null, items: [], empty_state: "NO_BOARD", readiness: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, active_requirement_id: null, active_item_number: null, ready_for_preview: false, readiness: "UNKNOWN", reason: "NO_BOARD" }, actions: { can_create_board: true, can_create_item: false, can_finalize: false } };
 const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_project_requirements_board") result = requirements; return { data: { ok: true, result }, error: null }; } } };
 const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
@@ -754,4 +772,158 @@ test("provision control follows owner PRE_PROJECT empty-workspace render state",
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+const repositoryOperationStates = [
+  "CLAIMED", "CREATING", "EXTERNAL_CREATED", "VERIFYING",
+  "RETRYABLE_FAILED", "RETRY_SCHEDULED", "BLOCKED", "QUARANTINED",
+  "TERMINAL_FAILED", "COMPLETE", null,
+];
+const repositoryWorkspaceStates = [
+  "PENDING_REPOSITORY", "REPOSITORY_PROVISIONING", "REPOSITORY_READY",
+  "REPOSITORY_FAILED", "READY",
+];
+
+function serverLifecycleProjection(workspaceState, operationState) {
+  const failure = operationState === "QUARANTINED" ? "QUARANTINED"
+    : operationState === "BLOCKED" ? "BLOCKED"
+    : operationState === "TERMINAL_FAILED" ? "TERMINAL"
+    : ["RETRYABLE_FAILED", "RETRY_SCHEDULED"].includes(operationState) ? "RETRYABLE"
+    : null;
+  const recovery = operationState === "QUARANTINED" ? "RECONCILIATION_REQUIRED"
+    : ["BLOCKED", "TERMINAL_FAILED"].includes(operationState) ? "CONTACT_OWNER"
+    : ["RETRYABLE_FAILED", "RETRY_SCHEDULED"].includes(operationState) ? "REFRESH_LATER"
+    : workspaceState === "READY" ? "RECONCILIATION_REQUIRED"
+    : workspaceState === "REPOSITORY_FAILED" ? "CONTACT_OWNER"
+    : ["PENDING_REPOSITORY", "REPOSITORY_PROVISIONING"].includes(workspaceState)
+      || ["CLAIMED", "CREATING", "EXTERNAL_CREATED", "VERIFYING"].includes(operationState)
+      ? "WAIT"
+    : workspaceState === "REPOSITORY_READY" && operationState === "COMPLETE"
+      ? null : "RECONCILIATION_REQUIRED";
+  return {
+    repository_failure_category: failure,
+    repository_recovery_guidance: recovery,
+    project_files_read: workspaceState === "REPOSITORY_READY" && operationState === "COMPLETE",
+  };
+}
+
+function v3WorkspaceFixture(workspaceState, operationState, overrides = {}) {
+  const lifecycle = serverLifecycleProjection(workspaceState, operationState);
+  return {
+    website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+    website_work_context_id: websiteWorkContextId,
+    project_id: projectId,
+    quote_request_id: quoteRequestId,
+    workspace_state: workspaceState,
+    repository_operation_state: operationState,
+    repository_failure_category: lifecycle.repository_failure_category,
+    repository_recovery_guidance: lifecycle.repository_recovery_guidance,
+    repository_provider: "GITHUB",
+    repository_owner: "lws-studio",
+    repository_name: "lws-web-2026-0042",
+    repository_navigation_url: "https://github.com/lws-studio/lws-web-2026-0042",
+    default_branch: "main",
+    preview_branch: "develop",
+    preview_url: "https://preview.example.com/build/42",
+    last_commit_sha: "a".repeat(40),
+    last_commit_at: "2026-09-12T12:00:00Z",
+    last_build_result: "PASS",
+    last_build_at: "2026-09-12T12:01:00Z",
+    binding_revision: 1,
+    provisioned_by: "a1800000-0000-4000-8000-000000000010",
+    provisioned_at: "2026-09-12T10:00:00Z",
+    created_at: "2026-09-12T10:00:00Z",
+    updated_at: "2026-09-12T12:01:00Z",
+    capabilities: { project_files_read: lifecycle.project_files_read },
+    ...overrides,
+  };
+}
+
+function v3Fixture(workspace, overrides = {}) {
+  return { ...base, contract_version: 3, workspace, ...overrides };
+}
+
+test("Website Execution v3 validates the complete server lifecycle matrix", () => {
+  for (const workspaceState of repositoryWorkspaceStates) {
+    for (const operationState of [...repositoryOperationStates, "SERVER_UNKNOWN_NORMALIZED_TO_NULL"]) {
+      const normalizedOperation = operationState === "SERVER_UNKNOWN_NORMALIZED_TO_NULL"
+        ? null : operationState;
+      const projected = serverLifecycleProjection(workspaceState, normalizedOperation);
+      const result = validateWebsiteExecutionWorkspace(v3Fixture(
+        v3WorkspaceFixture(workspaceState, normalizedOperation),
+      ), expected);
+      assert.equal(result.workspace.repository_operation_state, normalizedOperation);
+      assert.equal(result.workspace.repository_failure_category,
+        projected.repository_failure_category);
+      assert.equal(result.workspace.repository_recovery_guidance,
+        projected.repository_recovery_guidance);
+      assert.equal(result.workspace.capabilities.project_files_read,
+        projected.project_files_read);
+    }
+  }
+});
+
+test("Website Execution v3 preserves independently projected lifecycle fields", () => {
+  const contradictory = v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", {
+    repository_failure_category: "BLOCKED",
+    repository_recovery_guidance: "REFRESH_LATER",
+    capabilities: { project_files_read: false },
+  });
+  const result = validateWebsiteExecutionWorkspace(v3Fixture(contradictory), expected);
+  assert.equal(result.workspace.repository_failure_category, "BLOCKED");
+  assert.equal(result.workspace.repository_recovery_guidance, "REFRESH_LATER");
+  assert.equal(result.workspace.capabilities.project_files_read, false);
+  for (const malformed of [
+    { repository_failure_category: "INVENTED" },
+    { repository_recovery_guidance: "RETRY_NOW" },
+    { capabilities: { project_files_read: "yes" } },
+    { repository_operation_state: "UNKNOWN" },
+  ]) assert.throws(() => validateWebsiteExecutionWorkspace(v3Fixture(
+    v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", malformed),
+  ), expected), /INVALID_WEBSITE_EXECUTION_RESPONSE/);
+});
+
+test("Website Execution v3 keeps PRE_PROJECT project_id null", () => {
+  const context = {
+    quoteRequestId,
+    projectId: null,
+    conceptId,
+    websiteWorkContextId,
+    websiteWorkRevision: 1,
+    mode: "PRE_PROJECT",
+  };
+  const workspace = v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", {
+    project_id: null,
+  });
+  const result = validateWebsiteExecutionWorkspace({
+    ...preProjectV3,
+    contract_version: 3,
+    workspace,
+  }, context);
+  assert.equal(result.project_id, null);
+  assert.equal(result.workspace.project_id, null);
+  assert.equal(result.workspace.capabilities.project_files_read, true);
+});
+
+test("Website Execution uses only safe server-projected GitHub navigation", async () => {
+  const projection = validateWebsiteExecutionWorkspace(v3Fixture(
+    v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE"),
+  ), expected);
+  const view = websiteExecutionView(projection);
+  assert.equal(view.links.github, "https://github.com/lws-studio/lws-web-2026-0042");
+  assert.equal(Object.hasOwn(view.links, "vscode"), false);
+  for (const repository_navigation_url of [
+    "https://example.com/lws-studio/lws-web-2026-0042",
+    "https://github.com/other/repository",
+    "https://user:pass@github.com/lws-studio/lws-web-2026-0042",
+    "https://github.com/lws-studio/lws-web-2026-0042?token=secret",
+    "https://github.com/lws-studio/lws-web-2026-0042#fragment",
+    "https://vscode.dev/github/lws-studio/lws-web-2026-0042",
+  ]) assert.throws(() => validateWebsiteExecutionWorkspace(v3Fixture(
+    v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", { repository_navigation_url }),
+  ), expected), /INVALID_WEBSITE_EXECUTION_(?:URL|RESPONSE)/);
+
+  const source = await read("assets/js/operator-website-execution.mjs");
+  assert.doesNotMatch(source, /vscode\.dev|github\.dev/);
+  assert.doesNotMatch(source, /`https:\/\/github\.com\/\$\{/);
 });
