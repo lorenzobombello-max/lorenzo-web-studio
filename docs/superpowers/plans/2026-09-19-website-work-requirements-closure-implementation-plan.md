@@ -156,13 +156,16 @@ Additional required constraints:
 
 | Operation | Required authority |
 |---|---|
-| Read board/summary/history | Caller JWT; `ACTIVE` owner/admin/operations manager, or exact active assigned operator under existing dossier assignment policy. |
-| Initial sync/resync; resolve source change | Caller JWT; `ACTIVE` owner or operations manager; AAL2; exact dossier/context; expected board/context revision; idempotency key. |
-| Start/block; complete OPERATOR portion | Caller JWT; `ACTIVE` assigned operator or management; AAL2; server-projected action; expected item revision; idempotency key. |
-| Reopen/correct | Caller JWT; `ACTIVE` owner or operations manager; AAL2; reason; expected item/board revision; idempotency key. |
+| Read board/summary/history | Caller JWT; `ACTIVE` owner, admin, or operations manager; or `ACTIVE` operator whose exact active dossier assignment matches `quote_request_id`. AAL2 is not required. Admin is read-only. Reviewer, read-only, profile-only, and every other role are denied. |
+| Initial sync/resync | Caller JWT; `ACTIVE` owner or operations manager; AAL2; exact dossier/context; expected board revision under the Task 2 contract; idempotency key. |
+| Resolve source change | Caller JWT; `ACTIVE` owner or operations manager; AAL2; exact dossier/context/requirement; expected requirement revision; idempotency key. |
+| Start/block; complete OPERATOR portion | Caller JWT; `ACTIVE` owner or operations manager, or `ACTIVE` operator whose exact active dossier assignment matches `quote_request_id`; admin is denied; AAL2; server-projected action; expected requirement revision; idempotency key. |
+| Reopen/correct | Caller JWT; `ACTIVE` owner or operations manager only; admin and operator are denied; AAL2; reason; expected requirement revision; idempotency key. |
 | AUTO verification ingestion | Trusted backend verifier only, never a browser intent; exact closed evidence envelope and rule registry; actor/workspace/context binding revalidated. |
 | HYBRID completion | Current PASS verification plus authorized human attestation; neither half alone completes. |
-| EXTERNAL completion | PASS from an approved external evidence adapter; ordinary operators may block/reopen but cannot fabricate external PASS. |
+| EXTERNAL completion | PASS from an approved external evidence adapter; authorized lifecycle actors may block, management may reopen, and no human actor may fabricate external PASS. |
+
+For Task 3, `management` means exactly `owner` or `operations_manager`. It never includes admin or operator. All Task 3 mutations require AAL2. The primary authority is always exact `website_work_context_id + quote_request_id`; `project_id` is nullable informational read context only and is never accepted or derived as mutation authority.
 
 No role, phase, `project_id`, mode, permitted action, source provenance, verifier identity, commit, or workspace binding supplied by the browser is trusted as authority.
 
@@ -297,22 +300,110 @@ Any `CHANGE_PENDING` or `REMOVAL_PENDING` sets board `sync_state='REVIEW_REQUIRE
 
 ## 5. Lifecycle, progress, and audit
 
-The transition core mirrors the proven commercial pattern but is context-bound:
+### 5.1 Revision, locking, and one-active contract
+
+Every Task 3 mutation RPC accepts `p_expected_revision bigint`. It means exactly the target `website_requirements.revision`, never board, context, or sync revision. The caller sends no expected board or context revision. A stale target revision raises SQLSTATE `40001` with message `CONCURRENT_MODIFICATION`. Every successful non-replay mutation increments both target requirement revision and board revision by exactly one; `website_work_contexts.revision` remains unchanged.
+
+The exact lock order is:
+
+1. Authorize the server-resolved actor, role, assignment, and AAL2.
+2. Acquire an advisory transaction lock for the idempotency identity.
+3. Lock the exact `website_work_contexts` row `FOR UPDATE`.
+4. Lock the exact `website_requirements_boards` row `FOR UPDATE`.
+5. Lock the target `website_requirements` row `FOR UPDATE`.
+6. For START, check for a conflicting ACTIVE requirement under the already locked board.
+7. For source resolution, lock/select the current authoritative Task 2 sync proposal.
+
+This order must remain compatible with Task 2 context/board/requirements serialization. At most one requirement with `status='ACTIVE'` may exist per `website_work_context_id`, regardless of `source_review_state`. If Task 1/2 do not enforce this at database level, Task 3 adds the exact partial unique index required.
+
+### 5.2 Exact lifecycle transitions
+
+The context-bound transition matrix is exact:
 
 ```text
-PENDING --start--> ACTIVE
-ACTIVE --block(reason)--> BLOCKED
-BLOCKED --start--> ACTIVE
-ACTIVE --operator/hybrid complete--> COMPLETED
-PENDING/ACTIVE/BLOCKED --authoritative AUTO or EXTERNAL PASS--> COMPLETED
-COMPLETED --management reopen(reason)--> PENDING
+PENDING + CURRENT --start--> ACTIVE
+BLOCKED + CURRENT --start--> ACTIVE
+ACTIVE + CURRENT --block(reason)--> BLOCKED
+ACTIVE + CURRENT + OPERATOR attestation --complete--> COMPLETED
+ACTIVE + CURRENT + HYBRID current PASS + attestation --complete--> COMPLETED
+COMPLETED + CURRENT --management reopen(reason)--> PENDING
 ```
 
-- Exactly one transition core owns row locks, expected revision, allowed transition, completion-mode policy, verification policy, event append, board revision/progress recalculation, and idempotent result.
-- `complete` is never projected for `AUTO` or `EXTERNAL`. For `HYBRID`, it is projected only after a current PASS for the exact rule/workspace snapshot.
-- Reopen appends a correction event, invalidates current completion evidence with a new immutable invalidation record, clears completion fields, returns status to `PENDING`, increments item/board revisions, and recalculates summary.
-- Progress counts only required `CURRENT` items: total, completed, open (`PENDING` + `ACTIVE`), blocked. Any source-review conflict makes readiness `BLOCKED` even when numeric completion is 100%.
-- Read projection returns customer/dossier context, requirement number, title, description, category, safe source label/path, status, completion mode, verification state, progress, source-review state, and server-projected permitted actions.
+All unlisted transitions fail. START requires no other ACTIVE requirement. `PENDING -> ACTIVE` sets `started_at=now`, clears `blocked_reason`, and does not mutate evidence or source fields. `BLOCKED -> ACTIVE` preserves existing `started_at`, clears `blocked_reason`, and does not mutate evidence or source fields.
+
+BLOCK is allowed only from `ACTIVE + CURRENT`. Its normalized trimmed reason is required and 1..500 characters. It preserves `started_at`, sets status `BLOCKED` and `blocked_reason` to the normalized reason, and does not mutate evidence or source fields.
+
+COMPLETE is allowed only from `ACTIVE + CURRENT`. `OPERATOR` requires the exact attestation object `{"attestation":"<trimmed text>"}` with no surplus keys and text length 1..500; it sets `verification_result='NOT_APPLICABLE'`. `HYBRID` requires the same human attestation plus an already current authoritative PASS and preserves that PASS. Both set status `COMPLETED`, `completed_at=now`, `completed_by='OPERATOR:<operator_id>'`, and `evidence_reference` to the exact human attestation. `AUTO` and `EXTERNAL` can never be manually completed in Task 3.
+
+REOPEN is allowed only from `COMPLETED + CURRENT` by management with AAL2 and a normalized reason of 1..500 characters. It sets status `PENDING`; clears `started_at`, `blocked_reason`, `completed_at`, `completed_by`, and `evidence_reference`; sets verification result to `NOT_APPLICABLE` for `OPERATOR` and `UNKNOWN` otherwise; and preserves requirement identity, events, and immutable verification history.
+
+Task 3 performs no verification ingestion. Evidence invalidation is represented by the new requirement revision, clearing current evidence where required, resetting verification result where required, and appending `WEBSITE_REQUIREMENT_EVIDENCE_INVALIDATED`. Existing verification rows are never changed or deleted. Task 4 later treats currentness as revision-bound.
+
+### 5.3 Source proposal authority and resolution
+
+Source resolution never accepts `proposed_definition`, source hash, or `source_reference` from the browser. The server obtains the proposal only from an immutable Task 2 sync run matching the current board's `requirements_board_id`, `current_intake_id`, `current_intake_revision`, `current_intake_snapshot_sha256`, and `mapping_version`. Its `proposed_changes` must contain exactly one entry matching both target `requirement_id` and `source_key`, with an action compatible with the current source-review state; otherwise it fails closed with `WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND` or `WEBSITE_REQUIREMENT_SOURCE_STATE_MISMATCH` as applicable.
+
+Every source resolution requires management, AAL2, and a normalized reason of 1..500 characters. Exact resolution values are `KEEP_EXISTING`, `ACCEPT_CHANGE`, and `RETIRE`.
+
+- `ACCEPT_CHANGE` is allowed only for `CHANGE_PENDING`. Apply the exact `proposed_definition`, `proposed_source_value_sha256`, and proposed `source_reference` from the current immutable sync run; preserve `requirement_id`; set `source_review_state='CURRENT'`, set `required` from the proposal, reset lifecycle to `PENDING`, clear `started_at`, `blocked_reason`, `completed_at`, `completed_by`, and `evidence_reference`, and set verification result to `NOT_APPLICABLE` for new `OPERATOR` mode or `UNKNOWN` otherwise. Preserve prior immutable history. If prior lifecycle/evidence existed, append `WEBSITE_REQUIREMENT_EVIDENCE_INVALIDATED`.
+- `KEEP_EXISTING` is allowed for `CHANGE_PENDING` or `REMOVAL_PENDING`. Preserve exactly title, description, category, linked page/module, required, completion mode/rule, source hash/reference, lifecycle status/timestamps/reason/completer, evidence reference, and verification result. Set only `source_review_state='CURRENT'`, revisions, and events. A later materially new sync may flag the source again.
+- `RETIRE` is allowed only for `REMOVAL_PENDING`. Never delete. Preserve requirement ID and immutable history; set `source_review_state='RETIRED'` and `required=false`. `PENDING` stays `PENDING`. `ACTIVE` and `BLOCKED` become `PENDING` and clear `started_at` and `blocked_reason`; if current evidence exists, clear current evidence, reset verification state, and append evidence invalidation. `COMPLETED` stays `COMPLETED` and preserves completion, evidence, and verification history. Retired items do not count toward progress or readiness.
+
+After every source-resolution mutation, atomically set board `sync_state='REVIEW_REQUIRED'` if any item remains `CHANGE_PENDING` or `REMOVAL_PENDING`; otherwise set it to `CURRENT`. One unresolved item always keeps the board in review.
+
+### 5.4 Progress and readiness
+
+Progress has exactly `required_total`, `required_completed`, `required_open`, `required_blocked`, and `review_pending`. Only `required=true AND source_review_state='CURRENT'` contributes to the first four. Open means `PENDING + ACTIVE`; blocked means `BLOCKED`; review pending means every `CHANGE_PENDING + REMOVAL_PENDING` item regardless of required flag.
+
+Readiness has exactly `ready_for_preview`, `readiness`, and `reason`. `readiness` is `READY`, `BLOCKED`, or `UNKNOWN`. Evaluate in this exact priority:
+
+1. No board: `ready_for_preview=false`, `UNKNOWN`, `REQUIREMENTS_BOARD_MISSING`.
+2. `review_pending > 0` or board review state: false, `BLOCKED`, `REQUIREMENTS_REVIEW_REQUIRED`.
+3. `required_total = 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENTS_MISSING`.
+4. `required_blocked > 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENT_BLOCKED`.
+5. `required_open > 0`: false, `BLOCKED`, `REQUIRED_REQUIREMENTS_OPEN`.
+6. Otherwise: `ready_for_preview=true`, `READY`, `ALL_REQUIRED_REQUIREMENTS_COMPLETED`.
+
+### 5.5 Permitted actions
+
+The only Task 3 client action names are `start_website_requirement`, `block_website_requirement`, `complete_website_requirement`, `reopen_website_requirement`, `accept_website_requirement_source_change`, `keep_existing_website_requirement_source`, and `retire_website_requirement_source`.
+
+- `CHANGE_PENDING`: management sees accept and keep; all others see none.
+- `REMOVAL_PENDING`: management sees keep and retire; all others see none.
+- `RETIRED`: none.
+- `CURRENT + PENDING/BLOCKED`: an authorized lifecycle actor sees start only when no other ACTIVE item exists.
+- `CURRENT + ACTIVE`: an authorized lifecycle actor sees block; also complete for `OPERATOR`, or for `HYBRID` only with current PASS. `AUTO`/`EXTERNAL` never show manual complete.
+- `CURRENT + COMPLETED`: management sees reopen.
+
+### 5.6 Closed board projection
+
+`get_website_requirements_board_v1` returns exactly root keys `contract_version`, `quote_request_id`, `website_work_context_id`, `project_id`, `phase`, `context`, `board`, `items`, `progress`, `readiness`, and `empty_state`. Contract version is `1`; `project_id` is nullable informational context only.
+
+`context` has exactly `customer`, `dossier_reference`, and `assigned_operator`. Assigned operator is null or exactly `{operator_id, display_name}` and contains no other operator metadata.
+
+`board` is null when absent, otherwise has exactly `requirements_board_id`, `sync_state`, `revision`, `mapping_version`, `current_intake_id`, `current_intake_revision`, and `current_intake_snapshot_sha256`.
+
+Each item has exactly `requirement_id`, `item_number`, `title`, `description`, `category`, `source`, `linked_page_or_module`, `status`, `completion_mode`, `sort_order`, `required`, `started_at`, `completed_at`, `verification_result`, `blocked_reason`, `revision`, `source_review_state`, and `permitted_actions`.
+
+Safe `source` has exactly `authority_type`, `source_key`, `intake_id`, `intake_revision`, `submitted_at`, and `mapping_version`. It never exposes source hashes, raw intake, proposals, tokens, or credentials. `empty_state='NO_BOARD'` when no board exists and is null otherwise.
+
+### 5.7 Mutation result and idempotency
+
+Every mutation returns exactly root keys `contract_version`, `command`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `requirement_id`, `previous_status`, `status`, `previous_source_review_state`, `source_review_state`, `resolution`, `requirement_revision`, `board_revision`, and `replayed`. Contract version is `1`; command is exactly `START`, `BLOCK`, `COMPLETE`, `REOPEN`, or `RESOLVE_SOURCE`; resolution is null except for `RESOLVE_SOURCE`.
+
+Task 3 may add one supporting authority, not a second Requirements root: `public.website_requirement_command_ledger`. Its exact core columns are `operation_id uuid primary key`, non-null `actor_id`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `requirement_id`, `command_type`, `idempotency_key`, `request_fingerprint char(64)`, `result jsonb`, and `created_at timestamptz`. Its exact composite requirement authority FK uses `(requirement_id, requirements_board_id, website_work_context_id, quote_request_id)`. It has unique `(actor_id, command_type, idempotency_key)`, forced RLS, no direct privileges for `public`, `anon`, `authenticated`, or `service_role`, and writes only through the reviewed Task 3 command core.
+
+The canonical fingerprint input is exactly contract version 1, server actor ID, command type, quote request ID, work context ID, requirement ID, expected requirement revision, normalized reason or null, canonical attestation or null, and resolution or null. Same actor, command type, key, and fingerprint returns the stored result with `replayed=true` and performs no mutation, event, or revision increment. Same unique identity with a different fingerprint raises SQLSTATE `P0001`, message `WEBSITE_REQUIREMENT_IDEMPOTENCY_CONFLICT`.
+
+### 5.8 Audit events
+
+Task 3 event types are exactly `WEBSITE_REQUIREMENT_STARTED`, `WEBSITE_REQUIREMENT_BLOCKED`, `WEBSITE_REQUIREMENT_COMPLETED`, `WEBSITE_REQUIREMENT_REOPENED`, `WEBSITE_REQUIREMENT_SOURCE_CHANGE_ACCEPTED`, `WEBSITE_REQUIREMENT_SOURCE_KEPT`, `WEBSITE_REQUIREMENT_RETIRED`, and `WEBSITE_REQUIREMENT_EVIDENCE_INVALIDATED`.
+
+Every Task 3 event metadata object has exactly `requirements_board_id`, `requirement_id`, `source_key`, `previous_status`, `new_status`, `previous_source_review_state`, `new_source_review_state`, `previous_revision`, `new_revision`, `board_revision`, `reason`, `resolution`, and `sync_run_id`. Unused values are JSON null, never omitted. Raw proposal, raw attestation, raw evidence, tokens, and credentials are forbidden.
+
+### 5.9 Exact Task 3 errors
+
+The exact SQLSTATE/message pairs are: `22023/INVALID_WEBSITE_REQUIREMENT_COMMAND`, `22023/WEBSITE_REQUIREMENT_BLOCK_REASON_REQUIRED`, `22023/WEBSITE_REQUIREMENT_REOPEN_REASON_REQUIRED`, `22023/WEBSITE_REQUIREMENT_ATTESTATION_REQUIRED`, `22023/INVALID_WEBSITE_REQUIREMENT_SOURCE_RESOLUTION`, `42501/WEBSITE_REQUIREMENTS_ACCESS_DENIED`, `42501/WEBSITE_REQUIREMENT_ROLE_DENIED`, `42501/WEBSITE_REQUIREMENT_ASSIGNMENT_DENIED`, `42501/AAL2_REQUIRED`, `P0001/WEBSITE_REQUIREMENT_NOT_FOUND`, `P0001/WEBSITE_REQUIREMENTS_BOARD_NOT_FOUND`, `P0001/WEBSITE_ACTIVE_REQUIREMENT_CONFLICT`, `P0001/WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND`, `P0001/WEBSITE_REQUIREMENT_IDEMPOTENCY_CONFLICT`, `40001/CONCURRENT_MODIFICATION`, `55000/INVALID_WEBSITE_REQUIREMENT_TRANSITION`, `55000/WEBSITE_REQUIREMENT_SOURCE_REVIEW_REQUIRED`, `55000/WEBSITE_REQUIREMENT_SOURCE_STATE_MISMATCH`, and `55000/WEBSITE_REQUIREMENT_VERIFICATION_REQUIRED`.
 
 ## 6. Evidence-driven automatic checkoff
 
@@ -351,13 +442,13 @@ The verifier obtains commit and binding from server authority after acquiring th
 Planned SQL contracts (exact names to lock in RED tests before implementation):
 
 ```text
-get_website_requirements_board_v1(quote_request_id uuid, website_work_context_id uuid) -> jsonb
+get_website_requirements_board_v1(p_quote_request_id uuid, p_website_work_context_id uuid) -> jsonb
 sync_website_requirements_from_intake_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_expected_board_revision bigint, p_idempotency_key uuid) -> jsonb
-start_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, idempotency_key uuid) -> jsonb
-block_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, reason text, idempotency_key uuid) -> jsonb
-complete_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, attestation jsonb, idempotency_key uuid) -> jsonb
-reopen_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, reason text, idempotency_key uuid) -> jsonb
-resolve_website_requirement_source_change_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, resolution text, reason text, idempotency_key uuid) -> jsonb
+start_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_idempotency_key uuid) -> jsonb
+block_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_reason text, p_idempotency_key uuid) -> jsonb
+complete_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_attestation jsonb, p_idempotency_key uuid) -> jsonb
+reopen_website_requirement_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_reason text, p_idempotency_key uuid) -> jsonb
+resolve_website_requirement_source_change_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_requirement_id uuid, p_expected_revision bigint, p_resolution text, p_reason text, p_idempotency_key uuid) -> jsonb
 record_website_requirement_verification_v1(verification envelope...) -> jsonb
 promote_website_concept_v1(quote_request_id uuid, website_work_context_id uuid, project_id uuid, expected_context_revision bigint, idempotency_key uuid) -> jsonb
 ```
@@ -536,20 +627,20 @@ Existing commercial migration files are reference-only and must not be modified.
 - TEST: new lifecycle pgTAP; commercial Requirements regression
 
 **INTERFACES**
-- `get_website_requirements_board_v1`; start/block/complete/reopen/source-resolution RPCs; shared private transition/readiness/action projectors.
+- Exact section 7 `get_website_requirements_board_v1`, start/block/complete/reopen/source-resolution RPCs; shared private transition/readiness/action projectors; supporting `website_requirement_command_ledger` from section 5.7.
 
 **RED TEST FIRST**
-- Assert caller JWT, active role/assignment, AAL2 mutation gates, exact binding, all legal/illegal transitions, one ACTIVE item, revisions, idempotency conflicts, permitted actions, reopen invalidation, progress arithmetic, and audit append.
+- Assert sections 3.2 and 5 exactly: caller JWT; exact read/mutation roles and assignment; read without AAL2; every mutation with AAL2; exact context/quote/item binding; transition and source-resolution matrices; reason and attestation validation; one ACTIVE item; expected requirement revision semantics; lock compatibility; requirement/board increments with unchanged context revision; ledger fingerprint/replay/conflict; exact DTO and mutation result keys; permitted actions; board review clearing; progress/readiness priority; event types/metadata; errors; evidence invalidation; immutable history; and PRE_PROJECT without commercial dependencies.
 
 **IMPLEMENTATION**
-- Implement one locked transition core and closed projection. Manual completion is allowed only for `OPERATOR`, or `HYBRID` with current PASS.
+- Implement sections 5 and 7 without deviation: one locked transition core, closed projection, exact source proposal resolution, command ledger, immutable events, and database-level one-ACTIVE enforcement. Manual completion is allowed only for `OPERATOR`, or `HYBRID` with a current PASS. Task 3 does not ingest verification, create AUTO/EXTERNAL PASS, read repository/test/provider evidence, or perform automatic completion.
 
 **GREEN TESTS**
 - `npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql`
 - `npx supabase test db supabase/tests/project_requirements_board_v1.sql`
 
 **SECURITY / SCOPE GATE**
-- Denied callers receive no board metadata; no RPC accepts or derives authority from `project_id`; audit metadata is minimized and secret-key checked.
+- Denied callers receive no board metadata; no RPC accepts or derives authority from `project_id`; audit metadata uses the exact safe shape and is secret-key checked. Require `TASK3_CONTRACT_UNAMBIGUOUS=JA`, `LIFECYCLE_TRANSITIONS_FULLY_EXPLICIT=JA`, `SOURCE_RESOLUTION_TRANSITIONS_FULLY_EXPLICIT=JA`, `ROLE_MODEL_FULLY_EXPLICIT=JA`, `REVISION_MODEL_FULLY_EXPLICIT=JA`, `LOCK_MODEL_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_MODEL_FULLY_EXPLICIT=JA`, `EVENT_MODEL_FULLY_EXPLICIT=JA`, `RESULT_JSON_FULLY_EXPLICIT=JA`, `BOARD_DTO_FULLY_EXPLICIT=JA`, `PERMITTED_ACTION_MATRIX_FULLY_EXPLICIT=JA`, `ATTESTATION_SCHEMA_FULLY_EXPLICIT=JA`, `BOARD_REVIEW_CLEARING_FULLY_EXPLICIT=JA`, `TASK4_BOUNDARY_PRESERVED=JA`, and `COMMERCIAL_DEPENDENCY=NEE`.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): add requirements lifecycle api`
@@ -568,7 +659,7 @@ Existing commercial migration files are reference-only and must not be modified.
 - Reject browser caller, browser-selected SHA/ref, stale binding/revision/commit, unknown rule/version, cross-context workspace, mismatched source hash, and insufficient evidence. Prove AUTO PASS completes, approved-provider EXTERNAL PASS completes, an operator cannot fabricate EXTERNAL completion, FAIL/UNKNOWN do not complete, HYBRID requires both halves, and reopen invalidates without deleting history.
 
 **IMPLEMENTATION**
-- Implement only reviewed v1 rules. Reuse Project Files read policy/provider boundaries and server canonical commit resolution; add no repository mutation dependency.
+- Implement only reviewed v1 rules. Reuse Project Files read policy/provider boundaries and server canonical commit resolution; add no repository mutation dependency. Task 4, not Task 3, owns verification ingestion, AUTO PASS, EXTERNAL PASS, repository evidence, test-run evidence, and automatic completion. Task 3 only permits HYBRID human completion when a current PASS already exists.
 
 **GREEN TESTS**
 - `npx supabase test db supabase/tests/website_requirement_verification_v1.sql`
@@ -721,8 +812,11 @@ Planned implementation task count: 9. Planned green-path implementation commit c
 | `PRE_PROJECT_REQUIREMENTS_WITHOUT_PAYMENT` | Snapshot expectations/evidence/reconciliations | Progress works; counts unchanged |
 | `CUSTOMER_INTAKE_TO_STRUCTURED_WORKLIST` | Mapping fixture exercises all source groups | Exact expected source keys/order/categories/modes/provenance |
 | `NO_DUPLICATE_REQUIREMENTS_AFTER_RESYNC` | Same sync twice and concurrently | Same board/items; one immutable sync result per key/fingerprint |
-| `PERSISTENT_PROGRESS` | Mutate, reconnect/refetch integrated and detached views | Same server status/revision/counts |
-| `START_BLOCK_COMPLETE_REOPEN` | Lifecycle pgTAP transition table | Only legal transitions; reasons/revisions/events preserved |
+| `PERSISTENT_PROGRESS` | Mutate, reconnect/refetch integrated and detached views | Same server status/revision/exact progress and readiness keys/counts |
+| `START_BLOCK_COMPLETE_REOPEN` | Lifecycle pgTAP transition table over every status/source-state/mode/role combination | Only exact legal transitions; one ACTIVE; reasons/attestation; item+board revision increments; context revision unchanged; exact events/results/errors |
+| `SOURCE_RESOLUTION` | Resolve CHANGE_PENDING and REMOVAL_PENDING through every resolution and lifecycle state | Exact proposal authority, preserve/reset behavior, evidence invalidation, no delete, and one unresolved item keeps REVIEW_REQUIRED |
+| `TASK3_IDEMPOTENCY` | Replay each lifecycle/source command and reuse each key with changed fingerprint | Exact stored result without writes; conflict code; no duplicate event or revision increment |
+| `TASK3_BOARD_PROJECTION` | Read absent/current/review boards under every role/assignment | Exact closed root/context/board/item/source/progress/readiness/action DTO; denied callers receive no metadata |
 | `AUTHORITATIVE_AUTO_CHECKOFF` | Trusted PASS vs browser claim | Trusted current PASS can complete AUTO; browser cannot |
 | `AUTHORITATIVE_EXTERNAL_CHECKOFF` | Approved adapter PASS vs operator/browser claim | Trusted current provider PASS can complete EXTERNAL; operator/browser cannot |
 | `AUTO_EVIDENCE_BOUND_TO_CURRENT_WORKSPACE` | Substitute context/workspace/binding/commit/rule versions | Every stale/substituted envelope fails closed |
