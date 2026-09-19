@@ -373,6 +373,8 @@ Progress keys and arithmetic remain exactly unchanged. A completed OPERATOR item
 
 The only Task 3 client action names are `start_website_requirement`, `block_website_requirement`, `complete_website_requirement`, `reopen_website_requirement`, `accept_website_requirement_source_change`, `keep_existing_website_requirement_source`, and `retire_website_requirement_source`.
 
+The three source-resolution names are also the only browser action names for those resolutions. A generic browser action named `resolve_website_requirement_source_change` does not exist. Task 5 maps each of the three names to the shared server RPC with its fixed server argument from section 7; the browser never supplies `resolution`.
+
 - `CHANGE_PENDING`: management sees accept and keep; all others see none.
 - `REMOVAL_PENDING`: management sees keep and retire; all others see none.
 - `RETIRED`: none.
@@ -563,18 +565,88 @@ record_website_requirement_verification_v1(p_quote_request_id uuid, p_website_wo
 promote_website_concept_v1(quote_request_id uuid, website_work_context_id uuid, project_id uuid, expected_context_revision bigint, idempotency_key uuid) -> jsonb
 ```
 
-Browser Edge intents are exact and surplus-key rejecting:
+Task 5 exposes exactly these nine browser Edge actions and no generic source-resolution action:
 
-- `get_website_requirements_board`
-- `sync_website_requirements_from_intake`
-- `start_website_requirement`
-- `block_website_requirement`
-- `complete_website_requirement`
-- `reopen_website_requirement`
-- `resolve_website_requirement_source_change`
-- `promote_website_concept` (added with Task 8; owner+AAL2, exact project/context/revision/idempotency payload)
+1. `get_website_requirements_board`
+2. `sync_website_requirements_from_intake`
+3. `start_website_requirement`
+4. `block_website_requirement`
+5. `complete_website_requirement`
+6. `reopen_website_requirement`
+7. `accept_website_requirement_source_change`
+8. `keep_existing_website_requirement_source`
+9. `retire_website_requirement_source`
 
-There is no browser intent for verification ingestion or provider evidence. `commercial-operator-command` forwards the caller JWT and only bounded locators/revisions/reasons/attestations/idempotency keys. It never accepts role, mode, provenance, progress, permitted actions, verifier, workspace IDs for mutation, commit/ref, repository IDs, tokens, or completion state from the browser.
+`resolve_website_requirement_source_change` is not a browser action. `promote_website_concept` remains absent until Task 8.
+
+### 7.1 Exact closed Task 5 request schemas
+
+Every request rejects missing, surplus, or incorrectly typed keys with HTTP 400 and `INVALID_REQUEST`. `quote_request_id`, `website_work_context_id`, `requirement_id` when present, and `idempotency_key` when present must be UUIDs. Integer revisions must be safe integers. The exact allowed keys are:
+
+| Browser action | Exact request keys and constraints |
+|---|---|
+| `get_website_requirements_board` | `action`, `quote_request_id`, `website_work_context_id` |
+| `sync_website_requirements_from_intake` | `action`, `quote_request_id`, `website_work_context_id`, `expected_board_revision`, `idempotency_key`; revision is at least 0 |
+| `start_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `idempotency_key`; revision is at least 1 |
+| `block_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key`; revision is at least 1 and normalized trimmed reason is 1..500 characters |
+| `complete_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `attestation`, `idempotency_key`; revision is at least 1 and attestation is exactly `{"attestation":"<trimmed text>"}` with no surplus key and text length 1..500 |
+| `reopen_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key`; revision is at least 1 and normalized trimmed reason is 1..500 characters |
+| `accept_website_requirement_source_change` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key`; revision is at least 1 and normalized trimmed reason is 1..500 characters |
+| `keep_existing_website_requirement_source` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key`; revision is at least 1 and normalized trimmed reason is 1..500 characters |
+| `retire_website_requirement_source` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key`; revision is at least 1 and normalized trimmed reason is 1..500 characters |
+
+The browser never supplies intake content, source keys or hashes, mapping data, proposed definitions, `resolution`, `source_reference`, completion mode/result/state, actor/operator/role/status, `project_id`, `requirements_board_id`, verifier identity, repository ref, commit SHA, Website workspace ID, binding revision, tokens, or credentials. The Task 5 path is only browser -> `commercial-operator-command` -> caller-JWT RPC; it performs no direct table, board, requirement, verification, Project Files, repository, GitHub, or provider write.
+
+### 7.2 Exact Task 5 dispatch and authority
+
+All nine actions use a Supabase client constructed from the caller JWT. Task 5 never impersonates a caller with `service_role`. The server RPC remains the sole authority for actor, role, assignment, AAL2, context/dossier binding, permitted transition, and source proposal.
+
+| Browser action | RPC and exact fixed dispatch |
+|---|---|
+| `get_website_requirements_board` | `get_website_requirements_board_v1`; direct parameter mapping |
+| `sync_website_requirements_from_intake` | `sync_website_requirements_from_intake_v1`; direct parameter mapping |
+| `start_website_requirement` | `start_website_requirement_v1`; direct parameter mapping |
+| `block_website_requirement` | `block_website_requirement_v1`; direct parameter mapping |
+| `complete_website_requirement` | `complete_website_requirement_v1`; direct parameter mapping |
+| `reopen_website_requirement` | `reopen_website_requirement_v1`; direct parameter mapping |
+| `accept_website_requirement_source_change` | `resolve_website_requirement_source_change_v1`; fixed `p_resolution='ACCEPT_CHANGE'` |
+| `keep_existing_website_requirement_source` | `resolve_website_requirement_source_change_v1`; fixed `p_resolution='KEEP_EXISTING'` |
+| `retire_website_requirement_source` | `resolve_website_requirement_source_change_v1`; fixed `p_resolution='RETIRE'` |
+
+Read requires no AAL2 and permits an active owner, admin, operations manager, or exact active assigned operator. Sync requires owner or operations manager and AAL2. Start, block, and complete require owner, operations manager, or exact active assigned operator and AAL2. Reopen and all source resolutions require owner or operations manager and AAL2. Admin remains read-only; unassigned operator, reviewer, read-only, profile-only, inactive, revoked, and every other role are denied. The handler does not reproduce this policy; the RPC validates it.
+
+Every mutation requires an `idempotency_key`; read does not. Task 5 validates the UUID and transports it unchanged. It never creates or replaces a key. Task 6 request builders later create one `crypto.randomUUID()` per new user intent and reuse that same key for a retry of that intent. Task 5 tests use fixed synthetic UUIDs. Only the server computes and evaluates the request fingerprint.
+
+### 7.3 Private Edge response validation
+
+Task 5 adds private fail-closed transport validators in `commercial-operator-command/handler.ts`; Task 6 separately owns reusable frontend validators and builders. The Task 5 validators protect the Edge-to-browser boundary and are not business authority.
+
+The board validator accepts exactly the section 5.6 root and nested DTO shapes. It requires `contract_version=1`, exact request `quote_request_id` and `website_work_context_id`, and rejects missing or unknown keys.
+
+The sync validator accepts exactly the section 4.5 root and nested `counts` shapes. It requires `contract_version=1`, `mapping_version=1`, exact request quote/context correlation, and rejects missing or unknown keys.
+
+The mutation validator accepts exactly the section 5.7 root shape, requires `contract_version=1`, exact request quote/context/requirement correlation, and rejects missing or unknown keys. Lifecycle response correlation is exact: start is `command='START'` with null resolution; block is `BLOCK` with null resolution; complete is `COMPLETE` with null resolution; reopen is `REOPEN` with null resolution. Source response correlation is exact: all three use `command='RESOLVE_SOURCE'`, with respectively `ACCEPT_CHANGE`, `KEEP_EXISTING`, and `RETIRE`. Any malformed shape, surplus or missing key, broken request correlation, or impossible command/resolution fails with HTTP 500 and `SERVER_RESPONSE_INVALID`; no raw response crosses the browser boundary.
+
+Successful validated results retain the existing envelope exactly: `{"ok":true,"code":"APPLICATION_ACTION_ACCEPTED","result":<validated result>}`.
+
+### 7.4 Closed browser-safe error mapping
+
+Task 5 maps only the following explicit backend messages. No SQLSTATE, stack, query, provider response/body, raw backend message, or internal identifier outside a validated DTO may reach the browser.
+
+| Browser response | Exact allowlisted backend messages |
+|---|---|
+| HTTP 403, `OPERATOR_NOT_AUTHORIZED` | `AAL2_REQUIRED`, `MFA_AAL2_REQUIRED`, `HUMAN_JWT_REQUIRED`, `WEBSITE_REQUIREMENTS_ACCESS_DENIED`, `WEBSITE_REQUIREMENTS_SYNC_FORBIDDEN`, `WEBSITE_REQUIREMENT_ROLE_DENIED`, `WEBSITE_REQUIREMENT_ASSIGNMENT_DENIED` |
+| HTTP 404, `NOT_FOUND` | `WEBSITE_REQUIREMENT_NOT_FOUND`, `WEBSITE_REQUIREMENTS_BOARD_NOT_FOUND` |
+| HTTP 409, `CONCURRENT_MODIFICATION` | `CONCURRENT_MODIFICATION` |
+| HTTP 409, `IDEMPOTENCY_CONFLICT` | `WEBSITE_REQUIREMENTS_IDEMPOTENCY_CONFLICT`, `WEBSITE_REQUIREMENT_IDEMPOTENCY_CONFLICT` |
+| HTTP 400, `INVALID_REQUEST` | `INVALID_WEBSITE_REQUIREMENTS_SYNC_COMMAND`, `WEBSITE_REQUIREMENTS_CONTEXT_MISMATCH`, `INVALID_WEBSITE_REQUIREMENT_COMMAND`, `WEBSITE_REQUIREMENT_BLOCK_REASON_REQUIRED`, `WEBSITE_REQUIREMENT_REOPEN_REASON_REQUIRED`, `WEBSITE_REQUIREMENT_ATTESTATION_REQUIRED`, `INVALID_WEBSITE_REQUIREMENT_SOURCE_RESOLUTION` |
+| HTTP 409, `COMMAND_REJECTED` | `WEBSITE_REQUIREMENTS_INTAKE_NOT_ELIGIBLE`, `WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED`, `WEBSITE_ACTIVE_REQUIREMENT_CONFLICT`, `WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND`, `INVALID_WEBSITE_REQUIREMENT_TRANSITION`, `WEBSITE_REQUIREMENT_SOURCE_REVIEW_REQUIRED`, `WEBSITE_REQUIREMENT_SOURCE_STATE_MISMATCH`, `WEBSITE_REQUIREMENT_VERIFICATION_REQUIRED`, `DIRECT_WEBSITE_REQUIREMENT_WRITE_FORBIDDEN`, `WEBSITE_REQUIREMENT_ROOT_IMMUTABLE`, `WEBSITE_REQUIREMENT_IDENTITY_IMMUTABLE`, `STARTED_WEBSITE_REQUIREMENT_DEFINITION_IMMUTABLE` |
+
+This table explicitly enumerates every Website Requirements message thrown by the current Task 2 sync migration and every Task 3 message from section 5.9. Any non-allowlisted backend error maps to HTTP 500 and `INTERNAL_ERROR` without raw detail.
+
+### 7.5 Preserved boundaries
+
+There is no browser intent for `record_website_requirement_verification_v1`, verification ingestion, or provider evidence. Task 5 imports no Task 4 verifier into the browser action path and adds no service-role verification dispatch. `project_id` remains nullable projection context and is not a request or authority for any Task 5 action. PRE_PROJECT read and mutations require no quotation, acceptance, invoice, payment, commercial release, or project. Existing commercial Requirements routes and authority remain unchanged.
 
 ## 8. Frontend and controlled views
 
@@ -661,6 +733,7 @@ Planned modifications:
 - `supabase/migrations/20260912131000_add_website_concept_authority_v1.sql` is not edited; later migrations use `create or replace` where a projection contract must evolve.
 - `supabase/functions/commercial-operator-command/handler.ts`
 - `supabase/functions/commercial-operator-command/handler.test.ts`
+- `supabase/functions/commercial-operator-command/index.ts`
 - `assets/js/operator-project-requirements.mjs`
 - `assets/js/operator-project-requirements-child.mjs`
 - `assets/js/operator-website-execution.mjs`
@@ -785,24 +858,24 @@ Existing commercial migration files are reference-only and must not be modified.
 
 **FILES**
 - CREATE: none
-- MODIFY: `supabase/functions/commercial-operator-command/handler.ts`; `supabase/functions/commercial-operator-command/handler.test.ts`
+- MODIFY: `supabase/functions/commercial-operator-command/handler.ts`; `supabase/functions/commercial-operator-command/handler.test.ts`; `supabase/functions/commercial-operator-command/index.ts`
 - TEST: handler tests plus all existing Website/Requirements intent tests
 
 **INTERFACES**
-- Exact read/sync/lifecycle/source-resolution action schemas from section 7; caller JWT forwarding; stable error mapping.
+- Exactly nine closed read/sync/lifecycle/source-resolution browser actions from section 7; caller-JWT forwarding; fixed source-resolution dispatch; private exact response validators; closed browser-safe error mapping; existing success/error envelopes.
 
 **RED TEST FIRST**
-- Add one positive and malformed/surplus/missing/wrong-type test per Task 5 intent; cross-context substitutions; AAL1/inactive/revoked caller; and assertions that no verification or browser service-role intent exists. Promotion routing remains absent until Task 8.
+- Test all nine positive routes; exact keys; surplus/missing/wrong-type rejection; UUIDs; revision bounds; reason and attestation bounds/shapes; caller-JWT forwarding without service role; exact RPC names/arguments and fixed source resolutions; exact response shapes and request correlation; unknown response-key rejection; every allowlisted safe error; unknown backend error redaction; AAL1/inactive/revoked caller; role/assignment denial; cross-context substitution; stale revision; replay/conflict; PRE_PROJECT null project; and absence of verification and promotion actions. Promotion routing remains absent until Task 8.
 
 **IMPLEMENTATION**
-- Extend the existing action allowlist, request parser, and RPC dispatch with bounded arguments only.
+- In `handler.ts`, add only the nine actions, exact input types/parser/field validation, private fail-closed response validators, and safe error mappings while preserving existing envelopes. In `index.ts`, add only production caller-JWT RPC dispatch for those nine actions and exact `p_*` arguments; map each source action to its fixed resolution. Add no UI, service-role path, Task 4 verification route, or commercial Requirements behavior change.
 
 **GREEN TESTS**
 - `deno test --allow-env --allow-read supabase/functions/commercial-operator-command/handler.test.ts`
 - `deno check supabase/functions/commercial-operator-command/index.ts`
 
 **SECURITY / SCOPE GATE**
-- No credentials, repository external IDs, raw context tokens, role claims, source answers, or completion claims cross the browser contract.
+- No credentials, repository external IDs, raw context tokens, role claims, source answers, completion claims, browser-selected source resolution, direct table writes, Project Files writes, repository/GitHub/provider writes, or Task 4 verifier authority cross the browser contract. Require `TASK5_CONTRACT_UNAMBIGUOUS=JA`, `ACTION_CATALOG_FULLY_EXPLICIT=JA`, `REQUEST_SHAPES_FULLY_EXPLICIT=JA`, `RESPONSE_SHAPES_FULLY_EXPLICIT=JA`, `AAL2_MODEL_FULLY_EXPLICIT=JA`, `ROLE_MODEL_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_TRANSPORT_FULLY_EXPLICIT=JA`, `ERROR_MAPPING_FULLY_EXPLICIT=JA`, `FRONTEND_AUTHORITY_MODEL_FULLY_EXPLICIT=JA`, `TASK4_TRUST_BOUNDARY_FULLY_EXPLICIT=JA`, `TASK6_BOUNDARY_FULLY_EXPLICIT=JA`, `TASK7_BOUNDARY_FULLY_EXPLICIT=JA`, and `INDEX_DISPATCH_SCOPE_EXPLICIT=JA`.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): route requirements command intents`
@@ -815,13 +888,13 @@ Existing commercial migration files are reference-only and must not be modified.
 - TEST: the two modified Node suites and Project Files frontend regression
 
 **INTERFACES**
-- Separate exact Website board DTO validator/builders; Website Execution summary DTO; `Requirements openen` managed-slot command.
+- Separate reusable frontend Website board DTO validator/request builders; one `crypto.randomUUID()` idempotency key per new user intent with same-key retry reuse; Website Execution summary DTO; `Requirements openen` managed-slot command. Task 5 private transport validators remain the independent Edge-to-browser boundary.
 
 **RED TEST FIRST**
 - Test PRE_PROJECT null project, exact context/board binding, summary arithmetic, malformed/surplus DTO rejection, safe text-only rendering, no fake progress, stale summary handling, and Project Files panel dimensions remaining unobstructed.
 
 **IMPLEMENTATION**
-- Preserve commercial validators. Replace the PRE_PROJECT placeholder with server summary and a compact open action; do not mount the full list over the working surface.
+- Preserve commercial validators. Add reusable frontend validation/builders and client idempotency generation/retry ownership, replace the PRE_PROJECT placeholder with server summary and a compact open action, and do not mount the full list over the working surface. Task 6 does not add or change Edge routing.
 
 **GREEN TESTS**
 - `node --test scripts/operator-project-requirements.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-website-project-files.test.mjs`
@@ -846,7 +919,7 @@ Existing commercial migration files are reference-only and must not be modified.
 - Test first click opens one child, second click focuses it, no duplicate claim/workspace, same board revision in integrated/detached views, mutation refresh/invalidation, logout/revoke/context switch clear, opener substitution ignored, and no authority/token IDs in URLs.
 
 **IMPLEMENTATION**
-- Replace PRE_PROJECT placeholder branch with Website board fetch/render/action flow. Continue safe DOM rendering and existing managed-window protocols.
+- Replace PRE_PROJECT placeholder branch with Website board fetch/render/action flow. Continue safe DOM rendering and existing managed-window protocols. Task 7, not Task 5, owns the full Requirements child, detachable separate window, and singleton `req-<quote_request_id>` behavior.
 
 **GREEN TESTS**
 - `node --test scripts/operator-project-requirements.test.mjs scripts/operator-workspace.test.mjs scripts/operator-website-execution.test.mjs`
@@ -927,6 +1000,7 @@ Planned implementation task count: 9. Planned green-path implementation commit c
 | `SOURCE_RESOLUTION` | Resolve CHANGE_PENDING and REMOVAL_PENDING through every resolution and lifecycle state | Exact proposal authority, preserve/reset behavior, evidence invalidation, no delete, and one unresolved item keeps REVIEW_REQUIRED |
 | `TASK3_IDEMPOTENCY` | Replay each lifecycle/source command and reuse each key with changed fingerprint | Exact stored result without writes; conflict code; no duplicate event or revision increment |
 | `TASK3_BOARD_PROJECTION` | Read absent/current/review boards under every role/assignment | Exact closed root/context/board/item/source/progress/readiness/action DTO; denied callers receive no metadata |
+| `TASK5_BROWSER_EDGE_ROUTING` | Exercise all nine actions with exact/malformed/surplus requests, caller-JWT spies, response mutations, every allowlisted backend error, cross-context substitutions, replay/conflict, and forbidden action names | Exact RPC/argument/fixed-resolution dispatch; private fail-closed response correlation; stable redacted errors; null project accepted; no generic resolution, verification, promotion, service-role, direct-table, Project Files, repository, GitHub, or provider path |
 | `AUTHORITATIVE_AUTO_CHECKOFF` | Trusted `website_test_suite_passed` v1 PASS vs browser claim over PENDING/ACTIVE/BLOCKED/COMPLETED | Exact AUTO status matrix; browser cannot ingest or choose result/ref/SHA |
 | `AUTHORITATIVE_EXTERNAL_CHECKOFF` | Every EXTERNAL key/version, including generic provider names | `UNKNOWN_WEBSITE_REQUIREMENT_RULE`; no verification or completion; v1 registry remains empty |
 | `AUTO_EVIDENCE_BOUND_TO_CURRENT_WORKSPACE` | Substitute context/workspace/binding/ref/commit/source/requirement/rule versions and expiry | Every stale/substituted envelope fails closed with its exact Task 4 error |
