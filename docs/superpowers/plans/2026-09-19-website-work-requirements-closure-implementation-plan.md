@@ -1399,10 +1399,116 @@ npm run test:visual-contract
 
 After all nine closure tasks and their checkpoint pass:
 
-1. Re-run the original Phase A Task 10 as verification-only. Extend its two-context substitution matrix to include board/context/intake/item/verification IDs; include source-change and promotion substitutions; retain all existing resource limits and Project Files mutation spies. Add table snapshots proving Requirements reads/verifications do not create repository operations or mutate provider/workspace binding, and that Project Files reads do not mutate requirements progress. Require clean status and no Task 10 commit.
-2. Run original Phase A Task 11 from the September 17 plan. Its database list must include all six new Website requirements pgTAP files and the commercial Requirements regression. Its Deno list must include the verification suite. Its frontend list must include Requirements singleton/state synchronization. Preserve the original ancestry/baseline checks, exact assertion counts, public-page regressions, no-write proof, and checkpoint format.
-3. Update the Phase A verification checkpoint only during Task 11 with both Project Files and Requirements Closure evidence. Set `DEPLOY_AUTHORIZED=NEE` and `PUSH_AUTHORIZED=NEE` unless a later controller authorization explicitly changes them.
-4. Only after controller review of the green Task 10/11 evidence may a separate action consider push, main promotion, remote migrations, Edge deployment, or Pages production deployment.
+### 13.1 Mandatory pre-Task 10 evidence alignment
+
+Task 10 remains verification-only and cannot author missing evidence. Before Task 10 may start, run one separately authorized test-only alignment with this closed scope:
+
+```text
+PRE_TASK10_EVIDENCE_ALIGNMENT_CREATE=GEEN
+PRE_TASK10_EVIDENCE_ALIGNMENT_MODIFY=supabase/tests/website_requirements_lifecycle_v1.sql; supabase/tests/website_project_files_phase_a_v1.sql
+PRE_TASK10_EVIDENCE_ALIGNMENT_DELETE=GEEN
+PRODUCT_CODE_FILES=0
+MIGRATION_FILES=0
+PRE_TASK10_ALIGNMENT_PRODUCT_CODE_CHANGES=VERBODEN
+```
+
+No other test, product, migration, Edge, handler, shared-runtime, frontend, documentation, generated, or lockfile path belongs to this alignment.
+
+The existing test authorities own the missing evidence as follows:
+
+1. `SOURCE_CHANGE_CROSS_SUBSTITUTION` belongs only to `supabase/tests/website_requirements_lifecycle_v1.sql`. That suite already owns `resolve_website_requirement_source_change_v1`, all three exact resolutions `ACCEPT_CHANGE`, `KEEP_EXISTING`, and `RETIRE`, the source proposal/evidence/revision/event effects, and the existing two-context lifecycle denial fixture. Extend that fixture with one foreign-context attempt for each resolution. Each attempt must use the context A quote/context with the context B requirement, fail with `WEBSITE_REQUIREMENT_NOT_FOUND`, disclose no B metadata, and leave both contexts' requirement rows, board revisions, source proposals, verification state, and event history unchanged.
+2. `PROJECT_FILES_TO_REQUIREMENTS_NO_WRITE_SNAPSHOT` belongs only to `supabase/tests/website_project_files_phase_a_v1.sql`. That suite owns the caller-JWT OWNER+AAL2 acquire/release RPC boundary and already snapshots repository operations/events and complete workspace binding rows around DIRECTORY/FILE authority acquisition and release. Add synthetic Website Requirements board/item/event/verification state for both existing Project Files contexts to that same before/after snapshot and require exact equality after the existing successful, denied, rate-limited, concurrent, expired, and foreign-release paths. Board revision, item status/revision, progress inputs, events/history, and verification rows must remain unchanged.
+
+No additional test file is required. The SQL snapshot is the database-mutation boundary because the production Project Files route calls only `acquire_website_project_files_read_v1`, the pure provider/service read path, and `release_website_project_files_read_v1`. The existing static provider dependency test and runtime mutation spies remain responsible for proving that the provider/service segment exposes no Requirements or repository write operation. No service, handler, or frontend test may be modified for this alignment.
+
+Run this exact alignment matrix after the two test edits:
+
+```powershell
+npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql
+npx supabase test db supabase/tests/website_requirements_security_release_v1.sql
+npx supabase test db supabase/tests/website_project_files_phase_a_v1.sql
+deno test --allow-env supabase/functions/_shared/website-project-files-provider.test.ts --filter "Phase A provider dependency graph exposes read operations only"
+```
+
+All four commands must pass. The lifecycle suite must prove all three foreign source-resolution attempts fail closed without writes. The security-release regression must retain its two-context Requirements-to-repository/provider/workspace no-write snapshot. The Project Files suite must prove its expanded Requirements snapshot remains exactly equal. The filtered provider test must report zero reachable repository/provision/build/preview/publication mutation calls.
+
+If an added assertion exposes a product defect, stop with `PRODUCT_DEFECT_FOUND=JA` and return to controller review. Do not change product code, migrations, Edge code, handlers, shared runtime, or frontend code in the alignment. Do not weaken or delete an assertion. Do not create the alignment commit until all four commands pass and the exact two-file scope is clean under `git diff --check`.
+
+The successful alignment creates exactly one local test-only commit:
+
+```text
+PRE_TASK10_ALIGNMENT_COMMIT_SUBJECT=test(website): align phase a re-entry evidence
+PRE_TASK10_ALIGNMENT_COMMIT_COUNT=1
+PRE_TASK10_ALIGNMENT_PUSHES=0
+PRE_TASK10_ALIGNMENT_DEPLOYS=0
+PRE_TASK10_ALIGNMENT_REMOTE_MIGRATIONS=0
+PRE_TASK10_ALIGNMENT_REMOTE_DATABASE_MUTATIONS=0
+```
+
+Use this exact scope and commit gate after all four alignment commands pass:
+
+```powershell
+git status --short
+git diff --check
+git diff --name-only
+git add -- supabase/tests/website_requirements_lifecycle_v1.sql supabase/tests/website_project_files_phase_a_v1.sql
+git diff --cached --check
+git diff --cached --name-only
+git commit -m "test(website): align phase a re-entry evidence"
+git rev-parse HEAD
+git rev-parse HEAD^
+git log -1 --format=%s
+git status --short
+git diff --check
+git diff-tree --no-commit-id --name-only -r HEAD
+```
+
+Before the commit, `git status --short`, `git diff --name-only`, and `git diff --cached --name-only` must identify exactly the two files listed by `PRE_TASK10_EVIDENCE_ALIGNMENT_MODIFY`; `git diff --check` and `git diff --cached --check` must pass. After the commit, the parent must be the controller-approved pre-alignment HEAD, the subject and two-file tree must be exact, and the worktree must be clean. `deno.lock` and every generated file must remain byte-for-byte unchanged. Any third path or ancestry movement stops the alignment without cleanup, reset, restore, stash, rebase, merge, or cherry-pick. Task 10 starts only from that clean alignment commit after separate controller authorization.
+
+### 13.2 Expanded verification-only Task 10
+
+Re-run original Phase A Task 10 from the September 17 plan as verification-only. Task 10 creates, modifies, and deletes no file and creates no commit. Run this exact expanded command matrix; it retains every original Task 10 command and adds only the focused Requirements suites that own the re-entry substitutions and no-write evidence:
+
+```powershell
+npx supabase test db supabase/tests/website_project_files_phase_a_v1.sql
+deno test --allow-env supabase/functions/_shared/website-project-files-policy.test.ts supabase/functions/_shared/website-project-files-cursor.test.ts supabase/functions/_shared/website-project-files-provider.test.ts supabase/functions/_shared/website-project-files-service.test.ts
+deno test --allow-env --allow-read supabase/functions/commercial-operator-command/handler.test.ts
+node --test scripts/operator-website-project-files.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-workspace.test.mjs
+npx supabase test db supabase/tests/website_requirements_intake_sync_v1.sql
+npx supabase test db supabase/tests/website_requirements_lifecycle_v1.sql
+npx supabase test db supabase/tests/website_requirement_verification_v1.sql
+npx supabase test db supabase/tests/website_requirements_promotion_v1.sql
+npx supabase test db supabase/tests/website_requirements_security_release_v1.sql
+```
+
+The expanded matrix must prove all of the following together:
+
+- Board, context, intake, item, and verification identities from context B cannot be substituted under context A. Every foreign substitution fails closed without metadata, result, cursor reuse, stale UI content, or write.
+- Source-change substitution covers `ACCEPT_CHANGE`, `KEEP_EXISTING`, and `RETIRE`. Promotion substitution fails before project selection and creates no command or event.
+- Requirements reads and verification attempts leave repository operations/events and provider/workspace binding unchanged.
+- Project Files DIRECTORY/FILE acquire/read/release paths leave Website Requirements board revision, item state/revisions, progress inputs, events/history, and verification state unchanged.
+- The original 60-second 30/10 budgets, four concurrent reads, 10-second timeout, 500-entry limit, complete-envelope 512 KiB limit, 1 MiB file limit, cursor expiry, provider oversized-body behavior, classifier outage, one provider attempt per injected failure, cursor boundaries, and lease lifecycle remain exact.
+- Caller-JWT, active OWNER, AAL2, and canonical context/workspace/binding/ref/commit checks remain authoritative. Mutation spies remain exactly zero for repository create/provision, GitHub POST/PATCH/PUT/DELETE, commit/push, build/preview, publication, production release, and Task14 calls.
+
+Task 10 passes only when every command passes, the required cases use two synthetic contexts where applicable, every foreign substitution fails closed, every no-write snapshot is exactly equal, every mutation counter is zero, `git status --short` is empty, `git diff --check` passes, and Task 10 created zero files, modifications, deletions, and commits.
+
+Task 10 stops immediately when required evidence is absent; a command fails; provider content or foreign metadata leaks; foreign authority is accepted; a mutation counter is nonzero; a no-write snapshot differs; ancestry or baseline moves unexpectedly; the worktree becomes dirty; or a product defect is found. Task 10 performs no repair. A defect returns to its exact owning prior-task file and commit boundary under new controller authorization, after which the complete pre-Task10 alignment and Task 10 matrices restart.
+
+```text
+TASK10_VERIFICATION_ONLY=JA
+TASK10_FILES_CHANGED=0
+TASK10_COMMITS_CREATED=0
+TASK10_PUSHES=0
+TASK10_DEPLOYS=0
+```
+
+### 13.3 Separate Task 11 release gate
+
+Only after Task 10 passes and a controller separately authorizes Task 11 may the original Phase A Task 11 from the September 17 plan run. Its database list must include all six new Website Requirements pgTAP files and the commercial Requirements regression. Its Deno list must include the verification suite. Its frontend list must include Requirements singleton/state synchronization. Preserve the original ancestry/baseline checks, exact assertion counts, public-page regressions, no-write proof, and checkpoint format.
+
+Update `docs/superpowers/checkpoints/2026-09-17-website-execution-project-files-phase-a-verification.md` only during Task 11 with both Project Files and Requirements Closure evidence. Set `DEPLOY_AUTHORIZED=NEE` and `PUSH_AUTHORIZED=NEE` unless a later controller authorization explicitly changes them.
+
+Task 11 is a separate local release gate with its own checkpoint commit. Task 11 does not authorize a push, deployment, remote migration, remote database mutation, repository provisioning, or production action. Even after Task 11 passes, only a later controller-reviewed and separately authorized action may consider push, main promotion, remote migrations, Edge deployment, or Pages production deployment.
 
 ## 14. Design self-review and stop gates
 
