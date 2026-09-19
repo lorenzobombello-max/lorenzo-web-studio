@@ -168,64 +168,132 @@ No role, phase, `project_id`, mode, permitted action, source provenance, verifie
 
 ## 4. Deterministic intake-to-requirements model
 
-### 4.1 Canonical source snapshot
+### 4.1 Task 1 field reuse and Task 2 extension
 
-An internal function selects the intake row uniquely bound to the context's `quote_request_id` and requires its current revision to be `submitted` or `reviewed`, with non-null `submitted_at` and `confirmation = true`. The existing one-intake-per-dossier constraint is part of the proof; zero or more than one eligible row fails closed rather than choosing by timestamp. The function projects only the reviewed allowlist in a fixed key order, normalizes strings (trim and normalized line endings), normalizes arrays as ordered unique values according to field semantics, preserves typed booleans/numbers, and calculates SHA-256 over canonical JSON. Nulls, empty strings, empty arrays/objects, false optional feature flags, and detail objects whose enabling flag is not true produce no requirement.
+Task 2 reuses the exact Task 1 columns and does not introduce aliases:
 
-Every generated item stores only safe provenance:
+- Board: `revision`, `sync_state`, `mapping_version`, `current_intake_id`, `current_intake_revision`, and `current_intake_snapshot_sha256`.
+- Requirement: `source_review_state` (the persisted name for the source-state model), `source_key`, `source_value_sha256`, `source_reference`, `status`, `required`, `completion_mode`, `completion_rule_key`, `completion_rule_version`, `item_number`, `sort_order`, and `revision`.
+- Sync run: `intake_id`, `intake_revision`, `intake_snapshot_sha256`, `mapping_version`, `request_fingerprint`, `created_count`, `updated_count`, `retired_count`, `review_required_count`, `actor_id`, `command_id`, and `result`.
 
-```json
-{
-  "authority_type": "SUBMITTED_WEBSITE_INTAKE",
-  "intake_id": "uuid",
-  "intake_revision": 7,
-  "submitted_at": "timestamp",
-  "source_path": "requested_pages",
-  "source_key": "page:contact",
-  "source_value_sha256": "64 lowercase hex",
-  "mapping_version": 1
-}
+Task 2 adds only `public.website_requirement_sync_runs.proposed_changes jsonb not null` as a new persisted sync-contract field, constrained to a JSON array without forbidden keys. The exact expanded action counts are stored in the existing `result`; no duplicate scalar count, state, revision, provenance, or hash columns are added. Historical Task 1 migrations remain unchanged.
+
+### 4.2 Fixed authority, defaults, and eligibility
+
+Mapping version is exactly `1`. Every requirement emitted by Task 2 has `required = true`, `status = 'PENDING'`, `source_review_state = 'CURRENT'`, `completion_mode = 'OPERATOR'`, `completion_rule_key = null`, and `completion_rule_version = null`. `requirement_id` is its persistent UUID identity; `source_key` is its persistent semantic matching identity and is never derived from array position, `item_number`, `sort_order`, `requirement_id`, or mutable display text. Task 4 alone may later promote specifically reviewed items to `AUTO` or `HYBRID` with evidence rules.
+
+The server selects exactly one intake through `website_work_context_id -> website_work_contexts.quote_request_id -> quote_request_intakes.quote_request_id`. It requires `quote_requests.record_classification = 'production'`, `quote_requests.request_kind = 'website'`, intake status `submitted` or `reviewed`, non-null `submitted_at`, and `confirmation = true`. Zero or more than one eligible row fails closed. `quote_request_intakes.draft_revision` is the exact `intake_revision`; `lifecycle_revision` is not mapping content authority. No quotation, approval, issuance, acceptance, commercial project, invoice, or payment join is an eligibility prerequisite.
+
+Initial sync and resync require an `ACTIVE` operator with role `owner` or `operations_manager`, AAL2, exact context/dossier authority, expected board revision, and an idempotency key. Actor identity comes from server-side auth/session authority and is never accepted from the browser.
+
+### 4.3 Canonical normalization and hashing
+
+Canonical text normalization is exact: Unicode NFKC; CRLF and CR to LF; removal of control characters U+0000-U+0008, U+000B, U+000C, U+000E-U+001F, and U+007F; leading/trailing whitespace trim; an empty result becomes null and is suppressed. Normal internal newlines remain.
+
+Arrays normalize every string with canonical text normalization, remove empties, deduplicate by normalized identity, and use deterministic order. Fixed catalog arrays use the catalog order below. Free-text arrays sort by `lower(normalized_value)`, then exact `normalized_value`; browser order is not authority. Booleans remain JSON booleans and numbers remain JSON numbers. Objects retain only explicitly allowlisted keys, recursively suppress null/empty values and unknown keys, and use canonical key order. Raw intake JSON is never stored.
+
+The fixed catalog order is exact:
+
+- `website_goals`: `professional_presence`, `generate_leads`, `quote_requests`, `contact_requests`, `appointments`, `reservations`, `sell_products`, `sell_services`, `portfolio`, `information`, `recruitment`, `other`.
+- `requested_pages`: `home`, `about`, `services`, `products`, `portfolio`, `team`, `pricing`, `faq`, `reviews`, `blog`, `contact`, `quote_request`, `reservations`, `shop`, `jobs`, `gallery`, `other`.
+- `requested_features`: `contact_form`, `quote_form`, `google_maps`, `social_links`, `reviews`, `gallery`, `newsletter`, `whatsapp`, `appointments`, `reservations`, `shop`, `online_payment`, `customer_login`, `downloads`, `search`, `multilingual`, `other`, `unsure`, `online_payment_products`, `online_payment_reservations`, `online_payment_appointments`, `online_payment_services`, `online_payment_registrations`, `online_payment_deposit`, `online_payment_other`.
+- `design_styles`: `modern`, `business`, `minimal`, `elegant`, `luxury`, `warm`, `playful`, `creative`, `technical`, `industrial`, `calm`, `unsure`, `other`.
+- `image_support`: `optimize_existing`, `ai_images`, `stock_images`, `professional_photography`, `none`, `unsure`.
+- `priorities`: `professional_appearance`, `usability`, `more_requests`, `more_sales`, `mobile_experience`, `performance`, `seo`, `easy_management`, `fast_delivery`, `stay_within_budget`, `differentiate`, `other`.
+
+In the catalog below, "relevant" has one exact meaning: a normalized scalar is non-null and non-empty, an array/object has at least one retained value, a boolean is `true`, and a canonical number is present. A retained `false` may provide context inside a source already activated by another value, but never activates a requirement by itself.
+
+Language input is NFKC-normalized, trimmed, lowercased, and changes underscore to hyphen. Accent-insensitive base-language alias matching is exact: `nl|nederlands|dutch -> nl`; `fr|frans|francais|french -> fr`; `en|engels|english -> en`; `de|duits|deutsch|german -> de`; `it|italiaans|italiano|italian -> it`; `es|spaans|espanol|spanish -> es`. `primary_language` wins; if absent, the first valid legacy `languages` value is primary. Additional languages are normalized, deduplicated, stripped of primary, and deterministically sorted. Unknown languages are retained by normalized identity in `unknown_languages`.
+
+`other_pages` splits only on LF/CRLF/CR and semicolon, never comma. Parts use canonical text normalization, drop empties, deduplicate case-insensitively, and sort by lowercase then exact name. Each custom page uses `page:custom:<hash16>`, where `hash16` is the first 16 lowercase hexadecimal characters of SHA-256 over `lower(normalized_custom_page_name)`.
+
+`integrations` is a normalized free-text array. Each value uses `integration:external:<hash16>` with the same lowercase-name hash rule. Unknown `requested_features` never use the reserved `feature:custom:<hash16>` pattern and fail with `WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED`.
+
+For every emitted source, `source_value_sha256` is lowercase SHA-256 hex over the compact canonical JSON representation of only its allowlisted canonical source value. It excludes item/order IDs, browser data, and timestamps other than explicit source authority. The complete projection is exactly `{"mapping_version":1,"sources":[{"source_key":"...","source_value":<canonical safe JSON>}]}`, with sources in catalog order and dynamic peers lexicographically ordered. `intake_snapshot_sha256` is lowercase SHA-256 hex over that compact canonical JSON. Budget/commercial fields do not affect it.
+
+Safe `source_reference` has exactly `authority_type`, `intake_id`, `intake_revision`, `submitted_at`, `source_path`, `source_key`, `source_value_sha256`, and `mapping_version`. `authority_type` is `WEBSITE_INTAKE`, `source_path` is `mapping_v1/<source_key>`, and `mapping_version` is `1`. It contains no raw blob, browser payload, token, credential, pricing snapshot, or hidden field.
+
+Every description is exactly `Klantvraag uit bevestigde Website-intake. Bron: <source_key>. Details: <canonical_source_json>`. If longer than 1200 characters, take exactly its first 1187 characters and append `... [verkort]`.
+
+The following never generate requirements: `budget_confirmed`, `budget_update_category`, `budget_notes`, `budget_update_category_scheme`, `budget_update_category_code`, `selected_package_definition_id`, and `confirmation`. Confirmation is eligibility only.
+
+### 4.4 Exhaustive mapping catalog version 1
+
+Only present/activated sources emit rows. Fixed order is the table order; custom pages occupy position 19 lexicographically, and dynamic external integrations occupy position 40 lexicographically. `item_number` and `sort_order` are the one-based row number of the complete current canonical set. They are presentation only and do not affect identity or source-change detection.
+
+| Order | `source_key` | Exact title | Category | Emit and exact canonical source value |
+|---:|---|---|---|---|
+| 1 | `brief:site_direction` | `Verwerk briefing, doelgroep en doelen` | `CONTENT` | Emit if any value is non-empty. Object keys: `business_description`, `target_audience`, `website_goals`, `primary_conversion_goal`, `priorities`, `additional_notes`. |
+| 2 | `site:existing` | `Behoud en verbeter relevante delen van de bestaande website` | `DESIGN` | Emit if `has_existing_website = true` or any other value is non-empty. Object keys: `has_existing_website`, `existing_website_url`, `elements_to_keep`, `improvement_areas`. |
+| 3-18 | `page:<page_id>` | `Bouw pagina: <label>` | `PAGE` | Emit for exact `requested_pages` membership. Object keys: `requested`, `scope`, and for jobs `jobs_application`; suppressed keys are omitted. Scope may also activate `portfolio`, `reviews`, `blog`, `jobs`, or `gallery` unless null/empty/semantically `none`. |
+| 19 | `page:custom:<hash16>` | `Bouw pagina: <normalized_custom_page_name>` | `PAGE` | One per normalized `other_pages` value. Object key: `name`. `linked_page_or_module` is the normalized name. |
+| 20 | `module:shop` | `Bouw webshopfunctionaliteit` | `ECOMMERCE` | Emit for `shop_required = true`, feature/page `shop`, or non-empty details. Object keys: `shop_required`, `requested_feature`, `requested_page`, `shop_details`; detail keys: `approx_product_count`, `complex_product_count`, `payment_provider_count`, `shipping_scope`, `categories`, `online_payments`, `shipping`, `pickup`, `pickup_scope`, `existing_catalog`, `customer_accounts`, `catalog_import`, `erp_api`. |
+| 21 | `module:booking` | `Bouw reservatie- of boekingsfunctionaliteit` | `INTEGRATION` | Emit for `booking_required = true`, feature `appointments`/`reservations`, page `reservations`, goal `appointments`/`reservations`, or non-empty details. Object keys: `booking_required`, `requested_features`, `requested_page`, `website_goals`, `booking_details`; detail keys: `tier`, `type`, `existing_system`, `existing_system_name`, `calendar_integration`. |
+| 22 | `module:forms` | `Bouw formulieren en aanvraagflow` | `FORM` | Emit for feature `contact_form`/`quote_form`, page `quote_request`, goal `generate_leads`/`quote_requests`/`contact_requests`, or non-empty details. Object keys: `requested_features`, `requested_page`, `website_goals`, `quote_form_details`; detail keys: `file_uploads`, `database_workflow`, `automated_processing`, `review_approval`, `custom_logic`, `form_count`, `structure_scope`. |
+| 23 | `module:payments` | `Implementeer online betalingen` | `ECOMMERCE` | Emit for any payment feature or `shop_details.online_payments = true`. Object keys: `requested_features`, `shop_online_payments`. |
+| 24 | `module:multilingual` | `Implementeer meertaligheid` | `CONTENT` | Emit for feature `multilingual`, non-empty additional/unknown languages, or non-empty details. Object keys: `primary_language`, `additional_languages`, `unknown_languages`, `multilingual_details`; detail keys: `final_translations_supplied`, `same_structure`, `translation_required`, `seo_per_language`, `advanced_seo_research`, `language_specific_integrations`, `complex_scope`. |
+| 25 | `design:visual_direction` | `Pas de afgesproken visuele richting toe` | `DESIGN` | Emit if any value is non-empty. Object keys: `design_styles`, `inspiration_sites`, `disliked_styles`. |
+| 26 | `design:brand_assets` | `Verwerk logo, kleuren en huisstijl` | `DESIGN` | Emit if any value is relevant. Object keys: `brand_status`, `logo_status`, `brand_colors`, `branding_tier`. |
+| 27 | `content:copy` | `Werk websitecopy uit` | `CONTENT` | Emit if any value is relevant. Object keys: `content_status`, `copywriting_scope`, `copy_page_count`. |
+| 28 | `content:images` | `Werk beeldmateriaal uit` | `MULTIMEDIA` | Emit if any value is relevant. Object keys: `image_status`, `image_support`, `image_work_scope`, `paid_stock_handling`. |
+| 29 | `feature:downloads` | `Implementeer downloads en documenttoegang` | `DOCUMENT_FLOW` | Emit for feature `downloads` or non-empty details. Object keys: `requested`, `access`. |
+| 30 | `feature:newsletter` | `Implementeer nieuwsbriefkoppeling` | `INTEGRATION` | Emit for feature `newsletter` or non-empty details. Object keys: `requested`, `scope`, `analytics`, `custom_integration`. |
+| 31 | `feature:search` | `Implementeer zoekfunctie` | `TECHNICAL` | Emit for feature `search` or non-empty/non-`none` `page_scope_details.search`. Object keys: `requested`, `scope`. |
+| 32 | `feature:customer_login` | `Implementeer klantlogin` | `AUTH` | Emit for feature `customer_login`. Object key: `requested`. |
+| 33 | `feature:gallery` | `Implementeer galerijfunctionaliteit` | `MULTIMEDIA` | Emit for feature `gallery`. Object key: `requested`; may coexist with `page:gallery`. |
+| 34 | `feature:reviews` | `Implementeer reviewfunctionaliteit` | `INTEGRATION` | Emit for feature `reviews`. Object key: `requested`; may coexist with `page:reviews`. |
+| 35 | `feature:manual_scope` | `Werk nog te bepalen functionaliteit uit` | `OTHER` | Emit for feature `other` or `unsure`. Object keys: `requested_features`, `additional_notes`. |
+| 36 | `integration:google_maps` | `Integreer Google Maps` | `INTEGRATION` | Emit for feature `google_maps`. Object key: `requested`. |
+| 37 | `integration:social_links` | `Implementeer social-links op de website` | `INTEGRATION` | Emit for feature `social_links`. Object key: `requested`. |
+| 38 | `integration:whatsapp` | `Integreer WhatsApp-contact` | `INTEGRATION` | Emit for feature `whatsapp`. Object key: `requested`. |
+| 39 | `integration:social_channels` | `Koppel sociale kanalen` | `INTEGRATION` | Emit for non-empty normalized `social_channels`. Object key: `social_channels`. |
+| 40 | `integration:external:<hash16>` | `Integreer externe koppeling: <normalized_integration_name>` | `INTEGRATION` | One per normalized `integrations` value. Object key: `name`; `linked_page_or_module` is the `source_key`. |
+| 41 | `technical:domain` | `Configureer domein` | `TECHNICAL` | Emit if any value is relevant. Object keys: `domain_status`, `domain_name`, `domain_service`. |
+| 42 | `technical:hosting` | `Configureer hosting` | `TECHNICAL` | Emit if any value is relevant. Object keys: `hosting_status`, `hosting_support`, `details_hosting_support`. |
+| 43 | `technical:maintenance` | `Configureer onderhoudsafspraken` | `TECHNICAL` | Emit only for top-level/details interest `yes`, `maybe`, or `info_requested`, or plan `care`/`care_plus`. Object keys: `maintenance_interest`, `details_maintenance_interest`, `maintenance_plan`. `no` alone does not emit. |
+| 44 | `seo:scope` | `Implementeer SEO-scope` | `SEO` | Emit if any value is relevant. Object keys: `seo_priority`, `seo_keywords`, `scope`, `extra_language_seo`, `advanced_language_seo`. |
+| 45 | `constraint:deadline` | `Respecteer afgesproken deadline` | `OTHER` | Emit if any value is relevant. Object keys: `deadline_date`, `deadline_reason`, `commercially_critical`, `hard_deadline`. |
+
+Fixed page IDs and labels in positions 3-18 are exactly: `home -> Home`, `about -> Over ons`, `services -> Diensten`, `products -> Producten`, `portfolio -> Portfolio`, `team -> Team`, `pricing -> Prijzen`, `faq -> FAQ`, `reviews -> Reviews`, `blog -> Blog`, `contact -> Contact`, `quote_request -> Offerteaanvraag`, `reservations -> Reservaties`, `shop -> Shop`, `jobs -> Vacatures`, and `gallery -> Galerij`. Their `linked_page_or_module` is the `page_id`. All fixed module, feature, and integration rows use their own `source_key` as `linked_page_or_module`; all other fixed rows use null.
+
+The `requested_features` catalog is exhaustive: `contact_form -> module:forms`; `quote_form -> module:forms`; `google_maps -> integration:google_maps`; `social_links -> integration:social_links`; `reviews -> feature:reviews`; `gallery -> feature:gallery`; `newsletter -> feature:newsletter`; `whatsapp -> integration:whatsapp`; `appointments|reservations -> module:booking`; `shop -> module:shop`; `online_payment|online_payment_products|online_payment_reservations|online_payment_appointments|online_payment_services|online_payment_registrations|online_payment_deposit|online_payment_other -> module:payments`; `customer_login -> feature:customer_login`; `downloads -> feature:downloads`; `search -> feature:search`; `multilingual -> module:multilingual`; `other|unsure -> feature:manual_scope`. Any other persisted value fails closed with `WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED`.
+
+### 4.5 Exact sync, result, idempotency, and proposed changes
+
+The exact command is:
+
+```text
+public.sync_website_requirements_from_intake_v1(
+  p_quote_request_id uuid,
+  p_website_work_context_id uuid,
+  p_expected_board_revision bigint,
+  p_idempotency_key uuid
+) returns jsonb
 ```
 
-The projection may expose a safe source label, but not hidden intake fields or raw source blobs. Full customer text appears only in allowlisted requirement title/description fields with existing length limits and is always rendered with `textContent`.
+No browser parameter may supply intake answers, source identity/hash, mapping version, requirement definition, category, actor, or project authority. If no board exists, expected revision must be `0`; otherwise it must equal the current server-side board `revision`. Stale input fails closed, except an exact replay may return its stored result before stale-revision rejection.
 
-### 4.2 Mapping catalog version 1
+Result root keys are exactly `contract_version`, `outcome`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `board_revision`, `intake_id`, `intake_revision`, `intake_sha256`, `mapping_version`, `sync_run_id`, `replayed`, `review_required`, and `counts`. Both contract and mapping version are `1`. Outcome is exactly `SYNCED`, `REPLAYED`, or `REVIEW_REQUIRED`. `REPLAYED` requires `replayed=true`; `REVIEW_REQUIRED` requires `replayed=false` and `review_required=true`; `SYNCED` requires both booleans false. `counts` has exactly non-negative integer keys `created`, `updated`, `unchanged`, `retired`, `change_pending`, `removal_pending`, and `revived`.
 
-The mapper is a server-owned versioned catalog, not a prompt or browser algorithm:
+Command identity is server-derived `actor_id + p_idempotency_key` (`command_id` stores the idempotency key). The server hashes exactly `quote_request_id`, `website_work_context_id`, `p_expected_board_revision`, `intake_id`, `intake_revision`, `intake_sha256`, and `mapping_version` into `request_fingerprint`. Same command identity and fingerprint returns the exact stored result without writes. Same command identity with another fingerprint fails `WEBSITE_REQUIREMENTS_IDEMPOTENCY_CONFLICT`. The same board/intake ID/revision/hash/mapping version may reuse the stored logical result without side effects.
 
-| Source group | Generation rule | Category | Default mode |
-|---|---|---|---|
-| `business_description`, `target_audience`, `website_goals`, `primary_conversion_goal` | One requirement per non-empty scalar/list entry; stable keys by field and normalized entry | `CONTENT`/`OTHER` | `OPERATOR` |
-| `has_existing_website`, `existing_website_url`, `elements_to_keep`, `improvement_areas` | Generate only from explicit existing-site request or non-empty preserve/improve content | `DESIGN`/`CONTENT` | `OPERATOR` |
-| `requested_pages`, `other_pages`, `page_scope_details` | One page/module item per explicit non-empty selection/detail; canonical page key and fixed catalog order, then normalized custom-page order | `PAGE` | `HYBRID` where route evidence exists, otherwise `OPERATOR` |
-| `requested_features`, `quote_form_details`, `download_details`, `newsletter_details` | One feature/module item per explicit enabled feature or non-empty detail | `FORM`/`INTEGRATION`/`AUTOMATION` | `HYBRID` unless no machine proof exists |
-| `shop_required`, `shop_details` | Generate only when shop is true; details refine separate stable items without inventing omitted scope | `ECOMMERCE` | `HYBRID`/`EXTERNAL` for provider-dependent parts |
-| `booking_required`, `booking_details` | Generate only when booking is true | `INTEGRATION` | `HYBRID`/`EXTERNAL` |
-| `languages`, `primary_language`, `additional_languages`, `multilingual_details` | Generate only explicit languages and non-empty translation/SEO details | `CONTENT`/`SEO` | `HYBRID` or `OPERATOR` |
-| design/brand/logo/color/inspiration/disliked fields | Generate only explicit non-empty direction or asset status | `DESIGN` | `OPERATOR` |
-| content/image fields and `content_media_details` | Generate only explicit content/media responsibilities | `CONTENT`/`MULTIMEDIA` | `OPERATOR`/`HYBRID` |
-| domain/hosting/maintenance fields and details | Generate only explicit status/support/interest | `TECHNICAL` | `EXTERNAL` or `OPERATOR` |
-| SEO fields/details/keywords | Generate only explicit priority/scope/keywords | `SEO` | `HYBRID`/`OPERATOR` |
-| `social_channels`, `integrations` | One item per explicit channel/integration | `INTEGRATION` | `EXTERNAL`/`HYBRID` |
-| deadline fields/details, `priorities`, `additional_notes` | Generate only non-empty customer facts; never infer deliverables from a date alone | `OTHER` | `OPERATOR` |
+`proposed_changes` is an immutable JSON array sorted by `source_key`. Each element has exactly `source_key`, `action`, `requirement_id`, `previous_source_value_sha256`, `proposed_source_value_sha256`, and `proposed_definition`. Action is exactly `CREATE`, `UPDATE_SAFE`, `UNCHANGED`, `RETIRE`, `REVIVE`, `CHANGE_PENDING`, or `REMOVAL_PENDING`. Requirement ID is UUID or null only for `CREATE`; hashes are lowercase 64-hex or null. Proposed definition is null when inapplicable, otherwise has exactly `title`, `description`, `category`, `linked_page_or_module`, `required`, `completion_mode`, `completion_rule_key`, `completion_rule_version`, and `source_reference`. It contains no lifecycle status, progress, evidence, or browser data.
 
-`confirmation` is an eligibility fact, not a work item. `brand_status`, `content_status`, `image_status`, `domain_status`, and `hosting_status` generate work only when their explicit value denotes an action/responsibility; values such as "ready/already supplied" become provenance/context, not fabricated work.
+### 4.6 Exact resync and concurrency model
 
-Stable `source_key` is based on semantic field plus catalog key, not item position or mutable text. `item_number` and `sort_order` are assigned from the fixed group order and stable per-group key order. Repeated sync of the same canonical intake hash and mapping version returns the recorded result and creates no rows/events.
+The complete proposed set is computed before writes. The transaction locks, in order, the exact `website_work_contexts` row as primary serialization boundary, the exact eligible intake row, the board if present, all existing board requirements, and relevant sync/idempotency authority. Malformed, unsupported, stale, mismatched, or ambiguous input fails atomically. Concurrent syncs for one context cannot create two boards, duplicate requirements, lost updates, or multiple logical results.
 
-### 4.3 Later intake revision
+- Same `source_key` and hash: `UNCHANGED`; no definition/lifecycle/evidence/revision reset. A presentation-only order update does not create source drift.
+- New key: `CREATE`; new UUID, `PENDING`, `CURRENT`, required, and operator-only.
+- Changed `PENDING` + `CURRENT`: `UPDATE_SAFE`; preserve UUID, update safe definition/provenance/hash, remain `PENDING` + `CURRENT`.
+- Removed safe `PENDING`: `RETIRE`; preserve UUID and history, set `source_review_state='RETIRED'` and `required=false`; never delete.
+- Reappearing retired key: `REVIVE`; reuse UUID, update safe definition/provenance/hash, set `PENDING`, `CURRENT`, and required.
+- Changed `ACTIVE` or `BLOCKED`: `CHANGE_PENDING`; preserve current definition, status, progress, timestamps, blocked reason, evidence, verification/completion history; set `source_review_state='CHANGE_PENDING'`; proposal exists only in immutable sync run.
+- Removed `ACTIVE` or `BLOCKED`: `REMOVAL_PENDING`; preserve all execution state and evidence; never delete.
+- Changed `COMPLETED`: `CHANGE_PENDING`; preserve current definition, UUID, completion, evidence, and verification history; never reopen automatically.
+- Removed `COMPLETED`: `REMOVAL_PENDING`; preserve completion and evidence; never delete or reopen.
 
-Sync locks context, board, current items, and intake row. It computes the complete proposed set before writing and fails atomically on malformed data, unsupported values, stale expected revision, mismatched context, or ambiguous identity.
-
-- New source key: create one `PENDING` item and event.
-- Same key and same value hash: no item change.
-- Changed/removed item still `PENDING` and never started/verified: update or retire deterministically, increment revision, and append an event.
-- Changed/removed `ACTIVE`, `BLOCKED`, or `COMPLETED` item: preserve definition, status, progress, and evidence; set `CHANGE_PENDING` or `REMOVAL_PENDING`; store the proposed safe definition/hash in the immutable sync record; set board sync state `REVIEW_REQUIRED`; append an event. Readiness fails closed until resolution.
-- Management resolution `KEEP`: acknowledge the newer source with reason while preserving the execution definition and history.
-- Resolution `ACCEPT_CHANGE`: apply the reviewed definition. A completed item is reopened to `PENDING`, its current verification becomes `UNKNOWN`, and an invalidation event/verification record is appended.
-- Resolution `RETIRE`: mark applicability `RETIRED`, exclude it from current progress, preserve all prior lifecycle/evidence rows, and require reason. It never deletes the item.
-
-This makes legitimate revision safe without silently rewriting completed customer work.
+Any `CHANGE_PENDING` or `REMOVAL_PENDING` sets board `sync_state='REVIEW_REQUIRED'`; without either it is `CURRENT`. Task 2 does not implement `KEEP_EXISTING`, `ACCEPT_CHANGE`, management `RETIRE`, lifecycle commands, verification ingestion, AUTO/EXTERNAL verification, or automatic completion. Source resolution remains Task 3 and evidence automation remains Task 4.
 
 ## 5. Lifecycle, progress, and audit
 
@@ -284,7 +352,7 @@ Planned SQL contracts (exact names to lock in RED tests before implementation):
 
 ```text
 get_website_requirements_board_v1(quote_request_id uuid, website_work_context_id uuid) -> jsonb
-sync_website_requirements_from_intake_v1(quote_request_id uuid, website_work_context_id uuid, expected_board_revision bigint, idempotency_key uuid) -> jsonb
+sync_website_requirements_from_intake_v1(p_quote_request_id uuid, p_website_work_context_id uuid, p_expected_board_revision bigint, p_idempotency_key uuid) -> jsonb
 start_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, idempotency_key uuid) -> jsonb
 block_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, reason text, idempotency_key uuid) -> jsonb
 complete_website_requirement_v1(quote_request_id uuid, website_work_context_id uuid, requirement_id uuid, expected_revision bigint, attestation jsonb, idempotency_key uuid) -> jsonb
@@ -445,10 +513,10 @@ Existing commercial migration files are reference-only and must not be modified.
 - Internal canonical intake projector/mapper; `sync_website_requirements_from_intake_v1`; immutable sync runs; source-change resolution contract.
 
 **RED TEST FIRST**
-- Cover every allowlisted source group, empty/null/false suppression, stable keys/order, exact replay, changed-key resync, concurrent sync, non-submitted/unconfirmed intake, stale revision, ACTIVE/COMPLETED drift, and wrong-context substitution.
+- Prove sections 4.1-4.6 exactly: every fixed and dynamic source key, exhaustive feature handling, exact titles/categories/operator mode, canonical normalization/hashes/order, excluded commercial fields, exact result and proposed-change JSON, exact replay/conflict, every resync action, concurrency locks, eligibility, actor/AAL2 policy, stale revision, and wrong-context substitution. Any unknown feature must prove `WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED`.
 
 **IMPLEMENTATION**
-- Implement mapping v1 and atomic diff rules from section 4. The server reads intake directly; browser payload never supplies answers.
+- Implement mapping version 1 and atomic diff rules exactly as sections 4.1-4.6 define. Reuse every named Task 1 field, add only the specified `proposed_changes` sync-run field, and accept only the four documented command parameters. The server reads intake directly; browser payload never supplies answers or mapping authority.
 
 **GREEN TESTS**
 - `npx supabase test db supabase/tests/website_requirements_intake_sync_v1.sql`
