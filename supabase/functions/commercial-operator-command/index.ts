@@ -25,7 +25,9 @@ import {
   type SdfQuotationIssuanceActionInput,
   type SdfM1InvoicePreparationActionInput,
   executeSdfM1InvoicePreparationTransport,
+  executeWebsiteConceptPromotionTransport,
   executeWebsiteConceptStartTransport,
+  type WebsiteConceptPromotionActionInput,
   type WebsiteConceptStartActionInput,
   type WebsiteExecutionWorkspaceProvisionActionInput,
   type WebsiteProjectDirectoryActionInput,
@@ -214,6 +216,7 @@ type ValidatedApplicationActionInput =
     website_work_context_id: string;
     requirement_id: string;
     expected_board_revision: number;
+    expected_context_revision: number;
     attestation: Readonly<{ attestation: string }>;
     business_draft_id: string;
     approval_id: string;
@@ -391,6 +394,14 @@ export async function executeCallerJwtWebsiteConceptStartAction(
   clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeWebsiteConceptStartTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtWebsiteConceptPromotionAction(
+  jwt: string,
+  input: WebsiteConceptPromotionActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  return await executeWebsiteConceptPromotionTransport(clientFor(jwt), input);
 }
 
 export async function executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
@@ -1899,6 +1910,13 @@ if (import.meta.main) {
             return await executeCallerJwtWebsiteConceptStartAction(
               jwt,
               input as WebsiteConceptStartActionInput,
+              clientFor,
+            );
+          }
+          if (input.action === "promote_website_concept") {
+            return await executeCallerJwtWebsiteConceptPromotionAction(
+              jwt,
+              input as WebsiteConceptPromotionActionInput,
               clientFor,
             );
           }

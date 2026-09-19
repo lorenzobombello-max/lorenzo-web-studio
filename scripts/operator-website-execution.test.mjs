@@ -5,6 +5,9 @@ import { extname, join, normalize } from "node:path";
 import test from "node:test";
 import { chromium } from "@playwright/test";
 import {
+  createWebsiteConceptPromotionIntent,
+  validateWebsiteConceptPromotionResult,
+  websiteConceptPromotionRequest,
   websiteExecutionProvisionRequest,
   quoteRequestIdFromWebsiteExecutionSlot,
   websiteRequirementsSummary,
@@ -20,6 +23,8 @@ const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
 const projectId = "a1800000-0000-4000-8000-000000000002";
 const conceptId = "a1800000-0000-4000-8000-000000000004";
 const websiteWorkContextId = "a1800000-0000-4000-8000-000000000005";
+const promotionIdempotencyKey = "a1800000-0000-4000-8000-000000000008";
+const promotionEventId = "a1800000-0000-4000-8000-000000000009";
 const expected = {
   quoteRequestId,
   projectId,
@@ -137,6 +142,124 @@ const preProjectV3 = {
     message: "Requirements volgen na intake-sync.",
   },
 };
+
+function promotionResult(overrides = {}) {
+  return {
+    contract_version: 1,
+    outcome: "PROMOTED",
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    concept_id: conceptId,
+    project_id: projectId,
+    previous_phase: "PRE_PROJECT",
+    phase: "OFFICIAL_PROJECT",
+    previous_context_revision: 1,
+    context_revision: 2,
+    website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+    workspace_binding_revision: 1,
+    requirements_board_id: "a1800000-0000-4000-8000-000000000003",
+    requirements_board_revision: 12,
+    promotion_event_id: promotionEventId,
+    promoted_at: "2099-01-01T10:00:00.000Z",
+    replayed: false,
+    ...overrides,
+  };
+}
+
+test("Website concept promotion request carries only bounded browser intent", () => {
+  const request = websiteConceptPromotionRequest({
+    quoteRequestId,
+    websiteWorkContextId,
+    expectedContextRevision: 1,
+    idempotencyKey: promotionIdempotencyKey,
+  });
+  assert.deepEqual(request, {
+    action: "promote_website_concept",
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    expected_context_revision: 1,
+    idempotency_key: promotionIdempotencyKey,
+  });
+  assert.equal(Object.isFrozen(request), true);
+  assert.equal(Object.hasOwn(request, "project_id"), false);
+
+  for (const invalid of [
+    { quoteRequestId, websiteWorkContextId, expectedContextRevision: 0, idempotencyKey: promotionIdempotencyKey },
+    { quoteRequestId, websiteWorkContextId: "invalid", expectedContextRevision: 1, idempotencyKey: promotionIdempotencyKey },
+    { quoteRequestId, websiteWorkContextId, expectedContextRevision: 1, idempotencyKey: "invalid" },
+    { quoteRequestId, websiteWorkContextId, expectedContextRevision: 1, idempotencyKey: promotionIdempotencyKey, projectId },
+  ]) {
+    assert.throws(
+      () => websiteConceptPromotionRequest(invalid),
+      /INVALID_WEBSITE_CONCEPT_PROMOTION_REQUEST/,
+    );
+  }
+});
+
+test("Website concept promotion response is exact, correlated, and paired", () => {
+  const expectedPromotion = {
+    quoteRequestId,
+    websiteWorkContextId,
+    expectedContextRevision: 1,
+  };
+  const complete = validateWebsiteConceptPromotionResult(
+    promotionResult(),
+    expectedPromotion,
+  );
+  assert.equal(complete.phase, "OFFICIAL_PROJECT");
+  assert.equal(Object.isFrozen(complete), true);
+  assert.deepEqual(validateWebsiteConceptPromotionResult(promotionResult({
+    website_workspace_id: null,
+    workspace_binding_revision: null,
+    requirements_board_id: null,
+    requirements_board_revision: null,
+    replayed: true,
+  }), expectedPromotion).replayed, true);
+
+  for (const invalid of [
+    promotionResult({ extra: true }),
+    promotionResult({ quote_request_id: crypto.randomUUID() }),
+    promotionResult({ previous_context_revision: 2 }),
+    promotionResult({ context_revision: 3 }),
+    promotionResult({ phase: "PRE_PROJECT" }),
+    promotionResult({ workspace_binding_revision: null }),
+    promotionResult({ requirements_board_id: null }),
+    promotionResult({ promoted_at: "invalid" }),
+  ]) {
+    assert.throws(
+      () => validateWebsiteConceptPromotionResult(invalid, expectedPromotion),
+      /INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE/,
+    );
+  }
+});
+
+test("Website concept promotion intent owns one immutable retry key", () => {
+  let calls = 0;
+  const intent = createWebsiteConceptPromotionIntent({
+    quoteRequestId,
+    websiteWorkContextId,
+    expectedContextRevision: 1,
+  }, () => {
+    calls += 1;
+    return promotionIdempotencyKey;
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(intent, {
+    idempotencyKey: promotionIdempotencyKey,
+    request: websiteConceptPromotionRequest({
+      quoteRequestId,
+      websiteWorkContextId,
+      expectedContextRevision: 1,
+      idempotencyKey: promotionIdempotencyKey,
+    }),
+    quoteRequestId,
+    websiteWorkContextId,
+    expectedContextRevision: 1,
+  });
+  assert.equal(Object.isFrozen(intent), true);
+  assert.equal(Object.isFrozen(intent.request), true);
+  assert.equal(intent.request, intent.request);
+});
 
 test("PRE_PROJECT provisioning request accepts only the stable dossier locator", () => {
   assert.deepEqual(websiteExecutionProvisionRequest({
@@ -659,17 +782,32 @@ const mode = params.get("mode") || "PRE_PROJECT";
 const hasWorkspace = params.get("workspace") === "present";
 window.task8Events = [];
 window.task8Requests = [];
+window.task8PromotionRequests = [];
+window.task8Invalidations = [];
+window.task8Confirmations = [];
 window.task6Requests = [];
 window.task7Opens = [];
 window.task6Fail = params.get("requirements") === "error";
+window.confirm = (message) => { window.task8Confirmations.push(message); return params.get("confirm") !== "cancel"; };
 window.open = () => window.task8Events.push("window.open");
 const quoteRequestId = "${quoteRequestId}";
-const projectId = mode === "OFFICIAL_PROJECT" ? "${projectId}" : null;
-const conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
+const officialProjectId = "${projectId}";
+let projectId = mode === "OFFICIAL_PROJECT" ? officialProjectId : null;
+let conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
+let promotionAttempts = 0;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
 const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner" } } : null;
 const projection = { contract_version: 3, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
+window.task8SwitchContext = () => {
+  const replacementContextId = "a1800000-0000-4000-8000-000000000099";
+  detail.website_work.website_work_context_id = replacementContextId;
+  detail.website_work.revision = 2;
+  projection.website_work_context_id = replacementContextId;
+  projection.context_revision = 2;
+  if (workspace) workspace.website_work_context_id = replacementContextId;
+  requirements.website_work_context_id = replacementContextId;
+};
 const snapshot = { commit_sha: "a".repeat(40), ref_label: "main" };
 const directoryResult = (request) => {
   let entries;
@@ -695,9 +833,82 @@ const directoryResult = (request) => {
   }
   return { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, directory: request.path, entries, next_cursor: nextCursor };
 };
-const client = { functions: { async invoke(_name, { body }) { let result; if (body.action === "get_application_detail") result = detail; else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } }; else if (body.action === "get_website_execution_workspace") result = projection; else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" }; else if (body.action === "get_website_requirements_board") { window.task6Requests.push(structuredClone(body)); if (params.get("requirementsDelay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); if (window.task6Fail) return { data: null, error: new Error("requirements unavailable") }; result = requirements; } else if (body.action === "list_website_project_directory") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150)); result = directoryResult(body); } else if (body.action === "read_website_project_file") { window.task8Events.push("gateway"); window.task8Requests.push(structuredClone(body)); result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } }; } return { data: { ok: true, result }, error: null }; } } };
+const client = { functions: { async invoke(_name, { body }) {
+  let result;
+  if (body.action === "get_application_detail") {
+    if (params.get("promotion") === "refresh-fail" && promotionAttempts > 0) {
+      return { data: null, error: new Error("refresh unavailable") };
+    }
+    result = detail;
+  }
+  else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } };
+  else if (body.action === "get_website_execution_workspace") result = projection;
+  else if (body.action === "get_dossier_assignment") result = { assignee_display_name: "Operator A" };
+  else if (body.action === "get_website_requirements_board") {
+    window.task6Requests.push(structuredClone(body));
+    if (params.get("requirementsDelay") === "1") await new Promise((resolve) => setTimeout(resolve, 150));
+    if (window.task6Fail) return { data: null, error: new Error("requirements unavailable") };
+    result = requirements;
+  } else if (body.action === "promote_website_concept") {
+    promotionAttempts += 1;
+    window.task8Events.push("promotion-gateway");
+    window.task8PromotionRequests.push(structuredClone(body));
+    if (params.get("promotion") === "ambiguous" && promotionAttempts === 1) {
+      return { data: null, error: new Error("Failed to send a request to the Edge Function") };
+    }
+    if (params.get("promotion") === "command-rejected") {
+      return {
+        data: null,
+        error: {
+          message: "Edge Function returned a non-2xx status code",
+          context: {
+            status: 409,
+            clone: () => ({ json: async () => ({ ok: false, code: "COMMAND_REJECTED" }) }),
+          },
+        },
+      };
+    }
+    if (params.get("promotion") === "delay") await new Promise((resolve) => setTimeout(resolve, 150));
+    projectId = officialProjectId;
+    detail.website_work.state = "OFFICIAL_PROJECT";
+    detail.website_work.mode = "OFFICIAL_PROJECT";
+    detail.website_work.project_id = officialProjectId;
+    detail.website_work.revision = 2;
+    projection.mode = "OFFICIAL_PROJECT";
+    projection.project_id = officialProjectId;
+    projection.context_revision = 2;
+    projection.project = { project_id: officialProjectId, site: null };
+    projection.start_gate = { project_id: officialProjectId, quote_request_id: quoteRequestId };
+    projection.requirements = { state: "PROJECT_BOUND", message: null };
+    if (workspace) workspace.project_id = officialProjectId;
+    requirements.project_id = officialProjectId;
+    requirements.phase = "OFFICIAL_PROJECT";
+    result = {
+      contract_version: 1, outcome: "PROMOTED", quote_request_id: quoteRequestId,
+      website_work_context_id: "${websiteWorkContextId}", concept_id: "${conceptId}",
+      project_id: officialProjectId, previous_phase: "PRE_PROJECT", phase: "OFFICIAL_PROJECT",
+      previous_context_revision: 1, context_revision: 2,
+      website_workspace_id: workspace?.website_workspace_id || null,
+      workspace_binding_revision: workspace?.binding_revision || null,
+      requirements_board_id: requirements.board.requirements_board_id,
+      requirements_board_revision: requirements.board.revision,
+      promotion_event_id: "${promotionEventId}", promoted_at: "2099-01-01T10:00:00.000Z",
+      replayed: promotionAttempts > 1,
+    };
+  } else if (body.action === "list_website_project_directory") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    if (params.get("delay") === "1") await new Promise((resolve) => setTimeout(resolve, 150));
+    result = directoryResult(body);
+  } else if (body.action === "read_website_project_file") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } };
+  }
+  return { data: { ok: true, result }, error: null };
+} } };
 const { initializeOperatorWebsiteExecution } = await import("/assets/js/operator-website-execution-child.mjs");
-window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, requireAal2: async () => { window.task8Events.push("aal2"); }, requestOpen: (moduleKey, slotKey) => { window.task7Opens.push({ moduleKey, slotKey }); return true; } });
+window.controller = initializeOperatorWebsiteExecution(document, client, { role, status: "ACTIVE" }, { slotKey: "website-${quoteRequestId}", onAuthorizationFailure() {}, onInvalidate: (moduleKey) => window.task8Invalidations.push(moduleKey), requireAal2: async () => { window.task8Events.push("aal2"); if (params.get("aal2") === "deny") throw new Error("AAL2_REQUIRED"); }, requestOpen: (moduleKey, slotKey) => { window.task7Opens.push({ moduleKey, slotKey }); return true; } });
 </script></body></html>`;
 
 function serveProvisionControlHarness() {
@@ -1160,4 +1371,169 @@ test("Website Execution uses only safe server-projected GitHub navigation", asyn
   const source = await read("assets/js/operator-website-execution.mjs");
   assert.doesNotMatch(source, /vscode\.dev|github\.dev/);
   assert.doesNotMatch(source, /`https:\/\/github\.com\/\$\{/);
+});
+
+test("promotion control is owner-only and PRE_PROJECT-only", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const scenario of [
+      { query: "role=owner&mode=PRE_PROJECT&workspace=present", visible: true },
+      { query: "role=operator&mode=PRE_PROJECT&workspace=present", visible: false },
+      { query: "role=owner&mode=OFFICIAL_PROJECT&workspace=present", visible: false },
+    ]) {
+      const page = await openTask8Page(browser, server, scenario.query);
+      const control = page.locator('[data-website-action="promote"]');
+      assert.equal(await control.count(), 1);
+      assert.equal(await control.textContent(), "Naar officieel project");
+      assert.equal(await control.isVisible(), scenario.visible, scenario.query);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("promotion confirms, requires AAL2, sends no project authority, and refreshes in place", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present");
+    await page.locator('[data-website-action="promote"]').click();
+    await page.waitForFunction(() => window.task8Invalidations.length === 1);
+    const request = await page.evaluate(() => window.task8PromotionRequests[0]);
+    assert.deepEqual(Object.keys(request).sort(), [
+      "action", "expected_context_revision", "idempotency_key",
+      "quote_request_id", "website_work_context_id",
+    ]);
+    assert.equal(request.action, "promote_website_concept");
+    assert.equal(request.quote_request_id, quoteRequestId);
+    assert.equal(request.website_work_context_id, websiteWorkContextId);
+    assert.equal(request.expected_context_revision, 1);
+    assert.match(request.idempotency_key, /^[0-9a-f-]{36}$/);
+    assert.equal(Object.hasOwn(request, "project_id"), false);
+    assert.deepEqual(await page.evaluate(() => window.task8Events.slice(0, 2)), [
+      "aal2", "promotion-gateway",
+    ]);
+    assert.deepEqual(await page.evaluate(() => window.task8Invalidations), ["dossiers"]);
+    assert.deepEqual(await page.evaluate(() => window.task8Confirmations), [
+      "Website-context promoveren naar het officiële project? De bestaande werkruimte, Website Requirements, historie en verificaties blijven behouden. Dit maakt geen factuur, betaling, publicatie of deployment aan.",
+    ]);
+    assert.match(await page.locator("[data-website-mode]").textContent(), /Officieel project/);
+    assert.equal(await page.locator('[data-website-action="promote"]').isVisible(), false);
+    assert.equal(await page.locator("[data-website-message]").textContent(), "Website-context is gekoppeld aan het officiële project.");
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("ambiguous promotion retry reuses the exact immutable request and reruns AAL2", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=ambiguous");
+    await page.locator('[data-website-action="promote"]').click();
+    await page.waitForFunction(() => document.querySelector('[data-website-action="promotion-retry"]')?.hidden === false);
+    assert.equal(await page.locator("[data-website-message]").textContent(), "Uitkomst niet bevestigd. Opnieuw proberen gebruikt dezelfde veilige promotieaanvraag.");
+    await page.locator('[data-website-action="promotion-retry"]').click();
+    await page.waitForFunction(() => window.task8PromotionRequests.length === 2);
+    assert.deepEqual(
+      await page.evaluate(() => window.task8PromotionRequests[0]),
+      await page.evaluate(() => window.task8PromotionRequests[1]),
+    );
+    assert.equal(await page.evaluate(() => window.task8Events.filter((event) => event === "aal2").length), 2);
+    await page.waitForFunction(() => window.task8Invalidations.length === 1);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("promotion AAL2 denial and definitive rejection never retain retry authority", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const denied = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&aal2=deny");
+    await denied.locator('[data-website-action="promote"]').click();
+    await denied.waitForFunction(() => document.querySelector("[data-website-message]")?.textContent.length > 0);
+    assert.deepEqual(await denied.evaluate(() => window.task8PromotionRequests), []);
+    assert.equal(await denied.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    await denied.close();
+
+    const rejected = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=command-rejected");
+    await rejected.locator('[data-website-action="promote"]').click();
+    await rejected.waitForFunction(() => document.querySelector("[data-website-message]")?.textContent.includes("Promotie is niet meer toegestaan"));
+    assert.equal(await rejected.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    assert.equal(await rejected.evaluate(() => window.task8PromotionRequests.length), 1);
+    await rejected.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("pending promotion blocks parallel execution and a disposed child ignores its response", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=delay");
+    const promote = page.locator('[data-website-action="promote"]');
+    await promote.click();
+    await page.waitForFunction(() => window.task8PromotionRequests.length === 1);
+    assert.equal(await promote.isDisabled(), true);
+    assert.equal(await page.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    await page.evaluate(() => window.controller.dispose());
+    await page.waitForTimeout(200);
+    assert.deepEqual(await page.evaluate(() => window.task8Invalidations), []);
+    assert.equal(await page.locator("[data-dossiers-workspace]").textContent(), "");
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("promotion response after an authoritative context switch is ignored", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=delay");
+    await page.locator('[data-website-action="promote"]').click();
+    await page.waitForFunction(() => window.task8PromotionRequests.length === 1);
+    await page.evaluate(async () => {
+      window.task8SwitchContext();
+      await window.controller.refresh();
+    });
+    await page.waitForTimeout(200);
+    assert.deepEqual(await page.evaluate(() => window.task8Invalidations), []);
+    assert.equal(await page.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    assert.equal(await page.locator('[data-website-action="promote"]').isVisible(), true);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("authoritative promotion with failed local refresh invalidates and reports recovery state", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=refresh-fail");
+    await page.locator('[data-website-action="promote"]').click();
+    await page.waitForFunction(() => window.task8Invalidations.length === 1);
+    assert.equal(
+      await page.locator("[data-website-message]").textContent(),
+      "Promotie uitgevoerd, maar de Website Workspace kon niet veilig worden vernieuwd.",
+    );
+    assert.equal(await page.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

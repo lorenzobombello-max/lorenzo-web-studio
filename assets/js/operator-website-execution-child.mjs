@@ -7,7 +7,9 @@ import {
   dossierReference,
 } from "./operator-dossiers.mjs?v=20260917-pre-project-workspace-r2";
 import {
+  createWebsiteConceptPromotionIntent,
   quoteRequestIdFromWebsiteExecutionSlot,
+  validateWebsiteConceptPromotionResult,
   validateWebsiteExecutionWorkspace,
   websiteExecutionProvisionRequest,
   websiteExecutionRequest,
@@ -46,6 +48,29 @@ async function websiteRequirementsGateway(client, request) {
   const body = response?.data;
   if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
     throw new Error(body?.code || "INVALID_WEBSITE_REQUIREMENTS_RESPONSE");
+  }
+  return body.result;
+}
+
+async function websiteConceptPromotionGateway(client, request) {
+  if (request?.action !== "promote_website_concept") {
+    throw new Error("WEBSITE_CONCEPT_PROMOTION_ACTION_NOT_ALLOWED");
+  }
+  const response = await client.functions.invoke("commercial-operator-command", {
+    body: request,
+  });
+  if (response?.error) {
+    let code = "NETWORK_ERROR";
+    const status = Number(response.error?.context?.status || 0);
+    try {
+      const payload = await response.error.context.clone().json();
+      if (typeof payload?.code === "string") code = payload.code;
+    } catch {}
+    throw Object.assign(new Error(code), { code, status });
+  }
+  const body = response?.data;
+  if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
+    throw new Error(body?.code || "SERVER_RESPONSE_INVALID");
   }
   return body.result;
 }
@@ -151,6 +176,8 @@ function childMarkup() {
       <section class="website-project-files" data-website-project-files tabindex="-1" aria-label="Projectbestanden"></section>
       <nav class="website-execution__actions" aria-label="Website werkruimte acties">
         <button type="button" class="primary-action primary-action--compact" data-website-action="provision" hidden>Technische werkruimte starten</button>
+        <button type="button" class="primary-action primary-action--compact" data-website-action="promote" hidden>Naar officieel project</button>
+        <button type="button" class="secondary-action" data-website-action="promotion-retry" hidden>Opnieuw proberen</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
         <button type="button" class="secondary-action" data-website-action="files">Projectbestanden</button>
         <button type="button" class="secondary-action" data-website-action="back" data-website-project-back>Terug naar Project</button>
@@ -243,6 +270,12 @@ function renderChild(workspace, state) {
   workspace.querySelector("[data-website-action=\"provision\"]").hidden = !(
     state.canProvision && context.mode === "PRE_PROJECT" && view.state === "empty"
   );
+  const promote = workspace.querySelector("[data-website-action=\"promote\"]");
+  promote.hidden = !(state.canPromote && context.mode === "PRE_PROJECT");
+  promote.disabled = state.promotionPending === true;
+  const retry = workspace.querySelector("[data-website-action=\"promotion-retry\"]");
+  retry.hidden = state.promotionRetry !== true;
+  retry.disabled = state.promotionPending === true;
   workspace.querySelector("[data-website-message]").textContent = "";
 }
 
@@ -275,6 +308,24 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let disposed = false;
   const refreshGeneration = createOperatorRefreshGenerationGuard();
   let currentSnapshot = null;
+  let promotionIntent = null;
+  let promotionPending = false;
+
+  function promotionIntentMatches(intent) {
+    return !disposed && currentSnapshot?.context.mode === "PRE_PROJECT"
+      && currentSnapshot.context.quoteRequestId === intent.quoteRequestId
+      && currentSnapshot.context.websiteWorkContextId === intent.websiteWorkContextId
+      && currentSnapshot.context.websiteWorkRevision === intent.expectedContextRevision;
+  }
+
+  function setPromotionControls({ retry = false } = {}) {
+    const promote = workspace.querySelector("[data-website-action=\"promote\"]");
+    const retryButton = workspace.querySelector("[data-website-action=\"promotion-retry\"]");
+    if (!promote || !retryButton) return;
+    promote.disabled = promotionPending;
+    retryButton.hidden = !retry;
+    retryButton.disabled = promotionPending;
+  }
 
   async function refresh({ background = false, invalidationSlotKey } = {}) {
     if (!requirementsInvalidationMatches(invalidationSlotKey, detailRequest.quote_request_id)) {
@@ -312,8 +363,14 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         requirementsState: Object.freeze({ state: "LOADING", summary: null }),
         view: websiteExecutionView(projection),
         canProvision: identity.role === "owner",
+        canPromote: identity.role === "owner",
+        promotionPending,
+        promotionRetry: promotionIntent !== null,
       });
       currentSnapshot = nextSnapshot;
+      if (promotionIntent && !promotionIntentMatches(promotionIntent)) {
+        promotionIntent = null;
+      }
       projectFiles.updateContext(Object.freeze({
         quoteRequestId: context.quoteRequestId,
         websiteWorkContextId: context.websiteWorkContextId,
@@ -421,11 +478,103 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     }
   }
 
+  async function promote({ retry = false } = {}) {
+    if (disposed || promotionPending || identity.role !== "owner"
+      || currentSnapshot?.context.mode !== "PRE_PROJECT") return false;
+    if (typeof options.requireAal2 !== "function") {
+      promotionIntent = null;
+      workspace.querySelector("[data-website-message]").textContent =
+        "Je hebt geen toestemming om deze Website-context te promoveren.";
+      return false;
+    }
+    if (!retry) {
+      const confirmed = root.defaultView?.confirm(
+        "Website-context promoveren naar het officiële project? De bestaande werkruimte, Website Requirements, historie en verificaties blijven behouden. Dit maakt geen factuur, betaling, publicatie of deployment aan.",
+      );
+      if (!confirmed) {
+        promotionIntent = null;
+        return false;
+      }
+      promotionIntent = createWebsiteConceptPromotionIntent({
+        quoteRequestId: currentSnapshot.context.quoteRequestId,
+        websiteWorkContextId: currentSnapshot.context.websiteWorkContextId,
+        expectedContextRevision: currentSnapshot.context.websiteWorkRevision,
+      }, () => root.defaultView.crypto.randomUUID());
+    }
+    const intent = promotionIntent;
+    if (!intent || !promotionIntentMatches(intent)) {
+      promotionIntent = null;
+      return false;
+    }
+    promotionPending = true;
+    setPromotionControls();
+    const message = workspace.querySelector("[data-website-message]");
+    message.textContent = "Website-context wordt gekoppeld aan het officiële project.";
+    try {
+      await options.requireAal2();
+      if (!promotionIntentMatches(intent)) {
+        promotionIntent = null;
+        return false;
+      }
+      const rawResult = await websiteConceptPromotionGateway(client, intent.request);
+      const result = validateWebsiteConceptPromotionResult(rawResult, {
+        quoteRequestId: intent.quoteRequestId,
+        websiteWorkContextId: intent.websiteWorkContextId,
+        expectedContextRevision: intent.expectedContextRevision,
+      });
+      if (!promotionIntentMatches(intent)) {
+        promotionIntent = null;
+        return false;
+      }
+      promotionIntent = null;
+      const refreshed = await refresh();
+      if (disposed) return false;
+      options.onInvalidate?.("dossiers");
+      if (!refreshed || currentSnapshot?.context.mode !== "OFFICIAL_PROJECT"
+        || currentSnapshot.context.websiteWorkContextId !== result.website_work_context_id) {
+        message.textContent = "Promotie uitgevoerd, maar de Website Workspace kon niet veilig worden vernieuwd.";
+        return false;
+      }
+      message.textContent = "Website-context is gekoppeld aan het officiële project.";
+      return true;
+    } catch (error) {
+      if (disposed) return false;
+      const code = String(error?.code || error?.message || "");
+      const messages = {
+        INVALID_REQUEST: "Aanvraag is ongeldig. Vernieuw de Website Workspace en probeer opnieuw.",
+        OPERATOR_NOT_AUTHORIZED: "Je hebt geen toestemming om deze Website-context te promoveren.",
+        NOT_FOUND: "Het officiële project of de Website-context is niet meer beschikbaar.",
+        CONCURRENT_MODIFICATION: "De Website-context is gewijzigd. De werkruimte wordt vernieuwd.",
+        IDEMPOTENCY_CONFLICT: "Deze promotieaanvraag kon niet veilig worden herhaald. De werkruimte wordt vernieuwd.",
+        COMMAND_REJECTED: "Promotie is niet meer toegestaan. De werkruimte wordt vernieuwd.",
+      };
+      if (["NETWORK_ERROR", "INTERNAL_ERROR", "SERVER_RESPONSE_INVALID"].includes(code)) {
+        message.textContent = "Uitkomst niet bevestigd. Opnieuw proberen gebruikt dezelfde veilige promotieaanvraag.";
+        return false;
+      }
+      promotionIntent = null;
+      const shouldRefresh = new Set([
+        "NOT_FOUND", "CONCURRENT_MODIFICATION", "IDEMPOTENCY_CONFLICT", "COMMAND_REJECTED",
+      ]).has(code);
+      if (shouldRefresh) await refresh();
+      if (!disposed) message.textContent = messages[code]
+        || (/AAL2/.test(code)
+          ? "Je hebt geen toestemming om deze Website-context te promoveren."
+          : "Promotie kon niet veilig worden uitgevoerd.");
+      return false;
+    } finally {
+      promotionPending = false;
+      if (!disposed) setPromotionControls({ retry: promotionIntent !== null });
+    }
+  }
+
   const click = (event) => {
     const target = event.target.closest?.("[data-website-action]");
     const action = target?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
+    if (action === "promote") void promote();
+    if (action === "promotion-retry") void promote({ retry: true });
     if (action === "files") void projectFiles.activate();
     if (action === "requirements" && currentSnapshot?.context) {
       options.requestOpen?.(
@@ -457,6 +606,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       workspace.removeEventListener("click", click);
       projectFiles.dispose();
       authority.dispose();
+      promotionIntent = null;
+      promotionPending = false;
       currentSnapshot = null;
       workspace.replaceChildren();
     },

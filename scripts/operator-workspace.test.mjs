@@ -481,6 +481,51 @@ test("PRE_PROJECT Website launches reuse one generic module-slot child", async (
   master.dispose();
 });
 
+test("promotion keeps Website Execution and Website Requirements singleton slots stable", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const ids = [
+    masterWindowId,
+    childWindowId,
+    launchNonce,
+    "f4000000-0000-4000-8000-000000000006",
+    "f4000000-0000-4000-8000-000000000007",
+  ];
+  const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
+  const opened = [];
+  const references = [];
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open(url) {
+        opened.push(url);
+        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; } };
+        references.push(reference);
+        return reference;
+      },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  const websiteSlot = `website-${quoteRequestId}`;
+  const requirementsSlot = `req-${quoteRequestId}`;
+  assert.equal(master.openOperatorModuleWindow("dossiers", websiteSlot), true);
+  assert.equal(master.openOperatorModuleWindow("dossiers", requirementsSlot), true);
+  assert.equal(master.openOperatorModuleWindow("dossiers", websiteSlot), true);
+  assert.equal(master.openOperatorModuleWindow("dossiers", requirementsSlot), true);
+  assert.deepEqual(opened.map((url)=>parseChildBootstrap(url)?.slotKey), [
+    websiteSlot,
+    requirementsSlot,
+  ]);
+  assert.deepEqual(references.map(({ focusCalls })=>focusCalls), [2, 2]);
+  master.dispose();
+});
+
 test("Website and commercial Requirements use separate managed singleton identities", async ()=>{
   FakeBroadcastChannel.instances = [];
   const timers = timerHarness();

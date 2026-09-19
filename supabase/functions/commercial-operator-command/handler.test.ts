@@ -12,6 +12,7 @@ import {
   executeOperatorPersonalQueueTransport,
   executeRecruitmentVacancyTransport,
   executeSdfM1InvoicePreparationTransport,
+  executeWebsiteConceptPromotionTransport,
   executeWebsiteConceptStartTransport,
   executeWebsiteExecutionWorkspaceProvisionTransport,
   executeWorkforceCalendarTransport,
@@ -36,6 +37,7 @@ import {
   executeCallerJwtRecruitmentVacancyAction,
   executeCallerJwtSdfM1InvoicePreparationAction,
   executeCallerJwtQuotationVatReadinessAction,
+  executeCallerJwtWebsiteConceptPromotionAction,
   executeCallerJwtWebsiteConceptStartAction,
   executeCallerJwtWebsiteExecutionWorkspaceProvisionAction,
   executeCallerJwtWebsiteExecutionWorkspaceReadAction,
@@ -421,6 +423,40 @@ const websiteConceptStartRequest = {
   idempotency_key: "c1a00000-0000-4000-8000-000000000001",
 };
 
+const websiteConceptPromotionRequest = {
+  action: "promote_website_concept" as const,
+  quote_request_id: "c1110001-0000-4000-8000-000000000001",
+  website_work_context_id: "c1c00000-0000-4000-8000-000000000001",
+  expected_context_revision: 3,
+  idempotency_key: "c1a00000-0000-4000-8000-000000000004",
+};
+
+function websiteConceptPromotionResult(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    contract_version: 1,
+    outcome: "PROMOTED",
+    quote_request_id: websiteConceptPromotionRequest.quote_request_id,
+    website_work_context_id:
+      websiteConceptPromotionRequest.website_work_context_id,
+    concept_id: "c1b00000-0000-4000-8000-000000000001",
+    project_id: "c1d00000-0000-4000-8000-000000000001",
+    previous_phase: "PRE_PROJECT",
+    phase: "OFFICIAL_PROJECT",
+    previous_context_revision: 3,
+    context_revision: 4,
+    website_workspace_id: "c1e00000-0000-4000-8000-000000000001",
+    workspace_binding_revision: 2,
+    requirements_board_id: "c1f00000-0000-4000-8000-000000000001",
+    requirements_board_revision: 5,
+    promotion_event_id: "c1a00000-0000-4000-8000-000000000005",
+    promoted_at: "2099-01-01T10:00:00.000Z",
+    replayed: false,
+    ...overrides,
+  };
+}
+
 const websiteWorkspaceProvisionFixtures = [
   {
     quote_request_id: "c1110001-0000-4000-8000-000000000001",
@@ -630,6 +666,187 @@ Deno.test("Website concept start accepts only bounded browser intent", async () 
     assertEquals(rejected.status, 400, forbiddenKey);
     assertEquals(harness.calls.length, 0, forbiddenKey);
   }
+});
+
+Deno.test("Website concept promotion accepts only the closed browser intent", async () => {
+  const accepted = dependencies({
+    executeApplicationAction: async () => websiteConceptPromotionResult(),
+  });
+  const response = await handleCommercialOperator(
+    request(websiteConceptPromotionRequest),
+    accepted.deps,
+  );
+  assertEquals(response.status, 200);
+  assertEquals(accepted.calls.length, 0);
+
+  for (const invalid of [
+    { ...websiteConceptPromotionRequest, expected_context_revision: 0 },
+    { ...websiteConceptPromotionRequest, website_work_context_id: "invalid" },
+    { ...websiteConceptPromotionRequest, idempotency_key: "invalid" },
+    { action: "promote_website_concept", quote_request_id: websiteConceptPromotionRequest.quote_request_id },
+  ]) {
+    const harness = dependencies();
+    const rejected = await handleCommercialOperator(
+      request(invalid),
+      harness.deps,
+    );
+    assertEquals(rejected.status, 400, JSON.stringify(invalid));
+    assertEquals(await rejected.json(), { ok: false, code: "INVALID_REQUEST" });
+    assertEquals(harness.calls.length, 0);
+  }
+
+  for (const forbiddenKey of [
+    "project_id", "concept_id", "actor", "actor_id", "role", "operator_id",
+    "customer_id", "requirements_board_id", "website_workspace_id",
+    "repository_ref", "commit_sha", "commercially_released", "payment_state",
+    "quotation_id", "acceptance_id",
+  ]) {
+    const harness = dependencies();
+    const rejected = await handleCommercialOperator(
+      request({
+        ...websiteConceptPromotionRequest,
+        [forbiddenKey]: "c1d00000-0000-4000-8000-000000000099",
+      }),
+      harness.deps,
+    );
+    assertEquals(rejected.status, 400, forbiddenKey);
+    assertEquals(harness.calls.length, 0, forbiddenKey);
+  }
+});
+
+Deno.test("Website concept promotion validates exact correlated results", async () => {
+  for (const valid of [
+    websiteConceptPromotionResult(),
+    websiteConceptPromotionResult({
+      website_workspace_id: null,
+      workspace_binding_revision: null,
+      requirements_board_id: null,
+      requirements_board_revision: null,
+      replayed: true,
+    }),
+  ]) {
+    const response = await handleCommercialOperator(
+      request(websiteConceptPromotionRequest),
+      dependencies({ executeApplicationAction: async () => valid }).deps,
+    );
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).result, valid);
+  }
+
+  for (const invalid of [
+    websiteConceptPromotionResult({ extra: true }),
+    websiteConceptPromotionResult({ contract_version: 2 }),
+    websiteConceptPromotionResult({ project_id: "invalid" }),
+    websiteConceptPromotionResult({ quote_request_id: userId }),
+    websiteConceptPromotionResult({ previous_context_revision: 2 }),
+    websiteConceptPromotionResult({ context_revision: 5 }),
+    websiteConceptPromotionResult({ phase: "PRE_PROJECT" }),
+    websiteConceptPromotionResult({ workspace_binding_revision: null }),
+    websiteConceptPromotionResult({ requirements_board_id: null }),
+    websiteConceptPromotionResult({ promoted_at: "invalid" }),
+  ]) {
+    const response = await handleCommercialOperator(
+      request(websiteConceptPromotionRequest),
+      dependencies({ executeApplicationAction: async () => invalid }).deps,
+    );
+    assertEquals(response.status, 500, JSON.stringify(invalid));
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "SERVER_RESPONSE_INVALID",
+    });
+  }
+});
+
+Deno.test("Website concept promotion maps only the safe error allowlist", async () => {
+  const mappings = [
+    ...[
+      "AAL2_REQUIRED",
+      "WEBSITE_CONCEPT_PROMOTION_ACCESS_DENIED",
+      "WEBSITE_CONCEPT_PROMOTION_ROLE_DENIED",
+    ].map((code) => [code, 403, "OPERATOR_NOT_AUTHORIZED"]),
+    ...[
+      "WEBSITE_WORK_CONTEXT_NOT_FOUND",
+      "WEBSITE_CONCEPT_NOT_FOUND",
+      "WEBSITE_PROMOTION_PROJECT_NOT_FOUND",
+    ].map((code) => [code, 404, "NOT_FOUND"]),
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ["WEBSITE_CONCEPT_PROMOTION_IDEMPOTENCY_CONFLICT", 409, "IDEMPOTENCY_CONFLICT"],
+    ...[
+      "INVALID_WEBSITE_CONCEPT_PROMOTION",
+      "INVALID_WEBSITE_CONCEPT_PROMOTION_ARGUMENT",
+    ].map((code) => [code, 400, "INVALID_REQUEST"]),
+    ...[
+      "WEBSITE_CONCEPT_NOT_PRE_PROJECT",
+      "WEBSITE_CONCEPT_ALREADY_PROMOTED",
+      "WEBSITE_PROMOTION_PROJECT_AMBIGUOUS",
+      "WEBSITE_PROMOTION_LINEAGE_MISMATCH",
+      "WEBSITE_PROMOTION_PROJECT_NOT_ELIGIBLE",
+      "WEBSITE_PROMOTION_CONTEXT_MISMATCH",
+      "WEBSITE_PROMOTION_WORKSPACE_MISMATCH",
+    ].map((code) => [code, 409, "COMMAND_REJECTED"]),
+  ] as Array<[string, number, string]>;
+
+  for (const [backendCode, status, publicCode] of mappings) {
+    const response = await handleCommercialOperator(
+      request(websiteConceptPromotionRequest),
+      dependencies({
+        executeApplicationAction: async () => {
+          throw new Error(backendCode);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status, backendCode);
+    assertEquals(await response.json(), { ok: false, code: publicCode });
+  }
+
+  const unknown = await handleCommercialOperator(
+    request(websiteConceptPromotionRequest),
+    dependencies({
+      executeApplicationAction: async () => {
+        throw new Error("raw SQL/provider secret detail");
+      },
+    }).deps,
+  );
+  assertEquals(unknown.status, 500);
+  assertEquals(await unknown.json(), { ok: false, code: "INTERNAL_ERROR" });
+});
+
+Deno.test("Website concept promotion uses only caller JWT RPC authority", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const result = await executeWebsiteConceptPromotionTransport({
+    rpc: async (name, args) => {
+      calls.push({ name, args });
+      return { data: websiteConceptPromotionResult(), error: null };
+    },
+  }, websiteConceptPromotionRequest);
+  assertEquals(result, websiteConceptPromotionResult());
+  assertEquals(calls, [{
+    name: "promote_website_concept_v1",
+    args: {
+      p_quote_request_id: websiteConceptPromotionRequest.quote_request_id,
+      p_website_work_context_id:
+        websiteConceptPromotionRequest.website_work_context_id,
+      p_expected_context_revision:
+        websiteConceptPromotionRequest.expected_context_revision,
+      p_idempotency_key: websiteConceptPromotionRequest.idempotency_key,
+    },
+  }]);
+
+  const callerJwts: string[] = [];
+  await executeCallerJwtWebsiteConceptPromotionAction(
+    ownerAal2Jwt,
+    websiteConceptPromotionRequest,
+    (token) => {
+      callerJwts.push(token);
+      return {
+        rpc: async () => ({
+          data: websiteConceptPromotionResult(),
+          error: null,
+        }),
+      };
+    },
+  );
+  assertEquals(callerJwts, [ownerAal2Jwt]);
 });
 
 Deno.test("Website workspace provision accepts the canonical command", async () => {

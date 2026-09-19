@@ -113,6 +113,95 @@ export function websiteExecutionProvisionRequest(value) {
   });
 }
 
+export function websiteConceptPromotionRequest(value) {
+  if (!exactKeys(value, [
+    "quoteRequestId", "websiteWorkContextId", "expectedContextRevision",
+    "idempotencyKey",
+  ]) || !UUID.test(String(value.quoteRequestId || ""))
+    || !UUID.test(String(value.websiteWorkContextId || ""))
+    || !Number.isSafeInteger(value.expectedContextRevision)
+    || value.expectedContextRevision < 1
+    || !UUID.test(String(value.idempotencyKey || ""))) {
+    throw new Error("INVALID_WEBSITE_CONCEPT_PROMOTION_REQUEST");
+  }
+  return Object.freeze({
+    action: "promote_website_concept",
+    quote_request_id: value.quoteRequestId,
+    website_work_context_id: value.websiteWorkContextId,
+    expected_context_revision: value.expectedContextRevision,
+    idempotency_key: value.idempotencyKey,
+  });
+}
+
+export function validateWebsiteConceptPromotionResult(value, expected) {
+  if (!exactKeys(expected, [
+    "quoteRequestId", "websiteWorkContextId", "expectedContextRevision",
+  ]) || !UUID.test(String(expected.quoteRequestId || ""))
+    || !UUID.test(String(expected.websiteWorkContextId || ""))
+    || !Number.isSafeInteger(expected.expectedContextRevision)
+    || expected.expectedContextRevision < 1
+    || !exactKeys(value, [
+      "contract_version", "outcome", "quote_request_id",
+      "website_work_context_id", "concept_id", "project_id",
+      "previous_phase", "phase", "previous_context_revision",
+      "context_revision", "website_workspace_id",
+      "workspace_binding_revision", "requirements_board_id",
+      "requirements_board_revision", "promotion_event_id", "promoted_at",
+      "replayed",
+    ]) || value.contract_version !== 1 || value.outcome !== "PROMOTED"
+    || value.quote_request_id !== expected.quoteRequestId
+    || value.website_work_context_id !== expected.websiteWorkContextId
+    || !UUID.test(String(value.concept_id || ""))
+    || !UUID.test(String(value.project_id || ""))
+    || value.previous_phase !== "PRE_PROJECT"
+    || value.phase !== "OFFICIAL_PROJECT"
+    || value.previous_context_revision !== expected.expectedContextRevision
+    || value.context_revision !== expected.expectedContextRevision + 1
+    || !UUID.test(String(value.promotion_event_id || ""))
+    || typeof value.promoted_at !== "string"
+    || !Number.isFinite(Date.parse(value.promoted_at))
+    || typeof value.replayed !== "boolean") {
+    throw new Error("INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE");
+  }
+  const workspacePairValid = value.website_workspace_id === null
+    ? value.workspace_binding_revision === null
+    : UUID.test(String(value.website_workspace_id || ""))
+      && Number.isSafeInteger(value.workspace_binding_revision)
+      && value.workspace_binding_revision >= 1;
+  const requirementsPairValid = value.requirements_board_id === null
+    ? value.requirements_board_revision === null
+    : UUID.test(String(value.requirements_board_id || ""))
+      && Number.isSafeInteger(value.requirements_board_revision)
+      && value.requirements_board_revision >= 1;
+  if (!workspacePairValid || !requirementsPairValid) {
+    throw new Error("INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE");
+  }
+  return Object.freeze(structuredClone(value));
+}
+
+export function createWebsiteConceptPromotionIntent(
+  context,
+  randomUUID = crypto.randomUUID,
+) {
+  if (!exactKeys(context, [
+    "quoteRequestId", "websiteWorkContextId", "expectedContextRevision",
+  ])) {
+    throw new Error("INVALID_WEBSITE_CONCEPT_PROMOTION_REQUEST");
+  }
+  const idempotencyKey = randomUUID();
+  const request = websiteConceptPromotionRequest({
+    ...context,
+    idempotencyKey,
+  });
+  return Object.freeze({
+    idempotencyKey,
+    request,
+    quoteRequestId: context.quoteRequestId,
+    websiteWorkContextId: context.websiteWorkContextId,
+    expectedContextRevision: context.expectedContextRevision,
+  });
+}
+
 function safeRepositoryNavigationUrl(value, repositoryOwner, repositoryName) {
   if (value === null && repositoryOwner === null && repositoryName === null) return null;
   if (!GITHUB_SEGMENT.test(String(repositoryOwner || ""))

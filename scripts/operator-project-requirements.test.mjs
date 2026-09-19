@@ -600,6 +600,21 @@ test("requirements child contains both isolated authority paths and no Website p
   assert.doesNotMatch(childSource, /record_website_requirement_verification|projectRequirementsRequest\([^)]*website/i);
 });
 
+test("Website Requirements remains promotion-free across both phases", () => {
+  const childSource = readFileSync(
+    new URL("../assets/js/operator-project-requirements-child.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(childSource, /promote_website_concept/);
+  assert.doesNotMatch(childSource, /Naar officieel project/);
+  assert.doesNotMatch(childSource, /websiteConceptPromotion/);
+  assert.equal(requirementsBoardSlot(quoteRequestId), `req-${quoteRequestId}`);
+  assert.equal(
+    quoteRequestIdFromRequirementsBoardSlot(`req-${quoteRequestId}`),
+    quoteRequestId,
+  );
+});
+
 test("successful requirement mutation refreshes authority then invalidates every sibling", async () => {
   const { runProjectRequirementMutation } =
     await import("../assets/js/operator-project-requirements-child.mjs");
