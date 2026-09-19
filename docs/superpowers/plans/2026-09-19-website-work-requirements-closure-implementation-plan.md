@@ -392,7 +392,7 @@ The three source-resolution names are also the only browser action names for tho
 
 Each item has exactly `requirement_id`, `item_number`, `title`, `description`, `category`, `source`, `linked_page_or_module`, `status`, `completion_mode`, `sort_order`, `required`, `started_at`, `completed_at`, `verification_result`, `blocked_reason`, `revision`, `source_review_state`, and `permitted_actions`.
 
-Safe `source` has exactly `authority_type`, `source_key`, `intake_id`, `intake_revision`, `submitted_at`, and `mapping_version`. It never exposes source hashes, raw intake, proposals, tokens, or credentials. `empty_state='NO_BOARD'` when no board exists and is null otherwise.
+Safe `source` has exactly `authority_type`, `source_key`, `intake_id`, `intake_revision`, `submitted_at`, and `mapping_version`. It never exposes source hashes, raw intake, proposals, tokens, or credentials. `empty_state` is exactly `NO_BOARD` when an eligible context has no board, `INTAKE_NOT_ELIGIBLE` when the server determines that the intake is not eligible, and null when a board exists. Both empty states require null `board`, no items, and zero progress; intake eligibility is never inferred by a client.
 
 ### 5.7 Mutation result and idempotency
 
@@ -652,24 +652,115 @@ There is no browser intent for `record_website_requirement_verification_v1`, ver
 
 ### 8.1 Shared Website requirements contract
 
-Evolve `assets/js/operator-project-requirements.mjs` into a shared presentation/validation module without weakening the existing commercial validator. Add a separate `validateWebsiteRequirementsBoard` and Website request/action builders requiring `quoteRequestId + websiteWorkContextId` and nullable `projectId` only as projected context. Keep commercial functions and exact DTO tests intact.
+Task 6 is a client-only integration. It creates no migration, RPC, Edge handler/index change, Website workspace backend projection, contract-version bump, or `get_website_execution_workspace_v4`. The existing Website Execution workspace DTO remains unchanged, and its existing `requirements` placeholder is not Website Requirements authority.
 
-The Website projection contract increments `get_website_execution_workspace_v2` to a reviewed contract version and replaces the PRE_PROJECT placeholder with a closed requirements summary:
+For both PRE_PROJECT and OFFICIAL_PROJECT, the only Task 6 Website Requirements summary authority is the validated result of browser action `get_website_requirements_board`, routed by Task 5 to `get_website_requirements_board_v1`. After Website context resolution, the child calls:
 
-```json
-{
-  "state": "READY",
-  "requirements_board_id": "uuid",
-  "board_revision": 12,
-  "completed": 4,
-  "total": 9,
-  "open": 4,
-  "blocked": 1,
-  "review_required": 0
-}
+```js
+websiteRequirementsBoardRequest({
+  quoteRequestId,
+  websiteWorkContextId,
+})
 ```
 
-`NO_BOARD`, `INTAKE_NOT_ELIGIBLE`, and `REVIEW_REQUIRED` are explicit server states. The Website child shows summary progress, completed/open/blocked counts, and a `Requirements openen` command. It does not embed the full board over the Project Files surface, preserving the large workspace.
+through the existing authorized gateway. It never uses `get_project_requirements_board`, `projectRequirementsRequest`, `projectRequirementsSummary`, or `buildProjectRequirementAction` as Website Requirements authority. Those existing commercial exports and their behavior remain unchanged for the separate commercial Project Requirements flow; they are not made polymorphic.
+
+`assets/js/operator-project-requirements.mjs` adds exactly these Website exports:
+
+- `websiteRequirementsBoardRequest`
+- `websiteRequirementsSyncRequest`
+- `websiteRequirementStartRequest`
+- `websiteRequirementBlockRequest`
+- `websiteRequirementCompleteRequest`
+- `websiteRequirementReopenRequest`
+- `websiteRequirementAcceptSourceChangeRequest`
+- `websiteRequirementKeepExistingSourceRequest`
+- `websiteRequirementRetireSourceRequest`
+- `validateWebsiteRequirementsBoard`
+- `validateWebsiteRequirementsSyncResult`
+- `validateWebsiteRequirementMutationResult`
+- `createWebsiteRequirementMutationIntent`
+
+`assets/js/operator-website-execution.mjs` exports `websiteRequirementsSummary` with the exact summary contract below.
+
+#### 8.1.1 Exact Website request builders
+
+The nine builders return frozen requests with exactly the Task 5 request keys and actions:
+
+| Builder | Action | Exact output keys after normalization |
+|---|---|---|
+| `websiteRequirementsBoardRequest` | `get_website_requirements_board` | `action`, `quote_request_id`, `website_work_context_id` |
+| `websiteRequirementsSyncRequest` | `sync_website_requirements_from_intake` | `action`, `quote_request_id`, `website_work_context_id`, `expected_board_revision`, `idempotency_key` |
+| `websiteRequirementStartRequest` | `start_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `idempotency_key` |
+| `websiteRequirementBlockRequest` | `block_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key` |
+| `websiteRequirementCompleteRequest` | `complete_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `attestation`, `idempotency_key` |
+| `websiteRequirementReopenRequest` | `reopen_website_requirement` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key` |
+| `websiteRequirementAcceptSourceChangeRequest` | `accept_website_requirement_source_change` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key` |
+| `websiteRequirementKeepExistingSourceRequest` | `keep_existing_website_requirement_source` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key` |
+| `websiteRequirementRetireSourceRequest` | `retire_website_requirement_source` | `action`, `quote_request_id`, `website_work_context_id`, `requirement_id`, `expected_revision`, `reason`, `idempotency_key` |
+
+UUIDs, safe-integer revision bounds, and trimmed reason/attestation bounds are exactly section 7.1. Complete emits exactly `attestation: {attestation: "<trimmed 1..500>"}`. A source-change builder never accepts or emits a free `resolution` key.
+
+No Website builder accepts or emits `project_id`, `requirements_board_id`, `actor`, `actor_id`, `operator_id`, `operator_role`, `role`, `status`, `source_reference`, a source hash, proposed definition, `completion_mode`, `verification_result`, `verified_by`, `website_workspace_id`, `binding_revision`, `repository_ref`, `commit_sha`, or `resolution`.
+
+#### 8.1.2 Exact Website response validators
+
+`validateWebsiteRequirementsBoard` validates exactly the section 5.6 Task 3 Website board DTO: `contract_version=1`; exact root and nested keys; valid UUIDs, revisions, enums, and hashes where present; and exact correlation to expected `quoteRequestId` and `websiteWorkContextId`. `permitted_actions` accepts only the seven server action names in section 5.5. Any missing, surplus, malformed, or unknown nested key or permitted action invalidates the complete board. The client never derives an action from status, role, assignment, AAL2, completion mode, or source-review state.
+
+`validateWebsiteRequirementsSyncResult` accepts exactly root keys `contract_version`, `outcome`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `board_revision`, `intake_id`, `intake_revision`, `intake_sha256`, `mapping_version`, `sync_run_id`, `replayed`, `review_required`, and `counts`. `counts` has exactly `created`, `updated`, `unchanged`, `retired`, `change_pending`, `removal_pending`, and `revived`. It requires `contract_version=1`, `mapping_version=1`, exact quote/context correlation, and rejects missing, surplus, or malformed keys.
+
+`validateWebsiteRequirementMutationResult` accepts exactly root keys `contract_version`, `command`, `quote_request_id`, `website_work_context_id`, `requirements_board_id`, `requirement_id`, `previous_status`, `status`, `previous_source_review_state`, `source_review_state`, `resolution`, `requirement_revision`, `board_revision`, and `replayed`. It requires `contract_version=1`, exact quote/context/requirement correlation, and exact Task 5 command/resolution correlation. Missing, surplus, malformed, or impossible command/resolution data fails closed.
+
+These frontend validators are reusable client boundaries. They do not replace or weaken the independent private Task 5 Edge-to-browser validators.
+
+#### 8.1.3 Client idempotency intent
+
+Define exactly:
+
+```js
+createWebsiteRequirementMutationIntent(
+  builder,
+  builderArguments,
+  randomUUID = crypto.randomUUID,
+)
+```
+
+One call represents one new user intent. It calls `randomUUID` exactly once, supplies that UUID to the supplied Task 6 mutation builder, and returns exactly the immutable object `{idempotencyKey, request}`. The request is frozen; its key is never replaced or recomputed. Repeating the same intent later reuses the exact same intent object, request, and key. A new intent creates a new object and UUID.
+
+Task 6 only provides and tests this helper; it executes no Website Requirements mutation. Task 7 later owns the active pending-intent reference and mutation interaction. Task 7 may retain the same intent only after network failure or timeout without a definitive response, HTTP 500 `INTERNAL_ERROR`, or HTTP 500 `SERVER_RESPONSE_INVALID`. It discards the intent after an authoritative success, explicit user cancel, changed action, changed requirement target, changed reason, changed attestation, HTTP 400 `INVALID_REQUEST`, HTTP 403 `OPERATOR_NOT_AUTHORIZED`, HTTP 404 `NOT_FOUND`, HTTP 409 `CONCURRENT_MODIFICATION`, HTTP 409 `IDEMPOTENCY_CONFLICT`, or HTTP 409 `COMMAND_REJECTED`. A later submit then creates a new intent and UUID.
+
+Client intent identity is not a server fingerprint, security authority, or idempotency-fingerprint authority. The server remains the sole fingerprint authority.
+
+#### 8.1.4 Exact Website summary
+
+`websiteRequirementsSummary` accepts only a projection returned by `validateWebsiteRequirementsBoard`; it never accepts the raw Website workspace `requirements` placeholder or a commercial Project Requirements DTO. It returns a frozen object with exactly `state`, `requirements_board_id`, `board_revision`, `completed`, `total`, `open`, `blocked`, and `review_required`. The only DTO states are `READY`, `NO_BOARD`, `INTAKE_NOT_ELIGIBLE`, and `REVIEW_REQUIRED`; there is no persisted fifth state and specifically no `BLOCKED` summary state.
+
+| State | Board ID/revision | Counts | Review flag | Sole selection authority |
+|---|---|---|---|---|
+| `NO_BOARD` | both null | all four counts `0` | `false` | validated server `empty_state='NO_BOARD'` |
+| `INTAKE_NOT_ELIGIBLE` | both null | all four counts null | `false` | validated server `empty_state='INTAKE_NOT_ELIGIBLE'` |
+| `READY` | `board.requirements_board_id`, `board.revision` | copy server progress | `false` | validated board not requiring review |
+| `REVIEW_REQUIRED` | `board.requirements_board_id`, `board.revision` | copy server progress | `true` | validated `board.sync_state='REVIEW_REQUIRED'` |
+
+For `READY` and `REVIEW_REQUIRED`, `total`, `completed`, `open`, and `blocked` copy `progress.required_total`, `progress.required_completed`, `progress.required_open`, and `progress.required_blocked`. They are non-negative safe integers and must satisfy `completed + open + blocked = total`. This is a validator consistency check. Display uses these server values directly and never scans items as progress authority. A positive blocked count is displayed while state remains `READY` or `REVIEW_REQUIRED` according to server sync state.
+
+#### 8.1.5 Isolated summary presentation
+
+The Website child summary presentation has exactly `LOADING`, `NO_BOARD`, `INTAKE_NOT_ELIGIBLE`, `READY`, `REVIEW_REQUIRED`, `ERROR`, and `STALE_PRESENTATION`. `STALE_PRESENTATION` is UI-only and never a summary DTO state.
+
+- `LOADING`: before the first valid response, show loading without old commercial Requirements data.
+- `NO_BOARD`: heading `WEBSITE REQUIREMENTS`; copy `Nog geen Website Requirements-board beschikbaar.`
+- `INTAKE_NOT_ELIGIBLE`: heading `WEBSITE REQUIREMENTS`; copy `Website Requirements zijn nog niet beschikbaar voor deze intake.`
+- `READY`: show server `completed / total`, `open`, and `blocked`.
+- `REVIEW_REQUIRED`: show the same server counts plus `Wijzigingen uit de intake moeten eerst beoordeeld worden.`
+- `ERROR`: when the first Requirements read fails, show `Requirements konden niet veilig worden geladen.` without raw backend error.
+- `STALE_PRESENTATION`: when a background refresh fails after a valid summary, retain that exact summary and show `Requirements konden niet worden vernieuwd. Laatst geldige gegevens blijven zichtbaar.` Counters/state are not changed and no action is newly enabled.
+
+A Requirements-only read failure never moves the full Website child to global error. Repository links, the Website workspace, and Project Files remain usable. Rendering uses text-only DOM APIs and does not mount the full board over or reduce the existing Project Files working surface.
+
+Task 6 renders a compact, always-disabled button labelled `Requirements openen` with adjacent copy `De volledige Website Requirements-werkruimte wordt in de volgende stap geactiveerd.` It performs no `requestOpen`, does not call `requirementsBoardSlot`, creates no `req-<quote_request_id>` singleton route, and opens no child/window. Task 7 owns that behavior.
+
+Task 6 starts no AAL2/MFA flow and executes no sync, start, block, complete, reopen, accept, keep, or retire operation. It adds no verification ingestion UI, AUTO PASS button, manual trusted verifier, evidence upload authority, or `record_website_requirement_verification` route. It performs no Project Files, repository, or GitHub write.
 
 ### 8.2 Full Requirements child
 
@@ -888,19 +979,19 @@ Existing commercial migration files are reference-only and must not be modified.
 - TEST: the two modified Node suites and Project Files frontend regression
 
 **INTERFACES**
-- Separate reusable frontend Website board DTO validator/request builders; one `crypto.randomUUID()` idempotency key per new user intent with same-key retry reuse; Website Execution summary DTO; `Requirements openen` managed-slot command. Task 5 private transport validators remain the independent Edge-to-browser boundary.
+- Exact section 8.1 Website exports, nine builders, three fail-closed response validators, immutable mutation-intent helper, Website-board summary DTO, isolated summary states, and always-disabled `Requirements openen` control. Task 5 private transport validators remain the independent Edge-to-browser boundary.
 
 **RED TEST FIRST**
-- Test PRE_PROJECT null project, exact context/board binding, summary arithmetic, malformed/surplus DTO rejection, safe text-only rendering, no fake progress, stale summary handling, and Project Files panel dimensions remaining unobstructed.
+- Test all nine exact export names, actions, keysets, and forbidden authority-field absence; exact board/sync/mutation validation including nested surplus keys, malformed responses, correlation, and unknown permitted-action rejection; PRE_PROJECT requests without `project_id`; OFFICIAL_PROJECT using the same Website context authority; one UUID per immutable intent, same-intent retry identity, and new-intent UUID replacement; exact `NO_BOARD`, `INTAKE_NOT_ELIGIBLE`, `READY`, and `REVIEW_REQUIRED` summaries; arithmetic consistency and no item-scan progress authority; `LOADING`, local `ERROR`, and retained `STALE_PRESENTATION`; usable Website/Project Files surfaces during Requirements failure; visible disabled `Requirements openen` with no `requestOpen` or `requirementsBoardSlot`; no lifecycle/source forms or verification ingestion; and unchanged commercial Project Requirements and Project Files regressions.
 
 **IMPLEMENTATION**
-- Preserve commercial validators. Add reusable frontend validation/builders and client idempotency generation/retry ownership, replace the PRE_PROJECT placeholder with server summary and a compact open action, and do not mount the full list over the working surface. Task 6 does not add or change Edge routing.
+- Preserve all commercial validators/exports and the existing Website workspace DTO. For PRE_PROJECT and OFFICIAL_PROJECT, independently fetch and validate `get_website_requirements_board`, derive only the closed section 8.1 summary, and render its local state without making the whole Website child fail. Add the reusable builders, validators, and intent helper, but execute no mutation. Remove the current Website-path commercial `requirementsBoardSlot`/`requestOpen` behavior and render the compact open control disabled. Do not mount the full list over the working surface. Add no migration, RPC, backend projection/version, Edge route, singleton, child bootstrap, AAL2 interaction, Project Files write, repository write, or GitHub write.
 
 **GREEN TESTS**
 - `node --test scripts/operator-project-requirements.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-website-project-files.test.mjs`
 
 **SECURITY / SCOPE GATE**
-- No HTML injection, client-derived actions/progress, local persistence, URL authority, or Task 2-9 behavior change.
+- No HTML injection, client-derived actions/progress, local persistence, URL authority, commercial Requirements authority reuse, or Task 2-9 behavior change. Require `TASK6_CONTRACT_UNAMBIGUOUS=JA`, `FILE_SCOPE_FULLY_EXPLICIT=JA`, `CLIENT_ACTION_CATALOG_FULLY_EXPLICIT=JA`, `BUILDER_EXPORT_NAMES_FULLY_EXPLICIT=JA`, `REQUEST_BUILDERS_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_CLIENT_MODEL_FULLY_EXPLICIT=JA`, `RETRY_OWNER_MODEL_FULLY_EXPLICIT=JA`, `RESPONSE_VALIDATORS_FULLY_EXPLICIT=JA`, `SUMMARY_AUTHORITY_SOURCE_FULLY_EXPLICIT=JA`, `SUMMARY_MODEL_FULLY_EXPLICIT=JA`, `SUMMARY_NULLABILITY_FULLY_EXPLICIT=JA`, `SUMMARY_ARITHMETIC_FULLY_EXPLICIT=JA`, `STALE_PRESENTATION_FULLY_EXPLICIT=JA`, `OPEN_REQUIREMENTS_BEHAVIOR_FULLY_EXPLICIT=JA`, `UI_STATE_MODEL_FULLY_EXPLICIT=JA`, `COMMERCIAL_REQUIREMENTS_ISOLATION_FULLY_EXPLICIT=JA`, `TASK7_BOUNDARY_FULLY_EXPLICIT=JA`, `PRE_PROJECT_MODEL_FULLY_EXPLICIT=JA`, and `BACKEND_EXPANSION_REQUIRED=NEE`.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): show requirements workspace summary`
