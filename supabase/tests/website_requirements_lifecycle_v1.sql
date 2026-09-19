@@ -459,6 +459,107 @@ select throws_ok(
   '42501', 'WEBSITE_REQUIREMENTS_ACCESS_DENIED', 'cross-dossier board substitution fails closed'
 );
 
+create temporary table source_cross_before as
+select jsonb_build_object(
+  'boards', (select jsonb_agg(to_jsonb(board) order by board.requirements_board_id)
+    from public.website_requirements_boards as board
+    where board.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    )),
+  'requirements', (select jsonb_agg(to_jsonb(requirement) order by requirement.requirement_id)
+    from public.website_requirements as requirement
+    where requirement.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    )),
+  'sync_runs', (select coalesce(jsonb_agg(to_jsonb(sync_run) order by sync_run.sync_run_id), '[]'::jsonb)
+    from public.website_requirement_sync_runs as sync_run
+    where sync_run.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    )),
+  'events', (select coalesce(jsonb_agg(to_jsonb(event) order by event.event_id), '[]'::jsonb)
+    from public.website_requirement_events as event
+    where event.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    )),
+  'verifications', (select coalesce(jsonb_agg(to_jsonb(verification) order by verification.verification_id), '[]'::jsonb)
+    from public.website_requirement_verifications as verification
+    where verification.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    )),
+  'commands', (select coalesce(jsonb_agg(to_jsonb(command) order by command.operation_id), '[]'::jsonb)
+    from public.website_requirement_command_ledger as command
+    where command.website_work_context_id in (
+      pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+    ))
+) as snapshot;
+
+select throws_ok(
+  format(
+    'select public.resolve_website_requirement_source_change_v1(%L,%L,%L,1,%L,%L,%L)',
+    pg_temp.fixture_uuid('wrl-quote-a'), pg_temp.fixture_uuid('wrl-context-a'),
+    pg_temp.fixture_uuid('wrl-r-cross'), 'ACCEPT_CHANGE', 'Foreign accept denied',
+    pg_temp.fixture_uuid('wrl-key-cross-source-accept')
+  ),
+  'P0001', 'WEBSITE_REQUIREMENT_NOT_FOUND',
+  'foreign-context ACCEPT_CHANGE reveals no source authority'
+);
+select throws_ok(
+  format(
+    'select public.resolve_website_requirement_source_change_v1(%L,%L,%L,1,%L,%L,%L)',
+    pg_temp.fixture_uuid('wrl-quote-a'), pg_temp.fixture_uuid('wrl-context-a'),
+    pg_temp.fixture_uuid('wrl-r-cross'), 'KEEP_EXISTING', 'Foreign keep denied',
+    pg_temp.fixture_uuid('wrl-key-cross-source-keep')
+  ),
+  'P0001', 'WEBSITE_REQUIREMENT_NOT_FOUND',
+  'foreign-context KEEP_EXISTING reveals no source authority'
+);
+select throws_ok(
+  format(
+    'select public.resolve_website_requirement_source_change_v1(%L,%L,%L,1,%L,%L,%L)',
+    pg_temp.fixture_uuid('wrl-quote-a'), pg_temp.fixture_uuid('wrl-context-a'),
+    pg_temp.fixture_uuid('wrl-r-cross'), 'RETIRE', 'Foreign retire denied',
+    pg_temp.fixture_uuid('wrl-key-cross-source-retire')
+  ),
+  'P0001', 'WEBSITE_REQUIREMENT_NOT_FOUND',
+  'foreign-context RETIRE reveals no source authority'
+);
+select is(
+  (select snapshot from source_cross_before),
+  jsonb_build_object(
+    'boards', (select jsonb_agg(to_jsonb(board) order by board.requirements_board_id)
+      from public.website_requirements_boards as board
+      where board.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      )),
+    'requirements', (select jsonb_agg(to_jsonb(requirement) order by requirement.requirement_id)
+      from public.website_requirements as requirement
+      where requirement.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      )),
+    'sync_runs', (select coalesce(jsonb_agg(to_jsonb(sync_run) order by sync_run.sync_run_id), '[]'::jsonb)
+      from public.website_requirement_sync_runs as sync_run
+      where sync_run.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      )),
+    'events', (select coalesce(jsonb_agg(to_jsonb(event) order by event.event_id), '[]'::jsonb)
+      from public.website_requirement_events as event
+      where event.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      )),
+    'verifications', (select coalesce(jsonb_agg(to_jsonb(verification) order by verification.verification_id), '[]'::jsonb)
+      from public.website_requirement_verifications as verification
+      where verification.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      )),
+    'commands', (select coalesce(jsonb_agg(to_jsonb(command) order by command.operation_id), '[]'::jsonb)
+      from public.website_requirement_command_ledger as command
+      where command.website_work_context_id in (
+        pg_temp.fixture_uuid('wrl-context-a'), pg_temp.fixture_uuid('wrl-context-b')
+      ))
+  ),
+  'foreign source resolutions leave both contexts source proposals, revisions, verification, commands, and history unchanged'
+);
+
 create temporary table source_results(command text primary key, result jsonb);
 insert into source_results values (
   'accept', public.resolve_website_requirement_source_change_v1(

@@ -489,6 +489,103 @@ delete from lws_internal.website_project_files_read_acquisitions;
 delete from lws_internal.website_project_files_read_leases;
 set local session_replication_role = origin;
 
+set local session_replication_role = replica;
+insert into public.website_requirements_boards(
+  requirements_board_id, website_work_context_id, quote_request_id,
+  sync_state, mapping_version, revision, created_by
+)
+select
+  case fixture.context_label
+    when 'A' then 'f3400000-0000-4000-8000-000000000001'::uuid
+    else 'f3400000-0000-4000-8000-000000000002'::uuid end,
+  fixture.website_work_context_id, fixture.quote_request_id,
+  'CURRENT', 1,
+  case fixture.context_label when 'A' then 3 else 5 end,
+  (select operator_id from public.commercial_operators
+   where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0')
+from task3_contexts as fixture;
+
+insert into public.website_requirements(
+  requirement_id, requirements_board_id, website_work_context_id,
+  quote_request_id, source_key, source_reference, source_value_sha256,
+  item_number, sort_order, title, description, category,
+  linked_page_or_module, status, completion_mode, completion_rule_key,
+  completion_rule_version, source_review_state, required,
+  verification_result, revision
+)
+select
+  case fixture.context_label
+    when 'A' then 'f3410000-0000-4000-8000-000000000001'::uuid
+    else 'f3410000-0000-4000-8000-000000000002'::uuid end,
+  case fixture.context_label
+    when 'A' then 'f3400000-0000-4000-8000-000000000001'::uuid
+    else 'f3400000-0000-4000-8000-000000000002'::uuid end,
+  fixture.website_work_context_id, fixture.quote_request_id,
+  'page:home', jsonb_build_object(
+    'authority_type', 'WEBSITE_INTAKE',
+    'source_key', 'page:home',
+    'context_label', fixture.context_label
+  ),
+  repeat(case fixture.context_label when 'A' then 'a' else 'b' end, 64),
+  1, 1, 'Project Files no-write fixture',
+  'Requirements state must remain unchanged by Project Files reads.',
+  'PAGE', 'home', 'PENDING', 'HYBRID',
+  'website_test_suite_passed', 1, 'CURRENT', true, 'PASS',
+  case fixture.context_label when 'A' then 3 else 5 end
+from task3_contexts as fixture;
+
+insert into public.website_requirement_events(
+  event_id, requirements_board_id, website_work_context_id, quote_request_id,
+  requirement_id, event_type, actor_id, command_id, new_revision, metadata
+)
+select
+  case fixture.context_label
+    when 'A' then 'f3420000-0000-4000-8000-000000000001'::uuid
+    else 'f3420000-0000-4000-8000-000000000002'::uuid end,
+  case fixture.context_label
+    when 'A' then 'f3400000-0000-4000-8000-000000000001'::uuid
+    else 'f3400000-0000-4000-8000-000000000002'::uuid end,
+  fixture.website_work_context_id, fixture.quote_request_id,
+  case fixture.context_label
+    when 'A' then 'f3410000-0000-4000-8000-000000000001'::uuid
+    else 'f3410000-0000-4000-8000-000000000002'::uuid end,
+  'WEBSITE_REQUIREMENT_CREATED', 'SYSTEM:pre_task10_alignment',
+  case fixture.context_label
+    when 'A' then 'f3440000-0000-4000-8000-000000000001'::uuid
+    else 'f3440000-0000-4000-8000-000000000002'::uuid end,
+  case fixture.context_label when 'A' then 3 else 5 end,
+  jsonb_build_object('context_label', fixture.context_label)
+from task3_contexts as fixture;
+
+insert into public.website_requirement_verifications(
+  verification_id, requirement_id, requirements_board_id,
+  website_work_context_id, quote_request_id, website_workspace_id,
+  binding_revision, canonical_commit_sha, requirement_revision,
+  rule_key, rule_version, result, evidence_reference, evidence_sha256,
+  verified_by, verified_at, expires_at
+)
+select
+  case fixture.context_label
+    when 'A' then 'f3430000-0000-4000-8000-000000000001'::uuid
+    else 'f3430000-0000-4000-8000-000000000002'::uuid end,
+  case fixture.context_label
+    when 'A' then 'f3410000-0000-4000-8000-000000000001'::uuid
+    else 'f3410000-0000-4000-8000-000000000002'::uuid end,
+  case fixture.context_label
+    when 'A' then 'f3400000-0000-4000-8000-000000000001'::uuid
+    else 'f3400000-0000-4000-8000-000000000002'::uuid end,
+  fixture.website_work_context_id, fixture.quote_request_id,
+  fixture.website_workspace_id, fixture.binding_revision,
+  repeat(case fixture.context_label when 'A' then 'a' else 'b' end, 40),
+  case fixture.context_label when 'A' then 3 else 5 end,
+  'website_test_suite_passed', 1, 'PASS',
+  jsonb_build_object('context_label', fixture.context_label),
+  repeat(case fixture.context_label when 'A' then 'c' else 'd' end, 64),
+  'SYSTEM:pre_task10_alignment', clock_timestamp(),
+  clock_timestamp() + interval '1 hour'
+from task3_contexts as fixture;
+set local session_replication_role = origin;
+
 create temporary table task3_business_before as
 select jsonb_build_object(
   'operations', (select jsonb_agg(to_jsonb(operation) order by operation.operation_id)
@@ -505,6 +602,31 @@ select jsonb_build_object(
     from public.website_execution_workspaces as workspace
     where workspace.website_workspace_id in (
       select website_workspace_id from task3_contexts
+    )),
+  'requirements_boards', (select jsonb_agg(to_jsonb(board) order by board.requirements_board_id)
+    from public.website_requirements_boards as board
+    where board.website_work_context_id in (
+      select website_work_context_id from task3_contexts
+    )),
+  'requirements', (select jsonb_agg(to_jsonb(requirement) order by requirement.requirement_id)
+    from public.website_requirements as requirement
+    where requirement.website_work_context_id in (
+      select website_work_context_id from task3_contexts
+    )),
+  'requirements_progress', (select jsonb_object_agg(
+      fixture.context_label,
+      lws_internal.website_requirements_progress_v1(fixture.website_work_context_id)
+      order by fixture.context_label
+    ) from task3_contexts as fixture),
+  'requirement_events', (select jsonb_agg(to_jsonb(event) order by event.event_id)
+    from public.website_requirement_events as event
+    where event.website_work_context_id in (
+      select website_work_context_id from task3_contexts
+    )),
+  'requirement_verifications', (select jsonb_agg(to_jsonb(verification) order by verification.verification_id)
+    from public.website_requirement_verifications as verification
+    where verification.website_work_context_id in (
+      select website_work_context_id from task3_contexts
     ))
 ) as snapshot;
 
@@ -845,9 +967,34 @@ select is(
       from public.website_execution_workspaces as workspace
       where workspace.website_workspace_id in (
         select website_workspace_id from task3_contexts
+      )),
+    'requirements_boards', (select jsonb_agg(to_jsonb(board) order by board.requirements_board_id)
+      from public.website_requirements_boards as board
+      where board.website_work_context_id in (
+        select website_work_context_id from task3_contexts
+      )),
+    'requirements', (select jsonb_agg(to_jsonb(requirement) order by requirement.requirement_id)
+      from public.website_requirements as requirement
+      where requirement.website_work_context_id in (
+        select website_work_context_id from task3_contexts
+      )),
+    'requirements_progress', (select jsonb_object_agg(
+        fixture.context_label,
+        lws_internal.website_requirements_progress_v1(fixture.website_work_context_id)
+        order by fixture.context_label
+      ) from task3_contexts as fixture),
+    'requirement_events', (select jsonb_agg(to_jsonb(event) order by event.event_id)
+      from public.website_requirement_events as event
+      where event.website_work_context_id in (
+        select website_work_context_id from task3_contexts
+      )),
+    'requirement_verifications', (select jsonb_agg(to_jsonb(verification) order by verification.verification_id)
+      from public.website_requirement_verifications as verification
+      where verification.website_work_context_id in (
+        select website_work_context_id from task3_contexts
       ))
   ),
-  'acquisitions and releases create zero repository or workspace mutations'
+  'acquisitions and releases create zero repository, workspace, or Website Requirements mutations'
 );
 
 alter table public.website_execution_workspaces
