@@ -1,6 +1,9 @@
 import {
   classifyWebsiteProjectDirectoryEntry,
+  classifyWebsiteProjectPath,
+  inspectWebsiteProjectFile,
   normalizeWebsiteProjectPath,
+  type SensitiveContentClassifier,
   type WebsiteProjectDirectoryEntry,
 } from "./website-project-files-policy.ts";
 import {
@@ -28,6 +31,22 @@ export type WebsiteProjectDirectoryResult = Readonly<{
   next_cursor: string | null;
 }>;
 
+export type WebsiteProjectFileResult = Readonly<{
+  contract_version: 1;
+  quote_request_id: string;
+  website_work_context_id: string;
+  workspace_state: "REPOSITORY_READY";
+  repository: Readonly<{ display_name: string; binding_revision: number }>;
+  snapshot: Readonly<{ commit_sha: string; ref_label: string }>;
+  file: Readonly<{
+    path: string;
+    size_bytes: number;
+    media_type: "text/plain";
+    encoding: "utf-8";
+    content: string;
+  }>;
+}>;
+
 export type WebsiteProjectFilesService = Readonly<{
   list(
     input: Readonly<{
@@ -36,6 +55,12 @@ export type WebsiteProjectFilesService = Readonly<{
       cursor: string | null;
     }>,
   ): Promise<WebsiteProjectDirectoryResult>;
+  read(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      path: string;
+    }>,
+  ): Promise<WebsiteProjectFileResult>;
 }>;
 
 export class WebsiteProjectFilesServiceError extends Error {
@@ -49,6 +74,7 @@ type ServiceDependencies = Readonly<{
   provider: WebsiteProjectFilesProvider;
   cursorSecret?: string;
   now?: () => number;
+  classifier?: SensitiveContentClassifier;
 }>;
 
 function fail(code: string): never {
@@ -64,10 +90,25 @@ function codeOf(error: unknown): string {
   return "PROJECT_FILES_PROVIDER_UNAVAILABLE";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function exactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+) {
+  const actual = Object.keys(value).sort();
+  const allowed = [...expected].sort();
+  return actual.length === allowed.length &&
+    actual.every((key, index) => key === allowed[index]);
+}
+
 function normalize(error: unknown): never {
   if (error instanceof WebsiteProjectFilesServiceError) throw error;
   const code = codeOf(error);
   const allowed = new Set([
+    "INVALID_REQUEST",
     "INVALID_PROJECT_PATH",
     "PROJECT_FILES_CURSOR_INVALID",
     "PROJECT_FILES_CURSOR_CONFIGURATION_ERROR",
@@ -76,6 +117,13 @@ function normalize(error: unknown): never {
     "PROJECT_FILES_PROVIDER_THROTTLED",
     "PROJECT_FILES_PROVIDER_UNAVAILABLE",
     "PROJECT_FILES_SNAPSHOT_UNAVAILABLE",
+    "PROJECT_FILE_NOT_FOUND",
+    "PROJECT_PATH_KIND_MISMATCH",
+    "FILE_TOO_LARGE",
+    "BINARY_UNSUPPORTED",
+    "UNSUPPORTED_ENCODING",
+    "SENSITIVE_FILE_BLOCKED",
+    "SENSITIVE_CLASSIFICATION_UNAVAILABLE",
     "REPOSITORY_BINDING_STALE",
   ]);
   return fail(allowed.has(code) ? code : "PROJECT_FILES_PROVIDER_UNAVAILABLE");
@@ -130,6 +178,7 @@ export function createWebsiteProjectFilesService(
     !dependencies ||
     typeof dependencies.provider?.resolveSnapshot !== "function" ||
     typeof dependencies.provider?.listDirectory !== "function" ||
+    typeof dependencies.provider?.readFile !== "function" ||
     dependencies.now !== undefined && typeof dependencies.now !== "function"
   ) {
     return fail("PROJECT_FILES_SERVICE_CONFIGURATION_ERROR");
@@ -235,6 +284,62 @@ export function createWebsiteProjectFilesService(
           return fail("PROJECT_FILES_RESPONSE_TOO_LARGE");
         }
         return result;
+      } catch (error) {
+        return normalize(error);
+      }
+    },
+
+    async read(input) {
+      try {
+        if (
+          !isRecord(input) || !exactKeys(input, ["authority", "path"]) ||
+          typeof input.path !== "string"
+        ) return fail("INVALID_REQUEST");
+        const path = normalizeWebsiteProjectPath(input.path, {
+          allowRoot: false,
+        });
+        if (classifyWebsiteProjectPath(path) === "BLOCKED_CREDENTIAL") {
+          return fail("SENSITIVE_FILE_BLOCKED");
+        }
+        const snapshot = await dependencies.provider.resolveSnapshot(
+          input.authority,
+        );
+        const providerFile = await dependencies.provider.readFile({
+          authority: input.authority,
+          commitSha: snapshot.commitSha,
+          rootTreeSha: snapshot.rootTreeSha,
+          path,
+        });
+        const inspected = inspectWebsiteProjectFile({
+          path,
+          canonicalPath: providerFile.canonicalPath,
+          mode: providerFile.mode,
+          objectType: providerFile.objectType,
+          declaredSize: providerFile.declaredSize,
+          bytes: providerFile.bytes,
+          classifier: dependencies.classifier,
+        });
+        return Object.freeze({
+          contract_version: 1,
+          quote_request_id: input.authority.quoteRequestId,
+          website_work_context_id: input.authority.websiteWorkContextId,
+          workspace_state: "REPOSITORY_READY",
+          repository: Object.freeze({
+            display_name: snapshot.repositoryDisplayName,
+            binding_revision: input.authority.bindingRevision,
+          }),
+          snapshot: Object.freeze({
+            commit_sha: snapshot.commitSha,
+            ref_label: input.authority.refLabel,
+          }),
+          file: Object.freeze({
+            path: inspected.path,
+            size_bytes: inspected.size_bytes,
+            media_type: inspected.media_type,
+            encoding: inspected.encoding,
+            content: inspected.content,
+          }),
+        });
       } catch (error) {
         return normalize(error);
       }

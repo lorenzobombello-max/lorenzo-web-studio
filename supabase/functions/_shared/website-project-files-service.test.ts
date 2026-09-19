@@ -13,6 +13,8 @@ const SECRET = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
 const COMMIT = "a".repeat(40);
 const ROOT = "b".repeat(40);
 const DIRECTORY_TREE = "c".repeat(40);
+const NEXT_COMMIT = "e".repeat(40);
+const NEXT_ROOT = "f".repeat(40);
 
 const authority = Object.freeze({
   leaseId: "10000000-0000-4000-8000-000000000010",
@@ -58,18 +60,46 @@ function harness(entries: readonly ProviderTreeEntry[], options: {
   fail?: Error;
   directoryTreeSha?: string;
   now?: number;
+  snapshots?: readonly Readonly<{
+    commitSha: string;
+    rootTreeSha: string;
+    repositoryDisplayName: string;
+  }>[];
+  readResult?: Readonly<{
+    path: string;
+    canonicalPath: string;
+    mode: string;
+    objectType: "blob";
+    declaredSize: number | null;
+    bytes: Uint8Array;
+  }>;
+  classifier?: Readonly<{
+    classify(
+      input: Readonly<{
+        path: string;
+        bytes: Uint8Array;
+        text: string;
+      }>,
+    ): "SAFE" | "SENSITIVE" | "UNAVAILABLE";
+  }>;
 } = {}) {
   const resolveCalls: WebsiteProjectFilesAuthority[] = [];
   const listCalls: unknown[] = [];
-  const provider: WebsiteProjectFilesProvider = Object.freeze({
+  const readCalls: unknown[] = [];
+  let snapshotIndex = 0;
+  const provider = Object.freeze({
     resolveSnapshot(input: WebsiteProjectFilesAuthority) {
       resolveCalls.push(input);
       if (options.fail) return Promise.reject(options.fail);
-      return Promise.resolve({
+      const fallback = {
         commitSha: COMMIT,
         rootTreeSha: ROOT,
         repositoryDisplayName: "lws-phase-a-fixtures/project-a",
-      });
+      };
+      const snapshots = options.snapshots ?? [fallback];
+      const snapshot =
+        snapshots[Math.min(snapshotIndex++, snapshots.length - 1)];
+      return Promise.resolve(snapshot);
     },
     listDirectory(
       input: Readonly<{
@@ -87,13 +117,42 @@ function harness(entries: readonly ProviderTreeEntry[], options: {
         entries,
       });
     },
-  });
-  const service = createWebsiteProjectFilesService({
+    readFile(input: unknown) {
+      readCalls.push(input);
+      if (options.fail) return Promise.reject(options.fail);
+      return Promise.resolve(
+        options.readResult ?? {
+          path: "safe.txt",
+          canonicalPath: "safe.txt",
+          mode: "100644",
+          objectType: "blob" as const,
+          declaredSize: 4,
+          bytes: new TextEncoder().encode("safe"),
+        },
+      );
+    },
+  }) as unknown as WebsiteProjectFilesProvider;
+  const dependencies = {
     provider,
     cursorSecret: SECRET,
     now: () => options.now ?? 1_800_000_000_000,
-  });
-  return { service, resolveCalls, listCalls };
+    classifier: options.classifier,
+  };
+  const service = createWebsiteProjectFilesService(dependencies);
+  return { service, resolveCalls, listCalls, readCalls };
+}
+
+type ReadCapableService = Readonly<{
+  read(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      path: string;
+    }>,
+  ): Promise<Record<string, unknown>>;
+}>;
+
+function readCapable(value: unknown): ReadCapableService {
+  return value as ReadCapableService;
 }
 
 Deno.test("service lists root, nested, and empty directories lazily", async () => {
@@ -250,8 +309,7 @@ Deno.test("service fails malformed provider entries closed with zero partial lis
 
 Deno.test("Phase A provider dependency graph exposes read operations only", () => {
   const test = harness([]);
-  assertEquals(Object.keys(test.service), ["list"]);
-  assertEquals("read" in test.service, false);
+  assertEquals(Object.keys(test.service).sort(), ["list", "read"]);
   assertEquals(
     [
       "acquire",
@@ -267,4 +325,312 @@ Deno.test("Phase A provider dependency graph exposes read operations only", () =
     ].some((name) => name in test.service),
     false,
   );
+});
+
+Deno.test("successful safe text read", async () => {
+  const test = harness([]);
+  const result = await readCapable(test.service).read({
+    authority,
+    path: "safe.txt",
+  });
+  assertEquals(result, {
+    contract_version: 1,
+    quote_request_id: authority.quoteRequestId,
+    website_work_context_id: authority.websiteWorkContextId,
+    workspace_state: "REPOSITORY_READY",
+    repository: {
+      display_name: "lws-phase-a-fixtures/project-a",
+      binding_revision: 7,
+    },
+    snapshot: { commit_sha: COMMIT, ref_label: "main" },
+    file: {
+      path: "safe.txt",
+      size_bytes: 4,
+      media_type: "text/plain",
+      encoding: "utf-8",
+      content: "safe",
+    },
+  });
+  assertEquals(Object.keys(result), [
+    "contract_version",
+    "quote_request_id",
+    "website_work_context_id",
+    "workspace_state",
+    "repository",
+    "snapshot",
+    "file",
+  ]);
+});
+
+Deno.test("direct read always resolves fresh snapshot", async () => {
+  const test = harness([], {
+    snapshots: [
+      {
+        commitSha: COMMIT,
+        rootTreeSha: ROOT,
+        repositoryDisplayName: "lws-phase-a-fixtures/project-a",
+      },
+      {
+        commitSha: NEXT_COMMIT,
+        rootTreeSha: NEXT_ROOT,
+        repositoryDisplayName: "lws-phase-a-fixtures/project-a",
+      },
+    ],
+  });
+  const service = readCapable(test.service);
+  await service.read({ authority, path: "safe.txt" });
+  const second = await service.read({ authority, path: "safe.txt" });
+  assertEquals(test.resolveCalls.length, 2);
+  assertEquals(
+    test.readCalls[1] as Record<string, unknown>,
+    {
+      authority,
+      commitSha: NEXT_COMMIT,
+      rootTreeSha: NEXT_ROOT,
+      path: "safe.txt",
+    },
+  );
+  assertEquals(
+    (second.snapshot as { commit_sha: string }).commit_sha,
+    NEXT_COMMIT,
+  );
+});
+
+Deno.test("browser cannot supply commit/ref and stale historical commit cannot be selected", async () => {
+  for (
+    const extra of [
+      { commitSha: COMMIT },
+      { commit: COMMIT },
+      { ref: "heads/historical" },
+      { branch: "historical" },
+      { cursor: "opaque" },
+    ]
+  ) {
+    const test = harness([]);
+    await assertRejects(
+      () =>
+        readCapable(test.service).read({
+          authority,
+          path: "safe.txt",
+          ...extra,
+        } as never),
+      WebsiteProjectFilesServiceError,
+      "INVALID_REQUEST",
+    );
+    assertEquals(test.resolveCalls.length, 0);
+    assertEquals(test.readCalls.length, 0);
+  }
+});
+
+Deno.test("provider declared oversize and decoded oversize return no partial content", async () => {
+  for (
+    const [declaredSize, bytes] of [
+      [1_048_577, new Uint8Array(0)],
+      [null, new Uint8Array(1_048_577).fill(0x61)],
+    ] as const
+  ) {
+    const test = harness([], {
+      readResult: {
+        path: "large.txt",
+        canonicalPath: "large.txt",
+        mode: "100644",
+        objectType: "blob",
+        declaredSize,
+        bytes,
+      },
+    });
+    const error = await assertRejects(
+      () => readCapable(test.service).read({ authority, path: "large.txt" }),
+      WebsiteProjectFilesServiceError,
+      "FILE_TOO_LARGE",
+    );
+    assertEquals(JSON.stringify(error).includes("content"), false);
+  }
+});
+
+Deno.test("strict UTF-8 rejects malformed, UTF-16, and legacy encodings", async () => {
+  const cases = [
+    new Uint8Array([0xc3, 0x28]),
+    new Uint8Array([0xff, 0xfe, 0x41, 0x00]),
+    new Uint8Array([0xe9]),
+  ];
+  for (const bytes of cases) {
+    const test = harness([], {
+      readResult: {
+        path: "encoding.txt",
+        canonicalPath: "encoding.txt",
+        mode: "100644",
+        objectType: "blob",
+        declaredSize: bytes.byteLength,
+        bytes,
+      },
+    });
+    await assertRejects(
+      () => readCapable(test.service).read({ authority, path: "encoding.txt" }),
+      WebsiteProjectFilesServiceError,
+      "UNSUPPORTED_ENCODING",
+    );
+  }
+});
+
+Deno.test("binary content returns no partial content", async () => {
+  const bytes = new Uint8Array([0x61, 0x00, 0x62]);
+  const test = harness([], {
+    readResult: {
+      path: "binary.txt",
+      canonicalPath: "binary.txt",
+      mode: "100644",
+      objectType: "blob",
+      declaredSize: bytes.byteLength,
+      bytes,
+    },
+  });
+  const error = await assertRejects(
+    () => readCapable(test.service).read({ authority, path: "binary.txt" }),
+    WebsiteProjectFilesServiceError,
+    "BINARY_UNSUPPORTED",
+  );
+  assertEquals(JSON.stringify(error).includes("a\u0000b"), false);
+});
+
+Deno.test("sensitive pathname fails before provider read", async () => {
+  const test = harness([]);
+  await assertRejects(
+    () => readCapable(test.service).read({ authority, path: ".env" }),
+    WebsiteProjectFilesServiceError,
+    "SENSITIVE_FILE_BLOCKED",
+  );
+  assertEquals(test.resolveCalls.length, 0);
+  assertEquals(test.readCalls.length, 0);
+});
+
+Deno.test("sensitive content and unavailable classifier fail closed", async () => {
+  const cases = [
+    {
+      text: "client_secret=real-production-secret",
+      classifier: undefined,
+      expected: "SENSITIVE_FILE_BLOCKED",
+    },
+    {
+      text: "ordinary text",
+      classifier: { classify: () => "UNAVAILABLE" as const },
+      expected: "SENSITIVE_CLASSIFICATION_UNAVAILABLE",
+    },
+    {
+      text: "ordinary text",
+      classifier: {
+        classify: () => {
+          throw new Error("classifier raw failure");
+        },
+      },
+      expected: "SENSITIVE_CLASSIFICATION_UNAVAILABLE",
+    },
+  ];
+  for (const scenario of cases) {
+    const bytes = new TextEncoder().encode(scenario.text);
+    const test = harness([], {
+      classifier: scenario.classifier,
+      readResult: {
+        path: "safe.txt",
+        canonicalPath: "safe.txt",
+        mode: "100644",
+        objectType: "blob",
+        declaredSize: bytes.byteLength,
+        bytes,
+      },
+    });
+    const error = await assertRejects(
+      () => readCapable(test.service).read({ authority, path: "safe.txt" }),
+      WebsiteProjectFilesServiceError,
+      scenario.expected,
+    );
+    assertEquals(JSON.stringify(error).includes(scenario.text), false);
+  }
+});
+
+Deno.test("provider canonical path mismatch returns no content", async () => {
+  const bytes = new TextEncoder().encode("safe");
+  const test = harness([], {
+    readResult: {
+      path: "safe.txt",
+      canonicalPath: "other.txt",
+      mode: "100644",
+      objectType: "blob",
+      declaredSize: bytes.byteLength,
+      bytes,
+    },
+  });
+  const error = await assertRejects(
+    () => readCapable(test.service).read({ authority, path: "safe.txt" }),
+    WebsiteProjectFilesServiceError,
+    "PROJECT_FILES_PROVIDER_RESPONSE_INVALID",
+  );
+  assertEquals(JSON.stringify(error).includes("safe"), false);
+});
+
+Deno.test("UTF-8 BOM is removed while exact byte count is retained", async () => {
+  const bytes = new Uint8Array([0xef, 0xbb, 0xbf, 0x73, 0x61, 0x66, 0x65]);
+  const test = harness([], {
+    readResult: {
+      path: "safe.txt",
+      canonicalPath: "safe.txt",
+      mode: "100644",
+      objectType: "blob",
+      declaredSize: bytes.byteLength,
+      bytes,
+    },
+  });
+  const result = await readCapable(test.service).read({
+    authority,
+    path: "safe.txt",
+  });
+  assertEquals(result.file, {
+    path: "safe.txt",
+    size_bytes: 7,
+    media_type: "text/plain",
+    encoding: "utf-8",
+    content: "safe",
+  });
+});
+
+Deno.test("file read exposes no provider, download, data, object, signed URL, token, or SHA", async () => {
+  const result = await readCapable(harness([]).service).read({
+    authority,
+    path: "safe.txt",
+  });
+  const serialized = JSON.stringify(result);
+  for (
+    const forbidden of [
+      "raw.githubusercontent.com",
+      "download_url",
+      "data:",
+      "blob:",
+      "object_url",
+      "signed_url",
+      "ghs_",
+      "objectSha",
+    ]
+  ) assertEquals(serialized.includes(forbidden), false);
+});
+
+Deno.test("file provider failures remain stable and leak no raw details", async () => {
+  for (
+    const code of [
+      "PROJECT_FILE_NOT_FOUND",
+      "PROJECT_PATH_KIND_MISMATCH",
+      "PROJECT_FILES_SNAPSHOT_UNAVAILABLE",
+      "PROJECT_FILES_PROVIDER_UNAVAILABLE",
+      "PROJECT_FILES_PROVIDER_TIMEOUT",
+      "PROJECT_FILES_PROVIDER_THROTTLED",
+      "PROJECT_FILES_PROVIDER_RESPONSE_INVALID",
+    ]
+  ) {
+    const test = harness([], { fail: new Error(code) });
+    const error = await assertRejects(
+      () => readCapable(test.service).read({ authority, path: "safe.txt" }),
+      WebsiteProjectFilesServiceError,
+      code,
+    );
+    assertEquals(JSON.stringify(error).includes("github.com"), false);
+  }
 });

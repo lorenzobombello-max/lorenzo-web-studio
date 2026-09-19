@@ -16,6 +16,7 @@ const SHA = /^[0-9a-f]{40}$/;
 const REF =
   /^(?:heads|tags)\/[A-Za-z0-9](?:[A-Za-z0-9._\/-]{0,253}[A-Za-z0-9])?$/;
 const TOKEN = /^(?:ghs_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})$/;
+const MAX_FILE_BYTES = 1_048_576;
 
 export type WebsiteProjectFilesAuthority = Readonly<{
   leaseId: string;
@@ -56,6 +57,15 @@ export type WebsiteProjectFilesDirectory = Readonly<{
   entries: readonly ProviderTreeEntry[];
 }>;
 
+export type WebsiteProjectFilesProviderFile = Readonly<{
+  path: string;
+  canonicalPath: string;
+  mode: "100644" | "100755";
+  objectType: "blob";
+  declaredSize: number | null;
+  bytes: Uint8Array;
+}>;
+
 export type WebsiteProjectFilesProvider = Readonly<{
   resolveSnapshot(
     authority: WebsiteProjectFilesAuthority,
@@ -69,6 +79,14 @@ export type WebsiteProjectFilesProvider = Readonly<{
       path: string;
     }>,
   ): Promise<WebsiteProjectFilesDirectory>;
+  readFile(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      commitSha: string;
+      rootTreeSha: string;
+      path: string;
+    }>,
+  ): Promise<WebsiteProjectFilesProviderFile>;
 }>;
 
 export class WebsiteProjectFilesProviderError extends Error {
@@ -306,6 +324,54 @@ function projectTree(
   }));
 }
 
+function decodeBlob(
+  value: GitHubHttpResult,
+  expectedSha: string,
+  declaredSize: number | null,
+): Uint8Array {
+  if (!isRecord(value)) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  const blob = value as Record<string, unknown>;
+  if (
+    !exactKeys(blob, [
+      "sha",
+      "encoding",
+      "contentBase64",
+      "size",
+    ]) || blob.sha !== expectedSha || blob.encoding !== "base64" ||
+    typeof blob.contentBase64 !== "string" ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      blob.contentBase64,
+    ) || !Number.isSafeInteger(blob.size) || (blob.size as number) < 0
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  if ((blob.size as number) > MAX_FILE_BYTES) return fail("FILE_TOO_LARGE");
+  if (
+    declaredSize !== null &&
+    (blob.size as number) !== declaredSize
+  ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  if (blob.contentBase64.length > Math.ceil(MAX_FILE_BYTES / 3) * 4) {
+    return fail("FILE_TOO_LARGE");
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(
+      atob(blob.contentBase64),
+      (character) => character.charCodeAt(0),
+    );
+  } catch {
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+  if (bytes.byteLength > MAX_FILE_BYTES) return fail("FILE_TOO_LARGE");
+  if (bytes.byteLength !== blob.size) {
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+  let canonical = "";
+  for (const byte of bytes) canonical += String.fromCharCode(byte);
+  if (btoa(canonical) !== blob.contentBase64) {
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+  return bytes;
+}
+
 export function createWebsiteProjectFilesProvider(
   dependencies: ProviderDependencies,
 ): WebsiteProjectFilesProvider {
@@ -453,6 +519,75 @@ export function createWebsiteProjectFilesProvider(
         input.path,
       );
       return Object.freeze({ directoryTreeSha: treeSha, entries });
+    },
+
+    async readFile(input) {
+      if (
+        !isRecord(input) || !exactKeys(input, [
+          "authority",
+          "commitSha",
+          "rootTreeSha",
+          "path",
+        ]) || !validAuthority(input.authority, dependencies.config) ||
+        !SHA.test(input.commitSha) || !SHA.test(input.rootTreeSha) ||
+        typeof input.path !== "string" || input.path === ""
+      ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      const segments = input.path.split("/");
+      if (!segments.every(validName)) {
+        return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      }
+      const token = await access(input.authority);
+      const base = coordinates(input.authority, token);
+      let treeSha = input.rootTreeSha;
+      let traversed = "";
+      for (let index = 0; index < segments.length; index++) {
+        const entries = projectTree(
+          await execute({
+            kind: "WEBSITE_PROJECT_FILES_READ_TREE",
+            ...base,
+            treeRef: treeSha,
+          }),
+          treeSha,
+          traversed,
+        );
+        const segment = segments[index];
+        const target = entries.find((entry) => entry.name === segment);
+        if (!target) return fail("PROJECT_FILE_NOT_FOUND");
+        const final = index === segments.length - 1;
+        if (!final) {
+          if (target.objectType !== "tree" || target.mode !== "040000") {
+            return fail("PROJECT_PATH_KIND_MISMATCH");
+          }
+          treeSha = target.objectSha;
+          traversed = traversed ? `${traversed}/${segment}` : segment;
+          continue;
+        }
+        if (
+          target.objectType !== "blob" ||
+          target.mode !== "100644" && target.mode !== "100755"
+        ) return fail("PROJECT_PATH_KIND_MISMATCH");
+        if (target.size !== null && target.size > MAX_FILE_BYTES) {
+          return fail("FILE_TOO_LARGE");
+        }
+        const bytes = decodeBlob(
+          await execute({
+            kind: "READ_BLOB",
+            ...base,
+            blobSha: target.objectSha,
+          }),
+          target.objectSha,
+          target.size,
+        );
+        return Object.freeze({
+          path: input.path,
+          canonicalPath: target.canonicalPath,
+          mode: target.mode,
+          objectType: "blob" as const,
+          declaredSize: target.size,
+          bytes: Uint8Array.from(bytes),
+        });
+      }
+      return fail("PROJECT_FILE_NOT_FOUND");
     },
   });
 }
