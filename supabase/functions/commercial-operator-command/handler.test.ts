@@ -39,6 +39,7 @@ import {
   executeCallerJwtWebsiteConceptStartAction,
   executeCallerJwtWebsiteExecutionWorkspaceProvisionAction,
   executeCallerJwtWebsiteExecutionWorkspaceReadAction,
+  executeCallerJwtWebsiteRequirementsAction,
   executeApplicationDetailRead,
   executeCallerJwtWebsiteProjectFilesAction,
   executeCallerJwtWorkforceCalendarAction,
@@ -6338,5 +6339,546 @@ Deno.test("recruitment vacancy failures expose stable authorization and conflict
     );
     assertEquals(response.status, status);
     assertEquals((await response.json()).code, publicCode);
+  }
+});
+
+const websiteRequirementsQuoteId = "a1900000-0000-4000-8000-000000000001";
+const websiteRequirementsContextId = "a1900000-0000-4000-8000-000000000002";
+const websiteRequirementsBoardId = "a1900000-0000-4000-8000-000000000003";
+const websiteRequirementId = "a1900000-0000-4000-8000-000000000004";
+const websiteRequirementsIntakeId = "a1900000-0000-4000-8000-000000000005";
+const websiteRequirementsSyncRunId = "a1900000-0000-4000-8000-000000000006";
+const websiteRequirementsIdempotencyKey = "a1900000-0000-4000-8000-000000000007";
+
+function websiteRequirementsBoardResult(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    contract_version: 1,
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    project_id: null,
+    phase: "PRE_PROJECT",
+    context: {
+      customer: "Voorbeeldbedrijf BV",
+      dossier_reference: "LWS-AAN-2099-0001",
+      assigned_operator: null,
+    },
+    board: {
+      requirements_board_id: websiteRequirementsBoardId,
+      sync_state: "CURRENT",
+      revision: 3,
+      mapping_version: 1,
+      current_intake_id: websiteRequirementsIntakeId,
+      current_intake_revision: 2,
+      current_intake_snapshot_sha256: "a".repeat(64),
+    },
+    items: [{
+      requirement_id: websiteRequirementId,
+      item_number: 1,
+      title: "Bouw pagina: Home",
+      description: "Klantvraag uit bevestigde Website-intake.",
+      category: "PAGE",
+      source: {
+        authority_type: "WEBSITE_INTAKE",
+        source_key: "page:home",
+        intake_id: websiteRequirementsIntakeId,
+        intake_revision: 2,
+        submitted_at: "2099-01-01T10:00:00Z",
+        mapping_version: 1,
+      },
+      linked_page_or_module: "home",
+      status: "PENDING",
+      completion_mode: "OPERATOR",
+      sort_order: 1,
+      required: true,
+      started_at: null,
+      completed_at: null,
+      verification_result: "NOT_APPLICABLE",
+      blocked_reason: null,
+      revision: 1,
+      source_review_state: "CURRENT",
+      permitted_actions: ["start_website_requirement"],
+    }],
+    progress: {
+      required_total: 1,
+      required_completed: 0,
+      required_open: 1,
+      required_blocked: 0,
+      review_pending: 0,
+    },
+    readiness: {
+      ready_for_preview: false,
+      readiness: "BLOCKED",
+      reason: "REQUIRED_REQUIREMENTS_OPEN",
+    },
+    empty_state: null,
+    ...overrides,
+  };
+}
+
+function websiteRequirementsSyncResult(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    contract_version: 1,
+    outcome: "SYNCED",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirements_board_id: websiteRequirementsBoardId,
+    board_revision: 3,
+    intake_id: websiteRequirementsIntakeId,
+    intake_revision: 2,
+    intake_sha256: "a".repeat(64),
+    mapping_version: 1,
+    sync_run_id: websiteRequirementsSyncRunId,
+    replayed: false,
+    review_required: false,
+    counts: {
+      created: 1,
+      updated: 0,
+      unchanged: 0,
+      retired: 0,
+      change_pending: 0,
+      removal_pending: 0,
+      revived: 0,
+    },
+    ...overrides,
+  };
+}
+
+function websiteRequirementMutationResult(
+  action: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const sourceResolution = action === "accept_website_requirement_source_change"
+    ? "ACCEPT_CHANGE"
+    : action === "keep_existing_website_requirement_source"
+    ? "KEEP_EXISTING"
+    : action === "retire_website_requirement_source"
+    ? "RETIRE"
+    : null;
+  const command = sourceResolution !== null
+    ? "RESOLVE_SOURCE"
+    : action === "start_website_requirement"
+    ? "START"
+    : action === "block_website_requirement"
+    ? "BLOCK"
+    : action === "complete_website_requirement"
+    ? "COMPLETE"
+    : "REOPEN";
+  return {
+    contract_version: 1,
+    command,
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirements_board_id: websiteRequirementsBoardId,
+    requirement_id: websiteRequirementId,
+    previous_status: command === "REOPEN" ? "COMPLETED" : "PENDING",
+    status: command === "START" ? "ACTIVE" : command === "BLOCK" ? "BLOCKED" : command === "COMPLETE" ? "COMPLETED" : "PENDING",
+    previous_source_review_state: sourceResolution === null ? "CURRENT" : "CHANGE_PENDING",
+    source_review_state: "CURRENT",
+    resolution: sourceResolution,
+    requirement_revision: 2,
+    board_revision: 4,
+    replayed: false,
+    ...overrides,
+  };
+}
+
+const websiteRequirementsRequests: Record<string, unknown>[] = [
+  {
+    action: "get_website_requirements_board",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+  },
+  {
+    action: "sync_website_requirements_from_intake",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    expected_board_revision: 0,
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  },
+  {
+    action: "start_website_requirement",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirement_id: websiteRequirementId,
+    expected_revision: 1,
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  },
+  {
+    action: "block_website_requirement",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirement_id: websiteRequirementId,
+    expected_revision: 1,
+    reason: "  Wacht op klantinhoud  ",
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  },
+  {
+    action: "complete_website_requirement",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirement_id: websiteRequirementId,
+    expected_revision: 1,
+    attestation: { attestation: "  Handmatig gecontroleerd  " },
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  },
+  {
+    action: "reopen_website_requirement",
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirement_id: websiteRequirementId,
+    expected_revision: 1,
+    reason: "  Correctie nodig  ",
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  },
+  ...[
+    "accept_website_requirement_source_change",
+    "keep_existing_website_requirement_source",
+    "retire_website_requirement_source",
+  ].map((action) => ({
+    action,
+    quote_request_id: websiteRequirementsQuoteId,
+    website_work_context_id: websiteRequirementsContextId,
+    requirement_id: websiteRequirementId,
+    expected_revision: 1,
+    reason: "  Bronwijziging beoordeeld  ",
+    idempotency_key: websiteRequirementsIdempotencyKey,
+  })),
+];
+
+function websiteRequirementsResult(input: Record<string, unknown>) {
+  return input.action === "get_website_requirements_board"
+    ? websiteRequirementsBoardResult()
+    : input.action === "sync_website_requirements_from_intake"
+    ? websiteRequirementsSyncResult()
+    : websiteRequirementMutationResult(String(input.action));
+}
+
+Deno.test("Website Requirements accepts exactly nine caller-JWT browser actions", async () => {
+  for (const input of websiteRequirementsRequests) {
+    const calls: Array<{ jwt: string; input: Record<string, unknown> }> = [];
+    const harness = dependencies({
+      executeApplicationAction: async (
+        token: string,
+        parsedInput: Record<string, unknown>,
+      ) => {
+        calls.push({ jwt: token, input: parsedInput });
+        return websiteRequirementsResult(input);
+      },
+    });
+    const result = await handleCommercialOperator(request(input), harness.deps);
+    assertEquals(result.status, 200, String(input.action));
+    assertEquals((await result.json()).code, "APPLICATION_ACTION_ACCEPTED");
+    assertEquals(calls, [{
+      jwt,
+      input: {
+        ...input,
+        ...(typeof input.reason === "string" ? { reason: input.reason.trim() } : {}),
+        ...(input.attestation
+          ? { attestation: { attestation: "Handmatig gecontroleerd" } }
+          : {}),
+      },
+    }]);
+  }
+});
+
+Deno.test("Website Requirements rejects missing, surplus, malformed, and browser-authority fields", async () => {
+  for (const valid of websiteRequirementsRequests) {
+    const keys = Object.keys(valid);
+    const missing = { ...valid };
+    delete missing[keys[keys.length - 1]];
+    for (const invalid of [
+      missing,
+      { ...valid, extra: true },
+      { ...valid, quote_request_id: "not-a-uuid" },
+      { ...valid, project_id: "a1900000-0000-4000-8000-000000000099" },
+    ]) {
+      const harness = dependencies();
+      const result = await handleCommercialOperator(request(invalid), harness.deps);
+      assertEquals(result.status, 400, `${valid.action}: ${JSON.stringify(invalid)}`);
+      assertEquals((await result.json()).code, "INVALID_REQUEST");
+      assertEquals(harness.calls.length, 0);
+    }
+  }
+
+  for (const invalid of [
+    { ...websiteRequirementsRequests[1], expected_board_revision: -1 },
+    { ...websiteRequirementsRequests[1], expected_board_revision: 1.5 },
+    { ...websiteRequirementsRequests[2], expected_revision: 0 },
+    { ...websiteRequirementsRequests[2], idempotency_key: "bad" },
+    { ...websiteRequirementsRequests[3], reason: " " },
+    { ...websiteRequirementsRequests[3], reason: "x".repeat(501) },
+    { ...websiteRequirementsRequests[4], attestation: { attestation: "ok", extra: true } },
+    { ...websiteRequirementsRequests[4], attestation: { attestation: " " } },
+    { ...websiteRequirementsRequests[6], resolution: "ACCEPT_CHANGE" },
+  ]) {
+    const result = await handleCommercialOperator(request(invalid), dependencies().deps);
+    assertEquals(result.status, 400, JSON.stringify(invalid));
+    assertEquals((await result.json()).code, "INVALID_REQUEST");
+  }
+});
+
+Deno.test("Website Requirements fails closed on response drift and broken request correlation", async () => {
+  const board = websiteRequirementsBoardResult();
+  const item = (board.items as Array<Record<string, unknown>>)[0];
+  const cases: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ extra: true })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ quote_request_id: "a1900000-0000-4000-8000-000000000099" })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ website_work_context_id: "a1900000-0000-4000-8000-000000000099" })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ context: { customer: "Customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null, extra: true } })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ items: [{ ...item, source: { ...(item.source as Record<string, unknown>), source_sha256: "a".repeat(64) } }] })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ progress: { ...(board.progress as Record<string, unknown>), extra: 0 } })],
+    [websiteRequirementsRequests[0], websiteRequirementsBoardResult({ readiness: { ...(board.readiness as Record<string, unknown>), extra: false } })],
+    [websiteRequirementsRequests[1], websiteRequirementsSyncResult({ mapping_version: 2 })],
+    [websiteRequirementsRequests[1], websiteRequirementsSyncResult({ website_work_context_id: "a1900000-0000-4000-8000-000000000099" })],
+    [websiteRequirementsRequests[1], websiteRequirementsSyncResult({ counts: { ...(websiteRequirementsSyncResult().counts as Record<string, unknown>), extra: 1 } })],
+    [websiteRequirementsRequests[2], websiteRequirementMutationResult("start_website_requirement", { command: "BLOCK" })],
+    [websiteRequirementsRequests[2], websiteRequirementMutationResult("start_website_requirement", { extra: true })],
+    [websiteRequirementsRequests[4], websiteRequirementMutationResult("complete_website_requirement", { resolution: "KEEP_EXISTING" })],
+    [websiteRequirementsRequests[6], websiteRequirementMutationResult("accept_website_requirement_source_change", { resolution: "RETIRE" })],
+    [websiteRequirementsRequests[8], websiteRequirementMutationResult("retire_website_requirement_source", { requirement_id: "a1900000-0000-4000-8000-000000000099" })],
+  ];
+  for (const [input, invalidResponse] of cases) {
+    const response = await handleCommercialOperator(
+      request(input),
+      dependencies({ executeApplicationAction: async () => invalidResponse }).deps,
+    );
+    const payload = await response.json();
+    assertEquals(response.status, 500, String(input.action));
+    assertEquals(payload, { ok: false, code: "SERVER_RESPONSE_INVALID" });
+  }
+});
+
+Deno.test("Website Requirements accepts exact replay results without weakening correlation", async () => {
+  for (const [input, result] of [
+    [websiteRequirementsRequests[1], websiteRequirementsSyncResult({
+      outcome: "REPLAYED",
+      replayed: true,
+      review_required: false,
+    })],
+    [websiteRequirementsRequests[2], websiteRequirementMutationResult(
+      "start_website_requirement",
+      { replayed: true },
+    )],
+  ] as Array<[Record<string, unknown>, Record<string, unknown>]>) {
+    const response = await handleCommercialOperator(
+      request(input),
+      dependencies({ executeApplicationAction: async () => result }).deps,
+    );
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).result, result);
+  }
+});
+
+Deno.test("Website Requirements exposes only the closed browser-safe error allowlist", async () => {
+  const mappings = [
+    ...[
+      "AAL2_REQUIRED",
+      "MFA_AAL2_REQUIRED",
+      "HUMAN_JWT_REQUIRED",
+      "WEBSITE_REQUIREMENTS_ACCESS_DENIED",
+      "WEBSITE_REQUIREMENTS_SYNC_FORBIDDEN",
+      "WEBSITE_REQUIREMENT_ROLE_DENIED",
+      "WEBSITE_REQUIREMENT_ASSIGNMENT_DENIED",
+    ].map((code) => [code, 403, "OPERATOR_NOT_AUTHORIZED"]),
+    ...[
+      "WEBSITE_REQUIREMENT_NOT_FOUND",
+      "WEBSITE_REQUIREMENTS_BOARD_NOT_FOUND",
+    ].map((code) => [code, 404, "NOT_FOUND"]),
+    ["CONCURRENT_MODIFICATION", 409, "CONCURRENT_MODIFICATION"],
+    ...[
+      "WEBSITE_REQUIREMENTS_IDEMPOTENCY_CONFLICT",
+      "WEBSITE_REQUIREMENT_IDEMPOTENCY_CONFLICT",
+    ].map((code) => [code, 409, "IDEMPOTENCY_CONFLICT"]),
+    ...[
+      "INVALID_WEBSITE_REQUIREMENTS_SYNC_COMMAND",
+      "WEBSITE_REQUIREMENTS_CONTEXT_MISMATCH",
+      "INVALID_WEBSITE_REQUIREMENT_COMMAND",
+      "WEBSITE_REQUIREMENT_BLOCK_REASON_REQUIRED",
+      "WEBSITE_REQUIREMENT_REOPEN_REASON_REQUIRED",
+      "WEBSITE_REQUIREMENT_ATTESTATION_REQUIRED",
+      "INVALID_WEBSITE_REQUIREMENT_SOURCE_RESOLUTION",
+    ].map((code) => [code, 400, "INVALID_REQUEST"]),
+    ...[
+      "WEBSITE_REQUIREMENTS_INTAKE_NOT_ELIGIBLE",
+      "WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED",
+      "WEBSITE_ACTIVE_REQUIREMENT_CONFLICT",
+      "WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND",
+      "INVALID_WEBSITE_REQUIREMENT_TRANSITION",
+      "WEBSITE_REQUIREMENT_SOURCE_REVIEW_REQUIRED",
+      "WEBSITE_REQUIREMENT_SOURCE_STATE_MISMATCH",
+      "WEBSITE_REQUIREMENT_VERIFICATION_REQUIRED",
+      "DIRECT_WEBSITE_REQUIREMENT_WRITE_FORBIDDEN",
+      "WEBSITE_REQUIREMENT_ROOT_IMMUTABLE",
+      "WEBSITE_REQUIREMENT_IDENTITY_IMMUTABLE",
+      "STARTED_WEBSITE_REQUIREMENT_DEFINITION_IMMUTABLE",
+    ].map((code) => [code, 409, "COMMAND_REJECTED"]),
+  ] as Array<[string, number, string]>;
+
+  for (const [backendCode, status, publicCode] of mappings) {
+    const response = await handleCommercialOperator(
+      request(websiteRequirementsRequests[2]),
+      dependencies({
+        executeApplicationAction: async () => {
+          throw new Error(backendCode);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, status, backendCode);
+    assertEquals(await response.json(), { ok: false, code: publicCode });
+  }
+
+  const unknown = await handleCommercialOperator(
+    request(websiteRequirementsRequests[2]),
+    dependencies({
+      executeApplicationAction: async () => {
+        throw new Error("raw SQL/provider secret detail");
+      },
+    }).deps,
+  );
+  assertEquals(unknown.status, 500);
+  assertEquals(await unknown.json(), { ok: false, code: "INTERNAL_ERROR" });
+});
+
+Deno.test("Website Requirements keeps generic resolution, verification, promotion, and service role unavailable", async () => {
+  for (const action of [
+    "resolve_website_requirement_source_change",
+    "record_website_requirement_verification",
+    "promote_website_concept",
+  ]) {
+    const result = await handleCommercialOperator(
+      request({ action, quote_request_id: websiteRequirementsQuoteId }),
+      dependencies().deps,
+    );
+    assertEquals(result.status, 400);
+    assertEquals((await result.json()).code, "INVALID_REQUEST");
+  }
+
+  const serviceRoleJwt = createUnsignedTestJwt({
+    sub: userId,
+    role: "service_role",
+    exp: 4102444800,
+  });
+  const denied = await handleCommercialOperator(
+    request(websiteRequirementsRequests[0], serviceRoleJwt),
+    dependencies().deps,
+  );
+  assertEquals(denied.status, 401);
+  assertEquals((await denied.json()).code, "HUMAN_JWT_REQUIRED");
+});
+
+Deno.test("Website Requirements redacts AAL1, inactive, revoked, role, assignment, and cross-context denials", async () => {
+  const cases: Array<[string, Record<string, unknown>, string]> = [
+    [ownerAal1Jwt, websiteRequirementsRequests[1], "AAL2_REQUIRED"],
+    [jwt, websiteRequirementsRequests[0], "OPERATOR_INACTIVE"],
+    [jwt, websiteRequirementsRequests[0], "OPERATOR_REVOKED"],
+    [jwt, websiteRequirementsRequests[2], "WEBSITE_REQUIREMENT_ROLE_DENIED"],
+    [jwt, websiteRequirementsRequests[2], "WEBSITE_REQUIREMENT_ASSIGNMENT_DENIED"],
+    [jwt, {
+      ...websiteRequirementsRequests[2],
+      website_work_context_id: "a1900000-0000-4000-8000-000000000099",
+    }, "WEBSITE_REQUIREMENTS_ACCESS_DENIED"],
+  ];
+  for (const [token, input, backendCode] of cases) {
+    const claims = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const response = await handleCommercialOperator(
+      request(input, token),
+      dependencies({
+        verifyUser: async () => ({ id: claims.sub }),
+        executeApplicationAction: async () => {
+          throw new Error(backendCode);
+        },
+      }).deps,
+    );
+    assertEquals(response.status, 403, backendCode);
+    assertEquals(await response.json(), {
+      ok: false,
+      code: "OPERATOR_NOT_AUTHORIZED",
+    });
+  }
+});
+
+Deno.test("Website Requirements production dispatch uses caller JWT and fixed RPC resolutions", async () => {
+  const expected = [
+    ["get_website_requirements_board_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+    }],
+    ["sync_website_requirements_from_intake_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_expected_board_revision: 0,
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }],
+    ["start_website_requirement_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_requirement_id: websiteRequirementId,
+      p_expected_revision: 1,
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }],
+    ["block_website_requirement_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_requirement_id: websiteRequirementId,
+      p_expected_revision: 1,
+      p_reason: "  Wacht op klantinhoud  ",
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }],
+    ["complete_website_requirement_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_requirement_id: websiteRequirementId,
+      p_expected_revision: 1,
+      p_attestation: { attestation: "  Handmatig gecontroleerd  " },
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }],
+    ["reopen_website_requirement_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_requirement_id: websiteRequirementId,
+      p_expected_revision: 1,
+      p_reason: "  Correctie nodig  ",
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }],
+    ...[
+      "ACCEPT_CHANGE",
+      "KEEP_EXISTING",
+      "RETIRE",
+    ].map((resolution) => ["resolve_website_requirement_source_change_v1", {
+      p_quote_request_id: websiteRequirementsQuoteId,
+      p_website_work_context_id: websiteRequirementsContextId,
+      p_requirement_id: websiteRequirementId,
+      p_expected_revision: 1,
+      p_resolution: resolution,
+      p_reason: "  Bronwijziging beoordeeld  ",
+      p_idempotency_key: websiteRequirementsIdempotencyKey,
+    }]),
+  ] as Array<[string, Record<string, unknown>]>;
+
+  for (let index = 0; index < websiteRequirementsRequests.length; index++) {
+    const clientJwts: string[] = [];
+    const rpcCalls: Array<[string, Record<string, unknown>]> = [];
+    const result = await executeCallerJwtWebsiteRequirementsAction(
+      jwt,
+      websiteRequirementsRequests[index] as Parameters<
+        typeof executeCallerJwtWebsiteRequirementsAction
+      >[1],
+      (token) => {
+        clientJwts.push(token);
+        return {
+          rpc: (name: string, parameters: Record<string, unknown>) => {
+            rpcCalls.push([name, parameters]);
+            return Promise.resolve({ data: { accepted: true }, error: null });
+          },
+        };
+      },
+    );
+    assertEquals(clientJwts, [jwt]);
+    assertEquals(rpcCalls, [expected[index]]);
+    assertEquals(result, { accepted: true });
   }
 });

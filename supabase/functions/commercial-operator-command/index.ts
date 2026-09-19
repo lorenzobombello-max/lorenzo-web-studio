@@ -30,6 +30,7 @@ import {
   type WebsiteExecutionWorkspaceProvisionActionInput,
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
+  type WebsiteRequirementsActionInput,
   type RecruitmentVacancyActionInput,
   type WebsiteQuotationPricingStateActionInput,
   withCommercialOperatorCors,
@@ -210,6 +211,10 @@ type ValidatedApplicationActionInput =
     idempotency_key: string;
     reason: string | null;
     quote_request_id: string | null;
+    website_work_context_id: string;
+    requirement_id: string;
+    expected_board_revision: number;
+    attestation: Readonly<{ attestation: string }>;
     business_draft_id: string;
     approval_id: string;
     approval_version: number;
@@ -400,6 +405,118 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
       p_idempotency_key: input.idempotency_key,
     },
   );
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function executeCallerJwtWebsiteRequirementsAction(
+  jwt: string,
+  input: WebsiteRequirementsActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  const client = clientFor(jwt);
+  let rpcName: string;
+  let parameters: Record<string, unknown>;
+  switch (input.action) {
+    case "get_website_requirements_board":
+      rpcName = "get_website_requirements_board_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+      };
+      break;
+    case "sync_website_requirements_from_intake":
+      rpcName = "sync_website_requirements_from_intake_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_expected_board_revision: input.expected_board_revision,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "start_website_requirement":
+      rpcName = "start_website_requirement_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "block_website_requirement":
+      rpcName = "block_website_requirement_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_reason: input.reason,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "complete_website_requirement":
+      rpcName = "complete_website_requirement_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_attestation: input.attestation,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "reopen_website_requirement":
+      rpcName = "reopen_website_requirement_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_reason: input.reason,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "accept_website_requirement_source_change":
+      rpcName = "resolve_website_requirement_source_change_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_resolution: "ACCEPT_CHANGE",
+        p_reason: input.reason,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "keep_existing_website_requirement_source":
+      rpcName = "resolve_website_requirement_source_change_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_resolution: "KEEP_EXISTING",
+        p_reason: input.reason,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    case "retire_website_requirement_source":
+      rpcName = "resolve_website_requirement_source_change_v1";
+      parameters = {
+        p_quote_request_id: input.quote_request_id,
+        p_website_work_context_id: input.website_work_context_id,
+        p_requirement_id: input.requirement_id,
+        p_expected_revision: input.expected_revision,
+        p_resolution: "RETIRE",
+        p_reason: input.reason,
+        p_idempotency_key: input.idempotency_key,
+      };
+      break;
+    default:
+      throw new Error("INVALID_WEBSITE_REQUIREMENTS_ACTION");
+  }
+  const { data, error } = await client.rpc(rpcName, parameters);
   if (error) throw new Error(error.message);
   return data;
 }
@@ -1539,6 +1656,25 @@ if (import.meta.main) {
           input: ValidatedApplicationActionInput,
           actorAuthUserId: string,
         ) => {
+          if (
+            [
+              "get_website_requirements_board",
+              "sync_website_requirements_from_intake",
+              "start_website_requirement",
+              "block_website_requirement",
+              "complete_website_requirement",
+              "reopen_website_requirement",
+              "accept_website_requirement_source_change",
+              "keep_existing_website_requirement_source",
+              "retire_website_requirement_source",
+            ].includes(input.action)
+          ) {
+            return await executeCallerJwtWebsiteRequirementsAction(
+              jwt,
+              input as WebsiteRequirementsActionInput,
+              clientFor,
+            );
+          }
           if (input.action === "get_current_operator_identity") {
             return await executeCallerJwtCurrentOperatorIdentityAction(
               jwt,
