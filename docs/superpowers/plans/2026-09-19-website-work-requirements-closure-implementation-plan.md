@@ -764,26 +764,68 @@ Task 6 starts no AAL2/MFA flow and executes no sync, start, block, complete, reo
 
 ### 8.2 Full Requirements child
 
-Keep `req-<quote_request_id>`. `requirementsChildContext` re-resolves detail and binds exact `quote_request_id`, `website_work_context_id`, mode, context revision, and optional project. It always requests the Website context board when one exists, in both PRE_PROJECT and OFFICIAL_PROJECT. It does not switch to or copy the commercial board after promotion.
+Task 7 introduces exactly two closed Requirements slot families and no others:
 
-Render with DOM text APIs only:
+| Mode | Exact slot | Phase | Exclusive authority |
+|---|---|---|---|
+| `WEBSITE` | `req-<quote_request_id>` | PRE_PROJECT and OFFICIAL_PROJECT | `get_website_requirements_board` and the Task 5 Website Requirements browser actions |
+| `COMMERCIAL_PROJECT` | `project-req-<quote_request_id>` | OFFICIAL_PROJECT only | Existing `get_project_requirements_board` and existing commercial Project Requirements mutations |
 
-- customer and dossier context;
-- number, title, description, category, safe source/provenance label;
-- status, completion mode, verification state, source-review state;
-- progress and server-projected actions;
-- reason/attestation/source-change dialogs with bounded text.
+`project-req-` plus a canonical UUID is exactly 48 characters and fits the existing slot-key maximum; the generic slot-length contract is unchanged. `requirementsBoardSlot` and `quoteRequestIdFromRequirementsBoardSlot` remain exclusively Website helpers for `req-*`. Task 7 adds `projectRequirementsBoardSlot` and `quoteRequestIdFromProjectRequirementsBoardSlot` exclusively for `project-req-*`. `requirementsInvalidationMatches` remains the exact-quote Website matcher; Task 7 adds `projectRequirementsInvalidationMatches` for exact-quote commercial matching. Neither matcher accepts the other family or another dossier.
 
-Same-record refresh retains the last complete snapshot. Cross-dossier/context switch, logout, revoke, authorization loss, binding mismatch, or child disposal clears sensitive board state immediately. Mutations refetch the authoritative board before invalidating `dossiers`; stale revisions are never retried automatically.
+`operator-project-requirements-child.mjs` remains the only full Requirements child implementation. Its mode is selected solely by the validated slot prefix. It never selects authority from role, project ID, lifecycle status, completion mode, URL query data, opener/window messages, or browser state. The module registry performs only closed routing and must test prefixes in this exact shadow-safe order: `project-req-`, `req-`, `website-`, `project-`. Both Requirements prefixes mount `initializeOperatorProjectRequirements` and receive `requireAal2`. The registry determines no dossier, project, role, assignment, AAL2, Website context, or Requirement authority.
+
+For every authoritative refresh, the child parses the slot, requests `get_application_detail` and dossier substance, derives the server-backed context, performs the mode-specific board read, validates the exact response, and only then renders. Website mode binds exact `quoteRequestId`, `websiteWorkContextId`, nullable `conceptId`/`projectId`, mode, dossier reference, and customer. Commercial mode requires server-derived OFFICIAL_PROJECT, project ID, quote ID, and dossier binding; a PRE_PROJECT `project-req-*` slot fails closed. Website mode always uses the Website context board in both phases and never switches to or copies the commercial board. Commercial mode preserves existing `projectRequirementsRequest`, `validateProjectRequirementsBoard`, `projectRequirementsView`, existing summary behavior where used, `buildProjectRequirementAction`, filters, cards, actions, mutations, and DTO authority; only its slot namespace changes.
+
+The commercial Project Workspace open action changes to `projectRequirementsBoardSlot(currentContext.quoteRequestId)`. Website Execution activates its Task 6 `Requirements openen` button whenever a valid Website context exists and removes or hides the Task 6 next-step copy. Its click calls only `options.requestOpen?.("dossiers", requirementsBoardSlot(currentSnapshot.context.quoteRequestId))`; it uses no direct `window.open`, URL construction, or project ID.
+
+The integrated Website surface remains the compact Task 6 summary. There is no second full-board implementation and no full board mounted over Website Execution or Project Files. The one full Website board is the managed `dossiers:req-<quote_request_id>` child, usable through the existing workspace/window infrastructure. The commercial singleton is separately `dossiers:project-req-<quote_request_id>`; therefore Website and commercial children never share identity or authority.
+
+Website mode renders with DOM text APIs only and uses validated server order without drag/drop or client mutation of `sort_order`/`item_number`. Presentation filters are exactly `ALL`, `ACTIVE`, `OPEN`, and `COMPLETED`: ALL preserves all validated items; ACTIVE means `status=ACTIVE`; OPEN means `PENDING`, `ACTIVE`, or `BLOCKED`; COMPLETED means `status=COMPLETED`. Filtering is presentation only. Cards expose only item number, title, description, category, safe source/provenance fields, linked page/module, status, completion mode, required, verification result, blocked reason, revision, source-review state, and permitted actions. They never expose raw intake, proposed definitions/hashes, or a client-computed diff. `CHANGE_PENDING` shows `Nieuwe intake-informatie wacht op beoordeling.`; `REMOVAL_PENDING` shows `Deze vereiste komt niet meer voor in de actuele intake en wacht op beoordeling.`
+
+Website action labels are exact:
+
+| Server-projected action | Label |
+|---|---|
+| `start_website_requirement` | `Start` |
+| `block_website_requirement` | `Blokkeren` |
+| `complete_website_requirement` | `Afronden` |
+| `reopen_website_requirement` | `Heropenen` |
+| `accept_website_requirement_source_change` | `Wijziging aanvaarden` |
+| `keep_existing_website_requirement_source` | `Bestaande vereiste behouden` |
+| `retire_website_requirement_source` | `Vereiste uitfaseren` |
+
+Buttons arise only from validated `permitted_actions`; no client derivation may use status, role, assignment, AAL2, completion mode, or source-review state. An unknown action invalidates the entire board response.
+
+Website mode has one convenience sync control labelled `Intake synchroniseren`. It is visible for browser-presented owner and operations-manager identities in `NO_BOARD`, `READY`, and `REVIEW_REQUIRED`, and hidden or disabled in `INTAKE_NOT_ELIGIBLE`, `LOADING`, `ERROR`, or mutation `PENDING`. This visibility is not security authority. The server remains final authority. The request uses exactly `board?.revision ?? 0`. A click creates one new immutable Task 6 intent, performs `requireAal2`, executes the Task 5 request, validates with `validateWebsiteRequirementsSyncResult`, treats a validated replay as authoritative success, discards the intent, refetches and validates the Website board, renders only the fresh projection, and publishes existing `dossiers` invalidation.
+
+At most one Website Requirements mutation intent may be pending per child. START is confirmed by its direct click and has no free input. BLOCK, COMPLETE, REOPEN, ACCEPT, KEEP, and RETIRE use inline forms, never `window.prompt`. Their exact textarea labels are respectively `Reden blokkering`, `Uitvoeringsbevestiging`, `Reden heropening`, `Reden wijziging aanvaarden`, `Reden bestaande vereiste behouden`, and `Reden vereiste uitfaseren`. Every value is trimmed and bounded to 1..500 characters. COMPLETE delegates the exact `{attestation: {attestation: "<trimmed>"}}` shape to its Task 6 builder. Source actions have no free resolution input. Form cancel performs no mutation, creates no pre-submit intent, closes the form, and returns focus to the originating action.
+
+An intent is created only on a valid confirmed form submit or direct START/SYNC click through `createWebsiteRequirementMutationIntent`. Its immutable context snapshot contains the slot, quote ID, Website context ID, optional requirement ID, frozen request, and idempotency key. Every Website mutation attempt, including retry of the same intent, calls `options.requireAal2()` before gateway execution. Missing or rejected AAL2 makes no gateway call and shows a safe authorization message. Frontend AAL2 is only a UX gate; the server remains final authority for AAL2, role, assignment, context, revision, transition, and source resolution.
+
+The same intent object/request/key is retained only for a network failure or timeout without a definitive HTTP response, HTTP 500 `INTERNAL_ERROR`, or HTTP 500 `SERVER_RESPONSE_INVALID`. Show `Uitkomst niet bevestigd. Opnieuw proberen gebruikt dezelfde veilige aanvraag.` and a button labelled `Opnieuw proberen`; retry reruns AAL2 and reuses the same frozen request and key. Discard the intent after validated success, explicit cancel, slot/context/action/target/reason/attestation change, or definitive HTTP 400 `INVALID_REQUEST`, 403 `OPERATOR_NOT_AUTHORIZED`, 404 `NOT_FOUND`, 409 `CONCURRENT_MODIFICATION`, 409 `IDEMPOTENCY_CONFLICT`, or 409 `COMMAND_REJECTED`. A later submit creates a new intent and UUID.
+
+Definitive safe messages are exact: `Aanvraag is ongeldig. Controleer de invoer.`, `Je hebt geen toestemming voor deze actie.`, `De vereiste is niet meer beschikbaar.`, `De gegevens zijn gewijzigd. Het bord wordt vernieuwd.`, `Deze aanvraag kon niet veilig worden herhaald. Het bord wordt vernieuwd.`, and `Deze actie is niet meer toegestaan. Het bord wordt vernieuwd.` in the error order above. The three 409 classes refetch authoritatively. Raw error messages, SQLSTATE, backend bodies, stacks, provider details, and internal queries are never rendered.
+
+After validated success, discard the pending intent, clear the action form, refetch the authoritative Website board, render only the validated fresh board, and publish existing `dossiers` invalidation. There is no optimistic UI. If success is authoritative but refetch fails, retain the last validated pre-mutation snapshot as stale presentation, show `Actie uitgevoerd, maar het bord kon niet veilig worden vernieuwd.`, and still publish invalidation without inventing status or counts.
+
+Root read states are exactly `LOADING`, `NO_BOARD`, `INTAKE_NOT_ELIGIBLE`, `READY`, `REVIEW_REQUIRED`, `ERROR`, and `STALE`. Transient mutation states are exactly `IDLE`, `FORM_OPEN`, `PENDING`, `AMBIGUOUS_RETRY`, and `DEFINITIVE_ERROR`; they never replace board authority. NO_BOARD renders no cards/item actions and exposes sync only to the convenience roles above. INTAKE_NOT_ELIGIBLE is informative only and exposes no cards, sync, or mutations. REVIEW_REQUIRED shows `Wijzigingen uit de intake moeten eerst beoordeeld worden.`
+
+The existing generation guard discards stale reads. Before applying a mutation result, the child verifies it is not disposed and that slot, server-derived context binding, and workspace epoch remain current. A result for an old context never updates current UI and its pending intent never migrates; a validated success may still publish general `dossiers` invalidation. Slot/context switch discards the intent, clears forms and sensitive board data, and re-resolves authority. Same-record background refresh may retain the last complete validated snapshot. Cross-dossier/context mismatch, logout, revoke, authorization loss, lease loss, binding mismatch, or child disposal clears sensitive state immediately. Context mismatch renders a safe denied/error state and need not itself close the window.
+
+After successful full-child mount, focus the Requirements heading. Opening an inline form focuses its first textarea; cancel or Escape before submit closes it and returns focus to the trigger. Escape during PENDING does not cancel the request. Successful authoritative refetch focuses the heading. Status and mutation messages use the existing `aria-live` status region and are never color-only. No new animation may ignore `prefers-reduced-motion`.
+
+Responsive behavior reuses only the existing 900px and 540px CSS breakpoints, with no JavaScript viewport authority. Above 900px the existing multi-column card layout may remain. At or below 900px cards/forms are one column with no horizontal content overflow. At or below 540px action controls/form buttons may stack full width. Acceptance viewports are 1440x900, 900x700, and 390x844. Requirements uses normal document/page scrolling and no fixed-height nested Requirements scroller. Task 7 defines no new popup minimum; managed-window infrastructure remains owner.
 
 ### 8.3 Detachable behavior
 
-- First click requests managed slot `req-<quote_request_id>`; second click routes through the existing master and focuses the existing child.
-- Integrated summary and detached child use the same read RPC and persisted board ID/revision.
-- No second Website workspace or independent requirements cache is created.
-- URL/slot contains only the non-secret dossier UUID already covered by the managed-window contract. JWT, context ID, workspace ID, repository external ID, installation ID, token, and capability never enter the URL.
-- The child independently re-resolves `website_work_context_id` from the dossier; opener messages are navigation hints only.
-- Existing lease, epoch, sequence, revoke, duplicate-focus, and invalidation protocols remain authoritative.
+- Website full-board open follows exactly Website Execution `Requirements openen` -> existing `requestOpen` -> `module=dossiers` -> `slot=req-<quote_request_id>` -> existing workspace master -> managed Requirements child. No new route or protocol exists.
+- Use only existing `managedChildUrl`, workspace master, operator window host, `OPEN_REQUEST`, `FOCUS_REQUEST`, `INVALIDATE`, `HEARTBEAT`, `LOCK`, `SHUTDOWN`, workspace epoch, and lease. Add no BroadcastChannel and perform no direct `window.open` in Requirements code.
+- The exact Website singleton is `dossiers:req-<quote_request_id>`. A duplicate open creates no second child; the existing window receives `focus()` and `FOCUS_REQUEST`. The commercial singleton is independently `dossiers:project-req-<quote_request_id>`.
+- Integrated summary and managed full child use the same Website read RPC and persisted board ID/revision. No second Website workspace or independent Requirements cache is created.
+- URL/slot contains only the non-secret dossier UUID already covered by the managed-window contract. JWT, context ID, workspace ID, repository external ID, installation ID, token, capability, actor, role, assignment, AAL2, board, requirement, or revision never enters the URL or navigation event.
+- The child independently re-resolves context on every authoritative refresh; opener/window messages are navigation hints only. Existing lease, epoch, sequence, revoke, duplicate-focus, invalidation, lock, and shutdown protocols remain unchanged and authoritative.
+- Existing logout/SHUTDOWN closes or clears the child. Revoke or lease loss locks and clears sensitive content; no stale board remains visible.
 
 ## 9. PRE_PROJECT to OFFICIAL_PROJECT continuity
 
@@ -1000,23 +1042,27 @@ Existing commercial migration files are reference-only and must not be modified.
 
 **FILES**
 - CREATE: none
-- MODIFY: `assets/js/operator-project-requirements-child.mjs`; `assets/css/operator-dashboard.css`; `scripts/operator-project-requirements.test.mjs`; `scripts/operator-workspace.test.mjs`
-- TEST: Requirements and workspace managed-window suites
+- MODIFY exactly: `assets/js/operator-project-requirements.mjs`; `assets/js/operator-project-requirements-child.mjs`; `assets/js/operator-project-workspace-child.mjs`; `assets/js/operator-website-execution-child.mjs`; `assets/js/operator-module-registry.mjs`; `assets/css/operator-dashboard.css`; `scripts/operator-project-requirements.test.mjs`; `scripts/operator-project-workspace.test.mjs`; `scripts/operator-website-execution.test.mjs`; `scripts/operator-workspace.test.mjs`
+- TEST: the four modified Node suites plus unchanged regression-only `scripts/operator-website-project-files.test.mjs`
 
 **INTERFACES**
-- `req-<quote_request_id>` full context board; filters/actions/source state; sibling Website open; managed focus/invalidation/revoke.
+- Exact section 8.2 Website `req-*` and commercial `project-req-*` slot helpers/matchers; one dual-mode child selected only by validated prefix; Task 6 Website builders/validators/intent helper; Task 5 browser actions; existing commercial Requirements interfaces; Website and Project open controls; existing managed focus/invalidation/revoke protocols.
 
 **RED TEST FIRST**
-- Test first click opens one child, second click focuses it, no duplicate claim/workspace, same board revision in integrated/detached views, mutation refresh/invalidation, logout/revoke/context switch clear, opener substitution ignored, and no authority/token IDs in URLs.
+- Lock the complete section 8.2-8.3 contract before implementation. At minimum prove exact parsing and rejection for Website `req-*`, commercial `project-req-*`, invalid/mixed slots, and exact-quote invalidation; registry tests `project-req-*` before `project-*`; PRE_PROJECT and OFFICIAL_PROJECT Website boards; PRE_PROJECT commercial fail-closed; commercial Project Requirements unchanged; no cross-authority dispatch; every root and transient UI state; exact filters and server order; unknown action rejection; sync visibility/revision/AAL2; all seven item actions; bounded inline forms with no Website `window.prompt`; one pending intent, same-intent ambiguous retry, definitive discard/new UUID, stale read/mutation/context switch, success refetch/invalidation, and safe error copies.
+- Prove Website button -> `req-*`, Project button -> `project-req-*`, first click opens one managed child, duplicate Website open focuses it with `FOCUS_REQUEST`, no duplicate claim/workspace, integrated/detached views share board ID/revision, logout/revoke/lease/context mismatch clear, opener substitution is ignored, and URLs/events contain no authority/token IDs. Prove no verification ingestion and unchanged Project Files behavior. Test CSS/accessibility at 1440x900, 900x700, and 390x844.
 
 **IMPLEMENTATION**
-- Replace PRE_PROJECT placeholder branch with Website board fetch/render/action flow. Continue safe DOM rendering and existing managed-window protocols. Task 7, not Task 5, owns the full Requirements child, detachable separate window, and singleton `req-<quote_request_id>` behavior.
+- Implement sections 8.2-8.3 without deviation. Add exact slot helpers and matchers; route `project-req-*` before `project-*`; pass `requireAal2` to both Requirements modes; switch Project Workspace to the commercial slot; activate Website Execution's Task 6 button for the Website slot; preserve the embedded summary; and keep one child implementation with authority selected only from the validated prefix.
+- In Website mode replace the placeholder with exact board fetch/validation/rendering, filters, sync, lifecycle/source actions, inline forms, one immutable intent, AAL2-before-every-attempt, closed retry/error handling, authoritative refetch, invalidation, stale/context guards, accessibility, and responsive behavior. Preserve commercial mode business logic and authority except for its namespace. Use existing managed-window protocols only.
+- Add no backend, migration, Edge, database mutation, verification ingestion, promotion, Project Files/repository/GitHub write, new route, BroadcastChannel, popup minimum, independent cache/workspace, optimistic state, or direct `window.open`.
 
 **GREEN TESTS**
-- `node --test scripts/operator-project-requirements.test.mjs scripts/operator-workspace.test.mjs scripts/operator-website-execution.test.mjs`
+- `node --test scripts/operator-project-requirements.test.mjs scripts/operator-project-workspace.test.mjs scripts/operator-website-execution.test.mjs scripts/operator-workspace.test.mjs scripts/operator-website-project-files.test.mjs`
 
 **SECURITY / SCOPE GATE**
-- Child re-resolves context on every authoritative refresh; denied/mismatch state clears immediately; no `window.open`, direct Supabase table call, or independent Website workspace.
+- Child re-resolves context on every authoritative refresh; mode derives only from exact slot prefix; denied/mismatch/revoke/lease/context-switch state clears immediately; Website/commercial authority never crosses; server-projected actions alone create buttons; every Website mutation is AAL2-gated, revision-bound, idempotent, and refetched; no raw error, optimistic state, `window.open`, direct table call, independent workspace/cache, verification path, Project Files write, repository/GitHub write, or Task 8 behavior.
+- Require `TASK7_CONTRACT_UNAMBIGUOUS=JA`, `FILE_SCOPE_FULLY_EXPLICIT=JA`, `WEBSITE_SLOT_MODEL_FULLY_EXPLICIT=JA`, `COMMERCIAL_SLOT_MODEL_FULLY_EXPLICIT=JA`, `REGISTRY_PREFIX_ORDER_FULLY_EXPLICIT=JA`, `COMMERCIAL_REQ_ROUTE_SEPARATION_FULLY_EXPLICIT=JA`, `INTEGRATED_VIEW_FULLY_EXPLICIT=JA`, `DETACHED_VIEW_FULLY_EXPLICIT=JA`, `CHILD_BOOTSTRAP_FULLY_EXPLICIT=JA`, `SYNC_UI_FULLY_EXPLICIT=JA`, `LIFECYCLE_UI_FULLY_EXPLICIT=JA`, `SOURCE_RESOLUTION_UI_FULLY_EXPLICIT=JA`, `IDEMPOTENCY_LIFECYCLE_FULLY_EXPLICIT=JA`, `AAL2_UI_MODEL_FULLY_EXPLICIT=JA`, `INVALIDATION_MODEL_FULLY_EXPLICIT=JA`, `LOGOUT_REVOKE_MODEL_FULLY_EXPLICIT=JA`, `STALE_MUTATION_MODEL_FULLY_EXPLICIT=JA`, `UI_STATE_MODEL_FULLY_EXPLICIT=JA`, `RESPONSIVE_MODEL_FULLY_EXPLICIT=JA`, `ACCESSIBILITY_MODEL_FULLY_EXPLICIT=JA`, and `TASK8_BOUNDARY_FULLY_EXPLICIT=JA`.
 
 **EXACT COMMIT SUBJECT**
 - `feat(website): detach context requirements worklist`
