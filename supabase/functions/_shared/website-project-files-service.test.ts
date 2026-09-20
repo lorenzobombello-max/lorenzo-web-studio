@@ -307,9 +307,9 @@ Deno.test("service fails malformed provider entries closed with zero partial lis
   );
 });
 
-Deno.test("Phase A provider dependency graph exposes read operations only", () => {
+Deno.test("service exposes bounded file operations without provider primitives", () => {
   const test = harness([]);
-  assertEquals(Object.keys(test.service).sort(), ["list", "read"]);
+  assertEquals(Object.keys(test.service).sort(), ["list", "read", "save"]);
   assertEquals(
     [
       "acquire",
@@ -360,6 +360,53 @@ Deno.test("successful safe text read", async () => {
     "snapshot",
     "file",
   ]);
+});
+
+Deno.test("save persists allowed text with expected commit concurrency", async () => {
+  const writes: unknown[] = [];
+  const provider = Object.freeze({
+    resolveSnapshot() {
+      return Promise.resolve({
+        commitSha: COMMIT,
+        rootTreeSha: ROOT,
+        repositoryDisplayName: "lws-phase-a-fixtures/project-a",
+      });
+    },
+    listDirectory() {
+      return Promise.resolve({ directoryTreeSha: ROOT, entries: [] });
+    },
+    readFile() {
+      return Promise.reject(new Error("PROJECT_FILE_NOT_FOUND"));
+    },
+    writeFile(input: unknown) {
+      writes.push(input);
+      return Promise.resolve({ commitSha: NEXT_COMMIT, created: false });
+    },
+  }) as unknown as WebsiteProjectFilesProvider;
+  const service = createWebsiteProjectFilesService({ provider });
+
+  const updated = await service.save({
+    authority,
+    path: "index.html",
+    content: "<!doctype html><h1>HIT001</h1>",
+    expectedCommitSha: COMMIT,
+  });
+
+  assertEquals(updated.snapshot.commit_sha, NEXT_COMMIT);
+  assertEquals(updated.file.path, "index.html");
+  assertEquals(updated.file.created, false);
+  assertEquals(writes.length, 1);
+  await assertRejects(
+    () => service.save({
+      authority,
+      path: "src/new.html",
+      content: "<p>new</p>",
+      expectedCommitSha: "9".repeat(40),
+    }),
+    WebsiteProjectFilesServiceError,
+    "PROJECT_FILES_STALE_REVISION",
+  );
+  assertEquals(writes.length, 1);
 });
 
 Deno.test("direct read always resolves fresh snapshot", async () => {

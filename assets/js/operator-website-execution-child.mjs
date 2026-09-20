@@ -35,7 +35,39 @@ const WEBSITE_CHILD_ROLES = new Set([
 const WEBSITE_PROJECT_FILE_ACTIONS = new Set([
   "list_website_project_directory",
   "read_website_project_file",
+  "save_website_project_file",
 ]);
+
+function websiteProjectPreviewRequest(quoteRequestId, expectedCommitSha) {
+  if (!quoteRequestId || !/^[0-9a-f]{40}$/i.test(expectedCommitSha || "")) {
+    throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_REQUEST");
+  }
+  return Object.freeze({
+    action: "build_website_project_preview",
+    quote_request_id: quoteRequestId,
+    expected_commit_sha: expectedCommitSha,
+    idempotency_key: crypto.randomUUID(),
+  });
+}
+
+async function websiteProjectPreviewGateway(client, request) {
+  if (request?.action !== "build_website_project_preview") {
+    throw new Error("WEBSITE_PROJECT_PREVIEW_ACTION_NOT_ALLOWED");
+  }
+  const response = await client.functions.invoke("commercial-operator-command", {
+    body: request,
+  });
+  if (response?.error) throw response.error;
+  const result = response?.data?.result;
+  if (!result || result.contract_version !== 1
+    || result.snapshot?.commit_sha !== request.expected_commit_sha
+    || result.build?.status !== "PASS"
+    || typeof result.preview?.signed_url !== "string"
+    || !result.preview.signed_url.startsWith("https://")) {
+    throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
+  }
+  return Object.freeze(structuredClone(result));
+}
 
 async function websiteRequirementsGateway(client, request) {
   if (request?.action !== "get_website_requirements_board") {
@@ -191,6 +223,8 @@ function childMarkup() {
         <button type="button" class="secondary-action" data-website-action="promotion-retry" hidden>Opnieuw proberen</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
         <button type="button" class="secondary-action" data-website-action="files">Projectbestanden</button>
+        <button type="button" class="secondary-action" data-website-action="preview-build">Preview bouwen / vernieuwen</button>
+        <a class="primary-action primary-action--compact" data-website-preview-open target="_blank" rel="noopener noreferrer" hidden>Preview openen</a>
         <button type="button" class="secondary-action" data-website-action="back" data-website-project-back>Terug naar Project</button>
       </nav>
       <p class="action-message" data-website-message role="status" aria-live="polite"></p>
@@ -321,6 +355,40 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let currentSnapshot = null;
   let promotionIntent = null;
   let promotionPending = false;
+  let previewPending = false;
+
+  async function buildPreview() {
+    const commitSha = projectFiles.currentCommitSha()
+      || currentSnapshot?.projection.workspace?.last_commit_sha;
+    if (disposed || previewPending || identity.role !== "owner" || !commitSha
+      || typeof options.requireAal2 !== "function") return false;
+    previewPending = true;
+    const button = workspace.querySelector('[data-website-action="preview-build"]');
+    const open = workspace.querySelector("[data-website-preview-open]");
+    const message = workspace.querySelector("[data-website-message]");
+    button.disabled = true;
+    message.textContent = "Preview wordt gebouwd.";
+    try {
+      await options.requireAal2();
+      const result = await websiteProjectPreviewGateway(client,
+        websiteProjectPreviewRequest(
+          currentSnapshot.context.quoteRequestId,
+          commitSha,
+        ));
+      open.href = result.preview.signed_url;
+      open.hidden = false;
+      message.textContent = "Preview is gereed voor de opgeslagen commit.";
+      return true;
+    } catch {
+      open.hidden = true;
+      open.removeAttribute("href");
+      message.textContent = "Preview kon niet veilig worden gebouwd.";
+      return false;
+    } finally {
+      previewPending = false;
+      button.disabled = false;
+    }
+  }
 
   function promotionIntentMatches(intent) {
     return !disposed && currentSnapshot?.context.mode === "PRE_PROJECT"
@@ -388,6 +456,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         websiteWorkspaceId: projection.workspace?.website_workspace_id || null,
         bindingRevision: projection.workspace?.binding_revision || null,
         projectFilesRead: projection.workspace?.capabilities.project_files_read === true,
+        projectFilesWrite:
+          projection.workspace?.capabilities.project_files_write === true,
         workspaceState: projection.workspace?.workspace_state || null,
         repositoryOperationState:
           projection.workspace?.repository_operation_state || null,
@@ -587,6 +657,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     if (action === "promote") void promote();
     if (action === "promotion-retry") void promote({ retry: true });
     if (action === "files") void projectFiles.activate();
+    if (action === "preview-build") void buildPreview();
     if (action === "requirements" && currentSnapshot?.context) {
       options.requestOpen?.(
         "dossiers",

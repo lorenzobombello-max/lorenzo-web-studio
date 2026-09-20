@@ -231,7 +231,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
         || (expected?.conceptId !== null && !UUID.test(String(expected?.conceptId || "")))))) {
     throw new Error("INVALID_WEBSITE_EXECUTION_CONTEXT");
   }
-  if (!exactKeys(value, ROOT_KEYS) || value.contract_version !== 3
+  if (!exactKeys(value, ROOT_KEYS) || value.contract_version !== 4
     || value.mode !== expected.mode
     || value.quote_request_id !== expected.quoteRequestId
     || value.website_work_context_id !== expected.websiteWorkContextId
@@ -282,8 +282,11 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null
       || !validTimestamp(workspace.created_at) || workspace.created_at === null
       || !validTimestamp(workspace.updated_at) || workspace.updated_at === null
-      || !exactKeys(workspace.capabilities, ["project_files_read"])
-      || typeof workspace.capabilities.project_files_read !== "boolean") {
+      || !exactKeys(workspace.capabilities, [
+        "project_files_read", "project_files_write",
+      ])
+      || typeof workspace.capabilities.project_files_read !== "boolean"
+      || typeof workspace.capabilities.project_files_write !== "boolean") {
       throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
     }
     workspace = {

@@ -133,6 +133,27 @@ export function websiteProjectFileRequest(value) {
   });
 }
 
+export function websiteProjectFileSaveRequest(value) {
+  if (!exactKeys(value, [
+    "quoteRequestId", "path", "content", "expectedCommitSha",
+    "idempotencyKey",
+  ]) || !UUID.test(String(value.quoteRequestId || ""))
+    || normalizedPath(value.path, false) === null
+    || typeof value.content !== "string"
+    || !COMMIT_SHA.test(String(value.expectedCommitSha || ""))
+    || !UUID.test(String(value.idempotencyKey || ""))) {
+    return fail("INVALID_WEBSITE_PROJECT_FILE_SAVE_REQUEST");
+  }
+  return freeze({
+    action: "save_website_project_file",
+    quote_request_id: value.quoteRequestId,
+    path: value.path,
+    content: value.content,
+    expected_commit_sha: value.expectedCommitSha,
+    idempotency_key: value.idempotencyKey,
+  });
+}
+
 export function validateWebsiteProjectDirectory(value, expected) {
   if (!validExpected(expected) || !exactKeys(value, DIRECTORY_KEYS)
     || value.contract_version !== 1
@@ -164,6 +185,21 @@ export function validateWebsiteProjectFile(value, expected) {
     || value.file.media_type !== "text/plain" || value.file.encoding !== "utf-8"
     || typeof value.file.content !== "string") {
     return fail("INVALID_WEBSITE_PROJECT_FILE");
+  }
+  return frozenClone(value);
+}
+
+export function validateWebsiteProjectFileSave(value, expected) {
+  if (!validExpected(expected) || !exactKeys(value, FILE_KEYS)
+    || value.contract_version !== 1
+    || value.quote_request_id !== expected.quoteRequestId
+    || value.website_work_context_id !== expected.websiteWorkContextId
+    || value.workspace_state !== "REPOSITORY_READY"
+    || !validRepository(value.repository) || !validSnapshot(value.snapshot)
+    || !exactKeys(value.file, ["path", "created"])
+    || normalizedPath(value.file.path, false) === null
+    || typeof value.file.created !== "boolean") {
+    return fail("INVALID_WEBSITE_PROJECT_FILE_SAVE");
   }
   return frozenClone(value);
 }
@@ -213,25 +249,33 @@ function initialState(available) {
     currentTreeSnapshot: null,
     currentFileSnapshot: null,
     currentFile: null,
+    editorContent: null,
+    editorDirty: false,
     pendingFileSnapshot: null,
     refreshRootRequired: false,
   });
 }
 
 export function createWebsiteProjectFilesController(options) {
-  if (!exactKeys(options, [
+  const baseOptionKeys = [
     "quoteRequestId", "websiteWorkContextId", "ownerEligible",
     "projectFilesRead", "requireAal2", "gateway",
-  ]) || !UUID.test(String(options.quoteRequestId || ""))
+  ];
+  if (!(exactKeys(options, baseOptionKeys) || exactKeys(options, [
+    ...baseOptionKeys, "projectFilesWrite",
+  ])) || !UUID.test(String(options.quoteRequestId || ""))
     || !UUID.test(String(options.websiteWorkContextId || ""))
     || typeof options.ownerEligible !== "boolean"
     || typeof options.projectFilesRead !== "boolean"
+    || options.projectFilesWrite !== undefined
+      && typeof options.projectFilesWrite !== "boolean"
     || typeof options.requireAal2 !== "function"
     || typeof options.gateway !== "function") {
     return fail("INVALID_WEBSITE_PROJECT_FILES_CONTROLLER");
   }
 
   const available = options.ownerEligible && options.projectFilesRead;
+  const writable = available && options.projectFilesWrite === true;
   const expected = {
     quoteRequestId: options.quoteRequestId,
     websiteWorkContextId: options.websiteWorkContextId,
@@ -361,6 +405,8 @@ export function createWebsiteProjectFilesController(options) {
         update({
           status: "ready",
           currentFile: result,
+          editorContent: result.file.content,
+          editorDirty: false,
           currentFileSnapshot: result.snapshot,
           pendingFileSnapshot: null,
           refreshRootRequired: false,
@@ -386,10 +432,70 @@ export function createWebsiteProjectFilesController(options) {
     }
   }
 
+  async function saveFile(input) {
+    try {
+      if (!writable) return deny();
+      if (!exactKeys(input, ["content", "path"]) ||
+        typeof input.content !== "string" || typeof input.path !== "string") {
+        return fail("INVALID_WEBSITE_PROJECT_FILE_SAVE_REQUEST");
+      }
+      const expectedCommitSha = state.currentTreeSnapshot?.commit_sha;
+      if (!COMMIT_SHA.test(String(expectedCommitSha || ""))) {
+        return fail("PROJECT_FILES_STALE_REVISION");
+      }
+      update({ status: "saving" });
+      await authorizeGesture();
+      const result = validateWebsiteProjectFileSave(await options.gateway(
+        websiteProjectFileSaveRequest({
+          quoteRequestId: options.quoteRequestId,
+          path: input.path,
+          content: input.content,
+          expectedCommitSha,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      ), expected);
+      const file = freeze({
+        ...result,
+        file: freeze({
+          path: result.file.path,
+          size_bytes: new TextEncoder().encode(input.content).byteLength,
+          media_type: "text/plain",
+          encoding: "utf-8",
+          content: input.content,
+        }),
+      });
+      update({
+        status: "ready",
+        currentTreeSnapshot: result.snapshot,
+        currentFileSnapshot: result.snapshot,
+        currentFile: file,
+        selectedPath: result.file.path,
+        editorContent: input.content,
+        editorDirty: false,
+        directories: {},
+        expandedDirectories: [],
+        refreshRootRequired: true,
+      });
+      return result;
+    } catch (error) {
+      return handleError(error);
+    }
+  }
+
   return freeze({
     getState: () => state,
     loadDirectory,
     readFile,
+    saveFile,
+    updateEditorContent(content) {
+      if (typeof content !== "string" || !state.currentFile) {
+        return fail("INVALID_WEBSITE_PROJECT_FILE_EDITOR");
+      }
+      update({
+        editorContent: content,
+        editorDirty: content !== state.currentFile.file.content,
+      });
+    },
     clearAuthorityState,
     reset() {
       clearAuthorityState();
@@ -416,7 +522,7 @@ export function createWebsiteProjectFilesController(options) {
 
 const TREE_CONTEXT_KEYS = [
   "quoteRequestId", "websiteWorkContextId", "websiteWorkspaceId",
-  "bindingRevision", "projectFilesRead",
+  "bindingRevision", "projectFilesRead", "projectFilesWrite",
   "workspaceState", "repositoryOperationState", "failureCategory",
   "recoveryGuidance",
 ];
@@ -430,6 +536,7 @@ function treeContextValid(value) {
     && (value.bindingRevision === null
       || Number.isSafeInteger(value.bindingRevision) && value.bindingRevision >= 1)
     && typeof value.projectFilesRead === "boolean"
+    && typeof value.projectFilesWrite === "boolean"
     && [
       null, "PENDING_REPOSITORY", "REPOSITORY_PROVISIONING",
       "REPOSITORY_READY", "REPOSITORY_FAILED", "READY",
@@ -550,9 +657,24 @@ export function mountWebsiteProjectFilesTree(host, options) {
   const contentMetadata = element(
     documentTarget, "p", "website-project-files__metadata",
   );
-  const content = element(documentTarget, "pre", "website-project-files__text");
-  content.tabIndex = 0;
-  contentPane.append(contentPath, contentMetadata, content);
+  const editor = element(documentTarget, "textarea", "website-project-files__editor");
+  editor.setAttribute("aria-label", "Bestandsinhoud bewerken");
+  editor.spellcheck = false;
+  const editorActions = element(documentTarget, "div", "website-project-files__actions");
+  const saveButton = element(
+    documentTarget, "button", "primary-action website-project-files__save", "Opslaan",
+  );
+  saveButton.type = "button";
+  const createPath = element(documentTarget, "input", "website-project-files__new-path");
+  createPath.type = "text";
+  createPath.placeholder = "nieuw-bestand.html";
+  createPath.setAttribute("aria-label", "Pad voor nieuw bestand");
+  const createButton = element(
+    documentTarget, "button", "secondary-action website-project-files__create", "Nieuw bestand",
+  );
+  createButton.type = "button";
+  editorActions.append(saveButton, createPath, createButton);
+  contentPane.append(contentPath, contentMetadata, editor, editorActions);
   host.replaceChildren(heading, status, empty, tree, contentPane);
 
   let context = null;
@@ -573,6 +695,7 @@ export function mountWebsiteProjectFilesTree(host, options) {
       websiteWorkContextId: context.websiteWorkContextId,
       ownerEligible: options.ownerEligible,
       projectFilesRead: context.projectFilesRead,
+      projectFilesWrite: context.projectFilesWrite,
       requireAal2: options.requireAal2,
       gateway: options.gateway,
     });
@@ -668,11 +791,11 @@ export function mountWebsiteProjectFilesTree(host, options) {
       && state.currentTreeSnapshot?.commit_sha === result.snapshot.commit_sha
       && state.currentFileSnapshot?.commit_sha === result.snapshot.commit_sha;
     contentPane.hidden = !coherent;
-    content.hidden = !coherent;
+    editor.hidden = !coherent;
     if (!coherent) {
       contentPath.textContent = "";
       contentMetadata.textContent = "";
-      content.textContent = "";
+      editor.value = "";
       return;
     }
     contentPath.textContent = result.file.path;
@@ -684,7 +807,13 @@ export function mountWebsiteProjectFilesTree(host, options) {
       result.snapshot.ref_label,
       result.snapshot.commit_sha,
     ].join(" · ");
-    content.textContent = result.file.content;
+    if (editor.value !== state.editorContent) editor.value = state.editorContent;
+    editor.disabled = busy || context?.projectFilesWrite !== true;
+    saveButton.disabled = busy || context?.projectFilesWrite !== true
+      || !state.editorDirty;
+    createPath.disabled = busy || context?.projectFilesWrite !== true;
+    createButton.disabled = busy || context?.projectFilesWrite !== true
+      || normalizedPath(createPath.value, false) === null;
   }
 
   function render() {
@@ -740,9 +869,36 @@ export function mountWebsiteProjectFilesTree(host, options) {
   }
 
   refreshButton.addEventListener("click", () => void refresh());
+  editor.addEventListener("input", () => {
+    controller?.updateEditorContent(editor.value);
+    render();
+  });
+  saveButton.addEventListener("click", () => {
+    const state = controller?.getState();
+    if (!busy && state?.currentFile && state.editorDirty) {
+      void perform(() => controller.saveFile({
+        path: state.currentFile.file.path,
+        content: state.editorContent,
+      }));
+    }
+  });
+  createPath.addEventListener("input", render);
+  createButton.addEventListener("click", () => {
+    const path = createPath.value.trim();
+    if (!busy && normalizedPath(path, false) !== null) {
+      void perform(async () => {
+        const result = await controller.saveFile({ path, content: "" });
+        createPath.value = "";
+        return result;
+      });
+    }
+  });
   render();
 
   return freeze({
+    currentCommitSha() {
+      return controller?.getState().currentTreeSnapshot?.commit_sha || null;
+    },
     activate() {
       if (disposed) return Promise.resolve(false);
       host.focus({ preventScroll: true });

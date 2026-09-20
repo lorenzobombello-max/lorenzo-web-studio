@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "GIT-001-20260920",
+  "baseRemoteMainSha": "8505a07fede4cc6ad9f5d161c09e672d94aa9578",
+  "allowedPaths": [
+    ".release/scopes/GIT-001-20260920.json",
+    "assets/css/operator-dashboard.css",
+    "assets/js/operator-website-execution-child.mjs",
+    "assets/js/operator-website-execution.mjs",
+    "assets/js/operator-website-project-files.mjs",
+    "scripts/operator-website-execution.test.mjs",
+    "scripts/operator-website-project-files.test.mjs",
+    "supabase/functions/_shared/github-app-token.ts",
+    "supabase/functions/_shared/github-http.ts",
+    "supabase/functions/_shared/website-project-files-provider.test.ts",
+    "supabase/functions/_shared/website-project-files-provider.ts",
+    "supabase/functions/_shared/website-project-files-service.test.ts",
+    "supabase/functions/_shared/website-project-files-service.ts",
+    "supabase/functions/_shared/website-project-preview-builder.test.ts",
+    "supabase/functions/_shared/website-project-preview-builder.ts",
+    "supabase/functions/commercial-operator-command/handler.test.ts",
+    "supabase/functions/commercial-operator-command/handler.ts",
+    "supabase/functions/commercial-operator-command/index.ts",
+    "supabase/migrations/20260920120000_add_website_project_files_write_authority_v1.sql",
+    "supabase/tests/website_project_files_write_v1.sql"
+  ],
+  "protectedChanges": [
+    "assets/css/operator-dashboard.css",
+    "assets/js/operator-website-execution-child.mjs",
+    "assets/js/operator-website-execution.mjs",
+    "assets/js/operator-website-project-files.mjs",
+    "scripts/operator-website-execution.test.mjs",
+    "scripts/operator-website-project-files.test.mjs"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": false,
+    "source": null,
+    "forwardPortProof": null
+  },
+  "migrationPlan": {
+    "alreadyLiveSourceHistoryOnly": [],
+    "alreadyLiveAction": "none",
+    "newOrderedMigrations": [
+      "20260920120000_add_website_project_files_write_authority_v1.sql"
+    ]
+  },
+  "edgeFunctionPlan": {
+    "deploy": [
+      "commercial-operator-command"
+    ],
+    "doNotDeploy": [],
+    "requiredSourceDependency": "supabase/functions/_shared/website-project-preview-builder.ts"
+  },
+  "pagesPlan": {
+    "requiredSharedAssets": [
+      "assets/css/operator-dashboard.css",
+      "assets/js/operator-website-execution-child.mjs",
+      "assets/js/operator-website-execution.mjs",
+      "assets/js/operator-website-project-files.mjs"
+    ],
+    "packagingFiles": [
+      "scripts/prepare-pages-dist.ps1",
+      "scripts/verify-pages-dist.ps1"
+    ]
+  },
+  "forbiddenActions": [
+    "force-push",
+    "history-rewrite",
+    "production-reset"
+  ]
+}

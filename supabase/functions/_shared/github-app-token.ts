@@ -21,6 +21,7 @@ const MAX_CLOCK_SKEW_MS = 60 * 1000;
 export type GitHubTokenOperation =
   | "STARTER_SNAPSHOT_READ"
   | "WEBSITE_PROJECT_FILES_READ"
+  | "WEBSITE_PROJECT_FILES_WRITE"
   | "LAB_REPOSITORY_CREATE"
   | "LAB_REPOSITORY_READ"
   | "LAB_REPOSITORY_WRITE";
@@ -143,6 +144,7 @@ function validAuthority(
     ![
       "STARTER_SNAPSHOT_READ",
       "WEBSITE_PROJECT_FILES_READ",
+      "WEBSITE_PROJECT_FILES_WRITE",
       "LAB_REPOSITORY_CREATE",
       "LAB_REPOSITORY_READ",
       "LAB_REPOSITORY_WRITE",
@@ -165,6 +167,7 @@ function validAuthority(
       request.repositoryIds[0] === config.templateRepositoryId;
   }
   if (request.operation === "WEBSITE_PROJECT_FILES_READ") return true;
+  if (request.operation === "WEBSITE_PROJECT_FILES_WRITE") return true;
   return request.target === "TEST";
 }
 
@@ -179,6 +182,9 @@ function permissionsFor(
   }
   if (operation === "WEBSITE_PROJECT_FILES_READ") {
     return Object.freeze({ metadata: "read", contents: "read" });
+  }
+  if (operation === "WEBSITE_PROJECT_FILES_WRITE") {
+    return Object.freeze({ metadata: "read", contents: "write" });
   }
   if (operation === "LAB_REPOSITORY_CREATE") {
     return Object.freeze({ metadata: "read", administration: "write" });

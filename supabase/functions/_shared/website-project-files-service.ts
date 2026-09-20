@@ -18,6 +18,7 @@ import type {
 
 const PAGE_SIZE = 500;
 const MAX_ENVELOPE_BYTES = 524_288;
+const SHA = /^[0-9a-f]{40}$/;
 
 export type WebsiteProjectDirectoryResult = Readonly<{
   contract_version: 1;
@@ -47,6 +48,16 @@ export type WebsiteProjectFileResult = Readonly<{
   }>;
 }>;
 
+export type WebsiteProjectFileSaveResult = Readonly<{
+  contract_version: 1;
+  quote_request_id: string;
+  website_work_context_id: string;
+  workspace_state: "REPOSITORY_READY";
+  repository: Readonly<{ display_name: string; binding_revision: number }>;
+  snapshot: Readonly<{ commit_sha: string; ref_label: string }>;
+  file: Readonly<{ path: string; created: boolean }>;
+}>;
+
 export type WebsiteProjectFilesService = Readonly<{
   list(
     input: Readonly<{
@@ -61,6 +72,14 @@ export type WebsiteProjectFilesService = Readonly<{
       path: string;
     }>,
   ): Promise<WebsiteProjectFileResult>;
+  save(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      path: string;
+      content: string;
+      expectedCommitSha: string;
+    }>,
+  ): Promise<WebsiteProjectFileSaveResult>;
 }>;
 
 export class WebsiteProjectFilesServiceError extends Error {
@@ -125,6 +144,7 @@ function normalize(error: unknown): never {
     "SENSITIVE_FILE_BLOCKED",
     "SENSITIVE_CLASSIFICATION_UNAVAILABLE",
     "REPOSITORY_BINDING_STALE",
+    "PROJECT_FILES_STALE_REVISION",
   ]);
   return fail(allowed.has(code) ? code : "PROJECT_FILES_PROVIDER_UNAVAILABLE");
 }
@@ -339,6 +359,78 @@ export function createWebsiteProjectFilesService(
             encoding: inspected.encoding,
             content: inspected.content,
           }),
+        });
+      } catch (error) {
+        return normalize(error);
+      }
+    },
+
+    async save(input) {
+      try {
+        if (
+          !isRecord(input) ||
+          !exactKeys(input, [
+            "authority",
+            "content",
+            "expectedCommitSha",
+            "path",
+          ]) ||
+          typeof input.path !== "string" ||
+          typeof input.content !== "string" ||
+          typeof input.expectedCommitSha !== "string" ||
+          !SHA.test(input.expectedCommitSha) ||
+          typeof dependencies.provider.writeFile !== "function"
+        ) return fail("INVALID_REQUEST");
+        const path = normalizeWebsiteProjectPath(input.path, {
+          allowRoot: false,
+        });
+        if (classifyWebsiteProjectPath(path) === "BLOCKED_CREDENTIAL") {
+          return fail("SENSITIVE_FILE_BLOCKED");
+        }
+        const bytes = new TextEncoder().encode(input.content);
+        const inspected = inspectWebsiteProjectFile({
+          path,
+          canonicalPath: path,
+          mode: "100644",
+          objectType: "blob",
+          declaredSize: bytes.byteLength,
+          bytes,
+          classifier: dependencies.classifier,
+        });
+        if (inspected.content !== input.content) {
+          return fail("UNSUPPORTED_ENCODING");
+        }
+        const snapshot = await dependencies.provider.resolveSnapshot(
+          input.authority,
+        );
+        if (snapshot.commitSha !== input.expectedCommitSha) {
+          return fail("PROJECT_FILES_STALE_REVISION");
+        }
+        const written = await dependencies.provider.writeFile({
+          authority: input.authority,
+          parentCommitSha: snapshot.commitSha,
+          rootTreeSha: snapshot.rootTreeSha,
+          path,
+          bytes,
+        });
+        if (
+          !written || !SHA.test(written.commitSha) ||
+          typeof written.created !== "boolean"
+        ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+        return Object.freeze({
+          contract_version: 1,
+          quote_request_id: input.authority.quoteRequestId,
+          website_work_context_id: input.authority.websiteWorkContextId,
+          workspace_state: "REPOSITORY_READY",
+          repository: Object.freeze({
+            display_name: snapshot.repositoryDisplayName,
+            binding_revision: input.authority.bindingRevision,
+          }),
+          snapshot: Object.freeze({
+            commit_sha: written.commitSha,
+            ref_label: input.authority.refLabel,
+          }),
+          file: Object.freeze({ path, created: written.created }),
         });
       } catch (error) {
         return normalize(error);
