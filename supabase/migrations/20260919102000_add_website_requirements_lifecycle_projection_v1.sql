@@ -468,7 +468,10 @@ begin
     raise exception using errcode = '22023', message = 'INVALID_WEBSITE_REQUIREMENT_COMMAND';
   end if;
   if p_command = 'RESOLVE_SOURCE'
-     and p_resolution not in ('ACCEPT_CHANGE', 'KEEP_EXISTING', 'RETIRE') then
+     and (
+       p_resolution is null
+       or p_resolution not in ('ACCEPT_CHANGE', 'KEEP_EXISTING', 'RETIRE')
+     ) then
     raise exception using errcode = '22023', message = 'INVALID_WEBSITE_REQUIREMENT_SOURCE_RESOLUTION';
   end if;
 

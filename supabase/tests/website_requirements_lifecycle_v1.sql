@@ -560,6 +560,43 @@ select is(
   'foreign source resolutions leave both contexts source proposals, revisions, verification, commands, and history unchanged'
 );
 
+create temporary table null_resolution_before as
+select jsonb_build_object(
+  'board', (select to_jsonb(board) from public.website_requirements_boards as board
+    where board.requirements_board_id = pg_temp.fixture_uuid('wrl-board-a')),
+  'requirement', (select to_jsonb(requirement) from public.website_requirements as requirement
+    where requirement.requirement_id = pg_temp.fixture_uuid('wrl-r-retire')),
+  'events', (select count(*) from public.website_requirement_events as event
+    where event.requirement_id = pg_temp.fixture_uuid('wrl-r-retire')),
+  'commands', (select count(*) from public.website_requirement_command_ledger as command
+    where command.requirement_id = pg_temp.fixture_uuid('wrl-r-retire'))
+) as snapshot;
+
+select throws_ok(
+  format(
+    'select public.resolve_website_requirement_source_change_v1(%L,%L,%L,5,NULL,%L,%L)',
+    pg_temp.fixture_uuid('wrl-quote-a'), pg_temp.fixture_uuid('wrl-context-a'),
+    pg_temp.fixture_uuid('wrl-r-retire'), 'NULL must fail closed',
+    pg_temp.fixture_uuid('wrl-key-null-source-resolution')
+  ),
+  '22023', 'INVALID_WEBSITE_REQUIREMENT_SOURCE_RESOLUTION',
+  'NULL source resolution fails closed with the existing validation contract'
+);
+select is(
+  (select snapshot from null_resolution_before),
+  jsonb_build_object(
+    'board', (select to_jsonb(board) from public.website_requirements_boards as board
+      where board.requirements_board_id = pg_temp.fixture_uuid('wrl-board-a')),
+    'requirement', (select to_jsonb(requirement) from public.website_requirements as requirement
+      where requirement.requirement_id = pg_temp.fixture_uuid('wrl-r-retire')),
+    'events', (select count(*) from public.website_requirement_events as event
+      where event.requirement_id = pg_temp.fixture_uuid('wrl-r-retire')),
+    'commands', (select count(*) from public.website_requirement_command_ledger as command
+      where command.requirement_id = pg_temp.fixture_uuid('wrl-r-retire'))
+  ),
+  'NULL source resolution leaves requirement, board, events, and command ledger unchanged'
+);
+
 create temporary table source_results(command text primary key, result jsonb);
 insert into source_results values (
   'accept', public.resolve_website_requirement_source_change_v1(

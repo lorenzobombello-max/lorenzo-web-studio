@@ -124,6 +124,29 @@ as $$
   where value is not null
 $$;
 
+create function lws_internal.website_requirements_normalize_integration_array_v1(p_values text[])
+returns text[]
+language sql
+immutable
+set search_path = pg_catalog
+as $$
+  with normalized as (
+    select lws_internal.website_requirements_normalize_text_v1(value) as value
+    from unnest(coalesce(p_values, array[]::text[])) as entry(value)
+  ),
+  deduplicated as (
+    select min(value collate "C") as value
+    from normalized
+    where value is not null
+    group by lower(value) collate "C"
+  )
+  select coalesce(
+    array_agg(value order by lower(value) collate "C", value collate "C"),
+    array[]::text[]
+  )
+  from deduplicated
+$$;
+
 create function lws_internal.website_requirements_normalize_catalog_array_v1(
   p_values text[],
   p_catalog text[]
@@ -705,7 +728,7 @@ declare
   v_inspiration_sites text[] := lws_internal.website_requirements_normalize_text_array_v1(p_intake.inspiration_sites);
   v_seo_keywords text[] := lws_internal.website_requirements_normalize_text_array_v1(p_intake.seo_keywords);
   v_social_channels text[] := lws_internal.website_requirements_normalize_text_array_v1(p_intake.social_channels);
-  v_integrations text[] := lws_internal.website_requirements_normalize_text_array_v1(p_intake.integrations);
+  v_integrations text[] := lws_internal.website_requirements_normalize_integration_array_v1(p_intake.integrations);
   v_other_pages text[] := lws_internal.website_requirements_normalize_custom_pages_v1(p_intake.other_pages);
   v_feature_catalog constant text[] := array[
     'contact_form', 'quote_form', 'google_maps', 'social_links', 'reviews', 'gallery',
@@ -2012,6 +2035,8 @@ revoke all on function lws_internal.website_requirements_hash16_v1(text)
 revoke all on function lws_internal.website_requirements_normalize_text_v1(text)
   from public, anon, authenticated, service_role;
 revoke all on function lws_internal.website_requirements_normalize_text_array_v1(text[])
+  from public, anon, authenticated, service_role;
+revoke all on function lws_internal.website_requirements_normalize_integration_array_v1(text[])
   from public, anon, authenticated, service_role;
 revoke all on function lws_internal.website_requirements_normalize_catalog_array_v1(text[], text[])
   from public, anon, authenticated, service_role;

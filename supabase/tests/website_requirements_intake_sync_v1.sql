@@ -576,7 +576,8 @@ insert into public.quote_request_intakes(
     array['stock_images', 'ai_images', 'optimize_existing'],
     'has_domain', 'example.test', 'has_hosting', 'advice', 'yes',
     'high', array['lead generatie', 'erp koppeling'],
-    array['youtube', 'instagram', 'linkedin'], array['hubspot', 'exact online'],
+    array['youtube', 'instagram', 'linkedin'],
+    array['hubspot', 'HubSpot', 'exact online', 'Exact Online'],
     '2099-03-31', 'Lancering voor Q4-beurs', true, 'Meer dan EUR 6.000',
     'Budget in aparte commerciële stroom bevestigd.',
     array['differentiate', 'seo', 'fast_delivery', 'professional_appearance', 'other'],
@@ -953,8 +954,8 @@ values
   (38, 'integration:social_links', 'Implementeer social-links op de website', 'INTEGRATION', 'integration:social_links', jsonb_build_object('requested', true)),
   (39, 'integration:whatsapp', 'Integreer WhatsApp-contact', 'INTEGRATION', 'integration:whatsapp', jsonb_build_object('requested', true)),
   (40, 'integration:social_channels', 'Koppel sociale kanalen', 'INTEGRATION', 'integration:social_channels', jsonb_build_object('social_channels', jsonb_build_array('instagram', 'linkedin', 'youtube'))),
-  (41, 'integration:external:' || pg_temp.hash16('exact online'), 'Integreer externe koppeling: exact online', 'INTEGRATION', 'integration:external:' || pg_temp.hash16('exact online'), jsonb_build_object('name', 'exact online')),
-  (42, 'integration:external:' || pg_temp.hash16('hubspot'), 'Integreer externe koppeling: hubspot', 'INTEGRATION', 'integration:external:' || pg_temp.hash16('hubspot'), jsonb_build_object('name', 'hubspot')),
+  (41, 'integration:external:' || pg_temp.hash16('exact online'), 'Integreer externe koppeling: Exact Online', 'INTEGRATION', 'integration:external:' || pg_temp.hash16('exact online'), jsonb_build_object('name', 'Exact Online')),
+  (42, 'integration:external:' || pg_temp.hash16('hubspot'), 'Integreer externe koppeling: HubSpot', 'INTEGRATION', 'integration:external:' || pg_temp.hash16('hubspot'), jsonb_build_object('name', 'HubSpot')),
   (43, 'technical:domain', 'Configureer domein', 'TECHNICAL', null, jsonb_build_object('domain_status', 'has_domain', 'domain_name', 'example.test', 'domain_service', 'transfer_needed')),
   (44, 'technical:hosting', 'Configureer hosting', 'TECHNICAL', null, jsonb_build_object('hosting_status', 'has_hosting', 'hosting_support', 'advice', 'details_hosting_support', 'advice')),
   (45, 'technical:maintenance', 'Configureer onderhoudsafspraken', 'TECHNICAL', null, jsonb_build_object('maintenance_interest', 'yes', 'details_maintenance_interest', 'care_plus_requested', 'maintenance_plan', 'care_plus')),
@@ -1309,6 +1310,15 @@ select ok(
     where category not in ('PAGE', 'CONTENT', 'DESIGN', 'FORM', 'SEO', 'INTEGRATION', 'AUTH', 'ECOMMERCE', 'DOCUMENT_FLOW', 'MULTIMEDIA', 'TECHNICAL', 'OTHER')
   ),
   'expected sources use only the contracted category set'
+);
+select is(
+  lws_internal.website_requirements_normalize_integration_array_v1(
+    array['hubspot', 'HubSpot', 'exact online', 'Exact Online']
+  ),
+  lws_internal.website_requirements_normalize_integration_array_v1(
+    array['Exact Online', 'exact online', 'HubSpot', 'hubspot']
+  ),
+  'external integration identity and display selection are independent of input order'
 );
 
 select pg_temp.set_sync_claims_v1(pg_temp.fixture_uuid('wris-owner-user'), 'aal2');
