@@ -141,13 +141,16 @@ export type GitHubHttpOperation =
         type: "blob";
         sha: string;
       }>[];
+      baseTreeSha?: string;
     }>
   )
   | (
     & RepositoryCoordinates
     & Readonly<{
       kind: "CREATE_COMMIT";
-      message: "chore: initialize approved starter snapshot";
+      message:
+        | "chore: initialize approved starter snapshot"
+        | "chore: save website project file";
       treeSha: string;
       parentSha?: string;
     }>
@@ -187,6 +190,7 @@ export type GitHubHttpOperation =
       kind: "UPDATE_REF";
       commitSha: string;
       force: false;
+      ref?: string;
     }>
   )
   | (
@@ -791,15 +795,21 @@ function prepare(
       };
     }
     case "CREATE_TREE": {
-      if (
-        !exactKeys(operation, [
+      const treeKeys = operation.baseTreeSha === undefined
+        ? ["kind", "owner", "repository", "entries", "token"]
+        : [
           "kind",
           "owner",
           "repository",
           "entries",
+          "baseTreeSha",
           "token",
-        ]) ||
+        ];
+      if (
+        !exactKeys(operation, treeKeys) ||
         !validCoordinates(operation) || !Array.isArray(operation.entries) ||
+        operation.baseTreeSha !== undefined &&
+          !SHA.test(operation.baseTreeSha) ||
         operation.entries.length === 0 || operation.entries.length > 10_000 ||
         !operation.entries.every((entry) =>
           isRecord(entry) &&
@@ -812,7 +822,12 @@ function prepare(
       return {
         url:
           `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/trees`,
-        init: jsonRequest("POST", operation.token, { tree: operation.entries }),
+        init: jsonRequest("POST", operation.token, {
+          tree: operation.entries,
+          ...(operation.baseTreeSha === undefined
+            ? {}
+            : { base_tree: operation.baseTreeSha }),
+        }),
         responseBytes: SMALL_RESPONSE_BYTES,
         project: projectSha,
       };
@@ -831,7 +846,8 @@ function prepare(
         ];
       if (
         !exactKeys(operation, keys) || !validCoordinates(operation) ||
-        operation.message !== "chore: initialize approved starter snapshot" ||
+        operation.message !== "chore: initialize approved starter snapshot" &&
+          operation.message !== "chore: save website project file" ||
         !SHA.test(operation.treeSha) ||
         operation.parentSha !== undefined && !SHA.test(operation.parentSha)
       ) return invalidOperation();
@@ -933,20 +949,26 @@ function prepare(
       };
     }
     case "UPDATE_REF": {
-      if (
-        !exactKeys(operation, [
+      const refKeys = operation.ref === undefined
+        ? ["kind", "owner", "repository", "commitSha", "force", "token"]
+        : [
           "kind",
           "owner",
           "repository",
           "commitSha",
           "force",
+          "ref",
           "token",
-        ]) || !validCoordinates(operation) || !SHA.test(operation.commitSha) ||
+        ];
+      if (
+        !exactKeys(operation, refKeys) || !validCoordinates(operation) ||
+        !SHA.test(operation.commitSha) ||
+        operation.ref !== undefined && !REF.test(operation.ref) ||
         operation.force !== false
       ) return invalidOperation();
       return {
         url:
-          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/refs/heads/main`,
+          `${API_ORIGIN}/repos/${operation.owner}/${operation.repository}/git/refs/${operation.ref ?? "heads/main"}`,
         init: jsonRequest("PATCH", operation.token, {
           sha: operation.commitSha,
           force: false,

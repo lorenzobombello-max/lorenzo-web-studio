@@ -44,6 +44,7 @@ import {
   executeCallerJwtWebsiteRequirementsAction,
   executeApplicationDetailRead,
   executeCallerJwtWebsiteProjectFilesAction,
+  executeCallerJwtWebsiteProjectPreviewBuildAction,
   executeCallerJwtWorkforceCalendarAction,
   executeCustomerRequestUploadInboxPromotionAction,
   executeWebsiteQuotationPricingStateAction,
@@ -363,6 +364,8 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       executeCommand: async () => ({ command: true }),
       executeWebsiteProjectDirectoryList: async () => ({ entries: [] }),
       executeWebsiteProjectFileRead: async () => ({ file: {} }),
+      executeWebsiteProjectFileSave: async () => ({ file: {} }),
+      executeWebsiteProjectPreviewBuild: async () => ({ build: {} }),
       executeApplicationAction: async (
         token: string,
         input: Record<string, unknown>,
@@ -492,6 +495,22 @@ const websiteProjectFileRequest = {
   action: "read_website_project_file" as const,
   quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
   path: "src/main.ts",
+};
+
+const websiteProjectFileSaveRequest = {
+  action: "save_website_project_file" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  path: "src/main.ts",
+  content: "export const ok = true;\n",
+  expected_commit_sha: "a".repeat(40),
+  idempotency_key: "c1a00000-0000-4000-8000-000000000004",
+};
+
+const websiteProjectPreviewBuildRequest = {
+  action: "build_website_project_preview" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  expected_commit_sha: "a".repeat(40),
+  idempotency_key: "c1a00000-0000-4000-8000-000000000005",
 };
 
 const projectFileAuthorityFields = [
@@ -1046,6 +1065,112 @@ Deno.test("project file read accepts only bounded browser intent", async () => {
   }
 });
 
+Deno.test("project file save accepts only bounded browser intent", async () => {
+  const result = {
+    snapshot: { commit_sha: "b".repeat(40), ref_label: "main" },
+    file: { path: "src/main.ts", created: false },
+  };
+  const accepted = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectFileSave: async () => result,
+  });
+  const acceptedResponse = await handleCommercialOperator(
+    request(websiteProjectFileSaveRequest, ownerAal2Jwt),
+    accepted.deps,
+  );
+  assertEquals(acceptedResponse.status, 200);
+  assertEquals(await acceptedResponse.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result,
+  });
+
+  for (
+    const input of [
+      {
+        action: websiteProjectFileSaveRequest.action,
+        quote_request_id: websiteProjectFileSaveRequest.quote_request_id,
+        path: websiteProjectFileSaveRequest.path,
+        content: websiteProjectFileSaveRequest.content,
+        expected_commit_sha: websiteProjectFileSaveRequest.expected_commit_sha,
+      },
+      { ...websiteProjectFileSaveRequest, quote_request_id: "invalid" },
+      { ...websiteProjectFileSaveRequest, path: null },
+      { ...websiteProjectFileSaveRequest, content: null },
+      { ...websiteProjectFileSaveRequest, expected_commit_sha: "bad" },
+      { ...websiteProjectFileSaveRequest, idempotency_key: "bad" },
+    ]
+  ) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(input), harness.deps)).status,
+      400,
+    );
+  }
+  for (const field of projectFileAuthorityFields) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(
+        request({ ...websiteProjectFileSaveRequest, [field]: "forbidden" }),
+        harness.deps,
+      )).status,
+      400,
+      field,
+    );
+  }
+});
+
+Deno.test("project preview build accepts only bounded browser intent", async () => {
+  const result = {
+    build: { status: "PASS" },
+    preview: { signed_url: "https://storage.test/private" },
+  };
+  const accepted = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectPreviewBuild: async () => result,
+  });
+  const acceptedResponse = await handleCommercialOperator(
+    request(websiteProjectPreviewBuildRequest, ownerAal2Jwt),
+    accepted.deps,
+  );
+  assertEquals(acceptedResponse.status, 200);
+  assertEquals(await acceptedResponse.json(), {
+    ok: true,
+    code: "APPLICATION_ACTION_ACCEPTED",
+    result,
+  });
+
+  for (
+    const input of [
+      {
+        action: websiteProjectPreviewBuildRequest.action,
+        quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
+        expected_commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
+      },
+      { ...websiteProjectPreviewBuildRequest, quote_request_id: "invalid" },
+      { ...websiteProjectPreviewBuildRequest, expected_commit_sha: "bad" },
+      { ...websiteProjectPreviewBuildRequest, idempotency_key: "bad" },
+    ]
+  ) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(request(input), harness.deps)).status,
+      400,
+    );
+  }
+  for (const field of projectFileAuthorityFields) {
+    const harness = dependencies();
+    assertEquals(
+      (await handleCommercialOperator(
+        request({ ...websiteProjectPreviewBuildRequest, [field]: "forbidden" }),
+        harness.deps,
+      )).status,
+      400,
+      field,
+    );
+  }
+});
+
 Deno.test("project files require owner AAL2 before service dispatch", async () => {
   for (
     const [token, verifyUser] of [
@@ -1127,6 +1252,20 @@ Deno.test("project files preserve caller JWT authority", async () => {
       seen.push(token);
       return {};
     },
+    executeWebsiteProjectFileSave: async (token: string) => {
+      seen.push(token);
+      return {
+        snapshot: { commit_sha: "b".repeat(40), ref_label: "main" },
+        file: { path: "src/main.ts", created: false },
+      };
+    },
+    executeWebsiteProjectPreviewBuild: async (token: string) => {
+      seen.push(token);
+      return {
+        build: { status: "PASS" },
+        preview: { signed_url: "https://storage.test/private" },
+      };
+    },
   });
   assertEquals(
     (await handleCommercialOperator(
@@ -1142,7 +1281,24 @@ Deno.test("project files preserve caller JWT authority", async () => {
     )).status,
     200,
   );
-  assertEquals(seen, [ownerAal2Jwt, ownerAal2Jwt]);
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectFileSaveRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectPreviewBuildRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(
+    seen,
+    [ownerAal2Jwt, ownerAal2Jwt, ownerAal2Jwt, ownerAal2Jwt],
+  );
 });
 
 Deno.test("project file errors map without provider leakage", async () => {
@@ -1158,6 +1314,8 @@ Deno.test("project file errors map without provider leakage", async () => {
       ["REPOSITORY_BINDING_MISSING", 409],
       ["REPOSITORY_BINDING_STALE", 409],
       ["REPOSITORY_REF_MISMATCH", 409],
+      ["PROJECT_FILES_STALE_REVISION", 409],
+      ["PROJECT_FILES_LEASE_NOT_FOUND", 409],
       ["PROJECT_FILES_SNAPSHOT_UNAVAILABLE", 409],
       ["PROJECT_PATH_KIND_MISMATCH", 409],
       ["FILE_TOO_LARGE", 413],
@@ -1172,6 +1330,10 @@ Deno.test("project file errors map without provider leakage", async () => {
       ["PROJECT_FILES_PROVIDER_RESPONSE_INVALID", 503],
       ["PROJECT_FILES_CURSOR_CONFIGURATION_ERROR", 503],
       ["SENSITIVE_CLASSIFICATION_UNAVAILABLE", 503],
+      ["PREVIEW_MARKUP_INVALID", 400],
+      ["PREVIEW_MARKUP_UNSAFE", 409],
+      ["PREVIEW_ARTIFACT_STORAGE_FAILED", 503],
+      ["PREVIEW_SIGNED_URL_FAILED", 503],
     ] as const
   ) {
     const response = await handleCommercialOperator(
@@ -1219,6 +1381,14 @@ Deno.test("project read actions cannot dispatch mutation dependencies", async ()
     },
     executeWebsiteProjectDirectoryList: async () => ({ entries: [] }),
     executeWebsiteProjectFileRead: async () => ({ file: {} }),
+    executeWebsiteProjectFileSave: async () => ({
+      snapshot: { commit_sha: "b".repeat(40), ref_label: "main" },
+      file: { path: "src/main.ts", created: false },
+    }),
+    executeWebsiteProjectPreviewBuild: async () => ({
+      build: { status: "PASS" },
+      preview: { signed_url: "https://storage.test/private" },
+    }),
   });
   assertEquals(
     (await handleCommercialOperator(
@@ -1234,6 +1404,20 @@ Deno.test("project read actions cannot dispatch mutation dependencies", async ()
     )).status,
     200,
   );
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectFileSaveRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
+  assertEquals(
+    (await handleCommercialOperator(
+      request(websiteProjectPreviewBuildRequest, ownerAal2Jwt),
+      harness.deps,
+    )).status,
+    200,
+  );
   assertEquals(genericDispatches, 0);
   const source = await Deno.readTextFile(
     new URL("./index.ts", import.meta.url),
@@ -1243,7 +1427,7 @@ Deno.test("project read actions cannot dispatch mutation dependencies", async ()
       "export async function executeCallerJwtWebsiteProjectFilesAction",
     ),
     source.indexOf(
-      "export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction",
+      "export async function executeCallerJwtWebsiteProjectPreviewBuildAction",
     ),
   );
   for (
@@ -1300,7 +1484,10 @@ function projectFilesRuntime(overrides: Record<string, unknown> = {}) {
       return {
         rpc: async (name: string, args: Record<string, unknown>) => {
           events.push(`${name}:${JSON.stringify(args)}`);
-          if (name === "acquire_website_project_files_read_v1") {
+          if (
+            name === "acquire_website_project_files_read_v1" ||
+            name === "acquire_website_project_files_write_v1"
+          ) {
             return { data: websiteProjectAuthority, error: null };
           }
           return { data: null, error: null };
@@ -1322,6 +1509,13 @@ function projectFilesRuntime(overrides: Record<string, unknown> = {}) {
           events.push("service.read");
           return { file: { content: "safe" } };
         },
+        save: async () => {
+          events.push("service.save");
+          return {
+            snapshot: { commit_sha: "b".repeat(40), ref_label: "main" },
+            file: { path: "src/main.ts", created: false },
+          };
+        },
       };
     },
     ...overrides,
@@ -1340,6 +1534,7 @@ Deno.test("project files runtime acquires services and releases exactly once", a
     const [input, readKind, serviceEvent] of [
       [websiteProjectDirectoryRequest, "DIRECTORY", "service.list"],
       [websiteProjectFileRequest, "FILE", "service.read"],
+      [websiteProjectFileSaveRequest, "FILE", "service.save"],
     ] as const
   ) {
     const runtime = projectFilesRuntime();
@@ -1350,20 +1545,43 @@ Deno.test("project files runtime acquires services and releases exactly once", a
     );
     assertEquals(runtime.signalCount(), 1);
     assertEquals(runtime.callerJwts, [ownerAal2Jwt]);
-    assertEquals(runtime.events, [
-      `acquire_website_project_files_read_v1:${
-        JSON.stringify({
-          p_quote_request_id: input.quote_request_id,
-          p_read_kind: readKind,
-        })
-      }`,
-      serviceEvent,
-      `release_website_project_files_read_v1:${
-        JSON.stringify({
-          p_lease_id: websiteProjectAuthority.leaseId,
-        })
-      }`,
-    ]);
+    if (input.action === "save_website_project_file") {
+      assertEquals(runtime.events, [
+        `acquire_website_project_files_write_v1:${
+          JSON.stringify({
+            p_quote_request_id: input.quote_request_id,
+            p_path: input.path,
+            p_expected_commit_sha: input.expected_commit_sha,
+            p_idempotency_key: input.idempotency_key,
+          })
+        }`,
+        serviceEvent,
+        `finalize_website_project_files_write_v1:${
+          JSON.stringify({
+            p_lease_id: websiteProjectAuthority.leaseId,
+            p_path: input.path,
+            p_expected_commit_sha: input.expected_commit_sha,
+            p_commit_sha: "b".repeat(40),
+            p_created: false,
+          })
+        }`,
+      ]);
+    } else {
+      assertEquals(runtime.events, [
+        `acquire_website_project_files_read_v1:${
+          JSON.stringify({
+            p_quote_request_id: input.quote_request_id,
+            p_read_kind: readKind,
+          })
+        }`,
+        serviceEvent,
+        `release_website_project_files_read_v1:${
+          JSON.stringify({
+            p_lease_id: websiteProjectAuthority.leaseId,
+          })
+        }`,
+      ]);
+    }
   }
 });
 
@@ -1501,7 +1719,115 @@ Deno.test("project files share one cumulative ten second deadline", async () => 
   }
 });
 
-Deno.test("Website Execution read uses v3 and v118 provisioning remains present", async () => {
+Deno.test("project preview runtime acquires, finalizes, and returns signed metadata", async () => {
+  const events: string[] = [];
+  const runtime = {
+    clientFor: (_token: string) => ({
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        events.push(`${name}:${JSON.stringify(args)}`);
+        if (name === "acquire_website_project_preview_build_v1") {
+          return { data: websiteProjectAuthority, error: null };
+        }
+        return { data: null, error: null };
+      },
+    }),
+    createService: async (_signal: AbortSignal) => ({
+      build: async () => ({
+        contract_version: 1 as const,
+        quote_request_id: websiteProjectAuthority.quoteRequestId,
+        website_work_context_id: websiteProjectAuthority.websiteWorkContextId,
+        website_workspace_id: websiteProjectAuthority.websiteWorkspaceId,
+        workspace_state: "REPOSITORY_READY" as const,
+        repository: {
+          display_name: "lorenzo-test/website-project",
+          binding_revision: websiteProjectAuthority.bindingRevision,
+        },
+        snapshot: {
+          commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
+          ref_label: "main",
+        },
+        build: {
+          status: "PASS" as const,
+          built_at: "2099-01-01T00:00:00.000Z",
+          source_path: "index.html" as const,
+          sanitization: "STATIC_PREVIEW_SANITIZER_V1" as const,
+          idempotency_key: websiteProjectPreviewBuildRequest.idempotency_key,
+        },
+        preview: {
+          storage_bucket_id: "website-project-previews",
+          storage_object_path:
+            "contexts/ctx/workspaces/ws/commits/a/index-abc.html",
+          media_type: "text/html" as const,
+          sha256: "b".repeat(64),
+          byte_count: 120,
+          signed_url: "https://storage.test/private",
+          expires_at: "2099-01-01T00:05:00.000Z",
+          reuse_status: "CREATED" as const,
+        },
+      }),
+    }),
+  };
+
+  const result = await executeCallerJwtWebsiteProjectPreviewBuildAction(
+    ownerAal2Jwt,
+    websiteProjectPreviewBuildRequest,
+    runtime,
+  );
+
+  assertEquals(result.preview.signed_url, "https://storage.test/private");
+  assertEquals(events, [
+    `acquire_website_project_preview_build_v1:${JSON.stringify({
+      p_quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
+      p_expected_commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
+      p_idempotency_key: websiteProjectPreviewBuildRequest.idempotency_key,
+    })}`,
+    `finalize_website_project_preview_build_v1:${JSON.stringify({
+      p_lease_id: websiteProjectAuthority.leaseId,
+      p_expected_commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
+      p_artifact_path: "contexts/ctx/workspaces/ws/commits/a/index-abc.html",
+      p_artifact_sha256: "b".repeat(64),
+      p_artifact_bytes: 120,
+      p_build_status: "PASS",
+    })}`,
+  ]);
+});
+
+Deno.test("project preview runtime releases lease on build failure", async () => {
+  const events: string[] = [];
+  const runtime = {
+    clientFor: (_token: string) => ({
+      rpc: async (name: string, _args: Record<string, unknown>) => {
+        events.push(name);
+        if (name === "acquire_website_project_preview_build_v1") {
+          return { data: websiteProjectAuthority, error: null };
+        }
+        return { data: null, error: null };
+      },
+    }),
+    createService: async (_signal: AbortSignal) => ({
+      build: async () => {
+        throw new Error("PREVIEW_MARKUP_UNSAFE");
+      },
+    }),
+  };
+
+  await assertRejects(
+    () =>
+      executeCallerJwtWebsiteProjectPreviewBuildAction(
+        ownerAal2Jwt,
+        websiteProjectPreviewBuildRequest,
+        runtime,
+      ),
+    Error,
+    "PREVIEW_MARKUP_UNSAFE",
+  );
+  assertEquals(events, [
+    "acquire_website_project_preview_build_v1",
+    "release_website_project_preview_build_v1",
+  ]);
+});
+
+Deno.test("Website Execution read uses v4 and v118 provisioning remains present", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
     jwt,
@@ -1517,7 +1843,7 @@ Deno.test("Website Execution read uses v3 and v118 provisioning remains present"
     }),
   );
   assertEquals(calls, [{
-    name: "get_website_execution_workspace_v3",
+    name: "get_website_execution_workspace_v4",
     args: { p_quote_request_id: websiteProjectFileRequest.quote_request_id },
   }]);
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));

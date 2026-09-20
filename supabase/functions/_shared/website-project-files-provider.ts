@@ -66,6 +66,11 @@ export type WebsiteProjectFilesProviderFile = Readonly<{
   bytes: Uint8Array;
 }>;
 
+export type WebsiteProjectFilesProviderWrite = Readonly<{
+  commitSha: string;
+  created: boolean;
+}>;
+
 export type WebsiteProjectFilesProvider = Readonly<{
   resolveSnapshot(
     authority: WebsiteProjectFilesAuthority,
@@ -87,6 +92,15 @@ export type WebsiteProjectFilesProvider = Readonly<{
       path: string;
     }>,
   ): Promise<WebsiteProjectFilesProviderFile>;
+  writeFile?(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      parentCommitSha: string;
+      rootTreeSha: string;
+      path: string;
+      bytes: Uint8Array;
+    }>,
+  ): Promise<WebsiteProjectFilesProviderWrite>;
 }>;
 
 export class WebsiteProjectFilesProviderError extends Error {
@@ -257,6 +271,19 @@ function projectCommit(value: unknown, expectedSha: string): string {
   return value.treeSha;
 }
 
+function projectSha(value: unknown): string {
+  if (!isRecord(value) || typeof value.sha !== "string" || !SHA.test(value.sha)) {
+    return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+  }
+  return value.sha;
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function verifyMarker(
   value: unknown,
   authority: WebsiteProjectFilesAuthority,
@@ -384,6 +411,8 @@ export function createWebsiteProjectFilesProvider(
 
   async function access(
     authority: WebsiteProjectFilesAuthority,
+    operation: "WEBSITE_PROJECT_FILES_READ" | "WEBSITE_PROJECT_FILES_WRITE" =
+      "WEBSITE_PROJECT_FILES_READ",
   ): Promise<string> {
     if (!validAuthority(authority, dependencies.config)) {
       return fail("REPOSITORY_BINDING_STALE");
@@ -395,7 +424,7 @@ export function createWebsiteProjectFilesProvider(
           websiteWorkContextId: authority.websiteWorkContextId,
           target: dependencies.config.target,
           organization: authority.repositoryOwner,
-          operation: "WEBSITE_PROJECT_FILES_READ",
+          operation,
           repositoryIds: Object.freeze([authority.repositoryExternalId]),
         }),
         Object.freeze({
@@ -588,6 +617,108 @@ export function createWebsiteProjectFilesProvider(
         });
       }
       return fail("PROJECT_FILE_NOT_FOUND");
+    },
+
+    async writeFile(input) {
+      if (
+        !isRecord(input) || !exactKeys(input, [
+          "authority",
+          "bytes",
+          "parentCommitSha",
+          "path",
+          "rootTreeSha",
+        ]) || !validAuthority(input.authority, dependencies.config) ||
+        !SHA.test(input.parentCommitSha) || !SHA.test(input.rootTreeSha) ||
+        typeof input.path !== "string" || input.path === "" ||
+        !(input.bytes instanceof Uint8Array) ||
+        input.bytes.byteLength > MAX_FILE_BYTES
+      ) return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      const segments = input.path.split("/");
+      if (!segments.every(validName)) {
+        return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      }
+      const token = await access(
+        input.authority,
+        "WEBSITE_PROJECT_FILES_WRITE",
+      );
+      const base = coordinates(input.authority, token);
+      const currentCommit = projectRef(
+        await execute({
+          kind: "WEBSITE_PROJECT_FILES_READ_REF",
+          ...base,
+          ref: input.authority.repositoryRef,
+        }),
+        input.authority,
+      );
+      if (currentCommit !== input.parentCommitSha) {
+        return fail("PROJECT_FILES_STALE_REVISION");
+      }
+
+      let treeSha = input.rootTreeSha;
+      let traversed = "";
+      let created = false;
+      for (let index = 0; index < segments.length; index++) {
+        const entries = projectTree(
+          await execute({
+            kind: "WEBSITE_PROJECT_FILES_READ_TREE",
+            ...base,
+            treeRef: treeSha,
+          }),
+          treeSha,
+          traversed,
+        );
+        const target = entries.find((entry) => entry.name === segments[index]);
+        const final = index === segments.length - 1;
+        if (final) {
+          if (!target) {
+            created = true;
+          } else if (
+            target.objectType !== "blob" ||
+            target.mode !== "100644" && target.mode !== "100755"
+          ) return fail("PROJECT_PATH_KIND_MISMATCH");
+          break;
+        }
+        if (!target || target.objectType !== "tree" || target.mode !== "040000") {
+          return fail("PROJECT_PATH_KIND_MISMATCH");
+        }
+        treeSha = target.objectSha;
+        traversed = traversed ? `${traversed}/${segments[index]}` : segments[index];
+      }
+
+      const blobSha = projectSha(await execute({
+        kind: "CREATE_BLOB",
+        ...base,
+        contentBase64: encodeBase64(input.bytes),
+      }));
+      const nextTreeSha = projectSha(await execute({
+        kind: "CREATE_TREE",
+        ...base,
+        baseTreeSha: input.rootTreeSha,
+        entries: Object.freeze([Object.freeze({
+          path: input.path,
+          mode: "100644",
+          type: "blob" as const,
+          sha: blobSha,
+        })]),
+      }));
+      const commitSha = projectSha(await execute({
+        kind: "CREATE_COMMIT",
+        ...base,
+        message: "chore: save website project file",
+        treeSha: nextTreeSha,
+        parentSha: input.parentCommitSha,
+      }));
+      const publishedCommit = projectRef(await execute({
+        kind: "UPDATE_REF",
+        ...base,
+        commitSha,
+        force: false,
+        ref: input.authority.repositoryRef,
+      }), input.authority);
+      if (publishedCommit !== commitSha) {
+        return fail("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      }
+      return Object.freeze({ commitSha, created });
     },
   });
 }

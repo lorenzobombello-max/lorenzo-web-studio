@@ -9,8 +9,10 @@ import {
   createWebsiteProjectFilesController,
   validateWebsiteProjectDirectory,
   validateWebsiteProjectFile,
+  validateWebsiteProjectFileSave,
   websiteProjectDirectoryRequest,
   websiteProjectFileRequest,
+  websiteProjectFileSaveRequest,
 } from "../assets/js/operator-website-project-files.mjs";
 import { websiteProjectFilesGateway } from "../assets/js/operator-website-execution-child.mjs";
 
@@ -79,6 +81,19 @@ function fileFixture(overrides = {}) {
   };
 }
 
+function saveFixture(overrides = {}) {
+  return {
+    contract_version: 1,
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    workspace_state: "REPOSITORY_READY",
+    repository: { display_name: "studio/example", binding_revision: 3 },
+    snapshot: { commit_sha: commitB, ref_label: "main" },
+    file: { path: "index.html", created: false },
+    ...overrides,
+  };
+}
+
 function controllerHarness(responses, overrides = {}) {
   const requests = [];
   let aal2Calls = 0;
@@ -87,6 +102,7 @@ function controllerHarness(responses, overrides = {}) {
     websiteWorkContextId,
     ownerEligible: true,
     projectFilesRead: true,
+    projectFilesWrite: true,
     requireAal2: async () => { aal2Calls += 1; },
     gateway: async (request) => {
       requests.push(request);
@@ -184,6 +200,49 @@ test("file request is exact and authority minimal", () => {
     path: "src/app.js",
     [forbidden]: "browser-authority",
   }), /INVALID_WEBSITE_PROJECT_FILE_REQUEST/);
+});
+
+test("save request contains content concurrency and no repository authority", () => {
+  const idempotencyKey = "a2700000-0000-4000-8000-000000000004";
+  const request = websiteProjectFileSaveRequest({
+    quoteRequestId,
+    path: "index.html",
+    content: "<h1>Saved</h1>",
+    expectedCommitSha: commitA,
+    idempotencyKey,
+  });
+  assert.deepEqual(request, {
+    action: "save_website_project_file",
+    quote_request_id: quoteRequestId,
+    path: "index.html",
+    content: "<h1>Saved</h1>",
+    expected_commit_sha: commitA,
+    idempotency_key: idempotencyKey,
+  });
+  assert.equal(validateWebsiteProjectFileSave(saveFixture(), {
+    quoteRequestId,
+    websiteWorkContextId,
+  }).snapshot.commit_sha, commitB);
+  for (const field of ["repository", "branch", "workspace_id", "context_id"]) {
+    assert.equal(Object.hasOwn(request, field), false);
+  }
+});
+
+test("controller saves editor content against loaded snapshot", async () => {
+  const test = controllerHarness([
+    directoryFixture(),
+    fileFixture(),
+    saveFixture(),
+  ]);
+  await test.controller.loadDirectory({ path: "", cursor: null });
+  await test.controller.readFile("index.html");
+  test.controller.updateEditorContent("<h1>Saved</h1>");
+  assert.equal(test.controller.getState().editorDirty, true);
+  await test.controller.saveFile({ path: "index.html", content: "<h1>Saved</h1>" });
+  assert.equal(test.requests[2].expected_commit_sha, commitA);
+  assert.equal(test.controller.getState().currentTreeSnapshot.commit_sha, commitB);
+  assert.equal(test.controller.getState().editorDirty, false);
+  assert.equal(test.controller.getState().currentFile.file.content, "<h1>Saved</h1>");
 });
 
 test("directory DTO accepts only the closed metadata contract", () => {
@@ -444,6 +503,8 @@ test("failed canonical root refresh discards pending and current authority", asy
     currentTreeSnapshot: null,
     currentFileSnapshot: null,
     currentFile: null,
+    editorContent: null,
+    editorDirty: false,
     pendingFileSnapshot: null,
     refreshRootRequired: false,
   });
@@ -457,7 +518,7 @@ test("failed canonical root refresh discards pending and current authority", asy
     ["commit", "commit_sha", "ref", "branch"].some((key) => key in request)), false);
 });
 
-test("repository content has no persistence surface", async () => {
+test("repository content persists only through the bounded command gateway", async () => {
   const source = await readFile(new URL(
     "../assets/js/operator-website-project-files.mjs",
     import.meta.url,
@@ -468,6 +529,9 @@ test("repository content has no persistence surface", async () => {
   assert.match(source, /createElement/);
   assert.match(source, /textContent/);
   assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|\beval\(|new Function/);
+  assert.match(source, /save_website_project_file/);
+  assert.match(source, /website-project-files__save/);
+  assert.match(source, /website-project-files__create/);
 });
 
 test("Task 9 exports one safe internal tree and inert content mount", async () => {
@@ -480,7 +544,7 @@ test("Task 9 exports one safe internal tree and inert content mount", async () =
   assert.match(source, /website-project-files__row/);
   assert.match(source, /website-project-files__status/);
   assert.match(source, /website-project-files__refresh/);
-  assert.match(source, /website-project-files__text/);
+  assert.match(source, /website-project-files__editor/);
   assert.match(source, /website-project-files__metadata/);
   assert.match(source, /clearAuthorityState/);
   assert.doesNotMatch(source, /srcdoc|createObjectURL|data:|blob:|download_url|provider_url/i);
@@ -502,6 +566,8 @@ test("controller reset clears stale tree selection and pagination", async () => 
     currentTreeSnapshot: null,
     currentFileSnapshot: null,
     currentFile: null,
+    editorContent: null,
+    editorDirty: false,
     pendingFileSnapshot: null,
     refreshRootRequired: false,
   });
@@ -565,6 +631,7 @@ function task9Context(overrides = {}) {
     websiteWorkspaceId,
     bindingRevision: 3,
     projectFilesRead: true,
+    projectFilesWrite: true,
     workspaceState: "REPOSITORY_READY",
     repositoryOperationState: "COMPLETE",
     failureCategory: null,
@@ -580,10 +647,10 @@ async function queueAndOpenFile(page, fixture = fileFixture(), context = task9Co
   }, { directory: directoryFixture(), file: fixture, nextContext: context });
   await page.evaluate(() => window.projectFiles.activate());
   await page.getByRole("treeitem", { name: /Bestand/ }).click();
-  await page.waitForSelector(".website-project-files__text:not([hidden])");
+  await page.waitForSelector(".website-project-files__editor:not([hidden])");
 }
 
-test("hostile repository text and filenames remain inert with safe metadata and zero persistence", async () => {
+test("hostile repository text and filenames remain inert in the editor", async () => {
   const server = await serveTask9Harness();
   const browser = await chromium.launch({ headless: true });
   try {
@@ -608,8 +675,8 @@ test("hostile repository text and filenames remain inert with safe metadata and 
     });
     await page.evaluate(() => window.projectFiles.activate());
     await page.getByRole("treeitem", { name: /Bestand/ }).click();
-    await page.waitForSelector(".website-project-files__text:not([hidden])");
-    assert.equal(await page.locator(".website-project-files__text").textContent(), hostileContent);
+    await page.waitForSelector(".website-project-files__editor:not([hidden])");
+    assert.equal(await page.locator(".website-project-files__editor").inputValue(), hostileContent);
     assert.equal(await page.locator(".website-project-files__path").textContent(), hostileName);
     assert.match(await page.locator(".website-project-files__metadata").textContent(), /utf-8/);
     assert.match(await page.locator(".website-project-files__metadata").textContent(), /text\/plain/);
@@ -641,7 +708,7 @@ test("every authority-loss path clears content and disables reads until revalida
     for (const status of ["logout", "authorization_failure", "revoke", "owner_aal2_loss"]) {
       await queueAndOpenFile(page);
       await page.evaluate((reason) => window.projectFiles.clearAuthorityState(reason), status);
-      assert.equal(await page.locator(".website-project-files__text:not([hidden])").count(), 0, status);
+      assert.equal(await page.locator(".website-project-files__editor:not([hidden])").count(), 0, status);
       const before = await page.evaluate(() => window.task9Requests.length);
       await page.evaluate(() => window.projectFiles.activate());
       assert.equal(await page.evaluate(() => window.task9Requests.length), before, status);
@@ -654,18 +721,18 @@ test("every authority-loss path clears content and disables reads until revalida
     ]) {
       await queueAndOpenFile(page);
       await page.evaluate((nextContext) => window.projectFiles.updateContext(nextContext), context);
-      assert.equal(await page.locator(".website-project-files__text:not([hidden])").count(), 0);
+      assert.equal(await page.locator(".website-project-files__editor:not([hidden])").count(), 0);
     }
     await queueAndOpenFile(page);
     await page.evaluate(() => window.projectFiles.markUnavailable());
-    assert.equal(await page.locator(".website-project-files__text:not([hidden])").count(), 0);
+    assert.equal(await page.locator(".website-project-files__editor:not([hidden])").count(), 0);
     assert.equal(await page.locator(".website-project-files__refresh").isDisabled(), true);
     await queueAndOpenFile(page);
     const beforeAal2Loss = await page.evaluate(() => window.task9Requests.length);
     await page.evaluate(() => { window.task9Aal2 = false; });
     await page.getByRole("treeitem", { name: /Bestand/ }).click();
     await page.waitForFunction(() => document.querySelector(".website-project-files__refresh").disabled);
-    assert.equal(await page.locator(".website-project-files__text:not([hidden])").count(), 0);
+    assert.equal(await page.locator(".website-project-files__editor:not([hidden])").count(), 0);
     assert.equal(await page.evaluate(() => window.task9Requests.length), beforeAal2Loss);
     await page.evaluate(() => window.projectFiles.dispose());
     assert.equal(await page.locator("[data-website-project-files]").textContent(), "");
@@ -699,9 +766,8 @@ test("Task 8 styles provide bounded focusable responsive tree dimensions", async
 
 test("Task 9 content pane is bounded readable and responsive", async () => {
   const css = await readFile(new URL("../assets/css/operator-dashboard.css", import.meta.url), "utf8");
-  assert.match(css, /\.website-project-files__text\s*\{[^}]*white-space:pre-wrap/);
-  assert.match(css, /\.website-project-files__text\s*\{[^}]*overflow:auto/);
+  assert.match(css, /\.website-project-files__editor\s*\{[^}]*min-height:18rem/);
+  assert.match(css, /\.website-project-files__editor\s*\{[^}]*resize:vertical/);
   assert.match(css, /\.website-project-files__content-pane\s*\{[^}]*min-width:0/);
-  assert.match(css, /\.website-project-files__text:focus-visible/);
-  assert.match(css, /@media \(max-width:540px\)[^]*\.website-project-files__text/);
+  assert.match(css, /\.website-project-files__editor:focus-visible/);
 });

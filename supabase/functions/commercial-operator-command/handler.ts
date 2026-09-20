@@ -76,6 +76,8 @@ const APPLICATION_ACTIONS = new Set([
   "provision_website_execution_workspace",
   "list_website_project_directory",
   "read_website_project_file",
+  "save_website_project_file",
+  "build_website_project_preview",
   "get_website_requirements_board",
   "sync_website_requirements_from_intake",
   "start_website_requirement",
@@ -460,6 +462,20 @@ export type WebsiteProjectFileActionInput = Readonly<{
   quote_request_id: string;
   path: string;
 }>;
+export type WebsiteProjectFileSaveActionInput = Readonly<{
+  action: "save_website_project_file";
+  quote_request_id: string;
+  path: string;
+  content: string;
+  expected_commit_sha: string;
+  idempotency_key: string;
+}>;
+export type WebsiteProjectPreviewBuildActionInput = Readonly<{
+  action: "build_website_project_preview";
+  quote_request_id: string;
+  expected_commit_sha: string;
+  idempotency_key: string;
+}>;
 export type WebsiteRequirementsActionInput = Readonly<
   Record<string, unknown> & {
     action: string;
@@ -546,6 +562,14 @@ type CommercialOperatorDependencies = Readonly<{
   executeWebsiteProjectFileRead(
     jwt: string,
     input: WebsiteProjectFileActionInput,
+  ): PromiseLike<unknown>;
+  executeWebsiteProjectFileSave(
+    jwt: string,
+    input: WebsiteProjectFileSaveActionInput,
+  ): PromiseLike<unknown>;
+  executeWebsiteProjectPreviewBuild(
+    jwt: string,
+    input: WebsiteProjectPreviewBuildActionInput,
   ): PromiseLike<unknown>;
   consumeRateLimit(
     jwt: string,
@@ -1161,6 +1185,22 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "path", "cursor"])
     : action === "read_website_project_file"
     ? new Set(["action", "quote_request_id", "path"])
+    : action === "save_website_project_file"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "path",
+      "content",
+      "expected_commit_sha",
+      "idempotency_key",
+    ])
+    : action === "build_website_project_preview"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "expected_commit_sha",
+      "idempotency_key",
+    ])
     : action === "get_website_requirements_board"
     ? new Set(["action", "quote_request_id", "website_work_context_id"])
     : action === "sync_website_requirements_from_intake"
@@ -2077,6 +2117,36 @@ function validateApplicationAction(value: UnvalidatedInput) {
       path: value.path,
     } as WebsiteProjectFileActionInput;
   }
+  if (action === "save_website_project_file") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      typeof value.path !== "string" ||
+      typeof value.content !== "string" ||
+      !/^[0-9a-f]{40}$/.test(String(value.expected_commit_sha || "")) ||
+      !UUID.test(String(value.idempotency_key || ""))
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      path: value.path,
+      content: value.content,
+      expected_commit_sha: value.expected_commit_sha,
+      idempotency_key: value.idempotency_key,
+    } as WebsiteProjectFileSaveActionInput;
+  }
+  if (action === "build_website_project_preview") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      !/^[0-9a-f]{40}$/.test(String(value.expected_commit_sha || "")) ||
+      !UUID.test(String(value.idempotency_key || ""))
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      expected_commit_sha: value.expected_commit_sha,
+      idempotency_key: value.idempotency_key,
+    } as WebsiteProjectPreviewBuildActionInput;
+  }
   if (action === "get_website_execution_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
     if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
@@ -2402,6 +2472,8 @@ function mapDatabaseError(error: unknown) {
     ["REPOSITORY_BINDING_MISSING", 409],
     ["REPOSITORY_BINDING_STALE", 409],
     ["REPOSITORY_REF_MISMATCH", 409],
+    ["PROJECT_FILES_STALE_REVISION", 409],
+    ["PROJECT_FILES_LEASE_NOT_FOUND", 409],
     ["PROJECT_FILES_SNAPSHOT_UNAVAILABLE", 409],
     ["PROJECT_PATH_KIND_MISMATCH", 409],
     ["FILE_TOO_LARGE", 413],
@@ -2417,6 +2489,10 @@ function mapDatabaseError(error: unknown) {
     ["PROJECT_FILES_PROVIDER_CONFIGURATION_ERROR", 503],
     ["PROJECT_FILES_CURSOR_CONFIGURATION_ERROR", 503],
     ["SENSITIVE_CLASSIFICATION_UNAVAILABLE", 503],
+    ["PREVIEW_MARKUP_INVALID", 400],
+    ["PREVIEW_MARKUP_UNSAFE", 409],
+    ["PREVIEW_ARTIFACT_STORAGE_FAILED", 503],
+    ["PREVIEW_SIGNED_URL_FAILED", 503],
   ]);
   const projectFileStatus = projectFileStatuses.get(code);
   if (projectFileStatus !== undefined) return response(projectFileStatus, code);
@@ -3350,7 +3426,9 @@ export async function handleCommercialOperator(
       const input = validateApplicationAction(parsed);
       if (
         input.action === "list_website_project_directory" ||
-        input.action === "read_website_project_file"
+        input.action === "read_website_project_file" ||
+        input.action === "save_website_project_file" ||
+          input.action === "build_website_project_preview"
       ) {
         try {
           requireOperatorAal2(claims, sub);
@@ -3440,6 +3518,20 @@ export async function handleCommercialOperator(
         const result = await deps.executeWebsiteProjectFileRead(
           jwt,
           input as WebsiteProjectFileActionInput,
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "save_website_project_file") {
+        const result = await deps.executeWebsiteProjectFileSave(
+          jwt,
+          input as WebsiteProjectFileSaveActionInput,
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (input.action === "build_website_project_preview") {
+        const result = await deps.executeWebsiteProjectPreviewBuild(
+          jwt,
+          input as WebsiteProjectPreviewBuildActionInput,
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }

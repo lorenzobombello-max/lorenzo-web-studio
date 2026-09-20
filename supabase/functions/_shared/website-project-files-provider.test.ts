@@ -212,6 +212,21 @@ function harness(overrides: {
             size: overrides.blobDeclaredSize ?? bytes.byteLength,
           });
         }
+        if (kind === "CREATE_BLOB") {
+          return Promise.resolve({ sha: BLOB });
+        }
+        if (kind === "CREATE_TREE") {
+          return Promise.resolve({ sha: NEXT_ROOT_TREE });
+        }
+        if (kind === "CREATE_COMMIT") {
+          return Promise.resolve({ sha: NEXT_COMMIT });
+        }
+        if (kind === "UPDATE_REF") {
+          return Promise.resolve({
+            ref: "refs/heads/main",
+            commitSha: NEXT_COMMIT,
+          });
+        }
         throw new Error("UNEXPECTED_OPERATION");
       },
     },
@@ -342,13 +357,43 @@ Deno.test("provider rejects CONTEXT_B authority substitution before any result",
   }
 });
 
-Deno.test("provider exposes no write method", () => {
-  const provider = harness().provider;
-  assertEquals(Object.keys(provider).sort(), [
-    "listDirectory",
-    "readFile",
-    "resolveSnapshot",
+Deno.test("provider saves through parented non-force CAS operations", async () => {
+  const test = harness({
+    trees: {
+      [ROOT_TREE]: [{
+        path: "index.html",
+        mode: "100644",
+        type: "blob",
+        sha: BLOB,
+        size: 4,
+      }],
+    },
+  });
+  assert(test.provider.writeFile);
+  const result = await test.provider.writeFile({
+    authority: authority(),
+    parentCommitSha: COMMIT,
+    rootTreeSha: ROOT_TREE,
+    path: "index.html",
+    bytes: new TextEncoder().encode("next"),
+  });
+
+  assertEquals(result, { commitSha: NEXT_COMMIT, created: false });
+  assertEquals(test.calls.map(({ operation }) => operation.kind), [
+    "WEBSITE_PROJECT_FILES_READ_REF",
+    "WEBSITE_PROJECT_FILES_READ_TREE",
+    "CREATE_BLOB",
+    "CREATE_TREE",
+    "CREATE_COMMIT",
+    "UPDATE_REF",
   ]);
+  assertEquals(test.calls[3].operation.baseTreeSha, ROOT_TREE);
+  assertEquals(test.calls[4].operation.parentSha, COMMIT);
+  assertEquals(test.calls[5].operation.force, false);
+  assertEquals(
+    (test.tokenCalls[0] as { request: { operation: string } }).request.operation,
+    "WEBSITE_PROJECT_FILES_WRITE",
+  );
 });
 
 Deno.test("direct read re-resolves current canonical commit", async () => {

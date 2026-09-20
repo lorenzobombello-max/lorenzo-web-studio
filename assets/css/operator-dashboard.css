@@ -833,6 +833,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .website-project-files__metadata { margin:.4rem 0 .75rem; color:var(--muted); font-size:.75rem; overflow-wrap:anywhere; word-break:break-word; }
 .website-project-files__text { width:100%; min-width:0; max-width:100%; max-height:30rem; margin:0; padding:.85rem; overflow:auto; color:var(--text); border:1px solid var(--line); background:#f7f9fa; font:400 .82rem/1.55 "IBM Plex Mono","Cascadia Code",monospace; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
 .website-project-files__text:focus-visible { outline:3px solid var(--turquoise-deep); outline-offset:-3px; }
+.website-project-files__editor { width:100%; min-width:0; min-height:18rem; resize:vertical; padding:.85rem; border:1px solid var(--line); border-radius:6px; background:#101820; color:#f5f7f8; font:500 .88rem/1.55 "IBM Plex Mono","Cascadia Code",monospace; }
+.website-project-files__editor:focus-visible,.website-project-files__new-path:focus-visible { outline:3px solid var(--turquoise-deep); outline-offset:2px; }
+.website-project-files__actions { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; margin-top:.75rem; }
+.website-project-files__new-path { min-width:14rem; flex:1 1 16rem; min-height:2.75rem; padding:.65rem .75rem; border:1px solid var(--line); border-radius:6px; }
 .dossiers-project [data-project-start]:disabled { cursor:not-allowed; opacity:.55; }
 .website-execution__requirements { min-width:0; margin-top:1rem; padding:1rem; overflow:hidden; border:1px solid var(--line); border-left:5px solid var(--turquoise); border-radius:6px; background:var(--white); }
 .website-execution__requirements[data-website-requirements-state="LOADING"] { border-left-color:#8a979d; }

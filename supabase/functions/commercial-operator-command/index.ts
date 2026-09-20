@@ -32,6 +32,8 @@ import {
   type WebsiteExecutionWorkspaceProvisionActionInput,
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
+  type WebsiteProjectPreviewBuildActionInput,
+  type WebsiteProjectFileSaveActionInput,
   type WebsiteRequirementsActionInput,
   type RecruitmentVacancyActionInput,
   type WebsiteQuotationPricingStateActionInput,
@@ -101,6 +103,10 @@ import {
   createWebsiteProjectFilesService,
   type WebsiteProjectFilesService,
 } from "../_shared/website-project-files-service.ts";
+import {
+  createWebsiteProjectPreviewBuilder,
+  type WebsiteProjectPreviewBuildResult,
+} from "../_shared/website-project-preview-builder.ts";
 import { initializeGitHubAppInputSigner } from "../github-app-gate6-probe/runtime.ts";
 
 const UUID =
@@ -534,7 +540,46 @@ export async function executeCallerJwtWebsiteRequirementsAction(
 
 type WebsiteProjectFilesActionInput =
   | WebsiteProjectDirectoryActionInput
-  | WebsiteProjectFileActionInput;
+  | WebsiteProjectFileActionInput
+  | WebsiteProjectFileSaveActionInput;
+
+type WebsiteProjectPreviewBuildRpcClient = Readonly<{
+  rpc(
+    name: string,
+    parameters: Record<string, unknown>,
+  ): PromiseLike<
+    Readonly<{
+      data: unknown;
+      error: Readonly<{ message: string }> | null;
+    }>
+  >;
+}>;
+
+type WebsiteProjectPreviewStorageClient = Readonly<{
+  storage: Readonly<{
+    from(bucket: string): Readonly<{
+      upload(
+        path: string,
+        bytes: Uint8Array,
+        options: Readonly<{ contentType: string; upsert: false }>,
+      ): PromiseLike<
+        Readonly<{
+          data: unknown;
+          error: Readonly<{ message: string }> | null;
+        }>
+      >;
+      createSignedUrl(
+        path: string,
+        expiresInSeconds: number,
+      ): PromiseLike<
+        Readonly<{
+          data: Readonly<{ signedUrl: string }> | null;
+          error: Readonly<{ message: string }> | null;
+        }>
+      >;
+    }>;
+  }>;
+}>;
 
 type WebsiteProjectFilesRpcClient = Readonly<{
   rpc(
@@ -555,6 +600,9 @@ type WebsiteProjectFilesActionService = Readonly<{
   read(
     input: Parameters<WebsiteProjectFilesService["read"]>[0],
   ): PromiseLike<unknown>;
+  save(
+    input: Parameters<WebsiteProjectFilesService["save"]>[0],
+  ): PromiseLike<unknown>;
 }>;
 
 type WebsiteProjectFilesRuntimeDependencies = Readonly<{
@@ -562,6 +610,20 @@ type WebsiteProjectFilesRuntimeDependencies = Readonly<{
   createService(
     signal: AbortSignal,
   ): PromiseLike<WebsiteProjectFilesActionService>;
+  createDeadline?(): AbortSignal;
+}>;
+
+type WebsiteProjectPreviewBuilderService = Readonly<{
+  build(input: Readonly<{
+    authority: WebsiteProjectFilesAuthority;
+    expectedCommitSha: string;
+    idempotencyKey: string;
+  }>): PromiseLike<WebsiteProjectPreviewBuildResult>;
+}>;
+
+type WebsiteProjectPreviewRuntimeDependencies = Readonly<{
+  clientFor(jwt: string): WebsiteProjectPreviewBuildRpcClient;
+  createService(signal: AbortSignal): PromiseLike<WebsiteProjectPreviewBuilderService>;
   createDeadline?(): AbortSignal;
 }>;
 
@@ -576,13 +638,21 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
 ): Promise<unknown> {
   const signal = (dependencies.createDeadline ??
     (() => AbortSignal.timeout(10_000)))();
+  const isSave = input.action === "save_website_project_file";
   const client = dependencies.clientFor(jwt);
-  const acquired = await client.rpc("acquire_website_project_files_read_v1", {
-    p_quote_request_id: input.quote_request_id,
-    p_read_kind: input.action === "list_website_project_directory"
-      ? "DIRECTORY"
-      : "FILE",
-  });
+  const acquired = isSave
+    ? await client.rpc("acquire_website_project_files_write_v1", {
+      p_quote_request_id: input.quote_request_id,
+      p_path: input.path,
+      p_expected_commit_sha: input.expected_commit_sha,
+      p_idempotency_key: input.idempotency_key,
+    })
+    : await client.rpc("acquire_website_project_files_read_v1", {
+      p_quote_request_id: input.quote_request_id,
+      p_read_kind: input.action === "list_website_project_directory"
+        ? "DIRECTORY"
+        : "FILE",
+    });
   if (acquired.error) throw projectFilesError(acquired.error.message);
   if (
     !acquired.data || typeof acquired.data !== "object" ||
@@ -591,6 +661,7 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
   ) throw projectFilesError("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
 
   const authority = acquired.data as WebsiteProjectFilesAuthority;
+  let finalized = false;
   let primaryError: unknown = null;
   try {
     if (signal.aborted) {
@@ -603,17 +674,53 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
         path: input.path,
         cursor: input.cursor,
       })
-      : await service.read({ authority, path: input.path });
+      : input.action === "read_website_project_file"
+      ? await service.read({ authority, path: input.path })
+      : await service.save({
+        authority,
+        path: input.path,
+        content: input.content,
+        expectedCommitSha: input.expected_commit_sha,
+      });
     if (signal.aborted) {
       throw projectFilesError("PROJECT_FILES_PROVIDER_TIMEOUT");
     }
+
+    if (isSave) {
+      const saveResult = result as {
+        snapshot?: { commit_sha?: unknown };
+        file?: { created?: unknown };
+      };
+      const commitSha = String(saveResult.snapshot?.commit_sha || "");
+      const created = saveResult.file?.created;
+      if (!SHA.test(commitSha) || typeof created !== "boolean") {
+        throw projectFilesError("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+      }
+      const finalizedWrite = await client.rpc(
+        "finalize_website_project_files_write_v1",
+        {
+          p_lease_id: authority.leaseId,
+          p_path: input.path,
+          p_expected_commit_sha: input.expected_commit_sha,
+          p_commit_sha: commitSha,
+          p_created: created,
+        },
+      );
+      if (finalizedWrite.error) throw projectFilesError(finalizedWrite.error.message);
+      finalized = true;
+    }
+
     return result;
   } catch (error) {
     primaryError = error;
     throw error;
   } finally {
+    const releaseName = isSave
+      ? "release_website_project_files_write_v1"
+      : "release_website_project_files_read_v1";
+    if (finalized) return;
     try {
-      const released = await client.rpc("release_website_project_files_read_v1", {
+      const released = await client.rpc(releaseName, {
         p_lease_id: authority.leaseId,
       });
       if (released.error && primaryError === null) {
@@ -622,6 +729,80 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
     } catch {
       if (primaryError === null) {
         throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+      }
+    }
+  }
+}
+
+export async function executeCallerJwtWebsiteProjectPreviewBuildAction(
+  jwt: string,
+  input: WebsiteProjectPreviewBuildActionInput,
+  dependencies: WebsiteProjectPreviewRuntimeDependencies,
+): Promise<WebsiteProjectPreviewBuildResult> {
+  const signal = (dependencies.createDeadline ??
+    (() => AbortSignal.timeout(10_000)))();
+  const client = dependencies.clientFor(jwt);
+  const acquired = await client.rpc("acquire_website_project_preview_build_v1", {
+    p_quote_request_id: input.quote_request_id,
+    p_expected_commit_sha: input.expected_commit_sha,
+    p_idempotency_key: input.idempotency_key,
+  });
+  if (acquired.error) throw projectFilesError(acquired.error.message);
+  if (
+    !acquired.data || typeof acquired.data !== "object" ||
+    Array.isArray(acquired.data) ||
+    !UUID.test(String((acquired.data as { leaseId?: unknown }).leaseId || ""))
+  ) throw projectFilesError("PROJECT_FILES_PROVIDER_RESPONSE_INVALID");
+
+  const authority = acquired.data as WebsiteProjectFilesAuthority;
+  let finalized = false;
+  let primaryError: unknown = null;
+  try {
+    if (signal.aborted) {
+      throw projectFilesError("PROJECT_FILES_PROVIDER_TIMEOUT");
+    }
+    const service = await dependencies.createService(signal);
+    const result = await service.build({
+      authority,
+      expectedCommitSha: input.expected_commit_sha,
+      idempotencyKey: input.idempotency_key,
+    });
+    if (signal.aborted) {
+      throw projectFilesError("PROJECT_FILES_PROVIDER_TIMEOUT");
+    }
+    const finalizedBuild = await client.rpc(
+      "finalize_website_project_preview_build_v1",
+      {
+        p_lease_id: authority.leaseId,
+        p_expected_commit_sha: input.expected_commit_sha,
+        p_artifact_path: result.preview.storage_object_path,
+        p_artifact_sha256: result.preview.sha256,
+        p_artifact_bytes: result.preview.byte_count,
+        p_build_status: result.build.status,
+      },
+    );
+    if (finalizedBuild.error) throw projectFilesError(finalizedBuild.error.message);
+    finalized = true;
+    return result;
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    if (!finalized) {
+      try {
+        const released = await client.rpc(
+          "release_website_project_preview_build_v1",
+          {
+            p_lease_id: authority.leaseId,
+          },
+        );
+        if (released.error && primaryError === null) {
+          throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+        }
+      } catch {
+        if (primaryError === null) {
+          throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+        }
       }
     }
   }
@@ -636,7 +817,7 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
   const { data, error } = await clientFor(jwt).rpc(
-    "get_website_execution_workspace_v3",
+    "get_website_execution_workspace_v4",
     { p_quote_request_id: input.quote_request_id },
   );
   if (error) throw new Error(error.message);
@@ -679,6 +860,45 @@ async function createWebsiteProjectFilesRuntimeService(
     cursorSecret: Deno.env.get(
       "LWS_WEBSITE_PROJECT_FILES_CURSOR_SIGNING_KEY_V1",
     ),
+  });
+}
+
+async function createWebsiteProjectPreviewRuntimeService(
+  signal: AbortSignal,
+  storageClient: WebsiteProjectPreviewStorageClient,
+): Promise<WebsiteProjectPreviewBuilderService> {
+  const config = loadGitHubAppConfig();
+  const httpClient = createGitHubHttpClient({
+    fetch: (input, init) => fetch(input, { ...init, signal }),
+  });
+  const signer = await initializeGitHubAppInputSigner(config.privateKey);
+  const tokenBroker = createGitHubAppTokenBroker({
+    now: Date.now,
+    sign: (_privateKey, signingInput) => signer(signingInput),
+    exchange: async (input, exchangeSignal) => {
+      const result = await httpClient.execute({
+        kind: "TOKEN_EXCHANGE",
+        installationId: input.installationId,
+        appJwt: input.appJwt,
+        repositoryIds: input.repositoryIds,
+        permissions: input.permissions,
+      }, exchangeSignal ?? signal);
+      if (!("token" in result) || !("expiresAt" in result)) {
+        throw projectFilesError("GITHUB_TOKEN_EXCHANGE_FAILED");
+      }
+      return result;
+    },
+  });
+  const provider = createWebsiteProjectFilesProvider({
+    config,
+    signal,
+    tokenBroker,
+    httpClient,
+  });
+  const storage = storageClient.storage.from("website-project-previews");
+  return createWebsiteProjectPreviewBuilder({
+    provider,
+    storage,
   });
 }
 
@@ -743,6 +963,7 @@ type QuotationBusinessDraftRpcClient = Readonly<{
   >;
 }>;
 
+const SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
 function isWebsitePricingDecisionResponse(
@@ -1649,6 +1870,26 @@ if (import.meta.main) {
           await executeCallerJwtWebsiteProjectFilesAction(jwt, input, {
             clientFor,
             createService: createWebsiteProjectFilesRuntimeService,
+          }),
+        executeWebsiteProjectFileSave: async (
+          jwt: string,
+          input: WebsiteProjectFileSaveActionInput,
+        ) =>
+          await executeCallerJwtWebsiteProjectFilesAction(jwt, input, {
+            clientFor,
+            createService: createWebsiteProjectFilesRuntimeService,
+          }),
+        executeWebsiteProjectPreviewBuild: async (
+          jwt: string,
+          input: WebsiteProjectPreviewBuildActionInput,
+        ) =>
+          await executeCallerJwtWebsiteProjectPreviewBuildAction(jwt, input, {
+            clientFor,
+            createService: async (signal) =>
+              await createWebsiteProjectPreviewRuntimeService(
+                signal,
+                serviceClient(),
+              ),
           }),
         consumeRateLimit: async (jwt: string, projectId: string) => {
           const { data, error } = await clientFor(jwt).rpc(

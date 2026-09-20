@@ -36,7 +36,7 @@ const root = new URL("../", import.meta.url);
 const rootPath = decodeURIComponent(root.pathname).replace(/^\/(?:([A-Za-z]:))/, "$1");
 const read = (path) => readFile(new URL(path, root), "utf8");
 const base = {
-  contract_version: 3,
+  contract_version: 4,
   mode: "OFFICIAL_PROJECT",
   quote_request_id: quoteRequestId,
   concept_id: null,
@@ -99,7 +99,10 @@ function workspaceFixture(overrides = {}) {
     provisioned_at: "2026-09-12T10:00:00Z",
     created_at: "2026-09-12T10:00:00Z",
     updated_at: "2026-09-12T12:01:00Z",
-    capabilities: { project_files_read: lifecycle.project_files_read },
+    capabilities: {
+      project_files_read: lifecycle.project_files_read,
+      project_files_write: lifecycle.project_files_read,
+    },
     ...overrides,
   };
 }
@@ -125,7 +128,7 @@ const preProjectWork = {
 };
 
 const preProjectV3 = {
-  contract_version: 3,
+  contract_version: 4,
   mode: "PRE_PROJECT",
   quote_request_id: quoteRequestId,
   concept_id: conceptId,
@@ -336,7 +339,7 @@ test("PRE_PROJECT pending workspace is context-bound without fake repository dat
       last_commit_at: null,
       last_build_result: null,
       last_build_at: null,
-      capabilities: { project_files_read: false },
+      capabilities: { project_files_read: false, project_files_write: false },
     }),
   }, context);
   const view = websiteExecutionView(projection);
@@ -646,7 +649,7 @@ test("commercial command dispatch uses the exact caller-scoped Website RPC", asy
   assert.match(handler, /"get_website_execution_workspace"/);
   const branch = index.match(/if \(input\.action === "get_website_execution_workspace"\) \{[^]*?return data;\s*\}/)?.[0] || "";
   assert.match(branch, /executeCallerJwtWebsiteExecutionWorkspaceReadAction/);
-  assert.match(index, /"get_website_execution_workspace_v3"[^]*p_quote_request_id: input\.quote_request_id/);
+  assert.match(index, /"get_website_execution_workspace_v4"[^]*p_quote_request_id: input\.quote_request_id/);
   assert.doesNotMatch(branch, /p_project_id/);
 });
 
@@ -796,8 +799,8 @@ let projectId = mode === "OFFICIAL_PROJECT" ? officialProjectId : null;
 let conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
 let promotionAttempts = 0;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
-const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner" } } : null;
-const projection = { contract_version: 3, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
+const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner", project_files_write: role === "owner" } } : null;
+const projection = { contract_version: 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
 window.task8SwitchContext = () => {
   const replacementContextId = "a1800000-0000-4000-8000-000000000099";
@@ -809,6 +812,7 @@ window.task8SwitchContext = () => {
   requirements.website_work_context_id = replacementContextId;
 };
 const snapshot = { commit_sha: "a".repeat(40), ref_label: "main" };
+let savedContent = "<h1>Voor wijziging</h1>";
 const directoryResult = (request) => {
   let entries;
   let nextCursor = null;
@@ -824,6 +828,7 @@ const directoryResult = (request) => {
   } else {
     entries = [
       { entry_type: "ENTRY", name: "src", path: "src", kind: "DIRECTORY", size_bytes: null, readability: "DIRECTORY", selectable: true },
+      { entry_type: "ENTRY", name: "index.html", path: "index.html", kind: "FILE", size_bytes: savedContent.length, readability: "READABLE_CANDIDATE", selectable: true },
       { entry_type: "ENTRY", name: "README.md", path: "README.md", kind: "FILE", size_bytes: 12, readability: "READABLE_CANDIDATE", selectable: true },
       { entry_type: "ENTRY", name: "archive.zip", path: "archive.zip", kind: "FILE", size_bytes: 2000000, readability: "TOO_LARGE", selectable: false },
       { entry_type: "ENTRY", name: "linked", path: "linked", kind: "UNSUPPORTED", size_bytes: null, readability: "UNSUPPORTED", selectable: false },
@@ -903,7 +908,18 @@ const client = { functions: { async invoke(_name, { body }) {
   } else if (body.action === "read_website_project_file") {
     window.task8Events.push("gateway");
     window.task8Requests.push(structuredClone(body));
-    result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: 4, media_type: "text/plain", encoding: "utf-8", content: "safe" } };
+    const content = body.path === "index.html" ? savedContent : "safe";
+    result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, size_bytes: new TextEncoder().encode(content).byteLength, media_type: "text/plain", encoding: "utf-8", content } };
+  } else if (body.action === "save_website_project_file") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    savedContent = body.content;
+    snapshot.commit_sha = "b".repeat(40);
+    result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, created: false } };
+  } else if (body.action === "build_website_project_preview") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    result = { contract_version: 1, snapshot: { commit_sha: body.expected_commit_sha }, build: { status: "PASS" }, preview: { signed_url: \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\` } };
   }
   return { data: { ok: true, result }, error: null };
 } } };
@@ -1108,7 +1124,7 @@ test("Projectbestanden expands lazily and renders exact inert redacted entry beh
     await page.locator('[data-website-action="files"]').click();
     await page.waitForSelector('.website-project-files__row--directory');
     const initialLabels = await page.locator(".website-project-files__row").allTextContents();
-    assert.deepEqual(initialLabels.slice(0, 2), ["src", "README.md"]);
+    assert.deepEqual(initialLabels.slice(0, 3), ["src", "index.html", "README.md"]);
     await page.getByRole("treeitem", { name: /Map src/ }).click();
     await page.waitForFunction(() => window.task8Requests.some((request) => request.path === "src"));
     assert.deepEqual(await page.evaluate(() => window.task8Requests.at(-1)), {
@@ -1129,6 +1145,62 @@ test("Projectbestanden expands lazily and renders exact inert redacted entry beh
     await page.getByRole("treeitem", { name: /README\.md/ }).click();
     await page.waitForFunction(() => window.task8Requests.some((request) => request.action === "read_website_project_file"));
     assert.equal(await page.locator("[data-project-file-content], .website-project-files__content").count(), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("edited index.html is saved and visible in the opened preview", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present",
+    );
+    await page.context().route("https://preview.example.test/**", async (route) => {
+      const content = new URL(route.request().url()).searchParams.get("content") || "";
+      await route.fulfill({ contentType: "text/html; charset=utf-8", body: content });
+    });
+    await page.locator('[data-website-action="files"]').click();
+    await page.getByRole("treeitem", { name: /index\.html/ }).click();
+    const editor = page.getByRole("textbox", { name: "Bestandsinhoud bewerken" });
+    await editor.fill("<!doctype html><title>Gewijzigd</title><h1>Werkelijke wijziging</h1>");
+    await page.getByRole("button", { name: "Opslaan", exact: true }).click();
+    await page.waitForFunction(() => window.task8Requests.some(
+      (request) => request.action === "save_website_project_file",
+    ));
+    const saveRequest = await page.evaluate(() => window.task8Requests.find(
+      (request) => request.action === "save_website_project_file",
+    ));
+    assert.equal(saveRequest.expected_commit_sha, "a".repeat(40));
+    assert.match(saveRequest.content, /Werkelijke wijziging/);
+
+    await page.getByRole("region", { name: "Projectbestanden" })
+      .getByRole("button", { name: "Vernieuwen", exact: true }).click();
+    await page.getByRole("treeitem", { name: /index\.html/ }).click();
+    await page.waitForFunction(() => window.task8Requests.filter(
+      (request) => request.action === "read_website_project_file",
+    ).length >= 2);
+    assert.match(await editor.inputValue(), /Werkelijke wijziging/);
+
+    await page.locator('[data-website-action="preview-build"]').click();
+    await page.waitForSelector("[data-website-preview-open]:not([hidden])");
+    const buildRequest = await page.evaluate(() => window.task8Requests.find(
+      (request) => request.action === "build_website_project_preview",
+    ));
+    assert.equal(buildRequest.expected_commit_sha, "b".repeat(40));
+    const [preview] = await Promise.all([
+      page.waitForEvent("popup"),
+      page.locator("[data-website-preview-open]").click(),
+    ]);
+    await preview.waitForLoadState("domcontentloaded");
+    assert.equal(await preview.locator("h1").textContent(), "Werkelijke wijziging");
+    assert.equal(await page.evaluate(() => window.task8Requests.some(
+      (request) => /deploy|publish|commercial|quotation|quote|mail|email|payment|invoice/i.test(request.action),
+    )), false);
+    await preview.close();
     await page.close();
   } finally {
     await browser.close();
@@ -1201,7 +1273,7 @@ test("Projectbestanden empty, loading lockout, keyboard focus and mobile overflo
   }
 });
 
-test("Task 8 keeps one Website child and adds no files build editor or workspace slot", async () => {
+test("HIT001 keeps one Website child with bounded editor and preview actions", async () => {
   const [child, registry, css] = await Promise.all([
     read("assets/js/operator-website-execution-child.mjs"),
     read("assets/js/operator-module-registry.mjs"),
@@ -1212,7 +1284,10 @@ test("Task 8 keeps one Website child and adds no files build editor or workspace
   assert.match(child, /WEBSITE_PROJECT_FILE_ACTIONS\.has\(request\.action\)/);
   assert.match(child, /client\.functions\.invoke\("commercial-operator-command"/);
   assert.doesNotMatch(child, /scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
-  assert.doesNotMatch(child, /Open Preview|Open in VS Code Web|data-website-link="(?:preview|vscode)"/);
+  assert.match(child, /Preview bouwen \/ vernieuwen/);
+  assert.match(child, /Preview openen/);
+  assert.match(child, /build_website_project_preview/);
+  assert.doesNotMatch(child, /Open in VS Code Web|data-website-link="vscode"/);
   assert.doesNotMatch(child, /window\.open|vscode\.dev|github\.dev/);
   assert.equal((registry.match(/startsWith\("website-"\)/g) || []).length, 1);
   assert.doesNotMatch(registry, /startsWith\("(?:files|build|editor)-"\)/);
@@ -1279,13 +1354,16 @@ function v3WorkspaceFixture(workspaceState, operationState, overrides = {}) {
     provisioned_at: "2026-09-12T10:00:00Z",
     created_at: "2026-09-12T10:00:00Z",
     updated_at: "2026-09-12T12:01:00Z",
-    capabilities: { project_files_read: lifecycle.project_files_read },
+    capabilities: {
+      project_files_read: lifecycle.project_files_read,
+      project_files_write: lifecycle.project_files_read,
+    },
     ...overrides,
   };
 }
 
 function v3Fixture(workspace, overrides = {}) {
-  return { ...base, contract_version: 3, workspace, ...overrides };
+  return { ...base, contract_version: 4, workspace, ...overrides };
 }
 
 test("Website Execution v3 validates the complete server lifecycle matrix", () => {
@@ -1312,7 +1390,7 @@ test("Website Execution v3 preserves independently projected lifecycle fields", 
   const contradictory = v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", {
     repository_failure_category: "BLOCKED",
     repository_recovery_guidance: "REFRESH_LATER",
-    capabilities: { project_files_read: false },
+    capabilities: { project_files_read: false, project_files_write: false },
   });
   const result = validateWebsiteExecutionWorkspace(v3Fixture(contradictory), expected);
   assert.equal(result.workspace.repository_failure_category, "BLOCKED");
@@ -1321,7 +1399,7 @@ test("Website Execution v3 preserves independently projected lifecycle fields", 
   for (const malformed of [
     { repository_failure_category: "INVENTED" },
     { repository_recovery_guidance: "RETRY_NOW" },
-    { capabilities: { project_files_read: "yes" } },
+    { capabilities: { project_files_read: "yes", project_files_write: false } },
     { repository_operation_state: "UNKNOWN" },
   ]) assert.throws(() => validateWebsiteExecutionWorkspace(v3Fixture(
     v3WorkspaceFixture("REPOSITORY_READY", "COMPLETE", malformed),
@@ -1342,7 +1420,7 @@ test("Website Execution v3 keeps PRE_PROJECT project_id null", () => {
   });
   const result = validateWebsiteExecutionWorkspace({
     ...preProjectV3,
-    contract_version: 3,
+    contract_version: 4,
     workspace,
   }, context);
   assert.equal(result.project_id, null);
