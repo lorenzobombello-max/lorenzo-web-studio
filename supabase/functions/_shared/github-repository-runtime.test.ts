@@ -203,6 +203,7 @@ async function harness(
   createMetadata?: unknown,
   postCreateFailure?: PostCreateFailure,
   target: "TEST" | "PRODUCTION" = "TEST",
+  postCreateTokenFailure?: unknown,
 ) {
   const treeSha256 = await computeSnapshotDigest([{
     path: "README.md",
@@ -299,7 +300,12 @@ async function harness(
                 labWriteTokenCalls === 1 ||
               postCreateFailure === "READBACK_TOKEN" &&
                 labWriteTokenCalls === 2
-            ) return Promise.reject(new Error("synthetic post-create token"));
+            ) {
+              return Promise.reject(
+                postCreateTokenFailure ??
+                  new Error("synthetic post-create token"),
+              );
+            }
           }
           return Promise.resolve({
             token: `synthetic_${request.operation}_token_value`,
@@ -475,6 +481,44 @@ Deno.test("post-create write token failure retains its first causal boundary", a
     "WRITE_TOKEN",
     "LAB_POST_CREATE_WRITE_TOKEN_ACQUIRE",
   );
+});
+
+Deno.test("production write token failure preserves only validated causal diagnostics", async () => {
+  const test = await harness(
+    null,
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "WRITE_TOKEN",
+    "PRODUCTION",
+    new GitHubTokenAcquireDiagnosticError(
+      "raw token secret must remain unreachable",
+      "TOKEN_RESPONSE_SCHEMA",
+      undefined,
+      "TOKEN_SCHEMA_TOKEN",
+    ),
+  );
+  const error = await assertRejects(
+    () => test.runtime.provision(test.command),
+    GitHubRepositoryProviderError,
+    "GITHUB_LAB_POST_CREATE_FAILED",
+  );
+  assertEquals(error.subphase, "LAB_POST_CREATE_WRITE_TOKEN_ACQUIRE");
+  assertEquals(error.tokenAcquireSubphase, "TOKEN_RESPONSE_SCHEMA");
+  assertEquals(error.tokenLeaseCheck, undefined);
+  assertEquals(error.tokenResponseCheck, "TOKEN_SCHEMA_TOKEN");
+  assertEquals(JSON.stringify(error).includes("raw token secret"), false);
+  assertEquals(test.tokenRequests.at(-1), {
+    websiteWorkContextId: CONTEXT_ID,
+    target: "PRODUCTION",
+    organization: "lorenzo-web-solutions",
+    operation: "PRODUCTION_REPOSITORY_WRITE",
+    repositoryIds: [LAB_REPOSITORY_ID],
+  });
+  assertEquals(test.createCalls(), 1);
 });
 
 Deno.test("post-create blob failure retains its first causal boundary", async () => {

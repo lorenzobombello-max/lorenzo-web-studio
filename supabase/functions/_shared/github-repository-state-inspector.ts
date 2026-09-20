@@ -84,7 +84,9 @@ type TokenBroker = Readonly<{
     config: GitHubAppConfig,
     request:
       & GitHubTokenRequest
-      & Readonly<{ operation: "LAB_REPOSITORY_READ" }>,
+      & Readonly<{
+        operation: "LAB_REPOSITORY_READ" | "PRODUCTION_REPOSITORY_READ";
+      }>,
     authority: GitHubTokenAuthority,
   ): Promise<GitHubInstallationTokenLease>;
 }>;
@@ -463,6 +465,10 @@ function repositoryStateInspectionCapability(
   expected: GitHubRepositoryStateInspectionAuthority,
   dependencies: GitHubRepositoryStateInspectionRuntimeDependencies,
   completionProof: boolean,
+  readAuthority: Readonly<{
+    target: "TEST" | "PRODUCTION";
+    operation: "LAB_REPOSITORY_READ" | "PRODUCTION_REPOSITORY_READ";
+  }>,
 ): () => Promise<
   | Readonly<{ state: GitHubRepositoryStateClassification }>
   | Readonly<{
@@ -472,7 +478,7 @@ function repositoryStateInspectionCapability(
 > {
   const safeExpected = projectAuthority(expected);
   if (
-    !config || config.target !== "TEST" ||
+    !config || config.target !== readAuthority.target ||
     config.organization !== safeExpected.owner || !dependencies ||
     typeof dependencies.tokenBroker?.issue !== "function" ||
     typeof dependencies.http?.execute !== "function"
@@ -480,14 +486,14 @@ function repositoryStateInspectionCapability(
 
   const request = Object.freeze({
     websiteWorkContextId: safeExpected.websiteWorkContextId,
-    target: "TEST" as const,
+    target: readAuthority.target,
     organization: safeExpected.owner,
-    operation: "LAB_REPOSITORY_READ" as const,
+    operation: readAuthority.operation,
     repositoryIds: Object.freeze([safeExpected.repositoryId]),
   });
   const authority = Object.freeze({
     websiteWorkContextId: expected.websiteWorkContextId,
-    target: "TEST" as const,
+    target: readAuthority.target,
     organization: expected.owner,
     repositoryIds: request.repositoryIds,
   });
@@ -774,6 +780,7 @@ export function createGitHubRepositoryStateInspectionCapability(
     expected,
     dependencies,
     false,
+    Object.freeze({ target: "TEST", operation: "LAB_REPOSITORY_READ" }),
   ) as () => Promise<
     Readonly<{
       state: GitHubRepositoryStateClassification;
@@ -796,6 +803,51 @@ export function createGitHubRepositoryCompletionProofCapability(
     expected,
     dependencies,
     true,
+    Object.freeze({ target: "TEST", operation: "LAB_REPOSITORY_READ" }),
+  ) as () => Promise<
+    Readonly<{
+      state: "ALREADY_COMPLETE";
+      proof: GitHubRepositoryCompletionProof;
+    }>
+  >;
+}
+
+export function createProductionRepositoryStateInspectionCapability(
+  config: GitHubAppConfig,
+  expected: GitHubRepositoryStateInspectionAuthority,
+  dependencies: GitHubRepositoryStateInspectionRuntimeDependencies,
+): () => Promise<Readonly<{ state: GitHubRepositoryStateClassification }>> {
+  return repositoryStateInspectionCapability(
+    config,
+    expected,
+    dependencies,
+    false,
+    Object.freeze({
+      target: "PRODUCTION",
+      operation: "PRODUCTION_REPOSITORY_READ",
+    }),
+  ) as () => Promise<Readonly<{ state: GitHubRepositoryStateClassification }>>;
+}
+
+export function createProductionRepositoryCompletionProofCapability(
+  config: GitHubAppConfig,
+  expected: GitHubRepositoryStateInspectionAuthority,
+  dependencies: GitHubRepositoryStateInspectionRuntimeDependencies,
+): () => Promise<
+  Readonly<{
+    state: "ALREADY_COMPLETE";
+    proof: GitHubRepositoryCompletionProof;
+  }>
+> {
+  return repositoryStateInspectionCapability(
+    config,
+    expected,
+    dependencies,
+    true,
+    Object.freeze({
+      target: "PRODUCTION",
+      operation: "PRODUCTION_REPOSITORY_READ",
+    }),
   ) as () => Promise<
     Readonly<{
       state: "ALREADY_COMPLETE";

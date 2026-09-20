@@ -491,6 +491,13 @@ const websiteRepositoryProvisionRequest = {
   website_workspace_id: "c1d00000-0000-4000-8000-000000000001",
   idempotency_key: "c1a00000-0000-4000-8000-00000000000a",
 };
+const websiteRepositoryRecoveryRequest = {
+  action: "recover_existing_website_repository" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  website_work_context_id:
+    websiteWorkspaceProvisionFixtures[0].website_work_context_id,
+  website_workspace_id: "c1d00000-0000-4000-8000-000000000001",
+};
 
 const websiteProjectDirectoryRequest = {
   action: "list_website_project_directory" as const,
@@ -965,6 +972,46 @@ Deno.test("production repository provision requires exact OWNER+AAL2 intent", as
     const invalidHarness = dependencies({ verifyUser: verifyOwner });
     const response = await handleCommercialOperator(
       request(invalid, ownerAal2Jwt),
+      invalidHarness.deps,
+    );
+    assertEquals(response.status, 400);
+    assertEquals(invalidHarness.calls, []);
+  }
+});
+
+Deno.test("production repository recovery requires exact context-only OWNER+AAL2 intent", async () => {
+  const verifyOwner = async () => ({
+    id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  });
+  const acceptedHarness = dependencies({ verifyUser: verifyOwner });
+  const accepted = await handleCommercialOperator(
+    request(websiteRepositoryRecoveryRequest, ownerAal2Jwt),
+    acceptedHarness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(acceptedHarness.calls, [{
+    jwt: ownerAal2Jwt,
+    input: websiteRepositoryRecoveryRequest,
+  }]);
+
+  const deniedHarness = dependencies({ verifyUser: verifyOwner });
+  const denied = await handleCommercialOperator(
+    request(websiteRepositoryRecoveryRequest, ownerAal1Jwt),
+    deniedHarness.deps,
+  );
+  assertEquals(denied.status, 403);
+  assertEquals(deniedHarness.calls, []);
+
+  for (const forbidden of [
+    { operation_id: "c1a00000-0000-4000-8000-00000000000a" },
+    { repository_external_id: "1369007102" },
+    { repository_owner: "lorenzo-web-solutions" },
+    { repository_name: "forbidden" },
+    { idempotency_key: "c1a00000-0000-4000-8000-00000000000b" },
+  ]) {
+    const invalidHarness = dependencies({ verifyUser: verifyOwner });
+    const response = await handleCommercialOperator(
+      request({ ...websiteRepositoryRecoveryRequest, ...forbidden }, ownerAal2Jwt),
       invalidHarness.deps,
     );
     assertEquals(response.status, 400);
@@ -1888,7 +1935,7 @@ Deno.test("project preview runtime releases lease on build failure", async () =>
   ]);
 });
 
-Deno.test("Website Execution read uses v4 and v118 provisioning remains present", async () => {
+Deno.test("Website Execution read uses v5 and v118 provisioning remains present", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
     jwt,
@@ -1904,7 +1951,7 @@ Deno.test("Website Execution read uses v4 and v118 provisioning remains present"
     }),
   );
   assertEquals(calls, [{
-    name: "get_website_execution_workspace_v4",
+    name: "get_website_execution_workspace_v5",
     args: { p_quote_request_id: websiteProjectFileRequest.quote_request_id },
   }]);
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));

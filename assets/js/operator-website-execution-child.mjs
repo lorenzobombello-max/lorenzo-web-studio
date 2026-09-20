@@ -12,8 +12,10 @@ import {
   validateWebsiteConceptPromotionResult,
   validateWebsiteExecutionWorkspace,
   validateWebsiteRepositoryProvisionResult,
+  validateWebsiteRepositoryRecoveryResult,
   websiteExecutionProvisionRequest,
   websiteRepositoryProvisionRequest,
+  websiteRepositoryRecoveryRequest,
   websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
@@ -225,6 +227,7 @@ function childMarkup() {
       <nav class="website-execution__actions" aria-label="Website werkruimte acties">
         <button type="button" class="primary-action primary-action--compact" data-website-action="provision" hidden>Technische werkruimte starten</button>
         <button type="button" class="secondary-action" data-website-action="repository-retry" hidden>Technische werkruimte opnieuw proberen</button>
+        <button type="button" class="secondary-action" data-website-action="repository-recovery" hidden>Bestaande technische werkruimte herstellen</button>
         <button type="button" class="primary-action primary-action--compact" data-website-action="promote" hidden>Naar officieel project</button>
         <button type="button" class="secondary-action" data-website-action="promotion-retry" hidden>Opnieuw proberen</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
@@ -290,12 +293,26 @@ function repositoryRetryEligible(identity, context, workspaceProjection, pending
     && workspaceProjection.repository_operation_state === "TERMINAL_FAILED"
     && workspaceProjection.repository_failure_category === "TERMINAL"
     && workspaceProjection.repository_recovery_guidance === "CONTACT_OWNER"
+    && workspaceProjection.capabilities.repository_recovery_required !== true
+    && workspaceProjection.capabilities.repository_retry_allowed !== false
     && workspaceProjection.project_id === null
     && workspaceProjection.repository_owner === null
     && workspaceProjection.repository_name === null
     && workspaceProjection.repository_navigation_url === null
     && workspaceProjection.capabilities.project_files_read === false
     && workspaceProjection.capabilities.project_files_write === false;
+}
+
+function repositoryRecoveryEligible(identity, context, workspaceProjection, pending = false) {
+  return !pending
+    && identity.role === "owner"
+    && context?.mode === "PRE_PROJECT"
+    && workspaceProjection?.workspace_state === "REPOSITORY_FAILED"
+    && workspaceProjection.repository_operation_state === "TERMINAL_FAILED"
+    && workspaceProjection.project_id === null
+    && workspaceProjection.capabilities.repository_retry_allowed === false
+    && workspaceProjection.capabilities.repository_recovery_required === true
+    && typeof workspaceProjection.repository_recovery_operation_id === "string";
 }
 
 function renderChild(workspace, state) {
@@ -342,6 +359,11 @@ function renderChild(workspace, state) {
   );
   repositoryRetry.hidden = state.repositoryRetryEligible !== true;
   repositoryRetry.disabled = state.technicalPreparationPending === true;
+  const repositoryRecovery = workspace.querySelector(
+    "[data-website-action=\"repository-recovery\"]",
+  );
+  repositoryRecovery.hidden = state.repositoryRecoveryEligible !== true;
+  repositoryRecovery.disabled = state.repositoryRecoveryPending === true;
   const promote = workspace.querySelector("[data-website-action=\"promote\"]");
   promote.hidden = !(state.canPromote && context.mode === "PRE_PROJECT");
   promote.disabled = state.promotionPending === true;
@@ -386,6 +408,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let technicalPreparationPending = false;
   let repositoryProvisionIntent = null;
   let repositoryRetryAuthorityEligible = false;
+  let repositoryRecoveryPending = false;
+  let repositoryRecoveryAuthorityEligible = false;
 
   async function buildPreview() {
     const commitSha = projectFiles.currentCommitSha()
@@ -469,6 +493,11 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         context,
         projection.workspace,
       );
+      repositoryRecoveryAuthorityEligible = repositoryRecoveryEligible(
+        identity,
+        context,
+        projection.workspace,
+      );
       const nextSnapshot = Object.freeze({
         state: "ready",
         context,
@@ -483,6 +512,9 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         repositoryRetryEligible:
           repositoryRetryAuthorityEligible && !technicalPreparationPending,
         technicalPreparationPending,
+        repositoryRecoveryEligible:
+          repositoryRecoveryAuthorityEligible && !repositoryRecoveryPending,
+        repositoryRecoveryPending,
       });
       currentSnapshot = nextSnapshot;
       if (promotionIntent && !promotionIntentMatches(promotionIntent)) {
@@ -751,6 +783,44 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     }
   }
 
+  async function recoverExistingTechnicalWorkspace(button) {
+    const context = currentSnapshot?.context;
+    const workspaceProjection = currentSnapshot?.projection.workspace;
+    if (disposed || repositoryRecoveryPending
+      || !repositoryRecoveryAuthorityEligible
+      || !repositoryRecoveryEligible(identity, context, workspaceProjection)
+      || typeof options.requireAal2 !== "function") return false;
+    repositoryRecoveryPending = true;
+    button.disabled = true;
+    const message = workspace.querySelector("[data-website-message]");
+    message.textContent = "Bestaande technische werkruimte wordt hersteld.";
+    try {
+      await options.requireAal2();
+      const request = websiteRepositoryRecoveryRequest({
+        quoteRequestId: context.quoteRequestId,
+        websiteWorkContextId: context.websiteWorkContextId,
+        websiteWorkspaceId: workspaceProjection.website_workspace_id,
+      });
+      validateWebsiteRepositoryRecoveryResult(await authority.gateway(request));
+      if (!await refresh() || disposed) return false;
+      options.onInvalidate?.("dossiers");
+      message.textContent = "Bestaande technische werkruimte is hersteld.";
+      return true;
+    } catch {
+      if (!disposed) {
+        await refresh();
+        if (!disposed) {
+          message.textContent =
+            "Bestaande technische werkruimte kon niet veilig worden hersteld.";
+        }
+      }
+      return false;
+    } finally {
+      repositoryRecoveryPending = false;
+      if (!disposed) button.disabled = false;
+    }
+  }
+
   async function promote({ retry = false } = {}) {
     if (disposed || promotionPending || identity.role !== "owner"
       || currentSnapshot?.context.mode !== "PRE_PROJECT") return false;
@@ -847,6 +917,9 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
     if (action === "repository-retry") void retryTechnicalWorkspace(target);
+    if (action === "repository-recovery") {
+      void recoverExistingTechnicalWorkspace(target);
+    }
     if (action === "promote") void promote();
     if (action === "promotion-retry") void promote({ retry: true });
     if (action === "files") void projectFiles.activate();

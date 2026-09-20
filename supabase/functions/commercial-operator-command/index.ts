@@ -31,6 +31,7 @@ import {
   type WebsiteConceptStartActionInput,
   type WebsiteExecutionWorkspaceProvisionActionInput,
   type WebsiteRepositoryProvisionActionInput,
+  type WebsiteRepositoryRecoveryActionInput,
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
   type WebsiteProjectPreviewBuildActionInput,
@@ -118,6 +119,7 @@ import {
   createGitHubTargetRepositoryProviderForRuntime,
 } from "../_shared/github-repository-runtime.ts";
 import { createRepositoryProvisioningStoreV2 } from "../_shared/repository-provisioning-store-v2.ts";
+import { createProductionRepositoryRecovery } from "../_shared/production-repository-recovery.ts";
 import {
   hasValidatedGitHubTokenAcquireDiagnostic,
   hasValidatedGitHubTokenLeaseCheck,
@@ -836,7 +838,7 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
   const { data, error } = await clientFor(jwt).rpc(
-    "get_website_execution_workspace_v4",
+    "get_website_execution_workspace_v5",
     { p_quote_request_id: input.quote_request_id },
   );
   if (error) throw new Error(error.message);
@@ -998,6 +1000,53 @@ export async function executeCallerJwtWebsiteRepositoryProvisionAction(
         }),
       }));
   });
+}
+
+export async function executeCallerJwtWebsiteRepositoryRecoveryAction(
+  jwt: string,
+  actorAuthUserId: string,
+  input: WebsiteRepositoryRecoveryActionInput,
+  clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
+  serviceClient: () => WebsiteProjectFilesRpcClient,
+): Promise<unknown> {
+  const config = loadGitHubAppConfig();
+  if (config.target !== "PRODUCTION") {
+    throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+  }
+  const http = createGitHubHttpClient({ fetch });
+  const signer = await initializeGitHubAppInputSigner(config.privateKey);
+  const tokenBroker = createGitHubAppTokenBroker({
+    now: Date.now,
+    sign: (_privateKey, signingInput) => signer(signingInput),
+    exchange: async (exchange) => {
+      const result = await http.execute({
+        kind: "TOKEN_EXCHANGE",
+        installationId: exchange.installationId,
+        appJwt: exchange.appJwt,
+        repositoryIds: exchange.repositoryIds,
+        permissions: exchange.permissions,
+      });
+      if (!("token" in result) || !("expiresAt" in result)) {
+        throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+      }
+      return result;
+    },
+  });
+  const caller = clientFor(jwt);
+  const service = serviceClient();
+  const recovery = createProductionRepositoryRecovery({
+    config,
+    actor: Object.freeze({ authUserId: actorAuthUserId, aal: "aal2" }),
+    callerRpc: async (name, parameters) => await caller.rpc(name, parameters),
+    serviceRpc: async (name, parameters) => await service.rpc(name, parameters),
+    tokenBroker,
+    http,
+  });
+  return await recovery.recover(Object.freeze({
+    quoteRequestId: input.quote_request_id,
+    websiteWorkContextId: input.website_work_context_id,
+    websiteWorkspaceId: input.website_workspace_id,
+  }));
 }
 
 async function createWebsiteProjectFilesRuntimeService(
@@ -2349,6 +2398,15 @@ if (import.meta.main) {
               jwt,
               input as WebsiteRepositoryProvisionActionInput,
               clientFor,
+            );
+          }
+          if (input.action === "recover_existing_website_repository") {
+            return await executeCallerJwtWebsiteRepositoryRecoveryAction(
+              jwt,
+              actorAuthUserId,
+              input as WebsiteRepositoryRecoveryActionInput,
+              clientFor,
+              serviceClient,
             );
           }
           if (input.action === "get_website_quotation_pricing_state") {

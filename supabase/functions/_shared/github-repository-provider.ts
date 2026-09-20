@@ -17,6 +17,7 @@ import {
   type GitHubTokenLeaseCheck,
   type GitHubTokenResponseCheck,
   hasValidatedGitHubLabPostCreateDiagnosticError,
+  hasValidatedGitHubTokenAcquireDiagnostic,
   hasValidatedGitHubTokenLeaseCheck,
   hasValidatedGitHubTokenResponseCheck,
   REPOSITORY_STARTER_READ_SUBPHASES,
@@ -314,8 +315,17 @@ function isValidatedGitHubLabCreateDiagnosticError(
 function fail(
   code: RepositoryProvisioningProviderFailurePhase,
   subphase?: RepositoryProviderSubphase,
+  tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
+  tokenLeaseCheck?: GitHubTokenLeaseCheck,
+  tokenResponseCheck?: GitHubTokenResponseCheck,
 ): never {
-  throw new GitHubRepositoryProviderError(code, subphase);
+  throw new GitHubRepositoryProviderError(
+    code,
+    subphase,
+    tokenAcquireSubphase,
+    tokenLeaseCheck,
+    tokenResponseCheck,
+  );
 }
 
 function exactKeys(value: object, keys: readonly string[]): boolean {
@@ -698,7 +708,21 @@ export function createGitHubTargetRepositoryProvider(
         });
       } catch (error) {
         if (hasValidatedGitHubLabPostCreateDiagnosticError(error)) {
-          fail("GITHUB_LAB_POST_CREATE_FAILED", error.subphase);
+          fail(
+            "GITHUB_LAB_POST_CREATE_FAILED",
+            error.subphase,
+            hasValidatedGitHubTokenAcquireDiagnostic(error)
+              ? error.tokenAcquireSubphase
+              : undefined,
+            hasValidatedGitHubTokenAcquireDiagnostic(error) &&
+                hasValidatedGitHubTokenLeaseCheck(error)
+              ? error.tokenLeaseCheck
+              : undefined,
+            hasValidatedGitHubTokenAcquireDiagnostic(error) &&
+                hasValidatedGitHubTokenResponseCheck(error)
+              ? error.tokenResponseCheck
+              : undefined,
+          );
         }
         if (
           error instanceof GitHubRepositoryProviderError &&
