@@ -934,6 +934,19 @@ Deno.test("production repository provision requires exact OWNER+AAL2 intent", as
     input: websiteRepositoryProvisionRequest,
   }]);
 
+  const failedHarness = dependencies({
+    verifyUser: verifyOwner,
+    executeApplicationAction: async () => {
+      throw new Error("sensitive internal provisioning failure");
+    },
+  });
+  const failed = await handleCommercialOperator(
+    request(websiteRepositoryProvisionRequest, ownerAal2Jwt),
+    failedHarness.deps,
+  );
+  assertEquals(failed.status, 500);
+  assertEquals(await failed.json(), { ok: false, code: "INTERNAL_ERROR" });
+
   const deniedHarness = dependencies({ verifyUser: verifyOwner });
   const denied = await handleCommercialOperator(
     request(websiteRepositoryProvisionRequest, ownerAal1Jwt),

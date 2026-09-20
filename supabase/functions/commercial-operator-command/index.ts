@@ -93,7 +93,11 @@ import {
   getSupabasePublishableKey,
   getSupabaseServerSecretKey,
 } from "../_shared/supabase-key-bindings.ts";
-import { loadGitHubAppConfig } from "../_shared/github-app-config.ts";
+import {
+  GitHubAppConfigurationError,
+  GitHubProviderDisabledError,
+  loadGitHubAppConfig,
+} from "../_shared/github-app-config.ts";
 import { createGitHubAppTokenBroker } from "../_shared/github-app-token.ts";
 import { createGitHubHttpClient } from "../_shared/github-http.ts";
 import {
@@ -114,6 +118,14 @@ import {
   createGitHubTargetRepositoryProviderForRuntime,
 } from "../_shared/github-repository-runtime.ts";
 import { createRepositoryProvisioningStoreV2 } from "../_shared/repository-provisioning-store-v2.ts";
+import {
+  hasValidatedGitHubTokenAcquireDiagnostic,
+  hasValidatedGitHubTokenLeaseCheck,
+  hasValidatedGitHubTokenResponseCheck,
+  RepositoryProvisioningClaimDiagnosticError,
+  RepositoryProvisioningProviderDiagnosticError,
+  RepositoryProvisioningRuntimeDiagnosticError,
+} from "../_shared/repository-provisioning-diagnostics.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -831,60 +843,161 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
   return data;
 }
 
+export const WEBSITE_REPOSITORY_PROVISION_STAGES = [
+  "CONFIG_LOAD",
+  "TARGET_VALIDATE",
+  "SIGNER_INIT",
+  "STORE_INIT",
+  "PROVIDER_INIT",
+  "RUNTIME_PROVISION",
+] as const;
+
+export type WebsiteRepositoryProvisionStage =
+  (typeof WEBSITE_REPOSITORY_PROVISION_STAGES)[number];
+
+type WebsiteRepositoryProvisionFailureLog = Readonly<
+  Record<string, string>
+>;
+
+function safeProvisionErrorName(error: unknown): string {
+  try {
+    const name = error instanceof Error ? error.name : "";
+    return /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(name)
+      ? name
+      : "UNKNOWN_THROWABLE";
+  } catch {
+    return "UNKNOWN_THROWABLE";
+  }
+}
+
+export function websiteRepositoryProvisionFailureLog(
+  stage: WebsiteRepositoryProvisionStage,
+  error: unknown,
+): WebsiteRepositoryProvisionFailureLog {
+  const record: Record<string, string> = {
+    event: "LWS_GIT001_PROVISION_FAILURE",
+    action: "provision_website_repository",
+    stage,
+    error_name: safeProvisionErrorName(error),
+    diagnostic_code: "UNCLASSIFIED",
+  };
+  if (error instanceof RepositoryProvisioningClaimDiagnosticError) {
+    record.diagnostic_code = "REPOSITORY_PROVISIONING_CLAIM_FAILED";
+    record.claim_phase = error.phase;
+    if (/^[0-9A-Z]{2}$/.test(error.sqlstateClass || "")) {
+      record.sqlstate_class = error.sqlstateClass!;
+    }
+  } else if (error instanceof RepositoryProvisioningRuntimeDiagnosticError) {
+    record.diagnostic_code = error.phase;
+  } else if (error instanceof RepositoryProvisioningProviderDiagnosticError) {
+    record.diagnostic_code = error.phase;
+    record.provider_phase = error.phase;
+    if (error.subphase) record.provider_subphase = error.subphase;
+    if (
+      hasValidatedGitHubTokenAcquireDiagnostic(error) &&
+      error.tokenAcquireSubphase
+    ) {
+      record.token_acquire_subphase = error.tokenAcquireSubphase;
+    }
+    if (hasValidatedGitHubTokenLeaseCheck(error)) {
+      record.token_lease_check = error.tokenLeaseCheck;
+    }
+    if (hasValidatedGitHubTokenResponseCheck(error)) {
+      record.token_response_check = error.tokenResponseCheck;
+    }
+  } else if (
+    error instanceof GitHubAppConfigurationError ||
+    error instanceof GitHubProviderDisabledError
+  ) {
+    record.diagnostic_code = error.code;
+  } else if (
+    error instanceof Error &&
+    error.message === "PRODUCTION_GITHUB_AUTHORITY_REQUIRED"
+  ) {
+    record.diagnostic_code = "PRODUCTION_GITHUB_AUTHORITY_REQUIRED";
+  }
+  return Object.freeze(record);
+}
+
+export async function withWebsiteRepositoryProvisionFailureLogging<T>(
+  action: (
+    setStage: (stage: WebsiteRepositoryProvisionStage) => void,
+  ) => Promise<T>,
+  logger: (entry: string) => void = (entry) => console.error(entry),
+): Promise<T> {
+  let stage: WebsiteRepositoryProvisionStage = "CONFIG_LOAD";
+  try {
+    return await action((nextStage) => {
+      stage = nextStage;
+    });
+  } catch (error) {
+    logger(JSON.stringify(websiteRepositoryProvisionFailureLog(stage, error)));
+    throw error;
+  }
+}
+
 export async function executeCallerJwtWebsiteRepositoryProvisionAction(
   jwt: string,
   input: WebsiteRepositoryProvisionActionInput,
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
-  const config = loadGitHubAppConfig();
-  if (config.target !== "PRODUCTION") {
-    throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
-  }
-  const http = createGitHubHttpClient({ fetch });
-  const signer = await initializeGitHubAppInputSigner(config.privateKey);
-  const tokenBroker = createGitHubAppTokenBroker({
-    now: Date.now,
-    sign: (_privateKey, signingInput) => signer(signingInput),
-    exchange: async (exchange) => {
-      const result = await http.execute({
-        kind: "TOKEN_EXCHANGE",
-        installationId: exchange.installationId,
-        appJwt: exchange.appJwt,
-        repositoryIds: exchange.repositoryIds,
-        permissions: exchange.permissions,
-      });
-      if (!("token" in result) || !("expiresAt" in result)) {
-        throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
-      }
-      return result;
-    },
+  return await withWebsiteRepositoryProvisionFailureLogging(async (setStage) => {
+    setStage("CONFIG_LOAD");
+    const config = loadGitHubAppConfig();
+    setStage("TARGET_VALIDATE");
+    if (config.target !== "PRODUCTION") {
+      throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+    }
+    setStage("SIGNER_INIT");
+    const http = createGitHubHttpClient({ fetch });
+    const signer = await initializeGitHubAppInputSigner(config.privateKey);
+    const tokenBroker = createGitHubAppTokenBroker({
+      now: Date.now,
+      sign: (_privateKey, signingInput) => signer(signingInput),
+      exchange: async (exchange) => {
+        const result = await http.execute({
+          kind: "TOKEN_EXCHANGE",
+          installationId: exchange.installationId,
+          appJwt: exchange.appJwt,
+          repositoryIds: exchange.repositoryIds,
+          permissions: exchange.permissions,
+        });
+        if (!("token" in result) || !("expiresAt" in result)) {
+          throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+        }
+        return result;
+      },
+    });
+    setStage("STORE_INIT");
+    const store = createRepositoryProvisioningStoreV2({
+      rpc: async (name, parameters) =>
+        await clientFor(jwt).rpc(name, parameters),
+    }, {
+      claimRpcName: "claim_production_website_repository_provisioning_v1",
+      bindRpcName: "bind_production_website_repository_v1",
+      quoteRequestId: input.quote_request_id,
+    });
+    setStage("PROVIDER_INIT");
+    const provider = createGitHubTargetRepositoryProviderForRuntime(
+      config,
+      config,
+      { store, tokenBroker, http },
+    );
+    setStage("RUNTIME_PROVISION");
+    return await createGitHubRepositoryRuntimeFromProvider(provider, store)
+      .provision(Object.freeze({
+        contractVersion: 2 as const,
+        websiteWorkspaceId: input.website_workspace_id,
+        websiteWorkContextId: input.website_work_context_id,
+        idempotencyKey: input.idempotency_key,
+        starter: Object.freeze({
+          source: `${config.templateOwner}/${config.templateName}`,
+          version: config.starterVersion,
+          commitSha: config.starterCommitSha,
+          templateRepositoryId: config.templateRepositoryId,
+        }),
+      }));
   });
-  const store = createRepositoryProvisioningStoreV2({
-    rpc: async (name, parameters) =>
-      await clientFor(jwt).rpc(name, parameters),
-  }, {
-    claimRpcName: "claim_production_website_repository_provisioning_v1",
-    bindRpcName: "bind_production_website_repository_v1",
-    quoteRequestId: input.quote_request_id,
-  });
-  const provider = createGitHubTargetRepositoryProviderForRuntime(
-    config,
-    config,
-    { store, tokenBroker, http },
-  );
-  return await createGitHubRepositoryRuntimeFromProvider(provider, store)
-    .provision(Object.freeze({
-      contractVersion: 2 as const,
-      websiteWorkspaceId: input.website_workspace_id,
-      websiteWorkContextId: input.website_work_context_id,
-      idempotencyKey: input.idempotency_key,
-      starter: Object.freeze({
-        source: `${config.templateOwner}/${config.templateName}`,
-        version: config.starterVersion,
-        commitSha: config.starterCommitSha,
-        templateRepositoryId: config.templateRepositoryId,
-      }),
-    }));
 }
 
 async function createWebsiteProjectFilesRuntimeService(
