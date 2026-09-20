@@ -783,10 +783,11 @@ const params = new URLSearchParams(location.search);
 const role = params.get("role") || "owner";
 const mode = params.get("mode") || "PRE_PROJECT";
 const workspaceMode = params.get("workspace");
-const hasWorkspace = workspaceMode === "present" || workspaceMode === "pending";
+const hasWorkspace = ["present", "pending", "provisioning", "failed"].includes(workspaceMode);
 window.task8Events = [];
 window.task8Requests = [];
 window.task8RepositoryRequests = [];
+window.previousFailedRepositoryIdempotencyKey = "a1800000-0000-4000-8000-000000000011";
 let repositoryProvisionAttempts = 0;
 window.task8PromotionRequests = [];
 window.task8Invalidations = [];
@@ -804,6 +805,8 @@ let promotionAttempts = 0;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
 const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner", project_files_write: role === "owner" } } : null;
 if (workspaceMode === "pending") Object.assign(workspace, { workspace_state: "PENDING_REPOSITORY", repository_operation_state: null, repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
+if (workspaceMode === "provisioning") Object.assign(workspace, { workspace_state: "REPOSITORY_PROVISIONING", repository_operation_state: "CREATING", repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
+if (workspaceMode === "failed") Object.assign(workspace, { workspace_state: "REPOSITORY_FAILED", repository_operation_state: params.get("operation") || "TERMINAL_FAILED", repository_failure_category: params.get("category") || "TERMINAL", repository_recovery_guidance: params.get("guidance") || "CONTACT_OWNER", repository_owner: params.get("bound") === "1" ? "lws-studio" : null, repository_name: params.get("bound") === "1" ? "lws-web-2099-0001" : null, repository_navigation_url: params.get("bound") === "1" ? "https://github.com/lws-studio/lws-web-2099-0001" : null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
 const projection = { contract_version: 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
 const emptyRequirements = { ...requirements, board: null, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: 0 }, readiness: { ready_for_preview: false, readiness: "BLOCKED", reason: "REQUIRED_REQUIREMENTS_OPEN" }, empty_state: "NO_BOARD" };
@@ -850,6 +853,9 @@ const client = { functions: { async invoke(_name, { body }) {
     if (params.get("promotion") === "refresh-fail" && promotionAttempts > 0) {
       return { data: null, error: new Error("refresh unavailable") };
     }
+    if (params.get("repositoryRefresh") === "fail" && repositoryProvisionAttempts > 0) {
+      return { data: null, error: new Error("refresh unavailable") };
+    }
     result = detail;
   }
   else if (body.action === "get_dossier_substance") result = { customer: { name: "Preview customer" } };
@@ -863,9 +869,10 @@ const client = { functions: { async invoke(_name, { body }) {
   } else if (body.action === "provision_website_repository") {
     window.task8RepositoryRequests.push(structuredClone(body));
     repositoryProvisionAttempts += 1;
+    if (params.get("provision") === "fail") return { data: null, error: new Error("provider detail must stay private") };
     if (params.get("provision") === "ambiguous" && repositoryProvisionAttempts === 1) return { data: null, error: new Error("Failed to send a request to the Edge Function") };
     const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
-    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true } });
+    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true } });
     result = { provider: "GITHUB", providerRepositoryId: "1369000001", providerNodeId: "R_production_repository", owner: "lorenzo-web-solutions", name: repositoryName, visibility: "PRIVATE", defaultBranch: "main", starterSource: "lorenzo-web-solutions/lws-website-starter", starterVersion: "1.0.0", starterCommitSha: "a".repeat(40), repositoryMarkerCommitSha: "b".repeat(40), replayed: false };
   } else if (body.action === "sync_website_requirements_from_intake") {
     window.task6Requests.push(structuredClone(body));
@@ -1089,6 +1096,144 @@ test("ambiguous repository retry reuses the exact immutable provisioning intent"
       false,
     );
     await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("repository retry is visible only for the exact owner terminal-failure contract", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const scenarios = [
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed", visible: true, automaticRequests: 0 },
+      { query: "role=operator&mode=PRE_PROJECT&workspace=failed", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=OFFICIAL_PROJECT&workspace=failed", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=pending", visible: false, automaticRequests: 1 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=provisioning", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=present", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&operation=RETRYABLE_FAILED&category=RETRYABLE", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&operation=BLOCKED&category=BLOCKED", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&operation=QUARANTINED&category=QUARANTINED", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&operation=COMPLETE&category=TERMINAL", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&guidance=WAIT", visible: false, automaticRequests: 0 },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=failed&bound=1", visible: false, automaticRequests: 0 },
+    ];
+    for (const scenario of scenarios) {
+      const page = await openTask8Page(browser, server, scenario.query);
+      const retry = page.locator('[data-website-action="repository-retry"]');
+      assert.equal(await retry.count(), 1, "repository retry control must exist");
+      assert.equal(await retry.isVisible(), scenario.visible, scenario.query);
+      assert.equal(
+        await page.evaluate(() => window.task8RepositoryRequests.length),
+        scenario.automaticRequests,
+        scenario.query,
+      );
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("explicit repository retry requires AAL2 and sends one fresh command", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const denied = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&aal2=deny",
+    );
+    await denied.locator('[data-website-action="repository-retry"]').click();
+    await denied.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte kon niet veilig opnieuw worden voorbereid."
+    );
+    assert.equal(await denied.evaluate(() => window.task8RepositoryRequests.length), 0);
+    await denied.close();
+
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed",
+    );
+    assert.equal(await page.evaluate(() => window.task8RepositoryRequests.length), 0);
+    await page.locator('[data-website-action="repository-retry"]').click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte is klaar."
+    );
+    const requests = await page.evaluate(() => window.task8RepositoryRequests);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].action, "provision_website_repository");
+    assert.match(requests[0].idempotency_key, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.notEqual(
+      requests[0].idempotency_key,
+      await page.evaluate(() => window.previousFailedRepositoryIdempotencyKey),
+    );
+    assert.equal(await page.locator('[data-website-action="repository-retry"]').isVisible(), false);
+    assert.match(await page.locator('[data-website-field="repository"]').textContent(), /lorenzo-web-solutions/);
+    assert.equal(
+      await page.locator("[data-website-project-files] .website-project-files__refresh").isDisabled(),
+      false,
+    );
+    assert.equal(
+      await page.locator("[data-website-requirements-panel]").getAttribute(
+        "data-website-requirements-state",
+      ),
+      "READY",
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("failed explicit repository retry never loops and refreshes authority before re-enabling", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&provision=fail",
+    );
+    const retry = page.locator('[data-website-action="repository-retry"]');
+    await retry.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte kon niet veilig opnieuw worden voorbereid."
+    );
+    await page.waitForTimeout(50);
+    assert.equal(await page.evaluate(() => window.task8RepositoryRequests.length), 1);
+    assert.equal(await retry.isVisible(), true);
+    assert.equal(await retry.isEnabled(), true);
+    assert.equal((await page.locator("[data-website-message]").textContent()).includes("provider"), false);
+    await page.close();
+
+    const stalePage = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&provision=fail&repositoryRefresh=fail",
+    );
+    const staleRetry = stalePage.locator('[data-website-action="repository-retry"]');
+    await staleRetry.click();
+    await stalePage.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte kon niet veilig opnieuw worden voorbereid."
+    );
+    assert.equal(await stalePage.evaluate(() => window.task8RepositoryRequests.length), 1);
+    assert.equal(await staleRetry.isVisible(), false);
+    await stalePage.evaluate(() =>
+      document.querySelector('[data-website-action="repository-retry"]').click()
+    );
+    await stalePage.waitForTimeout(50);
+    assert.equal(await stalePage.evaluate(() => window.task8RepositoryRequests.length), 1);
+    await stalePage.close();
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

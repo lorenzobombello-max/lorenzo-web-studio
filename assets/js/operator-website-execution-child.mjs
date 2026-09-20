@@ -224,6 +224,7 @@ function childMarkup() {
       <section class="website-project-files" data-website-project-files tabindex="-1" aria-label="Projectbestanden"></section>
       <nav class="website-execution__actions" aria-label="Website werkruimte acties">
         <button type="button" class="primary-action primary-action--compact" data-website-action="provision" hidden>Technische werkruimte starten</button>
+        <button type="button" class="secondary-action" data-website-action="repository-retry" hidden>Technische werkruimte opnieuw proberen</button>
         <button type="button" class="primary-action primary-action--compact" data-website-action="promote" hidden>Naar officieel project</button>
         <button type="button" class="secondary-action" data-website-action="promotion-retry" hidden>Opnieuw proberen</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
@@ -281,6 +282,22 @@ function setLink(workspace, name, href) {
   else link.removeAttribute("href");
 }
 
+function repositoryRetryEligible(identity, context, workspaceProjection, pending = false) {
+  return !pending
+    && identity.role === "owner"
+    && context?.mode === "PRE_PROJECT"
+    && workspaceProjection?.workspace_state === "REPOSITORY_FAILED"
+    && workspaceProjection.repository_operation_state === "TERMINAL_FAILED"
+    && workspaceProjection.repository_failure_category === "TERMINAL"
+    && workspaceProjection.repository_recovery_guidance === "CONTACT_OWNER"
+    && workspaceProjection.project_id === null
+    && workspaceProjection.repository_owner === null
+    && workspaceProjection.repository_name === null
+    && workspaceProjection.repository_navigation_url === null
+    && workspaceProjection.capabilities.project_files_read === false
+    && workspaceProjection.capabilities.project_files_write === false;
+}
+
 function renderChild(workspace, state) {
   const empty = workspace.querySelector("[data-website-empty]");
   const content = workspace.querySelector("[data-website-content]");
@@ -320,6 +337,11 @@ function renderChild(workspace, state) {
   workspace.querySelector("[data-website-action=\"provision\"]").hidden = !(
     state.canProvision && context.mode === "PRE_PROJECT" && view.state === "empty"
   );
+  const repositoryRetry = workspace.querySelector(
+    "[data-website-action=\"repository-retry\"]",
+  );
+  repositoryRetry.hidden = state.repositoryRetryEligible !== true;
+  repositoryRetry.disabled = state.technicalPreparationPending === true;
   const promote = workspace.querySelector("[data-website-action=\"promote\"]");
   promote.hidden = !(state.canPromote && context.mode === "PRE_PROJECT");
   promote.disabled = state.promotionPending === true;
@@ -363,6 +385,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let previewPending = false;
   let technicalPreparationPending = false;
   let repositoryProvisionIntent = null;
+  let repositoryRetryAuthorityEligible = false;
 
   async function buildPreview() {
     const commitSha = projectFiles.currentCommitSha()
@@ -441,6 +464,11 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       }
       if (!refreshGeneration.isCurrent(selection)) return false;
       const previousRequirementsSummary = currentSnapshot?.requirementsState?.summary || null;
+      repositoryRetryAuthorityEligible = repositoryRetryEligible(
+        identity,
+        context,
+        projection.workspace,
+      );
       const nextSnapshot = Object.freeze({
         state: "ready",
         context,
@@ -452,6 +480,9 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         canPromote: identity.role === "owner",
         promotionPending,
         promotionRetry: promotionIntent !== null,
+        repositoryRetryEligible:
+          repositoryRetryAuthorityEligible && !technicalPreparationPending,
+        technicalPreparationPending,
       });
       currentSnapshot = nextSnapshot;
       if (promotionIntent && !promotionIntentMatches(promotionIntent)) {
@@ -523,6 +554,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       return true;
     } catch (error) {
       if (!refreshGeneration.isCurrent(selection)) return false;
+      repositoryRetryAuthorityEligible = false;
       const denied = /DENIED|NOT_AUTHORIZED|NO_ACCESS|42501/.test(
         String(error?.context?.code || error?.code || error?.message || ""),
       );
@@ -642,6 +674,83 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     }
   }
 
+  async function retryTechnicalWorkspace(button) {
+    const context = currentSnapshot?.context;
+    const workspaceProjection = currentSnapshot?.projection.workspace;
+    if (disposed || technicalPreparationPending
+      || !repositoryRetryAuthorityEligible
+      || !repositoryRetryEligible(identity, context, workspaceProjection)
+      || typeof options.requireAal2 !== "function") return false;
+    technicalPreparationPending = true;
+    button.disabled = true;
+    let authorityRefreshed = false;
+    const message = workspace.querySelector("[data-website-message]");
+    message.textContent = "Technische werkruimte wordt opnieuw voorbereid.";
+    try {
+      await options.requireAal2();
+      const request = websiteRepositoryProvisionRequest({
+        quoteRequestId: context.quoteRequestId,
+        websiteWorkContextId: context.websiteWorkContextId,
+        websiteWorkspaceId: workspaceProjection.website_workspace_id,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const rawResult = await authority.gateway(request);
+      validateWebsiteRepositoryProvisionResult(rawResult, {
+        websiteWorkContextId: context.websiteWorkContextId,
+      });
+      if (!await refresh() || disposed) return false;
+      let requirementsSynchronized = true;
+      if (currentSnapshot?.requirementsState.state === "NO_BOARD") {
+        try {
+          const syncRequest = websiteRequirementsSyncRequest({
+            quoteRequestId: context.quoteRequestId,
+            websiteWorkContextId: context.websiteWorkContextId,
+            expectedBoardRevision: 0,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          const rawSync = await websiteRequirementsGateway(client, syncRequest);
+          validateWebsiteRequirementsSyncResult(rawSync, {
+            quoteRequestId: context.quoteRequestId,
+            websiteWorkContextId: context.websiteWorkContextId,
+          });
+          await refresh();
+        } catch {
+          requirementsSynchronized = false;
+          currentSnapshot = Object.freeze({
+            ...currentSnapshot,
+            requirementsState: Object.freeze({ state: "ERROR", summary: null }),
+          });
+          renderRequirementsSummary(workspace, currentSnapshot.requirementsState);
+        }
+      }
+      if (!disposed) {
+        options.onInvalidate?.("dossiers");
+        message.textContent = requirementsSynchronized
+          ? "Technische werkruimte is klaar."
+          : "Technische werkruimte is klaar. Requirements konden niet worden gesynchroniseerd.";
+      }
+      return true;
+    } catch {
+      if (!disposed) {
+        authorityRefreshed = await refresh();
+        if (!disposed) {
+          message.textContent = "Technische werkruimte kon niet veilig opnieuw worden voorbereid.";
+        }
+      }
+      return false;
+    } finally {
+      technicalPreparationPending = false;
+      if (!disposed) {
+        const retry = workspace.querySelector('[data-website-action="repository-retry"]');
+        retry.hidden = !(authorityRefreshed && repositoryRetryAuthorityEligible
+          && repositoryRetryEligible(
+          identity, currentSnapshot?.context, currentSnapshot?.projection.workspace,
+        ));
+        retry.disabled = false;
+      }
+    }
+  }
+
   async function promote({ retry = false } = {}) {
     if (disposed || promotionPending || identity.role !== "owner"
       || currentSnapshot?.context.mode !== "PRE_PROJECT") return false;
@@ -737,6 +846,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const action = target?.dataset.websiteAction;
     if (action === "refresh") void refresh();
     if (action === "provision") void provision(target);
+    if (action === "repository-retry") void retryTechnicalWorkspace(target);
     if (action === "promote") void promote();
     if (action === "promotion-retry") void promote({ retry: true });
     if (action === "files") void projectFiles.activate();
