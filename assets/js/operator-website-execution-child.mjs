@@ -75,14 +75,25 @@ async function websiteConceptPromotionGateway(client, request) {
   return body.result;
 }
 
-async function websiteProjectFilesGateway(client, request) {
+export async function websiteProjectFilesGateway(client, request) {
   if (!request || !WEBSITE_PROJECT_FILE_ACTIONS.has(request.action)) {
     throw new Error("WEBSITE_PROJECT_FILES_ACTION_NOT_ALLOWED");
   }
   const response = await client.functions.invoke("commercial-operator-command", {
     body: request,
   });
-  if (response?.error) throw response.error;
+  if (response?.error) {
+    let code = "NETWORK_ERROR";
+    const status = Number(response.error?.context?.status || 0);
+    try {
+      const payload = await response.error.context.clone().json();
+      if ([
+        "GITHUB_PROVIDER_DISABLED",
+        "PROJECT_FILES_PROVIDER_UNAVAILABLE",
+      ].includes(payload?.code)) code = payload.code;
+    } catch {}
+    throw Object.assign(new Error(code), { code, status });
+  }
   const body = response?.data;
   if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
     throw new Error(body?.code || "INVALID_WEBSITE_PROJECT_FILES_RESPONSE");

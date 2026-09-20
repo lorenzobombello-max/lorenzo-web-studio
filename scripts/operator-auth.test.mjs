@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   buildEmailOtpRequest,
@@ -25,6 +29,29 @@ const loginHtml=readFileSync(new URL("../operator/login/index.html",import.meta.
 const LOGIN_STABILITY_RELEASE="20260902-login-stability";
 const OPERATOR_PROFILE_CSS_RELEASE = "20260905-profile-welcome-r3";
 const OPERATOR_PROFILE_RELEASE = "20260905-profile-welcome-r2";
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+
+function sha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function directLocalImports(source) {
+  return [...source.matchAll(/(?:from\s+|import\s*\()\s*["'](\.[^"']+)["']/g)]
+    .map((match) => match[1]);
+}
+
+function assertProjectFilesModule(outputPath) {
+  const sourcePath = join(repoRoot, "assets/js/operator-website-project-files.mjs");
+  const generatedPath = join(outputPath, "assets/js/operator-website-project-files.mjs");
+  assert.equal(existsSync(generatedPath), true);
+  assert.equal(sha256(generatedPath), sha256(sourcePath));
+  const generatedSource = readFileSync(generatedPath, "utf8");
+  for (const specifier of directLocalImports(generatedSource)) {
+    assert.equal(existsSync(resolve(dirname(generatedPath), specifier)), true);
+  }
+  assert.doesNotMatch(generatedSource, /service_role|sb_secret_|github_pat_|ghp_|GITHUB_TOKEN|SUPABASE_SERVICE|postgres(?:ql)?:\/\//i);
+  assert.doesNotMatch(generatedSource, /127\.0\.0\.1|localhost/);
+}
 
 function createLoginHarness(authOverrides={},options={}) {
   const element=(value="")=>({value,hidden:false,disabled:false,textContent:"",dataset:{},focus(){this.focused=true}});
@@ -53,6 +80,26 @@ function createLoginBootstrapHarness(accessStatus="unauthenticated") {
   });
   return {bootstrap,get state(){return{authorityChecks,navigations,controllerMounts}}};
 }
+
+test("Pages generator packages the exact production Project Files module", () => {
+  const outputDir = "dist/operator-auth-test-production";
+  const outputPath = join(repoRoot, outputDir);
+  rmSync(outputPath, { recursive: true, force: true });
+  try {
+    execFileSync("pwsh", [
+      "-NoProfile",
+      "-File",
+      join(repoRoot, "scripts/prepare-pages-dist.ps1"),
+      "-OutputDir",
+      outputDir,
+      "-OperatorPublishableKey",
+      "sb_publishable_test_public",
+    ], { cwd: repoRoot, stdio: "pipe" });
+    assertProjectFilesModule(outputPath);
+  } finally {
+    rmSync(outputPath, { recursive: true, force: true });
+  }
+});
 
 test("public config is exact and frozen",()=>assert.equal(validatePublicConfig(validConfig).callbackUrl,validConfig.callbackUrl));
 test("service-role-like browser config is rejected",()=>assert.throws(()=>validatePublicConfig({...validConfig,publishableKey:"service_role"}),/AUTH_CONFIG_INVALID/));

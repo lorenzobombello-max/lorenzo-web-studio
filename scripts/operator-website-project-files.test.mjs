@@ -12,6 +12,7 @@ import {
   websiteProjectDirectoryRequest,
   websiteProjectFileRequest,
 } from "../assets/js/operator-website-project-files.mjs";
+import { websiteProjectFilesGateway } from "../assets/js/operator-website-execution-child.mjs";
 
 const quoteRequestId = "a2700000-0000-4000-8000-000000000001";
 const websiteWorkContextId = "a2700000-0000-4000-8000-000000000002";
@@ -100,6 +101,39 @@ function controllerHarness(responses, overrides = {}) {
 
 function codedError(code) {
   return Object.assign(new Error(code), { code });
+}
+
+async function invokeProjectFilesGatewayError(code) {
+  let invokeCalls = 0;
+  const client = {
+    functions: {
+      async invoke() {
+        invokeCalls += 1;
+        return {
+          data: null,
+          error: {
+            context: new Response(JSON.stringify({ ok: false, code }), {
+              status: 503,
+              headers: { "content-type": "application/json" },
+            }),
+          },
+        };
+      },
+    },
+  };
+  let thrown;
+  try {
+    await websiteProjectFilesGateway(client, websiteProjectDirectoryRequest({
+      quoteRequestId,
+      path: "",
+      cursor: null,
+    }));
+  } catch (error) {
+    thrown = error;
+  }
+  assert.equal(invokeCalls, 1);
+  assert.equal(thrown?.status, 503);
+  return thrown;
 }
 
 test("directory request is exact and root includes null cursor", () => {
@@ -294,6 +328,7 @@ test("directory entry behavior is authority inert until an allowed action", () =
 test("stable gateway errors map to deterministic in-memory states", async () => {
   const cases = [
     ["OPERATOR_NOT_AUTHORIZED", "access_denied"],
+    ["GITHUB_PROVIDER_DISABLED", "provider_unavailable"],
     ["PROJECT_FILES_PROVIDER_UNAVAILABLE", "provider_unavailable"],
     ["PROJECT_FILE_NOT_FOUND", "not_found"],
     ["SENSITIVE_FILE_BLOCKED", "sensitive"],
@@ -311,6 +346,27 @@ test("stable gateway errors map to deterministic in-memory states", async () => 
     assert.equal(harness.controller.getState().status, status, code);
     assert.equal(harness.controller.getState().currentFile, null);
   }
+});
+
+test("Functions HTTP provider-disabled codes retain their public classification", async () => {
+  for (const code of [
+    "GITHUB_PROVIDER_DISABLED",
+    "PROJECT_FILES_PROVIDER_UNAVAILABLE",
+  ]) {
+    const error = await invokeProjectFilesGatewayError(code);
+    assert.equal(error?.code, code);
+    const harness = controllerHarness([error]);
+    await assert.rejects(() => harness.controller.loadDirectory({ path: "", cursor: null }));
+    assert.equal(harness.controller.getState().status, "provider_unavailable");
+  }
+});
+
+test("unrelated Functions HTTP 503 remains generic and fail closed", async () => {
+  const error = await invokeProjectFilesGatewayError("UNRELATED_SERVICE_FAILURE");
+  assert.equal(error?.code, "NETWORK_ERROR");
+  const harness = controllerHarness([error]);
+  await assert.rejects(() => harness.controller.loadDirectory({ path: "", cursor: null }));
+  assert.equal(harness.controller.getState().status, "failure");
 });
 
 test("tree and file same commit may display", async () => {

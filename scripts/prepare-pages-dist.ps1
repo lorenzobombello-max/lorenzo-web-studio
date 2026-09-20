@@ -120,6 +120,7 @@ $requiredFiles = @(
   "assets/js/operator-project-requirements-child.mjs",
   "assets/js/operator-project-workspace.mjs",
   "assets/js/operator-project-workspace-child.mjs",
+  "assets/js/operator-website-project-files.mjs",
   "assets/js/operator-vat-readiness.mjs",
   "assets/js/operator-recruitment.mjs",
   "assets/js/operator-recruitment-applications.mjs",

@@ -972,6 +972,7 @@ test("Requirements cards have stable readable no-shift layout contracts", () => 
 
 test("Requirements layout declares 1440, 900 and 390-safe overflow behavior", () => {
   assert.match(dashboardCss, /\.project-requirements-workspace,\.project-requirements\s*\{[^}]*width:100%[^}]*min-width:0/);
+  assert.match(dashboardCss, /\.project-child-heading\s*>\s*div\s*\{[^}]*min-width:0[^}]*max-width:100%[^}]*overflow-wrap:anywhere/);
   assert.match(dashboardCss, /@media \(max-width:900px\)[^{]*\{[^}]*\.project-requirements__cards\s*\{[^}]*grid-template-columns:1fr/);
   assert.match(dashboardCss, /@media \(max-width:540px\)[^{]*\{[^}]*\.project-requirements__form-actions[^}]*width:100%/);
   assert.match(dashboardCss, /\.project-requirements__card\s*\{[^}]*min-width:0[^}]*overflow:hidden/);

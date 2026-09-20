@@ -753,6 +753,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .dossiers-project-summary .badge { white-space:nowrap; }
 .project-child-workspace { max-width:1180px; margin:0 auto; }
 .project-child-heading { margin-bottom:1rem; display:flex; align-items:flex-start; justify-content:space-between; gap:1.5rem; }
+.project-child-heading > div { min-width:0; max-width:100%; overflow-wrap:anywhere; }
 .project-child-heading .module-shell__title { font-size:2.35rem; }
 .project-child-heading p:last-child { max-width:48rem; margin:.45rem 0 0; color:var(--muted); }
 .project-child-context { margin:0 0 1rem; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.65rem; }
