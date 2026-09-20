@@ -35,6 +35,25 @@ function authorityFailure(error) {
   return error?.code === "42501" || /OPERATOR|WORKSPACE|JWT|AUTH/i.test(String(error?.message || ""));
 }
 
+function expiredWorkspace(error) {
+  return error?.code === "42501" && error?.message === "WORKSPACE_NOT_ACTIVE";
+}
+
+function validWindowClaims(value) {
+  if (!Array.isArray(value)) return null;
+  const claims = new Map();
+  for (const claim of value) {
+    if (!claim || typeof claim !== "object" || Array.isArray(claim)
+      || Object.keys(claim).length !== 3 || !validUuid(claim.window_id)
+      || !resolveStandaloneOperatorModule(claim.module_key)
+      || !validOperatorSlotKey(claim.slot_key)) return null;
+    const key = `${claim.module_key}:${claim.slot_key}`;
+    if (claims.has(key)) return null;
+    claims.set(key, { windowId: claim.window_id, reference: null });
+  }
+  return claims;
+}
+
 function inactiveWorkspaceMaster(reason) {
   return Object.freeze({
     active: false,
@@ -114,6 +133,7 @@ export async function createOperatorWorkspaceMaster({
   onInvalidate = ()=>{},
   onInvalidWorkspace = ()=>{},
   onAvailabilityChange = ()=>{},
+  onResumeHintChange = ()=>{},
   requireAal2 = async ()=>true,
   resumeHint = null,
 } = {}) {
@@ -153,7 +173,8 @@ export async function createOperatorWorkspaceMaster({
       ({ data, error } = await client.rpc("acquire_operator_workspace_v1", { p_master_window_id: masterWindowId }));
     }
   }
-  if (error || (resumed ? data?.resumed !== true : data?.acquired !== true)
+  const resumedClaims = resumed ? validWindowClaims(data?.window_claims) : new Map();
+  if (error || (resumed ? data?.resumed !== true || !resumedClaims : data?.acquired !== true)
     || !validUuid(data.workspace_id) || !validUuid(data.renewal_token)) {
     if (error || data?.acquired !== false) onAvailabilityChange("unavailable");
     localLock.release();
@@ -166,13 +187,23 @@ export async function createOperatorWorkspaceMaster({
     masterWindowId,
     renewalToken: data.renewal_token,
   };
-  const channel = new windowObject.BroadcastChannel(workspaceChannelName(memory.workspaceId, memory.epoch));
+  let channel = new windowObject.BroadcastChannel(workspaceChannelName(memory.workspaceId, memory.epoch));
   let sequence = 0;
   let active = true;
-  const childWindows = new Map();
+  const childWindows = resumedClaims;
+  const pendingLaunches = new Map();
   const openButtons = new Map();
-  let renewalPending = false;
+  let authorityCheck = null;
+  let recoveryCheck = null;
   let leaseExpiresAt = leaseTime(data.lease_expires_at);
+
+  function currentResumeHint() {
+    return operatorWorkspaceResumeHint({
+      workspaceId: memory.workspaceId,
+      epoch: memory.epoch,
+      masterWindowId: memory.masterWindowId,
+    });
+  }
 
   function publish(type, moduleKey, slotKey) {
     if (!active && type !== "SHUTDOWN" && type !== "LOCK") return;
@@ -188,32 +219,84 @@ export async function createOperatorWorkspaceMaster({
     }));
   }
 
-  async function renew() {
-    if (!active || renewalPending) return;
-    renewalPending = true;
-    const { data, error } = await client.rpc("renew_operator_workspace_lease_v1", {
-      p_workspace_id: memory.workspaceId,
-      p_epoch: memory.epoch,
+  async function recoverExpiredWorkspace() {
+    if (recoveryCheck) return recoveryCheck;
+    recoveryCheck = (async ()=>{
+    const previousWorkspaceId = memory.workspaceId;
+    const previousEpoch = memory.epoch;
+    const { data, error } = await client.rpc("recover_operator_workspace_v1", {
+      p_workspace_id: previousWorkspaceId,
+      p_epoch: previousEpoch,
       p_master_window_id: memory.masterWindowId,
       p_renewal_token: memory.renewalToken,
     });
-    renewalPending = false;
-    if (error) {
-      if (authorityFailure(error) || !leaseExpiresAt || now() >= leaseExpiresAt) lockWorkspace("MASTER_RENEWAL_FAILED");
-      return;
-    }
     const nextExpiry = leaseTime(data?.lease_expires_at);
-    if (data?.valid !== true || !nextExpiry || nextExpiry <= now()) {
-      lockWorkspace("MASTER_RENEWAL_FAILED");
-      return;
+    if (error || data?.recovered !== true || !validUuid(data.workspace_id)
+      || !Number.isSafeInteger(Number(data.epoch)) || Number(data.epoch) < 1
+      || !validUuid(data.renewal_token) || !nextExpiry || nextExpiry <= now()
+      || validWindowClaims(data.window_claims)?.size !== 0) {
+      lockWorkspace("MASTER_RECOVERY_FAILED");
+      return false;
     }
+    publish("LOCK");
+    channel.close();
+    childWindows.clear();
+    memory.workspaceId = data.workspace_id;
+    memory.epoch = Number(data.epoch);
+    memory.renewalToken = data.renewal_token;
     leaseExpiresAt = nextExpiry;
+    sequence = 0;
+    channel = new windowObject.BroadcastChannel(workspaceChannelName(memory.workspaceId, memory.epoch));
+    bindChannel();
+    onResumeHintChange(currentResumeHint());
+    onAvailabilityChange("active");
+    return true;
+    })();
+    try {
+      return await recoveryCheck;
+    } finally {
+      recoveryCheck = null;
+    }
+  }
+
+  async function renew({ recoverExpired = false } = {}) {
+    if (!active) return false;
+    const check = authorityCheck || (authorityCheck = (async ()=>{
+      const { data, error } = await client.rpc("renew_operator_workspace_lease_v1", {
+        p_workspace_id: memory.workspaceId,
+        p_epoch: memory.epoch,
+        p_master_window_id: memory.masterWindowId,
+        p_renewal_token: memory.renewalToken,
+      });
+      if (error) {
+        if (expiredWorkspace(error)) return "expired";
+        if (authorityFailure(error) || !leaseExpiresAt || now() >= leaseExpiresAt) {
+          lockWorkspace("MASTER_RENEWAL_FAILED");
+        }
+        return "failed";
+      }
+      const nextExpiry = leaseTime(data?.lease_expires_at);
+      if (data?.valid !== true || !nextExpiry || nextExpiry <= now()) {
+        lockWorkspace("MASTER_RENEWAL_FAILED");
+        return "failed";
+      }
+      leaseExpiresAt = nextExpiry;
+      return "valid";
+    })());
+    let result;
+    try {
+      result = await check;
+    } finally {
+      if (authorityCheck === check) authorityCheck = null;
+    }
+    if (result === "expired" && recoverExpired && active) return recoverExpiredWorkspace();
+    return result === "valid";
   }
 
   const heartbeatTimer = setIntervalFn(()=>publish("HEARTBEAT"), LOCAL_HEARTBEAT_INTERVAL_MS);
   const renewalTimer = setIntervalFn(()=>void renew(), MASTER_SERVER_RENEWAL_INTERVAL_MS);
   const safetyTimer = setIntervalFn(()=>{
-    if (!leaseExpiresAt || now() >= leaseExpiresAt) lockWorkspace("MASTER_LEASE_EXPIRED");
+    if (!leaseExpiresAt) lockWorkspace("MASTER_LEASE_EXPIRED");
   }, 1_000);
 
   function lockWorkspace(reason = "WORKSPACE_INVALID") {
@@ -227,21 +310,20 @@ export async function createOperatorWorkspaceMaster({
     onInvalidWorkspace(reason);
   }
 
-  function openOperatorModuleWindow(moduleKey, slotKey = "main", reservationId) {
-    const descriptor = resolveStandaloneOperatorModule(moduleKey);
-    if (!active || !descriptor || !validOperatorSlotKey(slotKey)) return false;
+  async function completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId) {
+    if (!await renew({ recoverExpired: true }) || !active) {
+      try { reservation?.close(); } catch {}
+      return false;
+    }
     const childKey = `${moduleKey}:${slotKey}`;
     const existing = childWindows.get(childKey);
     if (existing?.reference && !existing.reference.closed) {
-      if (reservationId) {
-        const reservation = windowObject.open("about:blank", workspaceReservationWindowName(memory.workspaceId, reservationId), "popup");
-        try { reservation?.close(); } catch {}
-      }
+      try { reservation?.close(); } catch {}
       existing.reference.focus();
       publish("FOCUS_REQUEST", moduleKey, slotKey);
       return true;
     }
-    const windowId = existing?.windowId || createWindowId(windowObject.crypto);
+    const windowId = existing?.windowId || launchReservationId;
     const url = managedChildUrl({
       workspaceId: memory.workspaceId,
       epoch: memory.epoch,
@@ -250,13 +332,37 @@ export async function createOperatorWorkspaceMaster({
       moduleKey,
       slotKey,
     }, windowObject.location.origin);
-    const windowName = reservationId
-      ? workspaceReservationWindowName(memory.workspaceId, reservationId)
-      : `lws-operator-${moduleKey}-${slotKey}-${memory.workspaceId}`;
-    const reference = windowObject.open(url.href, windowName, "popup");
-    childWindows.set(childKey, { windowId, reference });
-    reference?.focus();
-    return Boolean(reference);
+    try {
+      reservation.location.replace(url.href);
+    } catch {
+      try { reservation.close(); } catch {}
+      return false;
+    }
+    childWindows.set(childKey, { windowId, reference: reservation });
+    reservation.focus();
+    return true;
+  }
+
+  function openOperatorModuleWindow(moduleKey, slotKey = "main", reservationId) {
+    const descriptor = resolveStandaloneOperatorModule(moduleKey);
+    if (!active || !descriptor || !validOperatorSlotKey(slotKey)) return false;
+    const childKey = `${moduleKey}:${slotKey}`;
+    const pending = pendingLaunches.get(childKey);
+    if (pending) {
+      pending.reference.focus();
+      return true;
+    }
+    const launchReservationId = reservationId || createWindowId(windowObject.crypto);
+    const reservation = windowObject.open(
+      "about:blank",
+      workspaceReservationWindowName(memory.workspaceId, launchReservationId),
+      "popup",
+    );
+    if (!reservation) return false;
+    const launch = completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId)
+      .finally(()=>pendingLaunches.delete(childKey));
+    pendingLaunches.set(childKey, { reference: reservation, launch });
+    return true;
   }
 
   function bindModuleButton(button, moduleKey, slotKey = "main") {
@@ -290,14 +396,20 @@ export async function createOperatorWorkspaceMaster({
     publish("INVALIDATE", moduleKey);
   }
 
-  channel.addEventListener("message", (event)=>{
+  function handleChannelMessage(event) {
     if (!validWorkspaceEvent(event.data, { workspaceId: memory.workspaceId, epoch: memory.epoch })) return;
     if (event.data.type === "HELLO") publish("REGISTERED", event.data.moduleKey, event.data.slotKey);
     if (event.data.type === "INVALIDATE" && resolveStandaloneOperatorModule(event.data.moduleKey)) onInvalidate(event.data.moduleKey);
     if (event.data.type === "OPEN_REQUEST") {
       openOperatorModuleWindow(event.data.moduleKey, event.data.slotKey, event.data.reservationId);
     }
-  });
+  }
+
+  function bindChannel() {
+    channel.addEventListener("message", handleChannelMessage);
+  }
+
+  bindChannel();
 
   async function shutdownWorkspace() {
     if (!active) return;
@@ -341,9 +453,9 @@ export async function createOperatorWorkspaceMaster({
   return {
     get active() { return active; },
     resumed,
-    resumeHint: operatorWorkspaceResumeHint({ workspaceId: memory.workspaceId, epoch: memory.epoch, masterWindowId: memory.masterWindowId }),
-    workspaceId: memory.workspaceId,
-    epoch: memory.epoch,
+    get resumeHint() { return currentResumeHint(); },
+    get workspaceId() { return memory.workspaceId; },
+    get epoch() { return memory.epoch; },
     masterWindowId: memory.masterWindowId,
     bindModuleButton,
     dispose,

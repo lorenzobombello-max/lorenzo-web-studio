@@ -348,9 +348,10 @@ test("master tolerates a temporary transport failure only inside its confirmed l
     ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
     : renewResult };
   const ids = [masterWindowId, childWindowId];
+  const reference = { closed: false, focus() {}, close() { this.closed = true; }, location: { replace() {} } };
   const master = await createOperatorWorkspaceMaster({
     client,
-    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>ids.shift() }, location: { origin: "https://operator.local" }, open() { return null; } },
+    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>ids.shift() }, location: { origin: "https://operator.local" }, open() { return reference; } },
     navigatorObject: availableWebLock(),
     now: ()=>nowValue,
     setIntervalFn: timers.setIntervalFn,
@@ -361,8 +362,12 @@ test("master tolerates a temporary transport failure only inside its confirmed l
   assert.deepEqual(invalidations, []);
   nowValue = 25_000;
   timers.timer(1_000).callback();
-  assert.deepEqual(invalidations, ["MASTER_LEASE_EXPIRED"]);
-  assert.equal(master.openOperatorModuleWindow("messages"), false);
+  assert.deepEqual(invalidations, []);
+  assert.equal(master.openOperatorModuleWindow("messages"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.deepEqual(invalidations, []);
+  assert.equal(reference.closed, true);
+  assert.equal(master.active, true);
 });
 
 test("master authority failure locks immediately without waiting for lease expiry", async ()=>{
@@ -423,14 +428,23 @@ test("a second launch focuses the managed child without opening a duplicate", as
   const ids = [masterWindowId, childWindowId, launchNonce];
   let openCalls = 0;
   let focusCalls = 0;
-  const childReference = { closed: false, focus() { focusCalls += 1; } };
+  const navigations = [];
+  const references = [];
   const master = await createOperatorWorkspaceMaster({
-    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    client: { rpc: async (name)=>name === "acquire_operator_workspace_v1"
+      ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+      : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
     windowObject: {
       BroadcastChannel: FakeBroadcastChannel,
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
-      open() { openCalls += 1; return childReference; },
+      open(url) {
+        assert.equal(url, "about:blank");
+        openCalls += 1;
+        const reference = { closed: false, focus() { focusCalls += 1; }, close() { this.closed = true; }, location: { replace(target) { navigations.push(target); } } };
+        references.push(reference);
+        return reference;
+      },
     },
     navigatorObject: availableWebLock(),
     now: ()=>10_000,
@@ -440,7 +454,9 @@ test("a second launch focuses the managed child without opening a duplicate", as
   assert.equal(master.openOperatorModuleWindow("messages", "main"), true);
   assert.equal(master.openOperatorModuleWindow("messages", "main"), true);
   assert.equal(master.openOperatorModuleWindow("intake", "main"), false);
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(openCalls, 1);
+  assert.equal(navigations.length, 1);
   assert.equal(focusCalls, 2);
 });
 
@@ -453,12 +469,17 @@ test("PRE_PROJECT Website launches reuse one generic module-slot child", async (
   const opened = [];
   let focusCalls = 0;
   const master = await createOperatorWorkspaceMaster({
-    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    client: { rpc: async (name)=>name === "acquire_operator_workspace_v1"
+      ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+      : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
     windowObject: {
       BroadcastChannel: FakeBroadcastChannel,
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
-      open(url) { opened.push(url); return { closed: false, focus() { focusCalls += 1; } }; },
+      open(url) {
+        assert.equal(url, "about:blank");
+        return { closed: false, focus() { focusCalls += 1; }, close() { this.closed = true; }, location: { replace(target) { opened.push(target); } } };
+      },
     },
     navigatorObject: availableWebLock(),
     now: ()=>10_000,
@@ -467,6 +488,7 @@ test("PRE_PROJECT Website launches reuse one generic module-slot child", async (
   });
   assert.equal(master.openOperatorModuleWindow("dossiers", slotKey), true);
   assert.equal(master.openOperatorModuleWindow("dossiers", slotKey), true);
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(opened.length, 1);
   assert.equal(focusCalls, 2);
   assert.deepEqual(parseChildBootstrap(opened[0]), {
@@ -495,14 +517,16 @@ test("promotion keeps Website Execution and Website Requirements singleton slots
   const opened = [];
   const references = [];
   const master = await createOperatorWorkspaceMaster({
-    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    client: { rpc: async (name)=>name === "acquire_operator_workspace_v1"
+      ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+      : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
     windowObject: {
       BroadcastChannel: FakeBroadcastChannel,
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
       open(url) {
-        opened.push(url);
-        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; } };
+        assert.equal(url, "about:blank");
+        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; }, location: { replace(target) { opened.push(target); } } };
         references.push(reference);
         return reference;
       },
@@ -518,6 +542,7 @@ test("promotion keeps Website Execution and Website Requirements singleton slots
   assert.equal(master.openOperatorModuleWindow("dossiers", requirementsSlot), true);
   assert.equal(master.openOperatorModuleWindow("dossiers", websiteSlot), true);
   assert.equal(master.openOperatorModuleWindow("dossiers", requirementsSlot), true);
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.deepEqual(opened.map((url)=>parseChildBootstrap(url)?.slotKey), [
     websiteSlot,
     requirementsSlot,
@@ -540,14 +565,16 @@ test("Website and commercial Requirements use separate managed singleton identit
   const opened = [];
   const references = [];
   const master = await createOperatorWorkspaceMaster({
-    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    client: { rpc: async (name)=>name === "acquire_operator_workspace_v1"
+      ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+      : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
     windowObject: {
       BroadcastChannel: FakeBroadcastChannel,
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
       open(url) {
-        opened.push(url);
-        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; } };
+        assert.equal(url, "about:blank");
+        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; }, location: { replace(target) { opened.push(target); } } };
         references.push(reference);
         return reference;
       },
@@ -560,6 +587,7 @@ test("Website and commercial Requirements use separate managed singleton identit
   assert.equal(master.openOperatorModuleWindow("dossiers", `req-${quoteRequestId}`), true);
   assert.equal(master.openOperatorModuleWindow("dossiers", `req-${quoteRequestId}`), true);
   assert.equal(master.openOperatorModuleWindow("dossiers", `project-req-${quoteRequestId}`), true);
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(opened.length, 2);
   assert.equal(references[0].focusCalls, 2);
   assert.equal(references[1].focusCalls, 1);
@@ -575,19 +603,22 @@ test("master claims a reserved shell and retains deduplication and shutdown owne
   const timers = timerHarness();
   const ids = [masterWindowId, childWindowId, launchNonce];
   const opened = [];
-  const managedReference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; } };
-  const duplicateReservation = { closed: false, close() { this.closed = true; } };
+  const navigations = [];
+  const managedReference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; }, location: { replace(url) { navigations.push(url); } } };
+  const duplicateReservation = { closed: false, focus() {}, close() { this.closed = true; }, location: { replace() {} } };
   const master = await createOperatorWorkspaceMaster({
     client: { rpc: async (name)=>name === "revoke_operator_workspace_v1"
       ? { data: { revoked: true }, error: null }
-      : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
+      : name === "acquire_operator_workspace_v1"
+        ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+        : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
     windowObject: {
       BroadcastChannel: FakeBroadcastChannel,
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
       open(url, name) {
         opened.push({ url, name });
-        return url === "about:blank" ? duplicateReservation : managedReference;
+        return opened.length === 1 ? managedReference : duplicateReservation;
       },
     },
     navigatorObject: availableWebLock(),
@@ -597,9 +628,11 @@ test("master claims a reserved shell and retains deduplication and shutdown owne
   });
   const channel = FakeBroadcastChannel.instances[0];
   channel.emit(createWorkspaceEvent({ type: "OPEN_REQUEST", workspaceId, epoch, senderWindowId: childWindowId, sequence: 1, now: 10_001, moduleKey: "dossiers", slotKey: "main", reservationId }));
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(opened[0].name, workspaceReservationWindowName(workspaceId, reservationId));
-  assert.equal(parseChildBootstrap(opened[0].url)?.moduleKey, "dossiers");
+  assert.equal(parseChildBootstrap(navigations[0])?.moduleKey, "dossiers");
   channel.emit(createWorkspaceEvent({ type: "OPEN_REQUEST", workspaceId, epoch, senderWindowId: childWindowId, sequence: 2, now: 10_002, moduleKey: "dossiers", slotKey: "main", reservationId: "f4000000-0000-4000-8000-000000000006" }));
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(opened.length, 2);
   assert.equal(duplicateReservation.closed, true);
   assert.equal(managedReference.focusCalls, 2);
@@ -663,7 +696,9 @@ test("master manages all six required modules as separate children in one worksp
   const references = [];
   const client = { rpc: async (name)=>name === "revoke_operator_workspace_v1"
     ? { data: { revoked: true }, error: null }
-    : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } };
+    : name === "acquire_operator_workspace_v1"
+      ? { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }
+      : { data: { valid: true, lease_expires_at: new Date(25_000).toISOString() }, error: null } };
   const master = await createOperatorWorkspaceMaster({
     client,
     windowObject: {
@@ -671,8 +706,10 @@ test("master manages all six required modules as separate children in one worksp
       crypto: { randomUUID: ()=>ids.shift() },
       location: { origin: "https://operator.local" },
       open(href, name) {
-        opened.push({ url: new URL(href), name });
-        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; } };
+        assert.equal(href, "about:blank");
+        const record = { url: null, name };
+        opened.push(record);
+        const reference = { closed: false, focusCalls: 0, focus() { this.focusCalls += 1; }, close() { this.closed = true; }, location: { replace(url) { record.url = new URL(url); } } };
         references.push(reference);
         return reference;
       },
@@ -691,6 +728,7 @@ test("master manages all six required modules as separate children in one worksp
   assert.equal(master.openOperatorModuleWindow("finance"), true);
   assert.equal(master.openOperatorModuleWindow("dossiers"), true);
   assert.equal(master.openOperatorModuleWindow("dossiers"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
   assert.equal(opened.length, 6);
   assert.deepEqual(opened.map(({ url })=>url.searchParams.get("module")), ["messages", "calendar", "recruitment", "workforce", "finance", "dossiers"]);
   assert.equal(opened.every(({ url })=>parseChildBootstrap(url)?.workspaceId === workspaceId), true);
@@ -836,6 +874,7 @@ test("master refresh resumes the same workspace without locking children or acqu
       master_window_id: nextMasterWindowId,
       renewal_token: launchNonce,
       lease_expires_at: new Date(25_000).toISOString(),
+      window_claims: [],
     }, error: null };
   } };
   const master = await createOperatorWorkspaceMaster({
@@ -860,6 +899,181 @@ test("master refresh resumes the same workspace without locking children or acqu
   master.dispose();
   assert.equal(master.active, false);
   assert.equal(FakeBroadcastChannel.instances[0].messages.some(({ type })=>type === "LOCK" || type === "SHUTDOWN"), false);
+});
+
+test("launch revalidates an expired workspace and navigates only after server recovery", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const recoveredWorkspaceId = "f4000000-0000-4000-8000-000000000006";
+  const recoveredRenewalToken = "f4000000-0000-4000-8000-000000000007";
+  const ids = [masterWindowId, reservationId, childWindowId, launchNonce];
+  const calls = [];
+  const navigations = [];
+  const resumeHints = [];
+  const reference = {
+    closed: false,
+    focus() {},
+    close() { this.closed = true; },
+    location: { replace(url) { navigations.push(url); } },
+  };
+  const client = { rpc: async (name, parameters)=>{
+    calls.push({ name, parameters });
+    if (name === "acquire_operator_workspace_v1" && calls.length === 1) {
+      return { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null };
+    }
+    if (name === "renew_operator_workspace_lease_v1") {
+      return { data: null, error: { code: "42501", message: "WORKSPACE_NOT_ACTIVE" } };
+    }
+    if (name === "recover_operator_workspace_v1") {
+      return { data: { recovered: true, workspace_id: recoveredWorkspaceId, epoch: epoch + 1, renewal_token: recoveredRenewalToken, lease_expires_at: new Date(40_000).toISOString(), window_claims: [] }, error: null };
+    }
+    assert.fail(`unexpected RPC ${name}`);
+  } };
+  const master = await createOperatorWorkspaceMaster({
+    client,
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open(url) { assert.equal(url, "about:blank"); return reference; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>20_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+    onResumeHintChange: (hint)=>resumeHints.push(hint),
+  });
+
+  assert.equal(master.openOperatorModuleWindow("dossiers", "website-a1800000-0000-4000-8000-000000000001"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.deepEqual(calls.map(({ name })=>name), [
+    "acquire_operator_workspace_v1",
+    "renew_operator_workspace_lease_v1",
+    "recover_operator_workspace_v1",
+  ]);
+  assert.equal(navigations.length, 1);
+  assert.equal(parseChildBootstrap(navigations[0]).workspaceId, recoveredWorkspaceId);
+  assert.equal(parseChildBootstrap(navigations[0]).epoch, epoch + 1);
+  assert.equal(master.workspaceId, recoveredWorkspaceId);
+  assert.deepEqual(resumeHints, [{ workspaceId: recoveredWorkspaceId, epoch: epoch + 1, masterWindowId }]);
+  assert.equal(reference.closed, false);
+});
+
+test("launch recovers when an in-flight periodic renewal discovers expiry", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const recoveredWorkspaceId = "f4000000-0000-4000-8000-000000000006";
+  const recoveredRenewalToken = "f4000000-0000-4000-8000-000000000007";
+  const ids = [masterWindowId, reservationId, launchNonce];
+  const calls = [];
+  const navigations = [];
+  let resolveRenewal;
+  const renewal = new Promise((resolve)=>{ resolveRenewal = resolve; });
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>{
+      calls.push(name);
+      if (name === "acquire_operator_workspace_v1") {
+        return { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: childWindowId, lease_expires_at: new Date(25_000).toISOString() }, error: null };
+      }
+      if (name === "renew_operator_workspace_lease_v1") return renewal;
+      if (name === "recover_operator_workspace_v1") {
+        return { data: { recovered: true, workspace_id: recoveredWorkspaceId, epoch: epoch + 1, renewal_token: recoveredRenewalToken, lease_expires_at: new Date(40_000).toISOString(), window_claims: [] }, error: null };
+      }
+      assert.fail(`unexpected RPC ${name}`);
+    } },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open(url) {
+        assert.equal(url, "about:blank");
+        return { closed: false, focus() {}, close() { this.closed = true; }, location: { replace(target) { navigations.push(target); } } };
+      },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>20_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+
+  timers.timer(MASTER_SERVER_RENEWAL_INTERVAL_MS).callback();
+  assert.equal(master.openOperatorModuleWindow("dossiers", "website-a1800000-0000-4000-8000-000000000001"), true);
+  resolveRenewal({ data: null, error: { code: "42501", message: "WORKSPACE_NOT_ACTIVE" } });
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.deepEqual(calls, [
+    "acquire_operator_workspace_v1",
+    "renew_operator_workspace_lease_v1",
+    "recover_operator_workspace_v1",
+  ]);
+  assert.equal(navigations.length, 1);
+  assert.equal(parseChildBootstrap(navigations[0]).workspaceId, recoveredWorkspaceId);
+});
+
+test("failed expired-workspace recovery closes the reserved child and remains fail-closed", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const invalidations = [];
+  const ids = [masterWindowId, reservationId];
+  const reference = { closed: false, focus() {}, close() { this.closed = true; }, location: { replace: ()=>assert.fail("invalid workspace must not navigate") } };
+  let acquisitionCalls = 0;
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>{
+      if (name === "acquire_operator_workspace_v1") {
+        acquisitionCalls += 1;
+        return { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null };
+      }
+      if (name === "recover_operator_workspace_v1") return { data: { recovered: false }, error: { code: "42501", message: "WORKSPACE_REVOKED" } };
+      return { data: null, error: { code: "42501", message: "WORKSPACE_NOT_ACTIVE" } };
+    } },
+    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>ids.shift() }, location: { origin: "https://operator.local" }, open: ()=>reference },
+    navigatorObject: availableWebLock(),
+    now: ()=>20_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+    onInvalidWorkspace: (reason)=>invalidations.push(reason),
+  });
+
+  assert.equal(master.openOperatorModuleWindow("dossiers", "main"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(reference.closed, true);
+  assert.equal(master.active, false);
+  assert.deepEqual(invalidations, ["MASTER_RECOVERY_FAILED"]);
+});
+
+test("resumed master hydrates and reuses valid server module-slot claims", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const nextMasterWindowId = "f4000000-0000-4000-8000-000000000005";
+  const claimedWindowId = "f4000000-0000-4000-8000-000000000006";
+  const nextLaunchNonce = "f4000000-0000-4000-8000-000000000007";
+  const ids = [nextMasterWindowId, reservationId, nextLaunchNonce];
+  const navigations = [];
+  const reference = { closed: false, focus() {}, close() {}, location: { replace(url) { navigations.push(url); } } };
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>{
+      if (name === "resume_operator_workspace_v1") return { data: {
+        resumed: true,
+        workspace_id: workspaceId,
+        epoch,
+        master_window_id: nextMasterWindowId,
+        renewal_token: launchNonce,
+        lease_expires_at: new Date(25_000).toISOString(),
+        window_claims: [{ window_id: claimedWindowId, module_key: "dossiers", slot_key: "website-a1800000-0000-4000-8000-000000000001" }],
+      }, error: null };
+      if (name === "renew_operator_workspace_lease_v1") return { data: { valid: true, lease_expires_at: new Date(30_000).toISOString() }, error: null };
+      assert.fail(`unexpected RPC ${name}`);
+    } },
+    resumeHint: { workspaceId, epoch, masterWindowId },
+    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>ids.shift() }, location: { origin: "https://operator.local" }, open: ()=>reference },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+
+  assert.equal(master.openOperatorModuleWindow("dossiers", "website-a1800000-0000-4000-8000-000000000001"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(parseChildBootstrap(navigations[0]).windowId, claimedWindowId);
 });
 
 test("workspace occupancy status distinguishes active, occupied, and failed acquisition", ()=>{

@@ -237,10 +237,10 @@ test("operator dashboard assets use explicit Pages-compatible release identities
   const dashboardUrl = guard.match(/from "([^"]*operator-dashboard\.js[^"]*)"/)?.[1];
   assert.deepEqual([cssUrl, guardUrl, dashboardUrl], [
     "/assets/css/operator-dashboard.css?v=20260917-pre-project-workspace-r2",
-    "/assets/js/operator-dashboard-guard.mjs?v=20260917-pre-project-workspace-r2",
+    "/assets/js/operator-dashboard-guard.mjs?v=20260920-launch-recovery-r1",
     "./operator-dashboard.js?v=20260917-pre-project-workspace-r2",
   ]);
-  for (const [url, release] of [[cssUrl, "20260917-pre-project-workspace-r2"], [guardUrl, "20260917-pre-project-workspace-r2"], [dashboardUrl, "20260917-pre-project-workspace-r2"]]) {
+  for (const [url, release] of [[cssUrl, "20260917-pre-project-workspace-r2"], [guardUrl, "20260920-launch-recovery-r1"], [dashboardUrl, "20260917-pre-project-workspace-r2"]]) {
     assert.equal(new URL(url, "https://operator.example/").searchParams.get("v"), release);
     assert.doesNotMatch(url, /20260824-lifecycle-ui/);
     assert.doesNotMatch(url, new RegExp(PREVIOUS_OPERATOR_ASSET_RELEASE));
