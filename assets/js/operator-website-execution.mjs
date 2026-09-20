@@ -411,3 +411,48 @@ export function websiteRequirementsSummary(value) {
     review_required: reviewRequired,
   });
 }
+
+export function websiteRepositoryProvisionRequest(value) {
+  if (!exactKeys(value, [
+    "quoteRequestId", "websiteWorkContextId", "websiteWorkspaceId",
+    "idempotencyKey",
+  ]) || !UUID.test(String(value.quoteRequestId || ""))
+    || !UUID.test(String(value.websiteWorkContextId || ""))
+    || !UUID.test(String(value.websiteWorkspaceId || ""))
+    || !UUID.test(String(value.idempotencyKey || ""))) {
+    throw new Error("INVALID_WEBSITE_REPOSITORY_PROVISION_REQUEST");
+  }
+  return Object.freeze({
+    action: "provision_website_repository",
+    quote_request_id: value.quoteRequestId,
+    website_work_context_id: value.websiteWorkContextId,
+    website_workspace_id: value.websiteWorkspaceId,
+    idempotency_key: value.idempotencyKey,
+  });
+}
+
+export function validateWebsiteRepositoryProvisionResult(value, expected) {
+  const keys = [
+    "provider", "providerRepositoryId", "providerNodeId", "owner", "name",
+    "visibility", "defaultBranch", "starterSource", "starterVersion",
+    "starterCommitSha", "repositoryMarkerCommitSha", "replayed",
+  ];
+  const expectedName = `lws-web-${
+    String(expected?.websiteWorkContextId || "").toLowerCase().replaceAll("-", "")
+  }`;
+  if (!UUID.test(String(expected?.websiteWorkContextId || ""))
+    || !exactKeys(value, keys) || value.provider !== "GITHUB"
+    || !/^[1-9][0-9]{0,29}$/.test(String(value.providerRepositoryId || ""))
+    || typeof value.providerNodeId !== "string" || !value.providerNodeId
+    || !GITHUB_SEGMENT.test(String(value.owner || ""))
+    || value.name !== expectedName || value.visibility !== "PRIVATE"
+    || value.defaultBranch !== "main"
+    || typeof value.starterSource !== "string" || !value.starterSource.includes("/")
+    || typeof value.starterVersion !== "string" || !value.starterVersion
+    || !COMMIT_SHA.test(String(value.starterCommitSha || ""))
+    || !COMMIT_SHA.test(String(value.repositoryMarkerCommitSha || ""))
+    || typeof value.replayed !== "boolean") {
+    throw new Error("INVALID_WEBSITE_REPOSITORY_PROVISION_RESPONSE");
+  }
+  return Object.freeze(structuredClone(value));
+}

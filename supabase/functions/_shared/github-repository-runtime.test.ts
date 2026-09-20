@@ -12,6 +12,9 @@ import {
 import {
   createGitHubLabRepositoryMetadataReader,
   createGitHubRepositoryRuntime,
+  createGitHubRepositoryRuntimeFromProvider,
+  createGitHubTargetRepositoryProviderForRuntime,
+  type GitHubRepositoryRuntimeDependencies,
   GitHubLabPrivateVisibilityUnprovenError,
 } from "./github-repository-runtime.ts";
 import type {
@@ -199,6 +202,7 @@ async function harness(
   labTokenFailure?: unknown,
   createMetadata?: unknown,
   postCreateFailure?: PostCreateFailure,
+  target: "TEST" | "PRODUCTION" = "TEST",
 ) {
   const treeSha256 = await computeSnapshotDigest([{
     path: "README.md",
@@ -208,6 +212,8 @@ async function harness(
   }]);
   const production = appConfig("PRODUCTION", treeSha256);
   const lab = appConfig("TEST", treeSha256);
+  const targetConfig = target === "PRODUCTION" ? production : lab;
+  const targetOwner = targetConfig.organization;
   const tokenRequests: GitHubTokenRequest[] = [];
   const tokenAuthorities: GitHubTokenAuthority[] = [];
   const httpOperations: GitHubHttpOperation[] = [];
@@ -218,14 +224,14 @@ async function harness(
   const repository = {
     repositoryId: LAB_REPOSITORY_ID,
     nodeId: "R_task13_repository",
-    owner: "lorenzo-web-solutions-lab",
+    owner: targetOwner,
     name: REPOSITORY,
-    fullName: `lorenzo-web-solutions-lab/${REPOSITORY}`,
+    fullName: `${targetOwner}/${REPOSITORY}`,
     private: true,
     defaultBranch: "main",
     createdAt: "2026-09-13T12:00:00Z",
     description: reconciliationExact
-      ? `LWS Task 13 operation ${OPERATION_ID}`
+      ? `${target === "PRODUCTION" ? "LWS website" : "LWS Task 13"} operation ${OPERATION_ID}`
       : "unrelated repository",
   };
   const store: RepositoryProvisioningRuntimeStoreV2 = {
@@ -268,9 +274,7 @@ async function harness(
     readStatus: () => Promise.reject(new Error("unused")),
     resume: () => Promise.reject(new Error("unused")),
   };
-  const runtime = createGitHubRepositoryRuntime(
-    { production, lab },
-    {
+  const dependencies: GitHubRepositoryRuntimeDependencies = {
       store,
       tokenBroker: {
         issue(_config, request, authority) {
@@ -282,11 +286,13 @@ async function harness(
             starterTokenFailure !== undefined
           ) return Promise.reject(starterTokenFailure);
           if (
-            request.target === "TEST" &&
-            request.operation === "LAB_REPOSITORY_CREATE" &&
-            labTokenFailure !== undefined
+            request.operation === (target === "PRODUCTION"
+              ? "PRODUCTION_REPOSITORY_CREATE"
+              : "LAB_REPOSITORY_CREATE") && labTokenFailure !== undefined
           ) return Promise.reject(labTokenFailure);
-          if (request.operation === "LAB_REPOSITORY_WRITE") {
+          if (request.operation === (target === "PRODUCTION"
+            ? "PRODUCTION_REPOSITORY_WRITE"
+            : "LAB_REPOSITORY_WRITE")) {
             labWriteTokenCalls++;
             if (
               postCreateFailure === "WRITE_TOKEN" &&
@@ -311,7 +317,7 @@ async function harness(
           }
           if (
             "owner" in operation &&
-            operation.owner === "lorenzo-web-solutions-lab" &&
+            operation.repository === REPOSITORY &&
             (postCreateFailure === operation.kind ||
               postCreateFailure === "SNAPSHOT_TREE" &&
                 operation.kind === "REPOSITORY_TREE" ||
@@ -337,7 +343,7 @@ async function harness(
           switch (operation.kind) {
             case "REPOSITORY_METADATA":
               return Promise.resolve(
-                operation.owner === "lorenzo-web-solutions"
+                operation.repository === "lws-website-starter"
                   ? {
                     repositoryId: SOURCE_REPOSITORY_ID,
                     nodeId: "R_source_repository",
@@ -407,8 +413,17 @@ async function harness(
           }
         },
       },
-    },
-  );
+  };
+  const runtime = target === "PRODUCTION"
+    ? createGitHubRepositoryRuntimeFromProvider(
+      createGitHubTargetRepositoryProviderForRuntime(
+        production,
+        production,
+        dependencies,
+      ),
+      store,
+    )
+    : createGitHubRepositoryRuntime({ production, lab }, dependencies);
   const command: RepositoryProvisioningCommandV2 = {
     contractVersion: 2,
     websiteWorkspaceId: WORKSPACE_ID,
@@ -567,6 +582,58 @@ Deno.test("runtime enforces claim, production read, one LAB create, durable capt
     item.kind === "CREATE_BLOB"
   );
   assertEquals(createIndex > 0 && firstWriteIndex > createIndex, true);
+});
+
+Deno.test("production runtime provisions only through production repository authority", async () => {
+  const test = await harness(
+    null,
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "PRODUCTION",
+  );
+  const result = await test.runtime.provision(test.command);
+
+  assertEquals(result.owner, "lorenzo-web-solutions");
+  assertEquals(test.createCalls(), 1);
+  assertEquals(test.storeCalls, ["CLAIM", "CAPTURE", "BIND"]);
+  assertEquals(
+    test.tokenRequests.map((request) => [
+      request.target,
+      request.organization,
+      request.operation,
+      request.repositoryIds,
+    ]),
+    [
+      ["PRODUCTION", "lorenzo-web-solutions", "STARTER_SNAPSHOT_READ", [SOURCE_REPOSITORY_ID]],
+      ["PRODUCTION", "lorenzo-web-solutions", "PRODUCTION_REPOSITORY_CREATE", []],
+      ["PRODUCTION", "lorenzo-web-solutions", "PRODUCTION_REPOSITORY_WRITE", [LAB_REPOSITORY_ID]],
+      ["PRODUCTION", "lorenzo-web-solutions", "PRODUCTION_REPOSITORY_WRITE", [LAB_REPOSITORY_ID]],
+    ],
+  );
+  assertEquals(
+    test.tokenAuthorities.every((authority) =>
+      authority.target === "PRODUCTION" &&
+      authority.organization === "lorenzo-web-solutions"
+    ),
+    true,
+  );
+  assertEquals(
+    test.httpOperations.find((operation) => operation.kind === "CREATE_REPOSITORY"),
+    {
+      kind: "CREATE_REPOSITORY",
+      owner: "lorenzo-web-solutions",
+      repository: REPOSITORY,
+      description: `LWS website operation ${OPERATION_ID}`,
+      token: "synthetic_PRODUCTION_REPOSITORY_CREATE_token_value",
+    },
+  );
+  assertEquals(JSON.stringify(test.tokenRequests).includes("TEST"), false);
+  assertEquals(JSON.stringify(test.tokenRequests).includes("LAB_"), false);
 });
 
 Deno.test("runtime classifies starter read boundaries without exposing upstream errors", async () => {

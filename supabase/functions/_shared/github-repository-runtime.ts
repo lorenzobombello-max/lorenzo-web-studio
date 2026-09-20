@@ -16,6 +16,7 @@ import {
 import {
   computeSnapshotDigest,
   createGitHubRepositoryProvider,
+  createGitHubTargetRepositoryProvider,
   GitHubLabCreateDiagnosticError,
   GitHubLabCreateOutcomeUnknownError,
   GitHubLabPostCreateDiagnosticError,
@@ -41,7 +42,8 @@ import {
 } from "./repository-provisioning.ts";
 import type { RepositoryProvisioningRuntimeStoreV2 } from "./repository-provisioning-store-v2.ts";
 
-const CREATE_DESCRIPTION_PREFIX = "LWS Task 13 operation ";
+const LAB_CREATE_DESCRIPTION_PREFIX = "LWS Task 13 operation ";
+const PRODUCTION_CREATE_DESCRIPTION_PREFIX = "LWS website operation ";
 
 const LAB_CREATE_HTTP_SUBPHASES = Object.freeze(
   {
@@ -231,9 +233,10 @@ function sha(value: unknown): string {
 function identity(
   metadata: GitHubRepositoryMetadata,
   installationId: string,
+  expectedOwner = "lorenzo-web-solutions-lab",
 ): GitHubLabRepositoryIdentity {
   if (
-    metadata.owner !== "lorenzo-web-solutions-lab" ||
+    metadata.owner !== expectedOwner ||
     metadata.private !== true || metadata.defaultBranch !== "main"
   ) return fail("GITHUB_LAB_IDENTITY_INVALID");
   return Object.freeze({
@@ -269,6 +272,39 @@ export function createGitHubRepositoryProviderForRuntime(
     typeof dependencies.http?.execute !== "function"
   ) return fail("GITHUB_RUNTIME_CONFIG_INVALID");
 
+  return createGitHubTargetRepositoryProviderForRuntime(
+    config.production,
+    config.lab,
+    dependencies,
+  );
+}
+
+export function createGitHubTargetRepositoryProviderForRuntime(
+  sourceConfig: GitHubAppConfig,
+  targetConfig: GitHubAppConfig,
+  dependencies: GitHubRepositoryRuntimeDependencies,
+): RepositoryProvisioningProviderV2 {
+  if (
+    !sourceConfig || sourceConfig.target !== "PRODUCTION" ||
+    !targetConfig || !dependencies ||
+    sourceConfig.templateOwner !== sourceConfig.organization ||
+    sourceConfig.templateName !== targetConfig.templateName ||
+    sourceConfig.templateRepositoryId !== targetConfig.templateRepositoryId ||
+    sourceConfig.starterVersion !== targetConfig.starterVersion ||
+    sourceConfig.starterCommitSha !== targetConfig.starterCommitSha ||
+    sourceConfig.starterTreeSha256 !== targetConfig.starterTreeSha256
+  ) return fail("GITHUB_RUNTIME_CONFIG_INVALID");
+
+  const createOperation = targetConfig.target === "PRODUCTION"
+    ? "PRODUCTION_REPOSITORY_CREATE" as const
+    : "LAB_REPOSITORY_CREATE" as const;
+  const writeOperation = targetConfig.target === "PRODUCTION"
+    ? "PRODUCTION_REPOSITORY_WRITE" as const
+    : "LAB_REPOSITORY_WRITE" as const;
+  const createDescriptionPrefix = targetConfig.target === "PRODUCTION"
+    ? PRODUCTION_CREATE_DESCRIPTION_PREFIX
+    : LAB_CREATE_DESCRIPTION_PREFIX;
+
   async function issue(
     appConfig: GitHubAppConfig,
     websiteWorkContextId: string,
@@ -288,12 +324,11 @@ export function createGitHubRepositoryProviderForRuntime(
       organization: appConfig.organization,
       repositoryIds: request.repositoryIds,
     });
-    const lease = await dependencies.tokenBroker.issue(
+    return (await dependencies.tokenBroker.issue(
       appConfig,
       request,
       authority,
-    );
-    return lease.token;
+    )).token;
   }
 
   async function readEntries(
@@ -323,12 +358,9 @@ export function createGitHubRepositoryProviderForRuntime(
         !entry || typeof entry !== "object" ||
         !["blob", "tree"].includes(String(entry.type))
       )
-    ) {
-      return starterFail("STARTER_TREE_VALIDATE");
-    }
-    const blobs = tree.entries.filter((entry) => entry.type === "blob");
+    ) return starterFail("STARTER_TREE_VALIDATE");
     const entries: GitHubSnapshotEntry[] = [];
-    for (const blob of blobs) {
+    for (const blob of tree.entries.filter((entry) => entry.type === "blob")) {
       let value: Readonly<{
         sha: string;
         encoding: "base64";
@@ -352,12 +384,8 @@ export function createGitHubRepositoryProviderForRuntime(
       } catch {
         return starterFail("STARTER_BLOB_VALIDATE");
       }
-      if (
-        !value || value.encoding !== "base64" || value.sha !== blob.sha ||
-        content.byteLength !== value.size
-      ) {
-        return starterFail("STARTER_BLOB_VALIDATE");
-      }
+      if (value.encoding !== "base64" || value.sha !== blob.sha ||
+        content.byteLength !== value.size) return starterFail("STARTER_BLOB_VALIDATE");
       entries.push(Object.freeze({
         path: blob.path,
         mode: blob.mode,
@@ -368,31 +396,46 @@ export function createGitHubRepositoryProviderForRuntime(
     return Object.freeze(entries);
   }
 
-  const readLabRepository = createGitHubLabRepositoryMetadataReader(
-    config,
-    dependencies,
-  );
+  async function readTargetRepository(input: Readonly<{
+    websiteWorkContextId: string;
+    organization: string;
+    repository: string;
+  }>): Promise<GitHubRepositoryMetadata> {
+    const token = await issue(
+      targetConfig,
+      input.websiteWorkContextId,
+      createOperation,
+      [],
+    );
+    return repository(await dependencies.http.execute({
+      kind: "REPOSITORY_METADATA",
+      owner: input.organization,
+      repository: input.repository,
+      token,
+    }));
+  }
 
-  const provider = createGitHubRepositoryProvider({
+  const provider = createGitHubTargetRepositoryProvider({
     source: {
-      installationId: config.production.installationId,
-      owner: config.production.templateOwner,
-      repository: config.production.templateName,
-      repositoryId: config.production.templateRepositoryId,
-      version: config.production.starterVersion,
-      commitSha: config.production.starterCommitSha,
-      treeSha256: config.production.starterTreeSha256,
+      installationId: sourceConfig.installationId,
+      owner: sourceConfig.templateOwner,
+      repository: sourceConfig.templateName,
+      repositoryId: sourceConfig.templateRepositoryId,
+      version: sourceConfig.starterVersion,
+      commitSha: sourceConfig.starterCommitSha,
+      treeSha256: sourceConfig.starterTreeSha256,
     },
-    lab: {
-      installationId: config.lab.installationId,
-      organization: config.lab.organization,
+    target: {
+      providerTarget: targetConfig.target,
+      installationId: targetConfig.installationId,
+      organization: targetConfig.organization,
     },
   }, {
     async readStarter(input) {
       let token: string;
       try {
         token = await issue(
-          config.production,
+          sourceConfig,
           input.websiteWorkContextId,
           "STARTER_SNAPSHOT_READ",
           [input.repositoryId],
@@ -445,13 +488,13 @@ export function createGitHubRepositoryProviderForRuntime(
       });
     },
 
-    async createLab(input) {
+    async createTarget(input) {
       let token: string;
       try {
         token = await issue(
-          config.lab,
+          targetConfig,
           input.websiteWorkContextId,
-          "LAB_REPOSITORY_CREATE",
+          createOperation,
           [],
         );
       } catch (error) {
@@ -476,7 +519,7 @@ export function createGitHubRepositoryProviderForRuntime(
           kind: "CREATE_REPOSITORY",
           owner: input.organization,
           repository: input.repository,
-          description: `${CREATE_DESCRIPTION_PREFIX}${input.operationId}`,
+          description: `${createDescriptionPrefix}${input.operationId}`,
           token,
         });
       } catch (error) {
@@ -492,7 +535,11 @@ export function createGitHubRepositoryProviderForRuntime(
         throw error;
       }
       try {
-        return identity(repository(result), input.installationId);
+        return identity(
+          repository(result),
+          input.installationId,
+          targetConfig.organization,
+        );
       } catch {
         throw new GitHubLabCreateOutcomeUnknownError(
           "LAB_CREATE_ADAPTER_PROJECT",
@@ -500,29 +547,33 @@ export function createGitHubRepositoryProviderForRuntime(
       }
     },
 
-    async reconcileLab(input) {
+    async reconcileTarget(input) {
       try {
-        const metadata = await readLabRepository(input);
+        const metadata = await readTargetRepository(input);
         if (
           metadata.name !== input.repository ||
           metadata.description !==
-            `${CREATE_DESCRIPTION_PREFIX}${input.operationId}`
+            `${createDescriptionPrefix}${input.operationId}`
         ) return Object.freeze({ state: "AMBIGUOUS" as const });
         return Object.freeze({
           state: "MATCH" as const,
-          identity: identity(metadata, input.installationId),
+          identity: identity(
+            metadata,
+            input.installationId,
+            targetConfig.organization,
+          ),
         });
       } catch {
         return Object.freeze({ state: "AMBIGUOUS" as const });
       }
     },
 
-    quarantineLab(input) {
+    quarantineTarget(input) {
       return dependencies.store.quarantine(input.operationId, input.reason)
         .then(() => undefined);
     },
 
-    captureLabIdentity(input) {
+    captureTargetIdentity(input) {
       return dependencies.store.captureLabIdentity({
         operationId: input.operationId,
         websiteWorkContextId: input.websiteWorkContextId,
@@ -531,13 +582,13 @@ export function createGitHubRepositoryProviderForRuntime(
       });
     },
 
-    async writeLabSnapshot(input) {
+    async writeTargetSnapshot(input) {
       let token: string;
       try {
         token = await issue(
-          config.lab,
+          targetConfig,
           input.websiteWorkContextId,
-          "LAB_REPOSITORY_WRITE",
+          writeOperation,
           [input.identity.repositoryId],
         );
       } catch {
@@ -646,13 +697,13 @@ export function createGitHubRepositoryProviderForRuntime(
       });
     },
 
-    async readLabBinding(input) {
+    async readTargetBinding(input) {
       let token: string;
       try {
         token = await issue(
-          config.lab,
+          targetConfig,
           input.websiteWorkContextId,
-          "LAB_REPOSITORY_WRITE",
+          writeOperation,
           [input.identity.repositoryId],
         );
       } catch {
@@ -715,7 +766,7 @@ export function createGitHubRepositoryProviderForRuntime(
         );
       }
       return Object.freeze({
-        ...identity(metadata, input.installationId),
+        ...identity(metadata, input.installationId, targetConfig.organization),
         sourceTreeSha256,
         markerContent,
         markerCommitSha: input.markerCommitSha,

@@ -483,6 +483,14 @@ const websiteWorkspaceProvisionRequest = {
   quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
   idempotency_key: websiteWorkspaceProvisionFixtures[0].idempotency_key,
 };
+const websiteRepositoryProvisionRequest = {
+  action: "provision_website_repository" as const,
+  quote_request_id: websiteWorkspaceProvisionFixtures[0].quote_request_id,
+  website_work_context_id:
+    websiteWorkspaceProvisionFixtures[0].website_work_context_id,
+  website_workspace_id: "c1d00000-0000-4000-8000-000000000001",
+  idempotency_key: "c1a00000-0000-4000-8000-00000000000a",
+};
 
 const websiteProjectDirectoryRequest = {
   action: "list_website_project_directory" as const,
@@ -908,6 +916,46 @@ Deno.test("Website workspace provision accepts only bounded browser intent", asy
     );
     assertEquals(rejected.status, 400, forbiddenKey);
     assertEquals(harness.calls.length, 0, forbiddenKey);
+  }
+});
+
+Deno.test("production repository provision requires exact OWNER+AAL2 intent", async () => {
+  const verifyOwner = async () => ({
+    id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  });
+  const acceptedHarness = dependencies({ verifyUser: verifyOwner });
+  const accepted = await handleCommercialOperator(
+    request(websiteRepositoryProvisionRequest, ownerAal2Jwt),
+    acceptedHarness.deps,
+  );
+  assertEquals(accepted.status, 200);
+  assertEquals(acceptedHarness.calls, [{
+    jwt: ownerAal2Jwt,
+    input: websiteRepositoryProvisionRequest,
+  }]);
+
+  const deniedHarness = dependencies({ verifyUser: verifyOwner });
+  const denied = await handleCommercialOperator(
+    request(websiteRepositoryProvisionRequest, ownerAal1Jwt),
+    deniedHarness.deps,
+  );
+  assertEquals(denied.status, 403);
+  assertEquals(await denied.json(), { ok: false, code: "OPERATOR_NOT_AUTHORIZED" });
+  assertEquals(deniedHarness.calls, []);
+
+  for (const invalid of [
+    { ...websiteRepositoryProvisionRequest, website_work_context_id: "invalid" },
+    { ...websiteRepositoryProvisionRequest, website_workspace_id: "invalid" },
+    { ...websiteRepositoryProvisionRequest, repository_owner: "forbidden" },
+    { ...websiteRepositoryProvisionRequest, environment: "TEST" },
+  ]) {
+    const invalidHarness = dependencies({ verifyUser: verifyOwner });
+    const response = await handleCommercialOperator(
+      request(invalid, ownerAal2Jwt),
+      invalidHarness.deps,
+    );
+    assertEquals(response.status, 400);
+    assertEquals(invalidHarness.calls, []);
   }
 });
 

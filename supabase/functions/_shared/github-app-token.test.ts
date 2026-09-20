@@ -521,6 +521,73 @@ Deno.test("GitHub App broker separates production snapshot read from LAB create 
   }]);
 });
 
+Deno.test("production repository create and write have no LAB fallback", async () => {
+  const productionCreate = harness({
+    token: INSTALLATION_TOKEN,
+    expiresAt: "2026-09-13T12:55:00.000Z",
+    repositorySelection: "selected",
+    permissions: { metadata: "read", administration: "write" },
+  });
+  await productionCreate.broker.issue(
+    config("PRODUCTION"),
+    request({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      operation: "PRODUCTION_REPOSITORY_CREATE",
+      repositoryIds: [],
+    }),
+    authority({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      repositoryIds: [],
+    }),
+  );
+  assertEquals(
+    (productionCreate.exchangeCalls[0] as Record<string, unknown>).permissions,
+    { metadata: "read", administration: "write" },
+  );
+
+  const productionWrite = harness({
+    token: INSTALLATION_TOKEN,
+    expiresAt: "2026-09-13T12:55:00.000Z",
+    repositorySelection: "selected",
+    permissions: { metadata: "read", contents: "write" },
+  });
+  await productionWrite.broker.issue(
+    config("PRODUCTION"),
+    request({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      operation: "PRODUCTION_REPOSITORY_WRITE",
+      repositoryIds: ["987654321"],
+    }),
+    authority({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      repositoryIds: ["987654321"],
+    }),
+  );
+  assertEquals(
+    (productionWrite.exchangeCalls[0] as Record<string, unknown>).permissions,
+    { metadata: "read", contents: "write" },
+  );
+
+  const noFallback = harness({});
+  await assertRejects(
+    () => noFallback.broker.issue(
+      config("TEST"),
+      request({
+        operation: "PRODUCTION_REPOSITORY_CREATE",
+        repositoryIds: [],
+      }),
+      authority({ repositoryIds: [] }),
+    ),
+    GitHubTokenBrokerError,
+    "GITHUB_TOKEN_AUTHORITY_INVALID",
+  );
+  assertEquals(noFallback.exchangeCalls, []);
+});
+
 Deno.test("Task 13 token chain accepts absent LAB repository-selection metadata", async () => {
   const lease = await task13TokenAcquisition(
     {
