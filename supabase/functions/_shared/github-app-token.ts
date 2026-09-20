@@ -103,6 +103,15 @@ function exactKeys(value: object, keys: readonly string[]): boolean {
   return actual.length === keys.length && keys.every((key) => key in value);
 }
 
+function exactOwnPropertyNames(
+  value: object,
+  names: readonly string[],
+): boolean {
+  const actual = Object.getOwnPropertyNames(value);
+  return actual.length === names.length &&
+    names.every((name) => Object.hasOwn(value, name));
+}
+
 function sameValues(
   left: readonly string[],
   right: readonly string[],
@@ -254,7 +263,7 @@ function validateResponse(
     "repositorySelection",
   );
   if (
-    !exactKeys(
+    !exactOwnPropertyNames(
       response,
       hasRepositorySelection
         ? ["token", "expiresAt", "repositorySelection", "permissions"]

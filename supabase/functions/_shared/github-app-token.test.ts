@@ -405,6 +405,91 @@ Deno.test("GitHub HTTP accepts a synthetic 520-plus installation token", async (
   });
 });
 
+Deno.test("GitHub App broker accepts the secure HTTP token result directly", async () => {
+  const http = createGitHubHttpClient({
+    now: () => NOW,
+    fetch: () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            token: INSTALLATION_TOKEN,
+            expires_at: "2026-09-13T12:55:00.000Z",
+            repository_selection: "selected",
+            permissions: { metadata: "read", contents: "read" },
+          }),
+          {
+            headers: { "content-type": "application/json; charset=utf-8" },
+          },
+        ),
+      ),
+  });
+  let httpResult: Awaited<ReturnType<typeof http.execute>> | undefined;
+  const broker = createGitHubAppTokenBroker({
+    now: () => NOW,
+    sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+    exchange: async (input) => {
+      httpResult = await http.execute({
+        kind: "TOKEN_EXCHANGE",
+        installationId: input.installationId,
+        appJwt: input.appJwt,
+        repositoryIds: input.repositoryIds,
+        permissions: input.permissions,
+      });
+      return httpResult;
+    },
+  });
+
+  const lease = await broker.issue(
+    config("PRODUCTION"),
+    request({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      operation: "STARTER_SNAPSHOT_READ",
+      repositoryIds: ["987654321"],
+    }),
+    authority({
+      target: "PRODUCTION",
+      organization: "lorenzo-web-solutions",
+      repositoryIds: ["987654321"],
+    }),
+  );
+
+  assertEquals(httpResult !== undefined && "token" in httpResult, true);
+  assertEquals(
+    Object.getOwnPropertyDescriptor(httpResult, "token")?.enumerable,
+    false,
+  );
+  assertEquals(Object.keys(httpResult ?? {}).includes("token"), false);
+  assertEquals(lease.token, INSTALLATION_TOKEN);
+  assertEquals(Object.getOwnPropertyDescriptor(lease, "token"), {
+    value: INSTALLATION_TOKEN,
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  assertEquals(JSON.stringify(lease).includes(INSTALLATION_TOKEN), false);
+});
+
+Deno.test("GitHub App broker rejects extra non-enumerable response properties", async () => {
+  const response = {
+    token: INSTALLATION_TOKEN,
+    expiresAt: "2026-09-13T12:55:00.000Z",
+    repositorySelection: "selected",
+    permissions: { metadata: "read", contents: "write" },
+  };
+  Object.defineProperty(response, "unexpected", {
+    value: true,
+    enumerable: false,
+  });
+  const test = harness(response);
+
+  await assertRejects(
+    () => test.broker.issue(config(), request(), authority()),
+    GitHubTokenBrokerError,
+    "GITHUB_TOKEN_RESPONSE_INVALID",
+  );
+});
+
 Deno.test("Task 13 classifies broker upper bound after wall-clock rollback", async () => {
   let brokerNowCalls = 0;
   const error = await assertRejects(
