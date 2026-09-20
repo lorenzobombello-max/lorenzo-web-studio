@@ -1,0 +1,534 @@
+import type { GitHubAppConfig } from "./github-app-config.ts";
+import type {
+  GitHubInstallationTokenLease,
+  GitHubTokenAuthority,
+  GitHubTokenRequest,
+} from "./github-app-token.ts";
+import {
+  GitHubHttpError,
+  type GitHubHttpOperation,
+  type GitHubHttpResult,
+  type GitHubRepositoryMetadata,
+  type GitHubTreeEntry,
+} from "./github-http.ts";
+import {
+  createProductionRepositoryCompletionProofCapability,
+  createProductionRepositoryStateInspectionCapability,
+  type GitHubRepositoryCompletionProof,
+  type GitHubRepositoryStateClassification,
+  type GitHubRepositoryStateInspectionAuthority,
+} from "./github-repository-state-inspector.ts";
+import { computeGitHubSnapshotDigest } from "./github-snapshot-digest.ts";
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const NUMERIC_ID = /^[1-9][0-9]{0,15}$/;
+const NODE_ID = /^[A-Za-z0-9_-]{6,255}$/;
+const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+const AUTHORITY_KEYS = [
+  "operation_id",
+  "website_work_context_id",
+  "website_workspace_id",
+  "repository_external_id",
+  "repository_node_id",
+  "repository_owner",
+  "repository_name",
+  "starter_source",
+  "starter_version",
+  "starter_commit_sha",
+] as const;
+
+export type ProductionRepositoryRecoveryInput = Readonly<{
+  quoteRequestId: string;
+  websiteWorkContextId: string;
+  websiteWorkspaceId: string;
+}>;
+
+type Authority = Readonly<{
+  operationId: string;
+  websiteWorkContextId: string;
+  websiteWorkspaceId: string;
+  repositoryId: string;
+  repositoryNodeId: string;
+  owner: string;
+  repository: string;
+  starterSource: string;
+  starterVersion: string;
+  starterCommitSha: string;
+  markerContent: string;
+}>;
+
+type RecoveryHttpOperation = Extract<GitHubHttpOperation, {
+  kind:
+    | "REPOSITORY_METADATA"
+    | "REPOSITORY_EMPTY_PROOF"
+    | "REPOSITORY_TREE"
+    | "READ_BLOB"
+    | "CREATE_BLOB"
+    | "CREATE_TREE"
+    | "CREATE_COMMIT"
+    | "CREATE_BOOTSTRAP_FILE"
+    | "READ_REF"
+    | "UPDATE_REF"
+    | "WRITE_PROJECT_MARKER"
+    | "READ_PROJECT_MARKER"
+    | "COMMIT_METADATA"
+    | "READ_COMMIT";
+}>;
+
+type RpcResult = Readonly<{ data: unknown; error: unknown }>;
+type Dependencies = Readonly<{
+  config: GitHubAppConfig;
+  actor: Readonly<{ authUserId: string; aal: "aal2" }>;
+  callerRpc(name: string, parameters: Readonly<Record<string, unknown>>): PromiseLike<RpcResult>;
+  serviceRpc(name: string, parameters: Readonly<Record<string, unknown>>): PromiseLike<RpcResult>;
+  tokenBroker: Readonly<{
+    issue(
+      config: GitHubAppConfig,
+      request: GitHubTokenRequest,
+      authority: GitHubTokenAuthority,
+    ): Promise<GitHubInstallationTokenLease>;
+  }>;
+  http: Readonly<{
+    execute(operation: RecoveryHttpOperation): Promise<GitHubHttpResult>;
+  }>;
+}>;
+
+type SnapshotEntry = Readonly<{
+  path: string;
+  mode: string;
+  type: "blob";
+  content: Uint8Array;
+}>;
+
+export type ProductionRepositoryRecoveryResult = Readonly<{
+  status: "ALREADY_COMPLETE" | "RECOVERED_FROM_EMPTY" | "RECOVERED_MARKER_ONLY";
+  operationId: string;
+  binding: unknown;
+}>;
+
+function fail(): never {
+  throw new Error("PRODUCTION_REPOSITORY_RECOVERY_FAILED");
+}
+
+function exactRecord(
+  value: unknown,
+  keys: readonly string[],
+): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  const actual = Reflect.ownKeys(value).sort();
+  const expected = [...keys].sort();
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  return (prototype === Object.prototype || prototype === null) &&
+    actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index]) &&
+    keys.every((key) =>
+      descriptors[key]?.enumerable === true &&
+      Object.hasOwn(descriptors[key], "value")
+    );
+}
+
+function base64(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function bytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+function sha(value: unknown): string {
+  if (!exactRecord(value, ["sha"]) || !SHA.test(String(value.sha))) fail();
+  return String(value.sha);
+}
+
+function markerContent(config: GitHubAppConfig, authority: Omit<Authority, "markerContent">): string {
+  return `${JSON.stringify({
+    schema_version: 1,
+    environment: "PRODUCTION",
+    organization: authority.owner,
+    website_work_context_id: authority.websiteWorkContextId,
+    repository_provisioning_operation_id: authority.operationId,
+    starter_source: authority.starterSource,
+    starter_version: `v${authority.starterVersion}`,
+    starter_commit_sha: authority.starterCommitSha,
+    starter_tree_sha256: config.starterTreeSha256,
+  }, null, 2)}\n`;
+}
+
+function projectAuthority(
+  value: unknown,
+  input: ProductionRepositoryRecoveryInput,
+  config: GitHubAppConfig,
+): Authority {
+  if (
+    !exactRecord(value, AUTHORITY_KEYS) ||
+    value.website_work_context_id !== input.websiteWorkContextId ||
+    value.website_workspace_id !== input.websiteWorkspaceId ||
+    typeof value.operation_id !== "string" || !UUID.test(value.operation_id) ||
+    typeof value.repository_external_id !== "string" ||
+    !NUMERIC_ID.test(value.repository_external_id) ||
+    typeof value.repository_node_id !== "string" ||
+    !NODE_ID.test(value.repository_node_id) ||
+    value.repository_owner !== config.organization ||
+    value.repository_name !==
+      `lws-web-${input.websiteWorkContextId.toLowerCase().replaceAll("-", "")}` ||
+    value.starter_source !== `${config.templateOwner}/${config.templateName}` ||
+    value.starter_version !== config.starterVersion ||
+    value.starter_commit_sha !== config.starterCommitSha ||
+    !SHA.test(String(value.starter_commit_sha)) ||
+    !SHA256.test(config.starterTreeSha256)
+  ) fail();
+  const authority = Object.freeze({
+    operationId: value.operation_id,
+    websiteWorkContextId: value.website_work_context_id,
+    websiteWorkspaceId: value.website_workspace_id,
+    repositoryId: value.repository_external_id,
+    repositoryNodeId: value.repository_node_id,
+    owner: value.repository_owner,
+    repository: value.repository_name,
+    starterSource: value.starter_source,
+    starterVersion: value.starter_version,
+    starterCommitSha: value.starter_commit_sha,
+  } as Omit<Authority, "markerContent">);
+  return Object.freeze({
+    ...authority,
+    markerContent: markerContent(config, authority),
+  });
+}
+
+function inspectionAuthority(
+  config: GitHubAppConfig,
+  authority: Authority,
+): GitHubRepositoryStateInspectionAuthority {
+  return Object.freeze({
+    websiteWorkContextId: authority.websiteWorkContextId,
+    repositoryId: authority.repositoryId,
+    owner: authority.owner,
+    repository: authority.repository,
+    private: true,
+    defaultBranch: "main",
+    snapshotTreeSha256: config.starterTreeSha256,
+    markerContent: authority.markerContent,
+  });
+}
+
+async function issue(
+  dependencies: Dependencies,
+  authority: Authority,
+  operation: "STARTER_SNAPSHOT_READ" | "PRODUCTION_REPOSITORY_WRITE",
+  repositoryId: string,
+): Promise<string> {
+  const request = Object.freeze({
+    websiteWorkContextId: authority.websiteWorkContextId,
+    target: "PRODUCTION" as const,
+    organization: dependencies.config.organization,
+    operation,
+    repositoryIds: Object.freeze([repositoryId]),
+  });
+  const lease = await dependencies.tokenBroker.issue(
+    dependencies.config,
+    request,
+    Object.freeze({
+      websiteWorkContextId: request.websiteWorkContextId,
+      target: request.target,
+      organization: request.organization,
+      repositoryIds: request.repositoryIds,
+    }),
+  );
+  if (!lease || typeof lease.token !== "string") fail();
+  return lease.token;
+}
+
+async function prepareSnapshot(
+  dependencies: Dependencies,
+  authority: Authority,
+): Promise<readonly SnapshotEntry[]> {
+  const config = dependencies.config;
+  const token = await issue(
+    dependencies,
+    authority,
+    "STARTER_SNAPSHOT_READ",
+    config.templateRepositoryId,
+  );
+  const metadata = await dependencies.http.execute({
+    kind: "REPOSITORY_METADATA",
+    owner: config.templateOwner,
+    repository: config.templateName,
+    token,
+  }) as GitHubRepositoryMetadata;
+  if (
+    metadata.repositoryId !== config.templateRepositoryId ||
+    metadata.owner !== config.templateOwner || metadata.name !== config.templateName
+  ) fail();
+  const tree = await dependencies.http.execute({
+    kind: "REPOSITORY_TREE",
+    owner: config.templateOwner,
+    repository: config.templateName,
+    treeRef: authority.starterCommitSha,
+    token,
+  }) as Readonly<{ sha: string; truncated: false; entries: readonly GitHubTreeEntry[] }>;
+  if (!tree || tree.truncated !== false || !Array.isArray(tree.entries)) fail();
+  const entries: SnapshotEntry[] = [];
+  for (const entry of tree.entries) {
+    if (entry.type === "tree") continue;
+    if (entry.type !== "blob") fail();
+    const blob = await dependencies.http.execute({
+      kind: "READ_BLOB",
+      owner: config.templateOwner,
+      repository: config.templateName,
+      blobSha: entry.sha,
+      token,
+    }) as Readonly<{ sha: string; encoding: "base64"; contentBase64: string; size: number }>;
+    const content = bytes(blob.contentBase64);
+    if (blob.sha !== entry.sha || blob.encoding !== "base64" || content.byteLength !== blob.size) fail();
+    entries.push(Object.freeze({
+      path: entry.path,
+      mode: entry.mode,
+      type: "blob" as const,
+      content,
+    }));
+  }
+  if (await computeGitHubSnapshotDigest(entries) !== config.starterTreeSha256) fail();
+  return Object.freeze(entries);
+}
+
+async function confirmTarget(
+  dependencies: Dependencies,
+  authority: Authority,
+  token: string,
+): Promise<void> {
+  const metadata = await dependencies.http.execute({
+    kind: "REPOSITORY_METADATA",
+    owner: authority.owner,
+    repository: authority.repository,
+    token,
+  }) as GitHubRepositoryMetadata;
+  if (
+    metadata.repositoryId !== authority.repositoryId ||
+    metadata.nodeId !== authority.repositoryNodeId ||
+    metadata.owner !== authority.owner || metadata.name !== authority.repository ||
+    metadata.fullName !== `${authority.owner}/${authority.repository}` ||
+    metadata.private !== true || metadata.defaultBranch !== "main"
+  ) fail();
+}
+
+function conflict(error: unknown): boolean {
+  return error instanceof GitHubHttpError && error.code === "GITHUB_HTTP_CONFLICT";
+}
+
+async function writeMarker(
+  dependencies: Dependencies,
+  authority: Authority,
+  token: string,
+): Promise<void> {
+  try {
+    const result: unknown = await dependencies.http.execute({
+      kind: "WRITE_PROJECT_MARKER",
+      owner: authority.owner,
+      repository: authority.repository,
+      message: "chore: bind project context",
+      contentBase64: base64(new TextEncoder().encode(authority.markerContent)),
+      token,
+    });
+    if (!exactRecord(result, ["contentSha", "commitSha"]) ||
+      !SHA.test(String(result.contentSha)) || !SHA.test(String(result.commitSha))) fail();
+  } catch (error) {
+    if (!conflict(error)) throw error;
+  }
+}
+
+async function initializeEmptyRepository(
+  dependencies: Dependencies,
+  authority: Authority,
+): Promise<void> {
+  const token = await issue(
+    dependencies,
+    authority,
+    "PRODUCTION_REPOSITORY_WRITE",
+    authority.repositoryId,
+  );
+  await confirmTarget(dependencies, authority, token);
+  const entries = await prepareSnapshot(dependencies, authority);
+  const bootstrap = `${JSON.stringify({
+    schema_version: 1,
+    purpose: "PRODUCTION_EXISTING_REPOSITORY_RECOVERY",
+    environment: "PRODUCTION",
+    organization: authority.owner,
+    repository: authority.repository,
+    repository_id: authority.repositoryId,
+    website_work_context_id: authority.websiteWorkContextId,
+    website_workspace_id: authority.websiteWorkspaceId,
+    repository_provisioning_operation_id: authority.operationId,
+  }, null, 2)}\n`;
+  const created: unknown = await dependencies.http.execute({
+    kind: "CREATE_BOOTSTRAP_FILE",
+    owner: authority.owner,
+    repository: authority.repository,
+    contentBase64: base64(new TextEncoder().encode(bootstrap)),
+    branch: "main",
+    token,
+  });
+  if (!exactRecord(created, ["path", "contentSha", "commitSha", "parentCount"]) ||
+    created.path !== ".lws/bootstrap.json" || !SHA.test(String(created.commitSha)) ||
+    created.parentCount !== 0) fail();
+
+  const treeEntries: Array<Readonly<{ path: string; mode: string; type: "blob"; sha: string }>> = [];
+  for (const entry of entries) {
+    treeEntries.push(Object.freeze({
+      path: entry.path,
+      mode: entry.mode,
+      type: "blob",
+      sha: sha(await dependencies.http.execute({
+        kind: "CREATE_BLOB",
+        owner: authority.owner,
+        repository: authority.repository,
+        contentBase64: base64(entry.content),
+        token,
+      })),
+    }));
+  }
+  const treeSha = sha(await dependencies.http.execute({
+    kind: "CREATE_TREE",
+    owner: authority.owner,
+    repository: authority.repository,
+    entries: Object.freeze(treeEntries),
+    token,
+  }));
+  const commitSha = sha(await dependencies.http.execute({
+    kind: "CREATE_COMMIT",
+    owner: authority.owner,
+    repository: authority.repository,
+    message: "chore: initialize approved starter snapshot",
+    treeSha,
+    parentSha: String(created.commitSha),
+    token,
+  }));
+  const ref: unknown = await dependencies.http.execute({
+    kind: "UPDATE_REF",
+    owner: authority.owner,
+    repository: authority.repository,
+    commitSha,
+    force: false,
+    token,
+  });
+  if (!exactRecord(ref, ["ref", "commitSha"]) || ref.ref !== "refs/heads/main" || ref.commitSha !== commitSha) fail();
+  await writeMarker(dependencies, authority, token);
+}
+
+async function completeMarker(
+  dependencies: Dependencies,
+  authority: Authority,
+): Promise<void> {
+  const token = await issue(
+    dependencies,
+    authority,
+    "PRODUCTION_REPOSITORY_WRITE",
+    authority.repositoryId,
+  );
+  await confirmTarget(dependencies, authority, token);
+  await writeMarker(dependencies, authority, token);
+}
+
+function verification(authority: Authority, proof: GitHubRepositoryCompletionProof) {
+  if (
+    proof.providerRepositoryId !== authority.repositoryId ||
+    proof.providerNodeId !== authority.repositoryNodeId ||
+    proof.owner !== authority.owner || proof.name !== authority.repository ||
+    proof.visibility !== "PRIVATE" || proof.defaultBranch !== "main" ||
+    !SHA.test(proof.repositoryMarkerCommitSha)
+  ) fail();
+  return Object.freeze({
+    operation_id: authority.operationId,
+    website_workspace_id: authority.websiteWorkspaceId,
+    website_work_context_id: authority.websiteWorkContextId,
+    repository_external_id: proof.providerRepositoryId,
+    repository_node_id: proof.providerNodeId,
+    repository_owner: proof.owner,
+    repository_name: proof.name,
+    repository_visibility: "private",
+    default_branch: proof.defaultBranch,
+    starter_source: authority.starterSource,
+    starter_version: authority.starterVersion,
+    starter_commit_sha: authority.starterCommitSha,
+    repository_marker_commit_sha: proof.repositoryMarkerCommitSha,
+  });
+}
+
+export function createProductionRepositoryRecovery(dependencies: Dependencies) {
+  if (
+    !dependencies || dependencies.config?.target !== "PRODUCTION" ||
+    dependencies.config.organization !== "lorenzo-web-solutions" ||
+    !UUID.test(dependencies.actor?.authUserId) || dependencies.actor.aal !== "aal2" ||
+    typeof dependencies.callerRpc !== "function" ||
+    typeof dependencies.serviceRpc !== "function" ||
+    typeof dependencies.tokenBroker?.issue !== "function" ||
+    typeof dependencies.http?.execute !== "function"
+  ) fail();
+
+  return Object.freeze({
+    async recover(input: ProductionRepositoryRecoveryInput): Promise<ProductionRepositoryRecoveryResult> {
+      if (!input || !UUID.test(input.quoteRequestId) ||
+        !UUID.test(input.websiteWorkContextId) || !UUID.test(input.websiteWorkspaceId)) fail();
+      const authorityResult = await dependencies.callerRpc(
+        "get_production_website_repository_recovery_authority_v1",
+        Object.freeze({
+          p_quote_request_id: input.quoteRequestId,
+          p_website_work_context_id: input.websiteWorkContextId,
+          p_website_workspace_id: input.websiteWorkspaceId,
+        }),
+      );
+      if (!authorityResult || authorityResult.error) fail();
+      const authority = projectAuthority(authorityResult.data, input, dependencies.config);
+      const expected = inspectionAuthority(dependencies.config, authority);
+      const inspect = createProductionRepositoryStateInspectionCapability(
+        dependencies.config,
+        expected,
+        { tokenBroker: dependencies.tokenBroker, http: dependencies.http },
+      );
+      const initial = await inspect();
+      let status: ProductionRepositoryRecoveryResult["status"];
+      if (initial.state === "CONFLICT") fail();
+      if (initial.state === "EMPTY_OR_UNINITIALIZED") {
+        await initializeEmptyRepository(dependencies, authority);
+        status = "RECOVERED_FROM_EMPTY";
+      } else if (initial.state === "MARKER_MISSING") {
+        await completeMarker(dependencies, authority);
+        status = "RECOVERED_MARKER_ONLY";
+      } else if (initial.state === "ALREADY_COMPLETE") {
+        status = "ALREADY_COMPLETE";
+      } else {
+        const exhaustive: never = initial.state as never;
+        return exhaustive;
+      }
+      const prove = createProductionRepositoryCompletionProofCapability(
+        dependencies.config,
+        expected,
+        { tokenBroker: dependencies.tokenBroker, http: dependencies.http },
+      );
+      const completed = await prove();
+      if (!completed || completed.state !== "ALREADY_COMPLETE") fail();
+      const finalized = await dependencies.serviceRpc(
+        "finalize_production_website_repository_recovery_v1",
+        Object.freeze({
+          p_quote_request_id: input.quoteRequestId,
+          p_operation_id: authority.operationId,
+          p_verification: verification(authority, completed.proof),
+          p_actor_auth_user_id: dependencies.actor.authUserId,
+          p_actor_aal: dependencies.actor.aal,
+        }),
+      );
+      if (!finalized || finalized.error) fail();
+      return Object.freeze({
+        status,
+        operationId: authority.operationId,
+        binding: finalized.data,
+      });
+    },
+  });
+}
+
+export type ProductionRecoveryRepositoryState = GitHubRepositoryStateClassification;

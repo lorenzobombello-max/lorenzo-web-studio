@@ -31,7 +31,7 @@ const DOSSIER_GATEWAY_ACTIONS = new Set([
   "evaluate_quotation_vat_readiness", "request_quotation_vat_review", "request_vat_turnover_refresh", "upsert_quotation_business_draft",
   "get_project_dossier", "get_project_workspace", "get_website_execution_workspace", "start_project_work", "get_project_requirements_board", "create_project_requirements_board", "create_project_requirement", "finalize_project_requirements_board", "start_project_requirement", "block_project_requirement", "complete_project_requirement", "reopen_project_requirement", "get_my_assigned_dossiers", "get_dossier_document_manifest",
   "start_website_concept", "provision_website_execution_workspace",
-  "provision_website_repository",
+  "provision_website_repository", "recover_existing_website_repository",
   "create_dossier_document_access", "list_customer_requests_for_dossier", "get_customer_request",
   "transition_customer_request", "create_customer_request_upload_link",
   "revoke_customer_request_upload_link", "create_sdf_customer_request",

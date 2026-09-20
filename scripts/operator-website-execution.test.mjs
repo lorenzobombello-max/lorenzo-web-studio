@@ -15,6 +15,7 @@ import {
   websiteExecutionRequest,
   websiteExecutionSlot,
   websiteExecutionView,
+  websiteRepositoryRecoveryRequest,
 } from "../assets/js/operator-website-execution.mjs";
 import { createOperatorDossierAuthority } from "../assets/js/operator-dossiers.mjs";
 import * as requirementsModule from "../assets/js/operator-project-requirements.mjs";
@@ -25,6 +26,25 @@ const conceptId = "a1800000-0000-4000-8000-000000000004";
 const websiteWorkContextId = "a1800000-0000-4000-8000-000000000005";
 const promotionIdempotencyKey = "a1800000-0000-4000-8000-000000000008";
 const promotionEventId = "a1800000-0000-4000-8000-000000000009";
+
+test("existing repository recovery request carries context identity only", () => {
+  assert.deepEqual(websiteRepositoryRecoveryRequest({
+    quoteRequestId,
+    websiteWorkContextId,
+    websiteWorkspaceId: "a1800000-0000-4000-8000-000000000006",
+  }), {
+    action: "recover_existing_website_repository",
+    quote_request_id: quoteRequestId,
+    website_work_context_id: websiteWorkContextId,
+    website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+  });
+  assert.throws(() => websiteRepositoryRecoveryRequest({
+    quoteRequestId,
+    websiteWorkContextId,
+    websiteWorkspaceId: "a1800000-0000-4000-8000-000000000006",
+    operationId: "a1800000-0000-4000-8000-000000000007",
+  }), /INVALID_WEBSITE_REPOSITORY_RECOVERY_REQUEST/);
+});
 const expected = {
   quoteRequestId,
   projectId,
@@ -649,7 +669,7 @@ test("commercial command dispatch uses the exact caller-scoped Website RPC", asy
   assert.match(handler, /"get_website_execution_workspace"/);
   const branch = index.match(/if \(input\.action === "get_website_execution_workspace"\) \{[^]*?return data;\s*\}/)?.[0] || "";
   assert.match(branch, /executeCallerJwtWebsiteExecutionWorkspaceReadAction/);
-  assert.match(index, /"get_website_execution_workspace_v4"[^]*p_quote_request_id: input\.quote_request_id/);
+  assert.match(index, /"get_website_execution_workspace_v5"[^]*p_quote_request_id: input\.quote_request_id/);
   assert.doesNotMatch(branch, /p_project_id/);
 });
 
@@ -787,6 +807,7 @@ const hasWorkspace = ["present", "pending", "provisioning", "failed"].includes(w
 window.task8Events = [];
 window.task8Requests = [];
 window.task8RepositoryRequests = [];
+window.task8RecoveryRequests = [];
 window.previousFailedRepositoryIdempotencyKey = "a1800000-0000-4000-8000-000000000011";
 let repositoryProvisionAttempts = 0;
 window.task8PromotionRequests = [];
@@ -807,7 +828,8 @@ const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-800
 if (workspaceMode === "pending") Object.assign(workspace, { workspace_state: "PENDING_REPOSITORY", repository_operation_state: null, repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
 if (workspaceMode === "provisioning") Object.assign(workspace, { workspace_state: "REPOSITORY_PROVISIONING", repository_operation_state: "CREATING", repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
 if (workspaceMode === "failed") Object.assign(workspace, { workspace_state: "REPOSITORY_FAILED", repository_operation_state: params.get("operation") || "TERMINAL_FAILED", repository_failure_category: params.get("category") || "TERMINAL", repository_recovery_guidance: params.get("guidance") || "CONTACT_OWNER", repository_owner: params.get("bound") === "1" ? "lws-studio" : null, repository_name: params.get("bound") === "1" ? "lws-web-2099-0001" : null, repository_navigation_url: params.get("bound") === "1" ? "https://github.com/lws-studio/lws-web-2099-0001" : null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
-const projection = { contract_version: 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
+if (workspace && params.get("recovery") === "required") Object.assign(workspace, { repository_recovery_operation_id: "a1800000-0000-4000-8000-000000000012", capabilities: { project_files_read: false, project_files_write: false, repository_retry_allowed: false, repository_recovery_required: true } });
+const projection = { contract_version: params.get("recovery") === "required" ? 5 : 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
 const emptyRequirements = { ...requirements, board: null, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: 0 }, readiness: { ready_for_preview: false, readiness: "BLOCKED", reason: "REQUIRED_REQUIREMENTS_OPEN" }, empty_state: "NO_BOARD" };
 let requirementsSynchronized = workspaceMode !== "pending";
@@ -874,6 +896,13 @@ const client = { functions: { async invoke(_name, { body }) {
     const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
     Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true } });
     result = { provider: "GITHUB", providerRepositoryId: "1369000001", providerNodeId: "R_production_repository", owner: "lorenzo-web-solutions", name: repositoryName, visibility: "PRIVATE", defaultBranch: "main", starterSource: "lorenzo-web-solutions/lws-website-starter", starterVersion: "1.0.0", starterCommitSha: "a".repeat(40), repositoryMarkerCommitSha: "b".repeat(40), replayed: false };
+  } else if (body.action === "recover_existing_website_repository") {
+    window.task8RecoveryRequests.push(structuredClone(body));
+    if (params.get("recoveryAction") === "delay") await new Promise((resolve) => setTimeout(resolve, 150));
+    if (params.get("recoveryAction") === "fail") return { data: null, error: new Error("recovery detail must stay private") };
+    const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
+    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), repository_recovery_operation_id: null, capabilities: { project_files_read: true, project_files_write: true, repository_retry_allowed: false, repository_recovery_required: false } });
+    result = { status: "RECOVERED_FROM_EMPTY", operationId: "a1800000-0000-4000-8000-000000000012", binding: { result: "BOUND" } };
   } else if (body.action === "sync_website_requirements_from_intake") {
     window.task6Requests.push(structuredClone(body));
     if (params.get("requirements") === "sync-error") return { data: null, error: new Error("requirements sync unavailable") };
@@ -1877,6 +1906,106 @@ test("authoritative promotion with failed local refresh invalidates and reports 
       "Promotie uitgevoerd, maar de Website Workspace kon niet veilig worden vernieuwd.",
     );
     assert.equal(await page.locator('[data-website-action="promotion-retry"]').isVisible(), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("existing repository recovery suppresses retry and invokes one context-only command", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required",
+    );
+    assert.equal(await page.locator('[data-website-action="repository-retry"]').isVisible(), false);
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    assert.equal(await recovery.isVisible(), true);
+    await recovery.click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(await page.evaluate(() => window.task8Events), ["aal2"]);
+    assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
+    assert.equal(
+      await page.locator("[data-website-message]").textContent(),
+      "Bestaande technische werkruimte is hersteld.",
+    );
+    const requests = await page.evaluate(() => window.task8RecoveryRequests);
+    assert.deepEqual(requests, [{
+      action: "recover_existing_website_repository",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+    }]);
+    assert.equal(await recovery.isVisible(), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("existing repository recovery is OWNER and server-eligibility gated and never runs on refresh", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const ownerPage = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required",
+    );
+    await ownerPage.evaluate(() => window.controller.refresh());
+    await ownerPage.waitForTimeout(200);
+    assert.equal(await ownerPage.evaluate(() => window.task8RecoveryRequests.length), 0);
+    assert.equal(await ownerPage.locator('[data-website-action="repository-recovery"]').isVisible(), true);
+    await ownerPage.close();
+
+    const deniedPage = await openTask8Page(
+      browser,
+      server,
+      "role=admin&mode=PRE_PROJECT&workspace=failed&recovery=required",
+    );
+    assert.equal(await deniedPage.locator('[data-website-action="repository-recovery"]').isVisible(), false);
+    assert.equal(await deniedPage.evaluate(() => window.task8RecoveryRequests.length), 0);
+    await deniedPage.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("existing repository recovery permits one in-flight request and failure never loops", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=delay",
+    );
+    await page.locator('[data-website-action="repository-recovery"]').evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
+
+    await page.goto(`${page.url().replace("recoveryAction=delay", "recoveryAction=fail")}`);
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
+    assert.equal(
+      await page.locator("[data-website-message]").textContent(),
+      "Bestaande technische werkruimte kon niet veilig worden hersteld.",
+    );
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
+    assert.equal(await recovery.isVisible(), false);
+    assert.equal(await recovery.isEnabled(), true);
     await page.close();
   } finally {
     await browser.close();

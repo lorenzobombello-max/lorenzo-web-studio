@@ -591,9 +591,22 @@ export function createGitHubTargetRepositoryProviderForRuntime(
           writeOperation,
           [input.identity.repositoryId],
         );
-      } catch {
+      } catch (error) {
         throw new GitHubLabPostCreateDiagnosticError(
           "LAB_POST_CREATE_WRITE_TOKEN_ACQUIRE",
+          undefined,
+          undefined,
+          hasValidatedGitHubTokenAcquireDiagnostic(error)
+            ? error.tokenAcquireSubphase
+            : undefined,
+          hasValidatedGitHubTokenAcquireDiagnostic(error) &&
+              hasValidatedGitHubTokenLeaseCheck(error)
+            ? error.tokenLeaseCheck
+            : undefined,
+          hasValidatedGitHubTokenAcquireDiagnostic(error) &&
+              hasValidatedGitHubTokenResponseCheck(error)
+            ? error.tokenResponseCheck
+            : undefined,
         );
       }
       const treeEntries: Array<

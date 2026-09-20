@@ -167,17 +167,31 @@ export type GitHubTokenResponseCheck =
 
 export class GitHubLabPostCreateDiagnosticError extends Error {
   declare readonly snapshotReadbackCheck?: GitHubSnapshotReadbackCheck;
+  readonly tokenLeaseCheck?: GitHubTokenLeaseCheck;
+  declare readonly tokenResponseCheck?: GitHubTokenResponseCheck;
 
   constructor(
     readonly subphase: GitHubLabPostCreateSubphase,
     snapshotReadbackCheck?: GitHubSnapshotReadbackCheck,
     refReadDiagnostic?: GitHubRefReadDiagnostic,
+    readonly tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
+    tokenLeaseCheck?: GitHubTokenLeaseCheck,
+    tokenResponseCheck?: GitHubTokenResponseCheck,
   ) {
     if (
       !GITHUB_LAB_POST_CREATE_SUBPHASES.includes(subphase) ||
       snapshotReadbackCheck !== undefined &&
         (subphase !== "LAB_POST_CREATE_SNAPSHOT_READBACK" ||
-          !GITHUB_SNAPSHOT_READBACK_CHECKS.includes(snapshotReadbackCheck))
+          !GITHUB_SNAPSHOT_READBACK_CHECKS.includes(snapshotReadbackCheck)) ||
+      tokenAcquireSubphase !== undefined &&
+        (subphase !== "LAB_POST_CREATE_WRITE_TOKEN_ACQUIRE" ||
+          !GITHUB_TOKEN_ACQUIRE_SUBPHASES.includes(tokenAcquireSubphase)) ||
+      tokenLeaseCheck !== undefined &&
+        (tokenAcquireSubphase !== "TOKEN_LEASE_VALIDATE" ||
+          !GITHUB_TOKEN_LEASE_CHECKS.includes(tokenLeaseCheck)) ||
+      tokenResponseCheck !== undefined &&
+        (tokenAcquireSubphase !== "TOKEN_RESPONSE_SCHEMA" ||
+          !GITHUB_TOKEN_RESPONSE_CHECKS.includes(tokenResponseCheck))
     ) {
       throw new Error("GITHUB_LAB_POST_CREATE_DIAGNOSTIC_INVALID");
     }
@@ -195,6 +209,31 @@ export class GitHubLabPostCreateDiagnosticError extends Error {
       writable: false,
       configurable: false,
     });
+    Object.defineProperty(this, "tokenAcquireSubphase", {
+      value: tokenAcquireSubphase,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+    if (tokenLeaseCheck !== undefined) {
+      Object.defineProperty(this, "tokenLeaseCheck", {
+        value: tokenLeaseCheck,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+      githubTokenLeaseDiagnostics.add(this);
+    }
+    if (tokenResponseCheck !== undefined) {
+      Object.defineProperty(this, "tokenResponseCheck", {
+        value: tokenResponseCheck,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+      githubTokenResponseDiagnostics.add(this);
+    }
+    githubTokenAcquireDiagnostics.add(this);
     githubLabPostCreateDiagnosticErrors.add(this);
     if (
       subphase === "LAB_POST_CREATE_SNAPSHOT_READBACK" &&
@@ -345,7 +384,9 @@ export class RepositoryProvisioningProviderDiagnosticError
           phase === "GITHUB_STARTER_SNAPSHOT_INVALID" &&
             subphase === "STARTER_TOKEN_ACQUIRE" ||
           phase === "GITHUB_LAB_CREATE_FAILED" &&
-            subphase === "LAB_TOKEN_ACQUIRE"
+            subphase === "LAB_TOKEN_ACQUIRE" ||
+          phase === "GITHUB_LAB_POST_CREATE_FAILED" &&
+            subphase === "LAB_POST_CREATE_WRITE_TOKEN_ACQUIRE"
         )
     ) {
       throw new Error("REPOSITORY_PROVISIONING_PROVIDER_DIAGNOSTIC_INVALID");

@@ -37,7 +37,7 @@ const WORKSPACE_KEYS = [
   "repository_navigation_url", "default_branch", "preview_branch",
   "preview_url", "last_commit_sha", "last_commit_at", "last_build_result",
   "last_build_at", "binding_revision", "provisioned_by", "provisioned_at",
-  "created_at", "updated_at", "capabilities",
+  "created_at", "updated_at", "capabilities", "repository_recovery_operation_id",
 ];
 
 function exactKeys(value, keys) {
@@ -231,7 +231,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
         || (expected?.conceptId !== null && !UUID.test(String(expected?.conceptId || "")))))) {
     throw new Error("INVALID_WEBSITE_EXECUTION_CONTEXT");
   }
-  if (!exactKeys(value, ROOT_KEYS) || value.contract_version !== 4
+  if (!exactKeys(value, ROOT_KEYS) || ![4, 5].includes(value.contract_version)
     || value.mode !== expected.mode
     || value.quote_request_id !== expected.quoteRequestId
     || value.website_work_context_id !== expected.websiteWorkContextId
@@ -261,7 +261,16 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
   let workspace = null;
   if (value.workspace !== null) {
     workspace = value.workspace;
-    if (!exactKeys(workspace, WORKSPACE_KEYS)
+    const workspaceKeys = value.contract_version === 5
+      ? WORKSPACE_KEYS
+      : WORKSPACE_KEYS.filter((key) => key !== "repository_recovery_operation_id");
+    const capabilityKeys = value.contract_version === 5
+      ? [
+        "project_files_read", "project_files_write",
+        "repository_retry_allowed", "repository_recovery_required",
+      ]
+      : ["project_files_read", "project_files_write"];
+    if (!exactKeys(workspace, workspaceKeys)
       || !UUID.test(String(workspace.website_workspace_id || ""))
       || workspace.website_work_context_id !== expected.websiteWorkContextId
       || workspace.project_id !== expected.projectId
@@ -282,11 +291,19 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || !validTimestamp(workspace.provisioned_at) || workspace.provisioned_at === null
       || !validTimestamp(workspace.created_at) || workspace.created_at === null
       || !validTimestamp(workspace.updated_at) || workspace.updated_at === null
-      || !exactKeys(workspace.capabilities, [
-        "project_files_read", "project_files_write",
-      ])
+      || !exactKeys(workspace.capabilities, capabilityKeys)
       || typeof workspace.capabilities.project_files_read !== "boolean"
-      || typeof workspace.capabilities.project_files_write !== "boolean") {
+      || typeof workspace.capabilities.project_files_write !== "boolean"
+      || (value.contract_version === 5 && (
+        typeof workspace.capabilities.repository_retry_allowed !== "boolean"
+        || typeof workspace.capabilities.repository_recovery_required !== "boolean"
+        || (workspace.capabilities.repository_retry_allowed
+          && workspace.capabilities.repository_recovery_required)
+        || (workspace.repository_recovery_operation_id !== null
+          && !UUID.test(String(workspace.repository_recovery_operation_id)))
+        || workspace.capabilities.repository_recovery_required
+          !== (workspace.repository_recovery_operation_id !== null)
+      ))) {
       throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
     }
     workspace = {
@@ -455,4 +472,33 @@ export function validateWebsiteRepositoryProvisionResult(value, expected) {
     throw new Error("INVALID_WEBSITE_REPOSITORY_PROVISION_RESPONSE");
   }
   return Object.freeze(structuredClone(value));
+}
+
+export function websiteRepositoryRecoveryRequest(value) {
+  if (!exactKeys(value, [
+    "quoteRequestId", "websiteWorkContextId", "websiteWorkspaceId",
+  ]) || !UUID.test(String(value.quoteRequestId || ""))
+    || !UUID.test(String(value.websiteWorkContextId || ""))
+    || !UUID.test(String(value.websiteWorkspaceId || ""))) {
+    throw new Error("INVALID_WEBSITE_REPOSITORY_RECOVERY_REQUEST");
+  }
+  return Object.freeze({
+    action: "recover_existing_website_repository",
+    quote_request_id: value.quoteRequestId,
+    website_work_context_id: value.websiteWorkContextId,
+    website_workspace_id: value.websiteWorkspaceId,
+  });
+}
+
+export function validateWebsiteRepositoryRecoveryResult(value) {
+  if (!exactKeys(value, ["status", "operationId", "binding"])
+    || ![
+      "ALREADY_COMPLETE", "RECOVERED_FROM_EMPTY", "RECOVERED_MARKER_ONLY",
+    ].includes(value.status)
+    || !UUID.test(String(value.operationId || ""))
+    || !value.binding || typeof value.binding !== "object"
+    || Array.isArray(value.binding)) {
+    throw new Error("INVALID_WEBSITE_REPOSITORY_RECOVERY_RESULT");
+  }
+  return Object.freeze({ status: value.status, operationId: value.operationId });
 }
