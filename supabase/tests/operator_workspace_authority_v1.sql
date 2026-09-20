@@ -51,17 +51,29 @@ select ok(
   'workspace authority tables have forced RLS'
 );
 
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role', 'authenticated',
+    'aal', 'aal2'
+  )::text,
+  true
+);
+
 insert into auth.users(id, email) values
-  ('f3000000-0000-4000-8000-000000000001', 'workspace-master@example.test'),
   ('f3000000-0000-4000-8000-000000000002', 'workspace-other@example.test'),
   ('f3000000-0000-4000-8000-000000000003', 'workspace-disabled@example.test');
 
 insert into public.commercial_operators(operator_id, auth_user_id, display_name, role, status) values
-  ('f3010000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-000000000001', 'Workspace Master', 'owner', 'ACTIVE'),
   ('f3010000-0000-4000-8000-000000000002', 'f3000000-0000-4000-8000-000000000002', 'Workspace Other', 'admin', 'ACTIVE'),
   ('f3010000-0000-4000-8000-000000000003', 'f3000000-0000-4000-8000-000000000003', 'Workspace Disabled', 'owner', 'DISABLED');
 
+delete from public.operator_workspace_sessions
+where operator_id = '7ac4c0d2-2b77-40aa-a652-0756660934bb';
+
 select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{}', true);
 select throws_ok(
   $$select public.acquire_operator_workspace_v1('f3020000-0000-4000-8000-000000000001')$$,
   '42501', 'HUMAN_JWT_REQUIRED', 'unauthenticated workspace acquisition is denied'
@@ -101,7 +113,16 @@ create temporary table workspace_fixture as
 select null::uuid workspace_id, null::bigint epoch, null::uuid renewal_token;
 truncate workspace_fixture;
 
-select set_config('request.jwt.claim.sub', 'f3000000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role', 'authenticated',
+    'aal', 'aal2'
+  )::text,
+  true
+);
 insert into workspace_fixture
 select
   (result->>'workspace_id')::uuid,
@@ -117,7 +138,7 @@ select ok(
   'server timestamp establishes a lease no longer than fifteen seconds'
 );
 select is(
-  (select count(*)::integer from public.operator_workspace_sessions where operator_id = 'f3010000-0000-4000-8000-000000000001' and status = 'ACTIVE'),
+  (select count(*)::integer from public.operator_workspace_sessions where operator_id = '7ac4c0d2-2b77-40aa-a652-0756660934bb' and status = 'ACTIVE'),
   1,
   'one Operator has one active workspace epoch'
 );
@@ -189,7 +210,16 @@ select throws_ok(
   '42501', 'WORKSPACE_MODULE_NOT_AUTHORIZED', 'active non-owner cannot join owner-only Dossiers'
 );
 
-select set_config('request.jwt.claim.sub', 'f3000000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role', 'authenticated',
+    'aal', 'aal2'
+  )::text,
+  true
+);
 select ok(
   jsonb_typeof(public.get_operator_calendar_v1('2026-09-01', '2026-09-07')->'employees') = 'array',
   'authorized owner reads the narrow standalone calendar projection'
@@ -298,7 +328,7 @@ select ok(
 );
 update public.commercial_operators
 set role = 'operator'
-where auth_user_id = 'f3000000-0000-4000-8000-000000000001';
+where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0';
 select throws_ok(
   $$select public.get_operator_calendar_v1('2026-09-01', '2026-09-07')$$,
   '42501', 'WORKFORCE_MANAGEMENT_READER_REQUIRED', 'unauthorized Operator cannot read standalone calendar authority'
@@ -345,7 +375,7 @@ select ok(
 );
 update public.commercial_operators
 set role = 'owner'
-where auth_user_id = 'f3000000-0000-4000-8000-000000000001';
+where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0';
 select ok(
   (public.get_operator_workspace_status_v1(
     (select workspace_id from workspace_fixture), (select epoch from workspace_fixture),
@@ -366,6 +396,54 @@ select ok(
     'f3030000-0000-4000-8000-000000000012'
   )->>'valid')::boolean,
   'Personnel child regains validity only after management-reader authority is restored'
+);
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role', 'authenticated',
+    'aal', 'aal1'
+  )::text,
+  true
+);
+select throws_ok(
+  format(
+    'select public.revoke_operator_workspace_v1(%L, %s, %L, %L)',
+    (select workspace_id from workspace_fixture), (select epoch from workspace_fixture),
+    'f3020000-0000-4000-8000-000000000001', (select renewal_token from workspace_fixture)
+  ),
+  '42501', 'AAL2_REQUIRED', 'master shutdown rejects an eligible human below aal2'
+);
+
+select set_config('request.jwt.claim.sub', 'f3000000-0000-4000-8000-000000000002', true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'f3000000-0000-4000-8000-000000000002',
+    'role', 'authenticated',
+    'aal', 'aal2'
+  )::text,
+  true
+);
+select throws_ok(
+  format(
+    'select public.revoke_operator_workspace_v1(%L, %s, %L, %L)',
+    (select workspace_id from workspace_fixture), (select epoch from workspace_fixture),
+    'f3020000-0000-4000-8000-000000000001', (select renewal_token from workspace_fixture)
+  ),
+  '42501', 'MFA_OPERATOR_NOT_ELIGIBLE', 'master shutdown rejects a non-eligible Operator even at aal2'
+);
+
+select set_config('request.jwt.claim.sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', true);
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0',
+    'role', 'authenticated',
+    'aal', 'aal2'
+  )::text,
+  true
 );
 select ok(
   (public.revoke_operator_workspace_v1(
