@@ -3,6 +3,7 @@ import type {
   RepositoryProvisioningRequestV2,
   VerifiedRepositoryBindingV2,
 } from "./repository-provisioning.ts";
+import type { GitHubProviderTarget } from "./github-app-config.ts";
 import {
   computeGitHubSnapshotDigest,
   GitHubSnapshotDigestError,
@@ -74,6 +75,19 @@ export type GitHubLabBindingReadback =
 export type GitHubLabReconciliation =
   | Readonly<{ state: "MATCH"; identity: GitHubLabRepositoryIdentity }>
   | Readonly<{ state: "AMBIGUOUS" }>;
+
+export type GitHubRepositoryIdentity = GitHubLabRepositoryIdentity;
+export type GitHubRepositoryBindingReadback = GitHubLabBindingReadback;
+export type GitHubRepositoryReconciliation = GitHubLabReconciliation;
+
+export type GitHubTargetRepositoryProviderConfig = Readonly<{
+  source: GitHubRepositoryProviderConfig["source"];
+  target: Readonly<{
+    providerTarget: GitHubProviderTarget;
+    installationId: string;
+    organization: string;
+  }>;
+}>;
 
 export type GitHubRepositoryProviderConfig = Readonly<{
   source: Readonly<{
@@ -161,6 +175,16 @@ export type GitHubRepositoryProviderDependencies = Readonly<{
       markerCommitSha: string;
     }>,
   ): Promise<GitHubLabBindingReadback>;
+}>;
+
+export type GitHubTargetRepositoryProviderDependencies = Readonly<{
+  readStarter: GitHubRepositoryProviderDependencies["readStarter"];
+  createTarget: GitHubRepositoryProviderDependencies["createLab"];
+  reconcileTarget: GitHubRepositoryProviderDependencies["reconcileLab"];
+  quarantineTarget: GitHubRepositoryProviderDependencies["quarantineLab"];
+  captureTargetIdentity: GitHubRepositoryProviderDependencies["captureLabIdentity"];
+  writeTargetSnapshot: GitHubRepositoryProviderDependencies["writeLabSnapshot"];
+  readTargetBinding: GitHubRepositoryProviderDependencies["readLabBinding"];
 }>;
 
 export class GitHubRepositoryProviderError
@@ -323,8 +347,8 @@ export async function computeSnapshotDigest(
   }
 }
 
-function validConfig(config: GitHubRepositoryProviderConfig): boolean {
-  return exactKeys(config, ["source", "lab"]) &&
+function validTargetConfig(config: GitHubTargetRepositoryProviderConfig): boolean {
+  return exactKeys(config, ["source", "target"]) &&
     exactKeys(config.source, [
       "installationId",
       "owner",
@@ -333,13 +357,19 @@ function validConfig(config: GitHubRepositoryProviderConfig): boolean {
       "version",
       "commitSha",
       "treeSha256",
-    ]) && exactKeys(config.lab, ["installationId", "organization"]) &&
+    ]) && exactKeys(config.target, [
+      "providerTarget",
+      "installationId",
+      "organization",
+    ]) &&
     NUMERIC_ID.test(config.source.installationId) &&
-    NUMERIC_ID.test(config.lab.installationId) &&
-    config.source.installationId !== config.lab.installationId &&
-    OWNER.test(config.source.owner) && OWNER.test(config.lab.organization) &&
-    config.source.owner.toLowerCase() !==
-      config.lab.organization.toLowerCase() &&
+    NUMERIC_ID.test(config.target.installationId) &&
+    ["TEST", "PRODUCTION"].includes(config.target.providerTarget) &&
+    OWNER.test(config.source.owner) && OWNER.test(config.target.organization) &&
+    (config.target.providerTarget === "PRODUCTION"
+      ? config.source.owner.toLowerCase() === config.target.organization.toLowerCase()
+      : config.source.installationId !== config.target.installationId &&
+        config.source.owner.toLowerCase() !== config.target.organization.toLowerCase()) &&
     REPOSITORY.test(config.source.repository) &&
     NUMERIC_ID.test(config.source.repositoryId) &&
     VERSION.test(config.source.version) && SHA.test(config.source.commitSha) &&
@@ -348,7 +378,7 @@ function validConfig(config: GitHubRepositoryProviderConfig): boolean {
 
 function validRequest(
   request: RepositoryProvisioningRequestV2,
-  config: GitHubRepositoryProviderConfig,
+  config: GitHubTargetRepositoryProviderConfig,
 ): boolean {
   return exactKeys(request, [
     "contractVersion",
@@ -381,19 +411,19 @@ function validRequest(
 
 function validIdentityFields(
   identity: GitHubLabRepositoryIdentity,
-  config: GitHubRepositoryProviderConfig,
+  config: GitHubTargetRepositoryProviderConfig,
   repositoryName: string,
 ): boolean {
-  return identity.installationId === config.lab.installationId &&
+  return identity.installationId === config.target.installationId &&
     NUMERIC_ID.test(identity.repositoryId) && NODE_ID.test(identity.nodeId) &&
-    identity.owner === config.lab.organization &&
+    identity.owner === config.target.organization &&
     identity.name === repositoryName &&
     identity.private === true && identity.defaultBranch === "main";
 }
 
 function validIdentity(
   identity: GitHubLabRepositoryIdentity,
-  config: GitHubRepositoryProviderConfig,
+  config: GitHubTargetRepositoryProviderConfig,
   repositoryName: string,
 ): boolean {
   return exactKeys(identity, [
@@ -409,14 +439,14 @@ function validIdentity(
 
 function markerFor(
   request: RepositoryProvisioningRequestV2,
-  config: GitHubRepositoryProviderConfig,
+  config: GitHubTargetRepositoryProviderConfig,
 ): string {
   return `${
     JSON.stringify(
       {
         schema_version: 1,
-        environment: "TEST",
-        organization: config.lab.organization,
+        environment: config.target.providerTarget,
+        organization: config.target.organization,
         website_work_context_id: request.websiteWorkContextId,
         repository_provisioning_operation_id: request.operationId,
         starter_source: request.starter.source,
@@ -441,24 +471,24 @@ function copyEntries(
   ));
 }
 
-export function createGitHubRepositoryProvider(
-  config: GitHubRepositoryProviderConfig,
-  dependencies: GitHubRepositoryProviderDependencies,
+export function createGitHubTargetRepositoryProvider(
+  config: GitHubTargetRepositoryProviderConfig,
+  dependencies: GitHubTargetRepositoryProviderDependencies,
 ): RepositoryProvisioningProviderV2 {
   if (
-    !validConfig(config) || !dependencies || typeof dependencies !== "object"
+    !validTargetConfig(config) || !dependencies || typeof dependencies !== "object"
   ) {
     fail("GITHUB_REPOSITORY_PROVIDER_CONFIG_INVALID");
   }
   for (
     const method of [
       dependencies.readStarter,
-      dependencies.createLab,
-      dependencies.reconcileLab,
-      dependencies.quarantineLab,
-      dependencies.captureLabIdentity,
-      dependencies.writeLabSnapshot,
-      dependencies.readLabBinding,
+      dependencies.createTarget,
+      dependencies.reconcileTarget,
+      dependencies.quarantineTarget,
+      dependencies.captureTargetIdentity,
+      dependencies.writeTargetSnapshot,
+      dependencies.readTargetBinding,
     ]
   ) {
     if (typeof method !== "function") {
@@ -525,11 +555,11 @@ export function createGitHubRepositoryProvider(
 
       let identity: GitHubLabRepositoryIdentity;
       try {
-        identity = await dependencies.createLab(Object.freeze({
+        identity = await dependencies.createTarget(Object.freeze({
           operationId: request.operationId,
           websiteWorkContextId: request.websiteWorkContextId,
-          installationId: config.lab.installationId,
-          organization: config.lab.organization,
+          installationId: config.target.installationId,
+          organization: config.target.organization,
           repository: request.repositoryName,
           private: true,
         }));
@@ -552,11 +582,11 @@ export function createGitHubRepositoryProvider(
         }
         let reconciliation: GitHubLabReconciliation;
         try {
-          reconciliation = await dependencies.reconcileLab(Object.freeze({
+          reconciliation = await dependencies.reconcileTarget(Object.freeze({
             operationId: request.operationId,
             websiteWorkContextId: request.websiteWorkContextId,
-            installationId: config.lab.installationId,
-            organization: config.lab.organization,
+            installationId: config.target.installationId,
+            organization: config.target.organization,
             repository: request.repositoryName,
           }));
         } catch {
@@ -564,7 +594,7 @@ export function createGitHubRepositoryProvider(
         }
         if (reconciliation.state !== "MATCH") {
           try {
-            await dependencies.quarantineLab(Object.freeze({
+            await dependencies.quarantineTarget(Object.freeze({
               operationId: request.operationId,
               websiteWorkContextId: request.websiteWorkContextId,
               reason: "REPOSITORY_IDENTITY_MISMATCH",
@@ -582,14 +612,14 @@ export function createGitHubRepositoryProvider(
 
       const markerContent = markerFor(request, config);
       try {
-        await dependencies.captureLabIdentity(Object.freeze({
+        await dependencies.captureTargetIdentity(Object.freeze({
           operationId: request.operationId,
           websiteWorkContextId: request.websiteWorkContextId,
           identity,
         }));
       } catch {
         try {
-          await dependencies.quarantineLab(Object.freeze({
+          await dependencies.quarantineTarget(Object.freeze({
             operationId: request.operationId,
             websiteWorkContextId: request.websiteWorkContextId,
             reason: "REPOSITORY_IDENTITY_MISMATCH",
@@ -608,10 +638,10 @@ export function createGitHubRepositoryProvider(
             "LAB_POST_CREATE_SNAPSHOT_PREPARE",
           );
         }
-        const written = await dependencies.writeLabSnapshot(Object.freeze({
+        const written = await dependencies.writeTargetSnapshot(Object.freeze({
           operationId: request.operationId,
           websiteWorkContextId: request.websiteWorkContextId,
-          installationId: config.lab.installationId,
+          installationId: config.target.installationId,
           identity,
           entries: preparedEntries,
           markerContent,
@@ -625,10 +655,10 @@ export function createGitHubRepositoryProvider(
             "LAB_POST_CREATE_WRITE_RESULT_VALIDATE",
           );
         }
-        const readback = await dependencies.readLabBinding(Object.freeze({
+        const readback = await dependencies.readTargetBinding(Object.freeze({
           operationId: request.operationId,
           websiteWorkContextId: request.websiteWorkContextId,
-          installationId: config.lab.installationId,
+          installationId: config.target.installationId,
           identity,
           snapshotCommitSha: written.snapshotCommitSha,
           markerCommitSha: written.markerCommitSha,
@@ -678,4 +708,26 @@ export function createGitHubRepositoryProvider(
       }
     },
   });
+}
+
+export function createGitHubRepositoryProvider(
+  config: GitHubRepositoryProviderConfig,
+  dependencies: GitHubRepositoryProviderDependencies,
+): RepositoryProvisioningProviderV2 {
+  return createGitHubTargetRepositoryProvider(Object.freeze({
+    source: config.source,
+    target: Object.freeze({
+      providerTarget: "TEST" as const,
+      installationId: config.lab.installationId,
+      organization: config.lab.organization,
+    }),
+  }), Object.freeze({
+    readStarter: dependencies.readStarter,
+    createTarget: dependencies.createLab,
+    reconcileTarget: dependencies.reconcileLab,
+    quarantineTarget: dependencies.quarantineLab,
+    captureTargetIdentity: dependencies.captureLabIdentity,
+    writeTargetSnapshot: dependencies.writeLabSnapshot,
+    readTargetBinding: dependencies.readLabBinding,
+  }));
 }

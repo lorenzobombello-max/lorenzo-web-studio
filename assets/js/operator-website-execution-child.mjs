@@ -11,7 +11,9 @@ import {
   quoteRequestIdFromWebsiteExecutionSlot,
   validateWebsiteConceptPromotionResult,
   validateWebsiteExecutionWorkspace,
+  validateWebsiteRepositoryProvisionResult,
   websiteExecutionProvisionRequest,
+  websiteRepositoryProvisionRequest,
   websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
@@ -20,7 +22,9 @@ import {
   requirementsBoardSlot,
   requirementsInvalidationMatches,
   validateWebsiteRequirementsBoard,
+  validateWebsiteRequirementsSyncResult,
   websiteRequirementsBoardRequest,
+  websiteRequirementsSyncRequest,
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
 import {
   mountWebsiteProjectFilesTree,
@@ -70,7 +74,8 @@ async function websiteProjectPreviewGateway(client, request) {
 }
 
 async function websiteRequirementsGateway(client, request) {
-  if (request?.action !== "get_website_requirements_board") {
+  if (!["get_website_requirements_board", "sync_website_requirements_from_intake"]
+    .includes(request?.action)) {
     throw new Error("WEBSITE_REQUIREMENTS_ACTION_NOT_ALLOWED");
   }
   const response = await client.functions.invoke("commercial-operator-command", {
@@ -356,6 +361,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let promotionIntent = null;
   let promotionPending = false;
   let previewPending = false;
+  let technicalPreparationPending = false;
+  let repositoryProvisionIntent = null;
 
   async function buildPreview() {
     const commitSha = projectFiles.currentCommitSha()
@@ -497,6 +504,22 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         });
       }
       renderRequirementsSummary(workspace, currentSnapshot.requirementsState);
+      if (projection.workspace?.workspace_state !== "PENDING_REPOSITORY") {
+        repositoryProvisionIntent = null;
+      }
+      if (
+        identity.role === "owner" && context.mode === "PRE_PROJECT" &&
+        projection.workspace?.workspace_state === "PENDING_REPOSITORY" &&
+        !technicalPreparationPending
+      ) {
+        repositoryProvisionIntent ||= websiteRepositoryProvisionRequest({
+          quoteRequestId: context.quoteRequestId,
+          websiteWorkContextId: context.websiteWorkContextId,
+          websiteWorkspaceId: projection.workspace.website_workspace_id,
+          idempotencyKey: crypto.randomUUID(),
+        });
+        queueMicrotask(() => void prepareTechnicalWorkspace());
+      }
       return true;
     } catch (error) {
       if (!refreshGeneration.isCurrent(selection)) return false;
@@ -533,10 +556,6 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       || currentSnapshot?.context.mode !== "PRE_PROJECT"
       || currentSnapshot?.projection.workspace !== null
       || typeof options.requireAal2 !== "function") return false;
-    const confirmed = root.defaultView?.confirm(
-      "Technische werkruimte starten? Dit maakt alleen een interne werkruimte aan. Er ontstaat geen bestelling, factuur, betaling, publicatierecht of externe repository.",
-    );
-    if (!confirmed) return false;
     button.disabled = true;
     const message = workspace.querySelector("[data-website-message]");
     try {
@@ -547,15 +566,79 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       }));
       const refreshed = await refresh();
       if (!refreshed || disposed) return false;
-      options.onInvalidate?.("dossiers");
-      message.textContent = "Technische werkruimte is gestart.";
-      return true;
+      return await prepareTechnicalWorkspace();
     } catch {
       if (!disposed) {
         button.disabled = false;
         message.textContent = "Technische werkruimte kon niet veilig worden gestart.";
       }
       return false;
+    }
+  }
+
+  async function prepareTechnicalWorkspace() {
+    if (disposed || technicalPreparationPending || identity.role !== "owner"
+      || currentSnapshot?.context.mode !== "PRE_PROJECT"
+      || currentSnapshot?.projection.workspace?.workspace_state !== "PENDING_REPOSITORY"
+      || typeof options.requireAal2 !== "function") return false;
+    const context = currentSnapshot.context;
+    const workspaceProjection = currentSnapshot.projection.workspace;
+    repositoryProvisionIntent ||= websiteRepositoryProvisionRequest({
+      quoteRequestId: context.quoteRequestId,
+      websiteWorkContextId: context.websiteWorkContextId,
+      websiteWorkspaceId: workspaceProjection.website_workspace_id,
+      idempotencyKey: crypto.randomUUID(),
+    });
+    const request = repositoryProvisionIntent;
+    technicalPreparationPending = true;
+    const message = workspace.querySelector("[data-website-message]");
+    message.textContent = "Technische werkruimte wordt voorbereid.";
+    try {
+      await options.requireAal2();
+      const rawResult = await authority.gateway(request);
+      validateWebsiteRepositoryProvisionResult(rawResult, {
+        websiteWorkContextId: context.websiteWorkContextId,
+      });
+      repositoryProvisionIntent = null;
+      if (!await refresh() || disposed) return false;
+      let requirementsSynchronized = true;
+      if (currentSnapshot?.requirementsState.state === "NO_BOARD") {
+        try {
+          const syncRequest = websiteRequirementsSyncRequest({
+            quoteRequestId: context.quoteRequestId,
+            websiteWorkContextId: context.websiteWorkContextId,
+            expectedBoardRevision: 0,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          const rawSync = await websiteRequirementsGateway(client, syncRequest);
+          validateWebsiteRequirementsSyncResult(rawSync, {
+            quoteRequestId: context.quoteRequestId,
+            websiteWorkContextId: context.websiteWorkContextId,
+          });
+          await refresh();
+        } catch {
+          requirementsSynchronized = false;
+          currentSnapshot = Object.freeze({
+            ...currentSnapshot,
+            requirementsState: Object.freeze({ state: "ERROR", summary: null }),
+          });
+          renderRequirementsSummary(workspace, currentSnapshot.requirementsState);
+        }
+      }
+      if (!disposed) {
+        options.onInvalidate?.("dossiers");
+        message.textContent = requirementsSynchronized
+          ? "Technische werkruimte is klaar."
+          : "Technische werkruimte is klaar. Requirements konden niet worden gesynchroniseerd.";
+      }
+      return true;
+    } catch {
+      if (!disposed) {
+        message.textContent = "Technische werkruimte kon niet veilig worden voorbereid. Vernieuw om opnieuw te proberen.";
+      }
+      return false;
+    } finally {
+      technicalPreparationPending = false;
     }
   }
 

@@ -74,6 +74,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_project_workspace",
   "get_website_execution_workspace",
   "provision_website_execution_workspace",
+  "provision_website_repository",
   "list_website_project_directory",
   "read_website_project_file",
   "save_website_project_file",
@@ -449,6 +450,13 @@ export type WebsiteConceptPromotionActionInput = Readonly<{
 export type WebsiteExecutionWorkspaceProvisionActionInput = Readonly<{
   action: "provision_website_execution_workspace";
   quote_request_id: string;
+  idempotency_key: string;
+}>;
+export type WebsiteRepositoryProvisionActionInput = Readonly<{
+  action: "provision_website_repository";
+  quote_request_id: string;
+  website_work_context_id: string;
+  website_workspace_id: string;
   idempotency_key: string;
 }>;
 export type WebsiteProjectDirectoryActionInput = Readonly<{
@@ -1181,6 +1189,11 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id"])
     : action === "provision_website_execution_workspace"
     ? new Set(["action", "quote_request_id", "idempotency_key"])
+    : action === "provision_website_repository"
+    ? new Set([
+      "action", "quote_request_id", "website_work_context_id",
+      "website_workspace_id", "idempotency_key",
+    ])
     : action === "list_website_project_directory"
     ? new Set(["action", "quote_request_id", "path", "cursor"])
     : action === "read_website_project_file"
@@ -2092,6 +2105,23 @@ function validateApplicationAction(value: UnvalidatedInput) {
       quote_request_id: quoteRequestId,
       idempotency_key: idempotencyKey,
     };
+  }
+  if (action === "provision_website_repository") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const websiteWorkContextId = String(value.website_work_context_id || "");
+    const websiteWorkspaceId = String(value.website_workspace_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(websiteWorkContextId) ||
+      !UUID.test(websiteWorkspaceId) || !UUID.test(idempotencyKey)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      website_workspace_id: websiteWorkspaceId,
+      idempotency_key: idempotencyKey,
+    } as WebsiteRepositoryProvisionActionInput;
   }
   if (action === "list_website_project_directory") {
     if (
@@ -3428,7 +3458,8 @@ export async function handleCommercialOperator(
         input.action === "list_website_project_directory" ||
         input.action === "read_website_project_file" ||
         input.action === "save_website_project_file" ||
-          input.action === "build_website_project_preview"
+        input.action === "build_website_project_preview" ||
+  input.action === "provision_website_repository"
       ) {
         try {
           requireOperatorAal2(claims, sub);

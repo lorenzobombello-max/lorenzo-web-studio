@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "GIT-001-PREPROJECT-PROVISIONING-20260920",
+  "baseRemoteMainSha": "c08746f67392a01e62cfc9db84b9b04acf7e81bf",
+  "allowedPaths": [
+    ".release/scopes/GIT-001-PREPROJECT-PROVISIONING-20260920.json",
+    "assets/js/operator-dossiers.mjs",
+    "assets/js/operator-website-execution-child.mjs",
+    "assets/js/operator-website-execution.mjs",
+    "scripts/operator-website-execution.test.mjs",
+    "supabase/functions/_shared/github-app-token.test.ts",
+    "supabase/functions/_shared/github-app-token.ts",
+    "supabase/functions/_shared/github-repository-provider.ts",
+    "supabase/functions/_shared/github-repository-runtime.test.ts",
+    "supabase/functions/_shared/github-repository-runtime.ts",
+    "supabase/functions/_shared/repository-provisioning-store-v2.ts",
+    "supabase/functions/commercial-operator-command/handler.test.ts",
+    "supabase/functions/commercial-operator-command/handler.ts",
+    "supabase/functions/commercial-operator-command/index.ts",
+    "supabase/migrations/20260920130000_add_pre_project_production_repository_provisioning_v1.sql",
+    "supabase/tests/website_pre_project_production_repository_provisioning_v1.sql",
+    "supabase/tests/website_requirements_promotion_v1.sql"
+  ],
+  "protectedChanges": [
+    "assets/js/operator-dossiers.mjs",
+    "assets/js/operator-website-execution-child.mjs",
+    "assets/js/operator-website-execution.mjs",
+    "scripts/operator-website-execution.test.mjs"
+  ],
+  "generatedArtifactChanges": [],
+  "historicalSourceUse": {
+    "used": true,
+    "source": {
+      "provisioningCheckpoint": "ba08c676931c28989e6936ee8acc45f1a3491d0a"
+    },
+    "forwardPortProof": "Only the reviewed PRE_PROJECT production repository provisioning checkpoint was applied with cherry-pick --no-commit onto current origin/main. The sole handler conflict was resolved as current production GIT-001 plus provision_website_repository, explicitly excluding historical pricing dispatch."
+  },
+  "migrationPlan": {
+    "alreadyLiveSourceHistoryOnly": [],
+    "newOrderedMigrations": [
+      "20260920130000_add_pre_project_production_repository_provisioning_v1.sql"
+    ]
+  },
+  "edgeFunctionPlan": {
+    "deploy": [
+      "commercial-operator-command"
+    ],
+    "doNotDeploy": [
+      "github-task13-test-island"
+    ]
+  },
+  "forbiddenActions": [
+    "push",
+    "production-migration",
+    "function-deployment",
+    "pages-publication",
+    "production-repository-provisioning",
+    "live-test"
+  ]
+}

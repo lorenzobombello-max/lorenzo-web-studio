@@ -22,6 +22,9 @@ export type GitHubTokenOperation =
   | "STARTER_SNAPSHOT_READ"
   | "WEBSITE_PROJECT_FILES_READ"
   | "WEBSITE_PROJECT_FILES_WRITE"
+  | "PRODUCTION_REPOSITORY_CREATE"
+  | "PRODUCTION_REPOSITORY_READ"
+  | "PRODUCTION_REPOSITORY_WRITE"
   | "LAB_REPOSITORY_CREATE"
   | "LAB_REPOSITORY_READ"
   | "LAB_REPOSITORY_WRITE";
@@ -145,6 +148,9 @@ function validAuthority(
       "STARTER_SNAPSHOT_READ",
       "WEBSITE_PROJECT_FILES_READ",
       "WEBSITE_PROJECT_FILES_WRITE",
+      "PRODUCTION_REPOSITORY_CREATE",
+      "PRODUCTION_REPOSITORY_READ",
+      "PRODUCTION_REPOSITORY_WRITE",
       "LAB_REPOSITORY_CREATE",
       "LAB_REPOSITORY_READ",
       "LAB_REPOSITORY_WRITE",
@@ -152,7 +158,12 @@ function validAuthority(
       .includes(request.operation)
   ) return false;
 
-  const repositoryCount = request.operation === "LAB_REPOSITORY_CREATE" ? 0 : 1;
+  const repositoryCount = [
+      "LAB_REPOSITORY_CREATE",
+      "PRODUCTION_REPOSITORY_CREATE",
+    ].includes(request.operation)
+    ? 0
+    : 1;
   if (
     !validRepositoryIds(request.repositoryIds, repositoryCount) ||
     !validRepositoryIds(authority.repositoryIds, repositoryCount) ||
@@ -162,13 +173,19 @@ function validAuthority(
   if (request.operation === "LAB_REPOSITORY_CREATE") {
     return request.target === "TEST";
   }
+  if (request.operation === "PRODUCTION_REPOSITORY_CREATE") {
+    return request.target === "PRODUCTION";
+  }
   if (request.operation === "STARTER_SNAPSHOT_READ") {
     return request.target === "PRODUCTION" &&
       request.repositoryIds[0] === config.templateRepositoryId;
   }
   if (request.operation === "WEBSITE_PROJECT_FILES_READ") return true;
   if (request.operation === "WEBSITE_PROJECT_FILES_WRITE") return true;
-  return request.target === "TEST";
+  if (["LAB_REPOSITORY_READ", "LAB_REPOSITORY_WRITE"].includes(request.operation)) {
+    return request.target === "TEST";
+  }
+  return request.target === "PRODUCTION";
 }
 
 function permissionsFor(
@@ -177,7 +194,7 @@ function permissionsFor(
   if (operation === "STARTER_SNAPSHOT_READ") {
     return Object.freeze({ metadata: "read", contents: "read" });
   }
-  if (operation === "LAB_REPOSITORY_READ") {
+  if (["LAB_REPOSITORY_READ", "PRODUCTION_REPOSITORY_READ"].includes(operation)) {
     return Object.freeze({ metadata: "read", contents: "read" });
   }
   if (operation === "WEBSITE_PROJECT_FILES_READ") {
@@ -186,7 +203,7 @@ function permissionsFor(
   if (operation === "WEBSITE_PROJECT_FILES_WRITE") {
     return Object.freeze({ metadata: "read", contents: "write" });
   }
-  if (operation === "LAB_REPOSITORY_CREATE") {
+  if (["LAB_REPOSITORY_CREATE", "PRODUCTION_REPOSITORY_CREATE"].includes(operation)) {
     return Object.freeze({ metadata: "read", administration: "write" });
   }
   return Object.freeze({ metadata: "read", contents: "write" });

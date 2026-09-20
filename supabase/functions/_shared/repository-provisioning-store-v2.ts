@@ -26,6 +26,14 @@ export type RepositoryProvisioningRpcClient = Readonly<{
   ): Promise<Readonly<{ data: unknown; error: unknown }>>;
 }>;
 
+export type RepositoryProvisioningStoreV2Options = Readonly<{
+  claimRpcName?: "claim_website_repository_provisioning_v1" |
+    "claim_production_website_repository_provisioning_v1";
+  bindRpcName?: "bind_website_repository_v1" |
+    "bind_production_website_repository_v1";
+  quoteRequestId?: string;
+}>;
+
 export type RepositoryProvisioningOperationStatusV2 = Readonly<{
   operationId: string;
   websiteWorkspaceId: string;
@@ -216,10 +224,23 @@ function sameBinding(
 
 export function createRepositoryProvisioningStoreV2(
   client: RepositoryProvisioningRpcClient,
+  options: RepositoryProvisioningStoreV2Options = {},
 ): RepositoryProvisioningRuntimeStoreV2 {
   if (!client || typeof client.rpc !== "function") {
     return fail("REPOSITORY_PROVISIONING_STORE_CONFIG_INVALID");
   }
+  const claimRpcName = options.claimRpcName ||
+    "claim_website_repository_provisioning_v1";
+  const bindRpcName = options.bindRpcName || "bind_website_repository_v1";
+  const productionAuthority =
+    claimRpcName === "claim_production_website_repository_provisioning_v1" ||
+    bindRpcName === "bind_production_website_repository_v1";
+  if (
+    productionAuthority &&
+    (!UUID.test(String(options.quoteRequestId || "")) ||
+      claimRpcName !== "claim_production_website_repository_provisioning_v1" ||
+      bindRpcName !== "bind_production_website_repository_v1")
+  ) return fail("REPOSITORY_PROVISIONING_STORE_CONFIG_INVALID");
 
   async function rpc(
     name: string,
@@ -243,7 +264,7 @@ export function createRepositoryProvisioningStoreV2(
     let response: Readonly<{ data: unknown; error: unknown }>;
     try {
       response = await client.rpc(
-        "claim_website_repository_provisioning_v1",
+        claimRpcName,
         arguments_,
       );
     } catch (error) {
@@ -269,6 +290,9 @@ export function createRepositoryProvisioningStoreV2(
       try {
         const value = record(
           await claimRpc(Object.freeze({
+            ...(productionAuthority
+              ? { p_quote_request_id: options.quoteRequestId }
+              : {}),
             p_website_workspace_id: authority.websiteWorkspaceId,
             p_website_work_context_id: authority.websiteWorkContextId,
             p_idempotency_key: authority.idempotencyKey,
@@ -338,8 +362,11 @@ export function createRepositoryProvisioningStoreV2(
       binding: VerifiedRepositoryBindingV2,
     ) {
       const value = await rpc(
-        "bind_website_repository_v1",
+        bindRpcName,
         Object.freeze({
+          ...(productionAuthority
+            ? { p_quote_request_id: options.quoteRequestId }
+            : {}),
           p_operation_id: operationId,
           p_verification: Object.freeze({
             operation_id: operationId,

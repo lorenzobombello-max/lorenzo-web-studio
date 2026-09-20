@@ -30,6 +30,7 @@ import {
   type WebsiteConceptPromotionActionInput,
   type WebsiteConceptStartActionInput,
   type WebsiteExecutionWorkspaceProvisionActionInput,
+  type WebsiteRepositoryProvisionActionInput,
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
   type WebsiteProjectPreviewBuildActionInput,
@@ -108,6 +109,11 @@ import {
   type WebsiteProjectPreviewBuildResult,
 } from "../_shared/website-project-preview-builder.ts";
 import { initializeGitHubAppInputSigner } from "../github-app-gate6-probe/runtime.ts";
+import {
+  createGitHubRepositoryRuntimeFromProvider,
+  createGitHubTargetRepositoryProviderForRuntime,
+} from "../_shared/github-repository-runtime.ts";
+import { createRepositoryProvisioningStoreV2 } from "../_shared/repository-provisioning-store-v2.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -220,6 +226,7 @@ type ValidatedApplicationActionInput =
     reason: string | null;
     quote_request_id: string | null;
     website_work_context_id: string;
+    website_workspace_id: string;
     requirement_id: string;
     expected_board_revision: number;
     expected_context_revision: number;
@@ -822,6 +829,62 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
   );
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function executeCallerJwtWebsiteRepositoryProvisionAction(
+  jwt: string,
+  input: WebsiteRepositoryProvisionActionInput,
+  clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
+): Promise<unknown> {
+  const config = loadGitHubAppConfig();
+  if (config.target !== "PRODUCTION") {
+    throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+  }
+  const http = createGitHubHttpClient({ fetch });
+  const signer = await initializeGitHubAppInputSigner(config.privateKey);
+  const tokenBroker = createGitHubAppTokenBroker({
+    now: Date.now,
+    sign: (_privateKey, signingInput) => signer(signingInput),
+    exchange: async (exchange) => {
+      const result = await http.execute({
+        kind: "TOKEN_EXCHANGE",
+        installationId: exchange.installationId,
+        appJwt: exchange.appJwt,
+        repositoryIds: exchange.repositoryIds,
+        permissions: exchange.permissions,
+      });
+      if (!("token" in result) || !("expiresAt" in result)) {
+        throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+      }
+      return result;
+    },
+  });
+  const store = createRepositoryProvisioningStoreV2({
+    rpc: async (name, parameters) =>
+      await clientFor(jwt).rpc(name, parameters),
+  }, {
+    claimRpcName: "claim_production_website_repository_provisioning_v1",
+    bindRpcName: "bind_production_website_repository_v1",
+    quoteRequestId: input.quote_request_id,
+  });
+  const provider = createGitHubTargetRepositoryProviderForRuntime(
+    config,
+    config,
+    { store, tokenBroker, http },
+  );
+  return await createGitHubRepositoryRuntimeFromProvider(provider, store)
+    .provision(Object.freeze({
+      contractVersion: 2 as const,
+      websiteWorkspaceId: input.website_workspace_id,
+      websiteWorkContextId: input.website_work_context_id,
+      idempotencyKey: input.idempotency_key,
+      starter: Object.freeze({
+        source: `${config.templateOwner}/${config.templateName}`,
+        version: config.starterVersion,
+        commitSha: config.starterCommitSha,
+        templateRepositoryId: config.templateRepositoryId,
+      }),
+    }));
 }
 
 async function createWebsiteProjectFilesRuntimeService(
@@ -2165,6 +2228,13 @@ if (import.meta.main) {
             return await executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
               jwt,
               input as WebsiteExecutionWorkspaceProvisionActionInput,
+              clientFor,
+            );
+          }
+          if (input.action === "provision_website_repository") {
+            return await executeCallerJwtWebsiteRepositoryProvisionAction(
+              jwt,
+              input as WebsiteRepositoryProvisionActionInput,
               clientFor,
             );
           }

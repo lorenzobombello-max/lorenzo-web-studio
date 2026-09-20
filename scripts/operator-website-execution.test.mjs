@@ -782,9 +782,12 @@ window.clearInterval = () => {};
 const params = new URLSearchParams(location.search);
 const role = params.get("role") || "owner";
 const mode = params.get("mode") || "PRE_PROJECT";
-const hasWorkspace = params.get("workspace") === "present";
+const workspaceMode = params.get("workspace");
+const hasWorkspace = workspaceMode === "present" || workspaceMode === "pending";
 window.task8Events = [];
 window.task8Requests = [];
+window.task8RepositoryRequests = [];
+let repositoryProvisionAttempts = 0;
 window.task8PromotionRequests = [];
 window.task8Invalidations = [];
 window.task8Confirmations = [];
@@ -800,8 +803,11 @@ let conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
 let promotionAttempts = 0;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
 const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner", project_files_write: role === "owner" } } : null;
+if (workspaceMode === "pending") Object.assign(workspace, { workspace_state: "PENDING_REPOSITORY", repository_operation_state: null, repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
 const projection = { contract_version: 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
+const emptyRequirements = { ...requirements, board: null, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: 0 }, readiness: { ready_for_preview: false, readiness: "BLOCKED", reason: "REQUIRED_REQUIREMENTS_OPEN" }, empty_state: "NO_BOARD" };
+let requirementsSynchronized = workspaceMode !== "pending";
 window.task8SwitchContext = () => {
   const replacementContextId = "a1800000-0000-4000-8000-000000000099";
   detail.website_work.website_work_context_id = replacementContextId;
@@ -853,7 +859,19 @@ const client = { functions: { async invoke(_name, { body }) {
     window.task6Requests.push(structuredClone(body));
     if (params.get("requirementsDelay") === "1") await new Promise((resolve) => setTimeout(resolve, 150));
     if (window.task6Fail) return { data: null, error: new Error("requirements unavailable") };
-    result = requirements;
+    result = requirementsSynchronized ? requirements : emptyRequirements;
+  } else if (body.action === "provision_website_repository") {
+    window.task8RepositoryRequests.push(structuredClone(body));
+    repositoryProvisionAttempts += 1;
+    if (params.get("provision") === "ambiguous" && repositoryProvisionAttempts === 1) return { data: null, error: new Error("Failed to send a request to the Edge Function") };
+    const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
+    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true } });
+    result = { provider: "GITHUB", providerRepositoryId: "1369000001", providerNodeId: "R_production_repository", owner: "lorenzo-web-solutions", name: repositoryName, visibility: "PRIVATE", defaultBranch: "main", starterSource: "lorenzo-web-solutions/lws-website-starter", starterVersion: "1.0.0", starterCommitSha: "a".repeat(40), repositoryMarkerCommitSha: "b".repeat(40), replayed: false };
+  } else if (body.action === "sync_website_requirements_from_intake") {
+    window.task6Requests.push(structuredClone(body));
+    if (params.get("requirements") === "sync-error") return { data: null, error: new Error("requirements sync unavailable") };
+    requirementsSynchronized = true;
+    result = { contract_version: 1, outcome: "SYNCED", quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", requirements_board_id: requirements.board.requirements_board_id, board_revision: 12, intake_id: "a1800000-0000-4000-8000-000000000007", intake_revision: 3, intake_sha256: "a".repeat(64), mapping_version: 1, sync_run_id: "a1800000-0000-4000-8000-000000000008", replayed: false, review_required: false, counts: { created: 0, updated: 0, unchanged: 0, retired: 0, change_pending: 0, removal_pending: 0, revived: 0 } };
   } else if (body.action === "promote_website_concept") {
     promotionAttempts += 1;
     window.task8Events.push("promotion-gateway");
@@ -966,6 +984,111 @@ test("provision control follows owner PRE_PROJECT empty-workspace render state",
       assert.equal(await control.isVisible(), scenario.visible, scenario.query);
       await page.close();
     }
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("pending PRE_PROJECT automatically reaches repository ready and synchronizes Requirements", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=pending",
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte is klaar."
+    );
+    assert.equal(
+      await page.locator("[data-website-requirements-panel]").getAttribute(
+        "data-website-requirements-state",
+      ),
+      "READY",
+    );
+    const repositoryRequests = await page.evaluate(() => window.task8RepositoryRequests);
+    assert.equal(repositoryRequests.length, 1);
+    assert.equal(repositoryRequests[0].action, "provision_website_repository");
+    assert.equal(repositoryRequests[0].quote_request_id, quoteRequestId);
+    assert.equal(repositoryRequests[0].website_work_context_id, websiteWorkContextId);
+    assert.equal(
+      await page.locator("[data-website-project-files] .website-project-files__refresh").isDisabled(),
+      false,
+    );
+    assert.equal(await page.evaluate(() => window.task8Requests.some((request) =>
+      request.action === "save_website_project_file" ||
+      request.action === "build_website_project_preview"
+    )), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Requirements sync failure does not downgrade a ready repository", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=pending&requirements=sync-error",
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes(
+        "Requirements konden niet worden gesynchroniseerd",
+      )
+    );
+    assert.equal(await page.evaluate(() => window.task8RepositoryRequests.length), 1);
+    assert.equal(
+      await page.locator("[data-website-requirements-panel]").getAttribute(
+        "data-website-requirements-state",
+      ),
+      "ERROR",
+    );
+    assert.equal(
+      await page.locator("[data-website-project-files] .website-project-files__refresh").isDisabled(),
+      false,
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("ambiguous repository retry reuses the exact immutable provisioning intent", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=pending&provision=ambiguous",
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes(
+        "Vernieuw om opnieuw te proberen",
+      )
+    );
+    assert.equal(await page.evaluate(() => window.task8RepositoryRequests.length), 1);
+    await page.evaluate(() => window.controller.refresh());
+    await page.waitForFunction(() =>
+      window.task8RepositoryRequests.length === 2 &&
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Technische werkruimte is klaar."
+    );
+    const requests = await page.evaluate(() => window.task8RepositoryRequests);
+    assert.deepEqual(requests[1], requests[0]);
+    assert.equal(
+      await page.locator("[data-website-project-files] .website-project-files__refresh").isDisabled(),
+      false,
+    );
+    await page.close();
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

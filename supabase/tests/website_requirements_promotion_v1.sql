@@ -471,14 +471,20 @@ insert into public.website_work_contexts(
 insert into public.website_execution_workspaces(
   website_workspace_id, website_work_context_id, project_id, quote_request_id,
   repository_owner, repository_name, binding_revision, created_by,
-  workspace_state, provisioned_by, provisioned_at
+  workspace_state, provisioned_by, provisioned_at, repository_provider,
+  repository_external_id, repository_node_id, repository_visibility,
+  repository_state, starter_source, starter_version, starter_commit_sha,
+  repository_marker_commit_sha, last_commit_sha, repository_bound_at
 ) values (
   'd81d0000-0000-4000-8000-000000000001', 'd81c0000-0000-4000-8000-000000000001',
   null, 'd8100000-0000-4000-8000-000000000001', 'fixture-owner', 'fixture-repository',
   3, (select operator_id from public.commercial_operators
-      where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'), 'READY',
+      where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'), 'REPOSITORY_READY',
   (select operator_id from public.commercial_operators
-   where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'), clock_timestamp()
+     where auth_user_id = 'c9bcd3ef-1e7e-4889-8a12-db827f1b97b0'), clock_timestamp(),
+    'GITHUB', 1369000001, 'R_promotion_continuity', 'private', 'BOUND',
+    'lorenzo-web-solutions/lws-website-starter', '1.0.0', repeat('9', 40),
+    repeat('8', 40), repeat('a', 40), clock_timestamp()
 );
 insert into public.website_requirements_boards(
   requirements_board_id, website_work_context_id, quote_request_id,
@@ -652,13 +658,25 @@ select ok(
 select ok(
   (select project_id = 'd81a0000-0000-4000-8000-000000000001'
      and binding_revision = 3
+      and repository_provider = 'GITHUB'
+      and repository_owner = 'fixture-owner'
+      and repository_name = 'fixture-repository'
+      and repository_external_id = 1369000001
+      and repository_node_id = 'R_promotion_continuity'
+      and repository_visibility = 'private'
+      and repository_state = 'BOUND'
+      and starter_source = 'lorenzo-web-solutions/lws-website-starter'
+      and starter_version = '1.0.0'
+      and starter_commit_sha = repeat('9', 40)
+      and repository_marker_commit_sha = repeat('8', 40)
+      and last_commit_sha = repeat('a', 40)
    from public.website_execution_workspaces
    where website_workspace_id = 'd81d0000-0000-4000-8000-000000000001')
   and exists (select 1 from public.website_requirements_boards where requirements_board_id = 'd81e0000-0000-4000-8000-000000000001' and revision = 5)
   and exists (select 1 from public.website_requirements where requirement_id = 'd81f0000-0000-4000-8000-000000000001' and revision = 2)
   and exists (select 1 from public.website_requirement_events where event_id = 'd8200000-0000-4000-8000-000000000001')
   and exists (select 1 from public.website_requirement_verifications where verification_id = 'd8220000-0000-4000-8000-000000000001' and binding_revision = 3),
-  'workspace, board, item, history, and verification identities survive promotion'
+  'repository identity, commits, Project Files authority, board, evidence, and history survive promotion'
 );
 select is(
   (select count(*) from public.website_work_context_promotion_events
