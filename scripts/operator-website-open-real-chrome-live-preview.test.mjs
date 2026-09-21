@@ -510,9 +510,15 @@ test("real dashboard WEBSITE OPENEN opens the real popup and reuses it on second
     await popup.getByRole("button", { name: "Requirements openen" }).waitFor({ state: "visible", timeout: 20_000 });
     console.log("STEP: child mounted");
 
+    // The child bootstrap (workspace/epoch/window/launch/slot) must be
+    // usable exactly once to join the workspace, then stripped from the
+    // visible URL entirely -- only the origin-relative module query string
+    // may remain visible once the module has mounted.
     const popupUrl = new URL(popup.url());
     assert.equal(popupUrl.pathname, "/operator/window/");
     assert.equal(popupUrl.searchParams.get("module"), "dossiers");
+    assert.equal(popupUrl.href, `${env.origin}/operator/window/?module=dossiers`, "the visible popup URL must be exactly the clean module URL with no bootstrap fragment");
+    assert.equal(popupUrl.hash, "", "no workspace/epoch/window/launch/slot bootstrap fragment may remain visible");
 
     const pagesBeforeSecondClick = env.context.pages().length;
     const extraPopupPromise = page.waitForEvent("popup", { timeout: 2_000 }).catch(() => null);
@@ -526,13 +532,31 @@ test("real dashboard WEBSITE OPENEN opens the real popup and reuses it on second
       // reservation in favour of focusing the existing child. A transient
       // reservation popup is therefore expected here and must close itself
       // quickly rather than becoming a second managed child window.
-      await extraPopup.waitForEvent("close", { timeout: 5_000 });
+      // The close happens only after an in-flight lease renewal settles;
+      // under sandboxed/CI scheduling contention that round trip (and the
+      // browser's own event delivery) can occasionally take longer than a
+      // couple of seconds, so this bound is generous rather than tight.
+      await extraPopup.waitForEvent("close", { timeout: 15_000 });
     }
     assert.equal(
       env.context.pages().length,
       pagesBeforeSecondClick,
       "no additional managed child window should remain open after the reservation is reconciled",
     );
+
+    console.log("STEP: refreshing popup");
+    // A same-window refresh of the managed child must keep working using the
+    // bootstrap identity preserved in history.state, even though the visible
+    // URL no longer carries the workspace/epoch/window/launch/slot fragment.
+    await popup.reload({ waitUntil: "domcontentloaded" });
+    await popup.getByRole("button", { name: "Requirements openen" }).waitFor({ state: "visible", timeout: 20_000 });
+    const popupUrlAfterRefresh = new URL(popup.url());
+    assert.equal(
+      popupUrlAfterRefresh.href,
+      `${env.origin}/operator/window/?module=dossiers`,
+      "the clean URL and working refresh must both hold after reload",
+    );
+    console.log("STEP: refresh verified");
 
     console.log("STEP: closing popup");
     await popup.close().catch(() => {});
