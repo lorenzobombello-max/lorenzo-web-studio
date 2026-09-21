@@ -1,6 +1,13 @@
 name: Deploy Commercial Operator Command
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/functions/commercial-operator-command/**"
+      - "supabase/functions/_shared/**"
+      - "supabase/functions/github-app-gate6-probe/runtime.ts"
   workflow_dispatch:
 
 permissions:
