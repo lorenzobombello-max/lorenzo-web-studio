@@ -677,6 +677,148 @@ test("remounted module launch controls are bound once and release detached liste
   assert.equal(listeners.size, 0);
 });
 
+function fakeDomButton() {
+  const listeners = new Map();
+  const button = {
+    hidden: true,
+    disabled: true,
+    dataset: {},
+    nextElementSibling: null,
+    ownerDocument: {
+      createElement() {
+        const attributes = {};
+        return {
+          className: "",
+          textContent: "",
+          setAttribute(name, value) { attributes[name] = value; },
+          hasAttribute(name) { return name in attributes; },
+        };
+      },
+    },
+    insertAdjacentElement(_position, element) {
+      button.nextElementSibling = element;
+      return element;
+    },
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    removeEventListener(type) { listeners.delete(type); },
+  };
+  return { button, listeners };
+}
+
+test("a module-window launch never fails silently: every failure branch reports an exact safe code", async ()=>{
+  const timers = timerHarness();
+  const codes = [];
+  const onLaunchFailure = (code)=>codes.push(code);
+
+  const inactiveMaster = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: false, lease_expires_at: new Date(10_000).toISOString() }, error: null }) },
+    navigatorObject: availableWebLock(),
+    windowObject: { crypto: { randomUUID: ()=>masterWindowId } },
+    now: ()=>10_000,
+    setTimeoutFn: async (callback)=>callback(),
+  });
+  assert.equal(inactiveMaster.openOperatorModuleWindow("messages", "main", undefined, onLaunchFailure), false);
+  assert.deepEqual(codes, ["WORKSPACE_INACTIVE"]);
+
+  const ids = [masterWindowId];
+  const active = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() || "f4000000-0000-4000-8000-000000000099" },
+      location: { origin: "https://operator.local" },
+      open() { return null; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  codes.length = 0;
+  assert.equal(active.openOperatorModuleWindow("not-a-module", "main", undefined, onLaunchFailure), false);
+  assert.deepEqual(codes, ["MODULE_INVALID"]);
+  codes.length = 0;
+  assert.equal(active.openOperatorModuleWindow("messages", "not valid slot!", undefined, onLaunchFailure), false);
+  assert.deepEqual(codes, ["SLOT_INVALID"]);
+  codes.length = 0;
+  assert.equal(active.openOperatorModuleWindow("messages", "main", undefined, onLaunchFailure), false);
+  assert.deepEqual(codes, ["POPUP_BLOCKED"]);
+});
+
+test("a module-window launch never fails silently: lease renewal and navigation failures report their exact safe code", async ()=>{
+  const timers = timerHarness();
+  const codes = [];
+  const onLaunchFailure = (code)=>codes.push(code);
+  const ids = [masterWindowId, childWindowId, launchNonce];
+  const failingReservation = { closed: false, focus() {}, close() { this.closed = true; }, location: { replace() { throw new Error("nav blocked"); } } };
+  let renewCalls = 0;
+  const renewalMaster = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>name === "renew_operator_workspace_lease_v1"
+      ? (++renewCalls === 1 ? { data: { valid: false }, error: null } : { data: { valid: true, lease_expires_at: new Date(60_000).toISOString() }, error: null })
+      : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() || "f4000000-0000-4000-8000-000000000099" },
+      location: { origin: "https://operator.local" },
+      open() { return failingReservation; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  assert.equal(renewalMaster.openOperatorModuleWindow("messages", "main", undefined, onLaunchFailure), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.deepEqual(codes, ["LEASE_RENEWAL_FAILED"]);
+  assert.equal(failingReservation.closed, true);
+
+  codes.length = 0;
+  renewCalls = 1;
+  const navigationMaster = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>name === "renew_operator_workspace_lease_v1"
+      ? { data: { valid: true, lease_expires_at: new Date(60_000).toISOString() }, error: null }
+      : { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null } },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() || "f4000000-0000-4000-8000-000000000098" },
+      location: { origin: "https://operator.local" },
+      open() { return failingReservation; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  assert.equal(navigationMaster.openOperatorModuleWindow("messages", "main", undefined, onLaunchFailure), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.deepEqual(codes, ["CHILD_NAVIGATION_FAILED"]);
+  assert.equal(failingReservation.closed, true);
+});
+
+test("a bound module button renders a visible safe message next to itself on any launch failure, never a raw error", async ()=>{
+  const { button, listeners } = fakeDomButton();
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null }) },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>masterWindowId },
+      location: { origin: "https://operator.local" },
+      open() { return null; },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>10_000,
+  });
+  master.bindModuleButton(button, "messages", "main");
+  assert.equal(button.nextElementSibling, null);
+  listeners.get("click")();
+  assert.notEqual(button.nextElementSibling, null);
+  assert.equal(button.nextElementSibling.textContent.includes("POPUP_BLOCKED"), true);
+  assert.equal(/error|exception|stack/i.test(button.nextElementSibling.textContent), false);
+  const firstMessageNode = button.nextElementSibling;
+  listeners.get("click")();
+  assert.equal(button.nextElementSibling, firstMessageNode, "repeated failures update the same message node instead of stacking new ones");
+});
+
 test("master manages all six required modules as separate children in one workspace", async ()=>{
   FakeBroadcastChannel.instances = [];
   const timers = timerHarness();
