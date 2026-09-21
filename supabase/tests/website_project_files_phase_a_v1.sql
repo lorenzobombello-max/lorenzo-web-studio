@@ -475,13 +475,20 @@ from task3_contexts as fixture
 where fixture.context_label = 'A';
 select set_config('lws.website_repository_command', '', true);
 
-select throws_ok(
+-- GIT-001 lineage hardening: repository authority is resolved via the
+-- canonical durable-identity operation, not the most recently updated
+-- row. A newer BLOCKED operation carrying no durable identity (no
+-- repository_external_id/node_id/external_created_at) must NOT shadow
+-- an older BOUND operation that does carry durable identity, purely
+-- because of its timestamp. The acquisition must therefore still
+-- succeed against the canonical BOUND marker.
+select lives_ok(
   $$select pg_temp.acquire_project_files_v1(
     (select quote_request_id from task3_contexts where context_label = 'A'),
     'DIRECTORY')$$,
-  'P0001', 'REPOSITORY_BINDING_STALE',
-  'newer BLOCKED operation overrides an older BOUND marker'
+  'timestamp-shadowing newer BLOCKED operation does not override the canonical BOUND marker'
 );
+
 set local session_replication_role = replica;
 delete from public.website_repository_provisioning_operations
 where operation_id = 'f3300000-0000-4000-8000-000000000099';
