@@ -349,7 +349,7 @@ function repositoryRecoveryEligible(identity, context, workspaceProjection, pend
     && typeof workspaceProjection.repository_recovery_operation_id === "string";
 }
 
-function renderChild(workspace, state) {
+function renderChild(workspace, state, background = false) {
   const empty = workspace.querySelector("[data-website-empty]");
   const content = workspace.querySelector("[data-website-content]");
   if (state.state === "denied" || state.state === "error") {
@@ -404,7 +404,27 @@ function renderChild(workspace, state) {
   const retry = workspace.querySelector("[data-website-action=\"promotion-retry\"]");
   retry.hidden = state.promotionRetry !== true;
   retry.disabled = state.promotionPending === true;
-  workspace.querySelector("[data-website-message]").textContent = "";
+  // A background auto-refresh (interval/focus/visibilitychange) must not erase
+  // a just-shown recovery status message before the operator can read it. Any
+  // foreground render (a new explicit action, the initial load, etc.) clears
+  // it as before.
+  const message = workspace.querySelector("[data-website-message]");
+  const stickyRecoveryMessage = workspace.__recoveryStatusMessage;
+  if (background && stickyRecoveryMessage) {
+    message.textContent = stickyRecoveryMessage.text;
+    message.classList.toggle("action-message--dark", stickyRecoveryMessage.dark === true);
+  } else {
+    message.textContent = "";
+    message.classList.remove("action-message--dark");
+    workspace.__recoveryStatusMessage = null;
+  }
+}
+
+function setRecoveryStatusMessage(workspace, text, { dark = false } = {}) {
+  const message = workspace.querySelector("[data-website-message]");
+  message.textContent = text;
+  message.classList.toggle("action-message--dark", dark);
+  workspace.__recoveryStatusMessage = text ? { text, dark } : null;
 }
 
 export function initializeOperatorWebsiteExecution(root, client, identity, options = {}) {
@@ -568,7 +588,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         failureCategory: projection.workspace?.repository_failure_category || null,
         recoveryGuidance: projection.workspace?.repository_recovery_guidance || null,
       }));
-      renderChild(workspace, currentSnapshot);
+      renderChild(workspace, currentSnapshot, background);
       try {
         const requirementsContext = Object.freeze({
           quoteRequestId: context.quoteRequestId,
@@ -826,8 +846,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       || typeof options.requireAal2 !== "function") return false;
     repositoryRecoveryPending = true;
     button.disabled = true;
-    const message = workspace.querySelector("[data-website-message]");
-    message.textContent = "Bestaande technische werkruimte wordt hersteld.";
+    setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte wordt hersteld.");
     try {
       await options.requireAal2();
       const request = websiteRepositoryRecoveryRequest({
@@ -840,16 +859,19 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       );
       if (!await refresh() || disposed) return false;
       options.onInvalidate?.("dossiers");
-      message.textContent = "Bestaande technische werkruimte is hersteld.";
+      setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte is hersteld.");
       return true;
     } catch (error) {
       if (!disposed) {
         await refresh();
         if (!disposed) {
           const code = safeWebsiteRepositoryRecoveryErrorCode(error);
-          message.textContent =
+          setRecoveryStatusMessage(
+            workspace,
             "Bestaande technische werkruimte kon niet veilig worden hersteld."
-              + ` (RECOVERY_ERROR: ${code})`;
+              + ` (RECOVERY_ERROR: ${code})`,
+            { dark: true },
+          );
         }
       }
       return false;

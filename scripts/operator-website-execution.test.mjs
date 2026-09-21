@@ -2058,6 +2058,176 @@ test("existing repository recovery preserves a structured backend error code wit
   }
 });
 
+test("recovery failure message survives a background auto-refresh render cycle", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=structuredFail",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForTimeout(300);
+    const expected = "Bestaande technische werkruimte kon niet veilig worden hersteld."
+      + " (RECOVERY_ERROR: GITHUB_TOKEN_EXCHANGE_FAILED)";
+    assert.equal(await page.locator("[data-website-message]").textContent(), expected);
+    // Reproduces the exact clobber vector: createOperatorAutoRefresh calling
+    // refresh({ background: true }) on its interval/focus/visibilitychange
+    // triggers, which previously blanked the message on every render.
+    await page.evaluate(() => window.controller.refresh({ background: true }));
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator("[data-website-message]").textContent(), expected);
+    await page.evaluate(() => window.controller.refresh({ background: true }));
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator("[data-website-message]").textContent(), expected);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("recovery success message survives a background auto-refresh render cycle", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Bestaande technische werkruimte is hersteld."
+    );
+    await page.evaluate(() => window.controller.refresh({ background: true }));
+    await page.waitForTimeout(50);
+    assert.equal(
+      await page.locator("[data-website-message]").textContent(),
+      "Bestaande technische werkruimte is hersteld.",
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("a new explicit recovery attempt replaces the previous recovery message", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=fail",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes("RECOVERY_ERROR"));
+    const firstMessage = await page.locator("[data-website-message]").textContent();
+
+    await page.goto(page.url().replace("recoveryAction=fail", "recoveryAction=structuredFail"));
+    await page.locator('[data-website-action="repository-recovery"]').click();
+    await page.waitForFunction((previous) =>
+      document.querySelector("[data-website-message]")?.textContent?.includes("RECOVERY_ERROR")
+        && document.querySelector("[data-website-message]")?.textContent !== previous, firstMessage);
+    const secondMessage = await page.locator("[data-website-message]").textContent();
+    assert.notEqual(secondMessage, firstMessage);
+    assert.match(secondMessage, /RECOVERY_ERROR: GITHUB_TOKEN_EXCHANGE_FAILED/);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("a sticky recovery message never resurrects over an unrelated action's own message", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=structuredFail",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes("RECOVERY_ERROR"));
+    // A foreground refresh (e.g. from a different explicit action) must clear
+    // the stale recovery status rather than letting it survive indefinitely.
+    await page.evaluate(() => window.controller.refresh());
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator("[data-website-message]").textContent(), "");
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("recovery failure message uses the high-contrast dark treatment, not the pale success tone", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=structuredFail",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes("RECOVERY_ERROR"));
+    // The harness page does not load the stylesheet, so this asserts the
+    // dark treatment class (already mapped to var(--text) by the existing
+    // .action-message--dark rule) is applied instead of the default pale
+    // success tone class.
+    assert.equal(
+      await page.locator("[data-website-message]").evaluate((element) =>
+        element.classList.contains("action-message--dark")),
+      true,
+    );
+    const css = await read("assets/css/operator-dashboard.css");
+    assert.match(css, /\.action-message--dark\s*\{\s*color:var\(--text\);?\s*\}/);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("recovery in-progress message does not use the dark error treatment", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=delay",
+    );
+    await page.locator('[data-website-action="repository-recovery"]').click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Bestaande technische werkruimte wordt hersteld.");
+    assert.equal(
+      await page.locator("[data-website-message]").evaluate((element) =>
+        element.classList.contains("action-message--dark")),
+      false,
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("websiteRepositoryRecoveryGateway preserves a structured backend error code", async () => {
   const client = {
     functions: {
