@@ -384,19 +384,27 @@ begin
 end;
 $$;
 
+-- GIT-001 migration-sequence transient-risk closure: EXECUTE on these two
+-- functions is deliberately NOT granted here. Supabase applies pending
+-- migration files sequentially with no cross-file transaction wrapping the
+-- pending set, so granting EXECUTE in this same file would make the
+-- pre-lineage-hardening recovery/finalize authority reachable by ordinary
+-- authenticated/service_role callers the instant this migration completes,
+-- for however long it takes 20260920231950 (lineage hardening) to also
+-- complete. 20260920231950 already ends with the authoritative
+-- `revoke all` / `grant execute` block for the complete hardened surface
+-- (including these two functions), so EXECUTE is granted for the first
+-- time only once the canonical durable-identity resolver is installed.
+-- Until then these functions exist but are unreachable by any externally
+-- facing role, matching the technical quiescence barrier established by
+-- 20260920135900.
 revoke all on function public.get_production_website_repository_recovery_authority_v1(
   uuid, uuid, uuid
-) from public, anon, service_role;
-grant execute on function public.get_production_website_repository_recovery_authority_v1(
-  uuid, uuid, uuid
-) to authenticated;
+) from public, anon, authenticated, service_role;
 
 revoke all on function public.finalize_production_website_repository_recovery_v1(
   uuid, uuid, jsonb, uuid, text
-) from public, anon, authenticated;
-grant execute on function public.finalize_production_website_repository_recovery_v1(
-  uuid, uuid, jsonb, uuid, text
-) to service_role;
+) from public, anon, authenticated, service_role;
 
 revoke all on function public.get_website_execution_workspace_v5(uuid)
 from public, anon;
