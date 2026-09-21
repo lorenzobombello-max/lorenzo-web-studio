@@ -119,13 +119,24 @@ try {
           if (moduleKey === "dossiers") document.querySelector("[data-dossiers-workspace]")?.operatorDossiersController?.refresh();
         },
       });
-      const activateWorkspaceMaster = (master)=>{
-        workspaceMaster = master;
-        if (!master.active) return;
-        writeOperatorWorkspaceResumeHint(window.history, master.resumeHint);
+      const bindManagedWindowButtons = (master)=>{
+        if (!master) return;
         for (const button of document.querySelectorAll("[data-operator-window-module]")) {
           master.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
         }
+      };
+      const unbindManagedWindowButtons = (master)=>{
+        if (!master) return;
+        for (const button of document.querySelectorAll("[data-operator-window-module]")) {
+          master.unbindModuleButton?.(button);
+        }
+      };
+      const activateWorkspaceMaster = (master)=>{
+        if (workspaceMaster && workspaceMaster !== master) unbindManagedWindowButtons(workspaceMaster);
+        workspaceMaster = master;
+        bindManagedWindowButtons(master);
+        if (!master.active) return;
+        writeOperatorWorkspaceResumeHint(window.history, master.resumeHint);
         document.getElementById("messagesWorkspace")?.operatorMessagesController?.setInvalidationPublisher((moduleKey)=>master.invalidate(moduleKey));
       };
       workspaceMaster = await acquireWorkspaceMaster(readOperatorWorkspaceResumeHint(window.history));
@@ -186,11 +197,7 @@ try {
     });
     async function navigateModule(url, options) {
       const navigated = await moduleNavigation.navigate(url, options);
-      if (workspaceMaster?.active) {
-        for (const button of document.querySelectorAll("[data-operator-window-module]")) {
-          workspaceMaster.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
-        }
-      }
+      bindManagedWindowButtons(workspaceMaster);
       if (operatorModuleFromUrl(url, identity.role) === "finance") {
         await financeNavigation.navigate(url, { push: false });
       }
