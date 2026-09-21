@@ -3,7 +3,7 @@ import { getOperatorClient } from "./operator-auth-client.mjs?v=20260902-login-s
 import { createOperatorMfaDialog, isMfaOperatorSubject } from "./operator-mfa.mjs?v=20260904-aal2-r1";
 import { mountStandaloneOperatorModule, resolveStandaloneOperatorModule } from "./operator-module-registry.mjs?v=20260917-pre-project-workspace-r2";
 import { createOperatorWorkspaceChild } from "./operator-workspace-child.mjs?v=20260913-user-gesture-handoff-r1";
-import { parseChildBootstrap } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
+import { parseChildBootstrap, cleanChildWindowUrl, readChildBootstrapVisibleState, writeChildBootstrapVisibleState } from "./operator-workspace-protocol.mjs?v=20260921-child-url-hygiene-r1";
 import { createOperatorWindowHost } from "./operator-window-host.mjs?v=20260902-login-stability";
 
 const gate = document.getElementById("operatorWindowGate");
@@ -17,7 +17,8 @@ const windowHost = createOperatorWindowHost({ gate, locked, shell, sensitiveCont
 const lockWindow = windowHost.lock;
 
 try {
-  const bootstrap = parseChildBootstrap(window.location.href, window.location.origin);
+  const bootstrap = parseChildBootstrap(window.location.href, window.location.origin)
+    || readChildBootstrapVisibleState(window.history);
   if (!bootstrap) throw new Error("INVALID_CHILD_BOOTSTRAP");
 
   const { client } = await getOperatorClient();
@@ -44,6 +45,18 @@ try {
     || joinedWorkspace?.module_key !== bootstrap.moduleKey || joinedWorkspace?.slot_key !== bootstrap.slotKey) {
     throw new Error("WORKSPACE_JOIN_REJECTED");
   }
+
+  // The workspace join above is the authoritative, server-validated proof
+  // that this bootstrap identity is legitimate. Only now is it safe to
+  // strip the bootstrap fragment from the visible URL -- the validated
+  // identity is preserved in history.state so a same-window refresh keeps
+  // working, but a copied clean URL (a fresh navigation with no state) or a
+  // tampered state object fails closed via the bootstrap check above.
+  writeChildBootstrapVisibleState(
+    window.history,
+    bootstrap,
+    cleanChildWindowUrl(window.location.href, window.location.origin).href,
+  );
 
   childCoordinator = createOperatorWorkspaceChild({
     client,

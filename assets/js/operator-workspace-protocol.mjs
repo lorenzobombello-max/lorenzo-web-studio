@@ -10,6 +10,7 @@ const MODULE_OR_SLOT_KEY = /^[a-z][a-z0-9-]{0,47}$/;
 const EVENT_TYPES = new Set(["HELLO", "REGISTERED", "HEARTBEAT", "SHUTDOWN", "LOCK", "INVALIDATE", "FOCUS_REQUEST", "OPEN_REQUEST"]);
 const EVENT_KEYS = new Set(["type", "workspaceId", "epoch", "senderWindowId", "sequence", "timestamp", "moduleKey", "slotKey", "reservationId"]);
 const MASTER_RESUME_STATE_KEY = "lwsOperatorWorkspaceResumeV1";
+const CHILD_BOOTSTRAP_STATE_KEY = "lwsOperatorChildBootstrapV1";
 
 export function validUuid(value) {
   return UUID.test(String(value || ""));
@@ -54,6 +55,58 @@ export function parseChildBootstrap(urlLike, origin = "https://operator.local") 
   if (url.pathname !== "/operator/window/" || !MODULE_OR_SLOT_KEY.test(moduleKey) || !MODULE_OR_SLOT_KEY.test(slotKey)) return null;
   if (![workspaceId, windowId, launchNonce].every(validUuid) || !Number.isSafeInteger(epoch) || epoch < 1) return null;
   return Object.freeze({ workspaceId, epoch, windowId, launchNonce, moduleKey, slotKey });
+}
+
+// Produces the visible-URL form of a managed child window once its bootstrap
+// has already been validated and preserved in history.state (see
+// writeChildBootstrapVisibleState below). Only the module query parameter is
+// browser-visible; workspace/epoch/window/launch/slot are bootstrap identity,
+// not browser authority, and must never be visible after the child has
+// consumed them.
+export function cleanChildWindowUrl(urlLike, origin = "https://operator.local") {
+  const url = new URL(urlLike, origin);
+  const moduleKey = url.searchParams.get("module");
+  const clean = new URL("/operator/window/", origin);
+  if (moduleKey) clean.searchParams.set("module", moduleKey);
+  return clean;
+}
+
+function childBootstrapHistoryValue(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).length !== 6 || !validUuid(value.workspaceId)
+    || !validUuid(value.windowId) || !validUuid(value.launchNonce)
+    || !Number.isSafeInteger(value.epoch) || value.epoch < 1
+    || !MODULE_OR_SLOT_KEY.test(value.moduleKey) || !MODULE_OR_SLOT_KEY.test(value.slotKey)) return null;
+  return Object.freeze({
+    workspaceId: value.workspaceId,
+    epoch: value.epoch,
+    windowId: value.windowId,
+    launchNonce: value.launchNonce,
+    moduleKey: value.moduleKey,
+    slotKey: value.slotKey,
+  });
+}
+
+// Reads the validated bootstrap identity back out of history.state after the
+// visible URL has been cleaned. Structurally tampered or foreign state (any
+// shape not exactly matching the six trusted bootstrap fields) fails closed
+// by returning null -- the browser-side state is never trusted as authority
+// on its own; join_operator_workspace_v1 still re-validates it server-side.
+export function readChildBootstrapVisibleState(historyObject) {
+  return childBootstrapHistoryValue(historyObject?.state?.[CHILD_BOOTSTRAP_STATE_KEY]);
+}
+
+// Preserves the already-validated bootstrap in versioned history.state and
+// replaces the visible URL with its clean form via history.replaceState().
+// Must only be called with a bootstrap that has already passed
+// parseChildBootstrap's own validation.
+export function writeChildBootstrapVisibleState(historyObject, bootstrap, cleanUrl) {
+  const validated = childBootstrapHistoryValue(bootstrap);
+  if (!validated || typeof historyObject?.replaceState !== "function") return false;
+  const state = historyObject.state && typeof historyObject.state === "object" && !Array.isArray(historyObject.state)
+    ? historyObject.state : {};
+  historyObject.replaceState({ ...state, [CHILD_BOOTSTRAP_STATE_KEY]: validated }, "", cleanUrl);
+  return true;
 }
 
 export function createWorkspaceEvent({ type, workspaceId, epoch, senderWindowId, sequence, now = Date.now(), moduleKey, slotKey, reservationId }) {
