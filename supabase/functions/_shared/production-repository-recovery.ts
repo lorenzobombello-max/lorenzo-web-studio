@@ -14,6 +14,7 @@ import {
 import {
   createProductionRepositoryCompletionProofCapability,
   createProductionRepositoryStateInspectionCapability,
+  GitHubRepositoryStateInspectionError,
   type GitHubRepositoryCompletionProof,
   type GitHubRepositoryStateClassification,
   type GitHubRepositoryStateInspectionAuthority,
@@ -141,17 +142,67 @@ const STAGE_DIAGNOSTIC_CODES: Readonly<Record<ProductionRepositoryRecoveryStage,
   RESPONSE_VALIDATE: "PRODUCTION_REPOSITORY_RECOVERY_RESPONSE_INVALID",
 });
 
+// REPOSITORY_INSPECT is a single guard() boundary wrapping several distinct
+// GitHub read substeps (token acquire, metadata read, ref read, snapshot
+// read, marker read). Without this map every one of those failures
+// collapsed into one generic code, making the exact failing substep
+// unprovable from the safe diagnostic alone. Each value here is itself a
+// pre-approved, whitelisted, safe machine-readable code (no raw provider
+// detail) -- this only narrows WHICH known substep failed.
+const REPOSITORY_INSPECT_SUBSTEP_DIAGNOSTIC_CODES = Object.freeze({
+  TOKEN_ACQUIRE: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FAILED",
+  METADATA_READ: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_METADATA_FAILED",
+  REF_READ: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_REF_READ_FAILED",
+  SNAPSHOT_READ: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_SNAPSHOT_FAILED",
+  MARKER_READ: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_MARKER_FAILED",
+  IDENTITY_MISMATCH: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_IDENTITY_MISMATCH",
+});
+type RepositoryInspectSubstep = keyof typeof REPOSITORY_INSPECT_SUBSTEP_DIAGNOSTIC_CODES;
+
 // Thrown ONLY with a pre-approved, whitelisted diagnostic code (see
-// STAGE_DIAGNOSTIC_CODES above). The original underlying error (which may be
-// a raw GitHubHttpError, a network failure, or an RPC error carrying
-// provider/database detail) is intentionally discarded by `guard` and never
-// attached to this error, so this class can never leak sensitive detail.
+// STAGE_DIAGNOSTIC_CODES / REPOSITORY_INSPECT_SUBSTEP_DIAGNOSTIC_CODES
+// above). The original underlying error (which may be a raw GitHubHttpError,
+// a network failure, or an RPC error carrying provider/database detail) is
+// intentionally discarded by `guard` and never attached to this error, so
+// this class can never leak sensitive detail.
 export class ProductionRepositoryRecoveryStageError extends Error {
   readonly stage: ProductionRepositoryRecoveryStage;
-  constructor(stage: ProductionRepositoryRecoveryStage) {
-    super(STAGE_DIAGNOSTIC_CODES[stage]);
+  constructor(stage: ProductionRepositoryRecoveryStage, inspectSubstep?: RepositoryInspectSubstep) {
+    if (inspectSubstep !== undefined && stage !== "REPOSITORY_INSPECT") {
+      throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
+    }
+    super(
+      inspectSubstep !== undefined
+        ? REPOSITORY_INSPECT_SUBSTEP_DIAGNOSTIC_CODES[inspectSubstep]
+        : STAGE_DIAGNOSTIC_CODES[stage],
+    );
     this.name = "ProductionRepositoryRecoveryStageError";
     this.stage = stage;
+  }
+}
+
+// Classifies a REPOSITORY_INSPECT failure into one of the known, safe
+// substep codes above using only the already-safe, already-sanitized
+// diagnostic surface exported by the inspector module (never the raw
+// error/provider payload). Returns undefined for anything unrecognized, so
+// `guard` falls back to the generic PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED
+// code and still fails closed.
+function classifyRepositoryInspectionFailure(error: unknown): RepositoryInspectSubstep | undefined {
+  if (!(error instanceof GitHubRepositoryStateInspectionError)) return undefined;
+  if (error.code === "REPOSITORY_IDENTITY_MISMATCH") return "IDENTITY_MISMATCH";
+  switch (error.postCreateSubphase) {
+    case "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE":
+      return "TOKEN_ACQUIRE";
+    case "LAB_POST_CREATE_METADATA_READ":
+      return "METADATA_READ";
+    case "LAB_POST_CREATE_SNAPSHOT_READBACK":
+      return error.snapshotReadbackCheck === "REF_READ" ? "REF_READ" : "SNAPSHOT_READ";
+    case "LAB_POST_CREATE_PROVENANCE_VALIDATE":
+      return "SNAPSHOT_READ";
+    case "LAB_POST_CREATE_MARKER_READBACK":
+      return "MARKER_READ";
+    default:
+      return undefined;
   }
 }
 
@@ -617,9 +668,17 @@ export function createProductionRepositoryRecovery(dependencies: Dependencies) {
         { tokenBroker: dependencies.tokenBroker, http: dependencies.http },
       );
       const initial = await guard("REPOSITORY_INSPECT", async () => {
-        const result = await inspect();
-        if (result.state === "CONFLICT") fail();
-        return result;
+        try {
+          const result = await inspect();
+          if (result.state === "CONFLICT") fail();
+          return result;
+        } catch (error) {
+          if (error instanceof ProductionRepositoryRecoveryStageError) throw error;
+          throw new ProductionRepositoryRecoveryStageError(
+            "REPOSITORY_INSPECT",
+            classifyRepositoryInspectionFailure(error),
+          );
+        }
       });
       let status: ProductionRepositoryRecoveryResult["status"];
       if (initial.state === "EMPTY_OR_UNINITIALIZED") {

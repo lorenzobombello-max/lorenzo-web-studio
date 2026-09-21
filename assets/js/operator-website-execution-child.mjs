@@ -846,7 +846,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       || typeof options.requireAal2 !== "function") return false;
     repositoryRecoveryPending = true;
     button.disabled = true;
-    setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte wordt hersteld.");
+    setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte wordt hersteld.", { dark: true });
     try {
       await options.requireAal2();
       const request = websiteRepositoryRecoveryRequest({
@@ -859,7 +859,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       );
       if (!await refresh() || disposed) return false;
       options.onInvalidate?.("dossiers");
-      setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte is hersteld.");
+      setRecoveryStatusMessage(workspace, "Bestaande technische werkruimte is hersteld.", { dark: true });
       return true;
     } catch (error) {
       if (!disposed) {

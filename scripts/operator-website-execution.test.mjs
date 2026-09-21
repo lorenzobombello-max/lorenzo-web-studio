@@ -2203,7 +2203,7 @@ test("recovery failure message uses the high-contrast dark treatment, not the pa
   }
 });
 
-test("recovery in-progress message does not use the dark error treatment", async () => {
+test("recovery in-progress message uses the dark treatment like the error message", async () => {
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
@@ -2219,7 +2219,32 @@ test("recovery in-progress message does not use the dark error treatment", async
     assert.equal(
       await page.locator("[data-website-message]").evaluate((element) =>
         element.classList.contains("action-message--dark")),
-      false,
+      true,
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("recovery success message uses the dark treatment, not the pale success tone", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=succeed",
+    );
+    await page.locator('[data-website-action="repository-recovery"]').click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent ===
+        "Bestaande technische werkruimte is hersteld.");
+    assert.equal(
+      await page.locator("[data-website-message]").evaluate((element) =>
+        element.classList.contains("action-message--dark")),
+      true,
     );
     await page.close();
   } finally {

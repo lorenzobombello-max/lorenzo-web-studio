@@ -601,6 +601,48 @@ Deno.test("production recovery CONFLICT state classifies to REPOSITORY_INSPECT",
   assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED");
 });
 
+// ==========================================================================
+// REPOSITORY_INSPECT substep classification (observability hardening)
+// ==========================================================================
+//
+// REPOSITORY_INSPECT wraps several distinct GitHub read substeps behind one
+// guard() boundary. Without substep classification, every one of these
+// failures collapsed into the same generic
+// PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED code, making the exact
+// failing read unprovable without raw log access. These tests prove the
+// substep code is both correct and still fully sanitized.
+
+Deno.test("production recovery repository metadata read failure classifies to REPOSITORY_INSPECT metadata substep", async () => {
+  const test = await recoveryHarness("ALREADY_COMPLETE", { networkReadFailure: true });
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assertZeroCreate(test.operations);
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.stage, "REPOSITORY_INSPECT");
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_METADATA_FAILED");
+  assert(!error.message.includes("network unavailable"));
+  const log = productionRepositoryRecoveryFailureLog(error);
+  assertEquals(log.diagnostic_code, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_METADATA_FAILED");
+  assert(!JSON.stringify(log).includes("network unavailable"));
+});
+
+Deno.test("production recovery unrecognized REPOSITORY_INSPECT failure falls back to the generic sanitized code", async () => {
+  const test = await recoveryHarness("CONFLICT");
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED");
+});
+
+Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and machine-readable", () => {
+  const codes: string[] = source.match(/PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_[A-Z_]+/g) ?? [];
+  assert(codes.length > 0);
+  for (const code of codes) {
+    assertMatch(code, /^PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_[A-Z_]+$/);
+  }
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_METADATA_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_REF_READ_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FAILED"));
+});
+
 Deno.test("production recovery stage errors never leak the underlying raw exception text", async () => {
   for (const [, , options] of STAGE_DIAGNOSTIC_SCENARIOS) {
     const test = await recoveryHarness(
