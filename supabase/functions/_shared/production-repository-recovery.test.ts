@@ -7,7 +7,13 @@ import {
 } from "jsr:@std/assert@1";
 import { GitHubHttpError } from "./github-http.ts";
 import { computeGitHubSnapshotDigest } from "./github-snapshot-digest.ts";
-import { createProductionRepositoryRecovery } from "./production-repository-recovery.ts";
+import {
+  createProductionRepositoryRecovery,
+  productionRepositoryRecoveryDiagnosticCode,
+  productionRepositoryRecoveryFailureLog,
+  ProductionRepositoryRecoveryStageError,
+  withProductionRepositoryRecoveryFailureLogging,
+} from "./production-repository-recovery.ts";
 
 const source = await Deno.readTextFile(
   new URL("./production-repository-recovery.ts", import.meta.url),
@@ -150,10 +156,15 @@ type RecoveryState =
 type HarnessOptions = Readonly<{
   authorityOverrides?: Readonly<Record<string, unknown>>;
   callerError?: unknown;
+  callerRpcThrows?: boolean;
   networkReadFailure?: boolean;
   writeFailure?: boolean;
   readbackFailure?: boolean;
   replay?: boolean;
+  tokenIssueFailsFor?: "STARTER_SNAPSHOT_READ" | "PRODUCTION_REPOSITORY_WRITE";
+  starterMetadataMismatch?: boolean;
+  createTreeFailure?: boolean;
+  finalizeError?: unknown;
 }>;
 
 function expectedMarker(treeDigest: string): string {
@@ -226,12 +237,20 @@ async function recoveryHarness(
       authUserId: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
       aal: "aal2" as const,
     }),
-    callerRpc: () => Promise.resolve({
-      data: authority,
-      error: options.callerError ?? null,
-    }),
+    callerRpc: () => {
+      if (options.callerRpcThrows) {
+        return Promise.reject(new Error("authority rpc network failure with sensitive detail"));
+      }
+      return Promise.resolve({
+        data: authority,
+        error: options.callerError ?? null,
+      });
+    },
     serviceRpc: (name, parameters) => {
       serviceCalls.push({ name, parameters });
+      if (options.finalizeError !== undefined) {
+        return Promise.resolve({ data: null, error: options.finalizeError });
+      }
       return Promise.resolve({
         data: { replayed: options.replay === true },
         error: null,
@@ -240,6 +259,11 @@ async function recoveryHarness(
     tokenBroker: {
       issue: (_config, request) => {
         tokenRequests.push(request);
+        if (options.tokenIssueFailsFor === request.operation) {
+          return Promise.reject(
+            new Error("token exchange failed with sensitive installation detail"),
+          );
+        }
         return Promise.resolve({
           token: TOKEN,
           expiresAt: "2099-01-01T00:00:00.000Z",
@@ -255,6 +279,19 @@ async function recoveryHarness(
             throw new Error("network unavailable");
           }
           if (operation.repository === "lws-website-starter") {
+            if (options.starterMetadataMismatch) {
+              return {
+                repositoryId: "9999999999",
+                nodeId: "R_wrong_starter_repository",
+                owner: OWNER,
+                name: "lws-website-starter",
+                fullName: `${OWNER}/lws-website-starter`,
+                private: true,
+                defaultBranch: "main",
+                description: null,
+                createdAt: "2026-09-20T00:00:00.000Z",
+              };
+            }
             return {
               repositoryId: "1369007000",
               nodeId: "R_starter_repository",
@@ -361,7 +398,12 @@ async function recoveryHarness(
           };
         }
         if (operation.kind === "CREATE_BLOB") return { sha: BLOB_SHA };
-        if (operation.kind === "CREATE_TREE") return { sha: TREE_SHA };
+        if (operation.kind === "CREATE_TREE") {
+          if (options.createTreeFailure) {
+            throw new Error("create tree failure with sensitive provider detail");
+          }
+          return { sha: TREE_SHA };
+        }
         if (operation.kind === "CREATE_COMMIT") return { sha: TARGET_COMMIT };
         if (operation.kind === "UPDATE_REF") {
           initialized = true;
@@ -451,17 +493,195 @@ Deno.test("production recovery rejects non-AAL2 composition with zero repository
   assertZeroCreate(test.operations);
 });
 
-for (const [name, options] of [
-  ["network read failure", { networkReadFailure: true }],
-  ["write failure", { writeFailure: true }],
-  ["readback failure", { readbackFailure: true }],
-] as const) {
+const STAGE_FAILURE_SCENARIOS = [
+  ["network read failure", { networkReadFailure: true }, "REPOSITORY_INSPECT"],
+  ["write failure", { writeFailure: true }, "MARKER_WRITE"],
+  ["readback failure", { readbackFailure: true }, "COMPLETION_PROOF"],
+] as const;
+
+for (const [name, options, expectedStage] of STAGE_FAILURE_SCENARIOS) {
   Deno.test(`production recovery ${name} retains zero repository creates`, async () => {
     const state = name === "network read failure"
       ? "ALREADY_COMPLETE"
       : "MARKER_MISSING";
     const test = await recoveryHarness(state, options);
-    await assertRejects(() => test.recovery.recover(test.input));
+    const error = await assertRejects(() => test.recovery.recover(test.input));
     assertZeroCreate(test.operations);
+    assert(error instanceof ProductionRepositoryRecoveryStageError);
+    assertEquals(error.stage, expectedStage);
   });
 }
+
+// ==========================================================================
+// Recovery stage diagnostic classification (backend observability fix)
+// ==========================================================================
+//
+// Every distinct recovery failure point must classify to exactly one
+// pre-approved, sanitized diagnostic code. The underlying raw exception
+// (which may carry network/provider detail) must never be observable in the
+// resulting error, in server logs, or in the code returned to the caller.
+
+const STAGE_DIAGNOSTIC_SCENARIOS: ReadonlyArray<
+  readonly [string, "EMPTY_OR_UNINITIALIZED" | "MARKER_MISSING" | "ALREADY_COMPLETE", HarnessOptions, string, string]
+> = [
+  [
+    "authority RPC transport failure",
+    "ALREADY_COMPLETE",
+    { callerRpcThrows: true },
+    "AUTHORITY_RPC",
+    "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_FAILED",
+  ],
+  [
+    "authority RPC application error",
+    "ALREADY_COMPLETE",
+    { callerError: { code: "SOME_DATABASE_ERROR" } },
+    "AUTHORITY_RPC",
+    "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_FAILED",
+  ],
+  [
+    "authority shape invalid",
+    "ALREADY_COMPLETE",
+    { authorityOverrides: { operation_id: "not-a-uuid" } },
+    "AUTHORITY_VALIDATE",
+    "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_INVALID",
+  ],
+  [
+    "target write token acquisition failure",
+    "EMPTY_OR_UNINITIALIZED",
+    { tokenIssueFailsFor: "PRODUCTION_REPOSITORY_WRITE" },
+    "TARGET_TOKEN_ACQUIRE",
+    "PRODUCTION_REPOSITORY_RECOVERY_TARGET_TOKEN_FAILED",
+  ],
+  [
+    "starter template token acquisition failure",
+    "EMPTY_OR_UNINITIALIZED",
+    { tokenIssueFailsFor: "STARTER_SNAPSHOT_READ" },
+    "STARTER_TOKEN_ACQUIRE",
+    "PRODUCTION_REPOSITORY_RECOVERY_STARTER_TOKEN_FAILED",
+  ],
+  [
+    "starter snapshot identity mismatch",
+    "EMPTY_OR_UNINITIALIZED",
+    { starterMetadataMismatch: true },
+    "STARTER_SNAPSHOT_READ",
+    "PRODUCTION_REPOSITORY_RECOVERY_SNAPSHOT_FAILED",
+  ],
+  [
+    "empty repository initialize failure",
+    "EMPTY_OR_UNINITIALIZED",
+    { createTreeFailure: true },
+    "EMPTY_REPOSITORY_INITIALIZE",
+    "PRODUCTION_REPOSITORY_RECOVERY_INITIALIZE_FAILED",
+  ],
+  [
+    "finalize RPC application error",
+    "ALREADY_COMPLETE",
+    { finalizeError: { code: "SOME_DATABASE_ERROR" } },
+    "FINALIZE_RPC",
+    "PRODUCTION_REPOSITORY_RECOVERY_FINALIZE_FAILED",
+  ],
+];
+
+for (const [name, state, options, expectedStage, expectedCode] of STAGE_DIAGNOSTIC_SCENARIOS) {
+  Deno.test(`production recovery ${name} classifies to ${expectedStage}`, async () => {
+    const test = await recoveryHarness(state, options);
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    assertZeroCreate(test.operations);
+    assert(error instanceof ProductionRepositoryRecoveryStageError);
+    assertEquals(error.stage, expectedStage);
+    assertEquals(error.message, expectedCode);
+  });
+}
+
+Deno.test("production recovery CONFLICT state classifies to REPOSITORY_INSPECT", async () => {
+  const test = await recoveryHarness("CONFLICT");
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.stage, "REPOSITORY_INSPECT");
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED");
+});
+
+Deno.test("production recovery stage errors never leak the underlying raw exception text", async () => {
+  for (const [, , options] of STAGE_DIAGNOSTIC_SCENARIOS) {
+    const test = await recoveryHarness(
+      Object.keys(options).includes("callerRpcThrows") ||
+        Object.keys(options).includes("callerError") ||
+        Object.keys(options).includes("finalizeError")
+        ? "ALREADY_COMPLETE"
+        : "EMPTY_OR_UNINITIALIZED",
+      options,
+    );
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    const message = String((error as Error).message);
+    assert(!message.includes("sensitive"));
+    assert(!message.includes("network"));
+    assert(!message.includes("provider"));
+    assertMatch(message, /^PRODUCTION_REPOSITORY_RECOVERY_[A-Z_]+$/);
+  }
+});
+
+Deno.test("productionRepositoryRecoveryDiagnosticCode returns null for unrelated errors", () => {
+  assertEquals(productionRepositoryRecoveryDiagnosticCode(new Error("unrelated database failure")), null);
+  assertEquals(productionRepositoryRecoveryDiagnosticCode("not an error"), null);
+  assertEquals(productionRepositoryRecoveryDiagnosticCode(null), null);
+});
+
+Deno.test("productionRepositoryRecoveryDiagnosticCode returns the exact sanitized code for stage errors", () => {
+  const error = new ProductionRepositoryRecoveryStageError("FINALIZE_RPC");
+  assertEquals(
+    productionRepositoryRecoveryDiagnosticCode(error),
+    "PRODUCTION_REPOSITORY_RECOVERY_FINALIZE_FAILED",
+  );
+});
+
+Deno.test("productionRepositoryRecoveryFailureLog contains only safe fields for stage errors", () => {
+  const log = productionRepositoryRecoveryFailureLog(
+    new ProductionRepositoryRecoveryStageError("MARKER_WRITE"),
+  );
+  assertEquals(log, {
+    event: "LWS_GIT001_RECOVERY_FAILURE",
+    action: "recover_existing_website_repository",
+    stage: "MARKER_WRITE",
+    diagnostic_code: "PRODUCTION_REPOSITORY_RECOVERY_MARKER_FAILED",
+  });
+});
+
+Deno.test("productionRepositoryRecoveryFailureLog fails closed for unclassified errors", () => {
+  const log = productionRepositoryRecoveryFailureLog(
+    new Error("some raw sensitive provider payload"),
+  );
+  assertEquals(log, {
+    event: "LWS_GIT001_RECOVERY_FAILURE",
+    action: "recover_existing_website_repository",
+    stage: "UNKNOWN",
+    diagnostic_code: "UNCLASSIFIED",
+  });
+  assert(!JSON.stringify(log).includes("sensitive"));
+});
+
+Deno.test("withProductionRepositoryRecoveryFailureLogging logs sanitized entry and rethrows the original error unchanged", async () => {
+  const logs: string[] = [];
+  const original = new ProductionRepositoryRecoveryStageError("AUTHORITY_RPC");
+  await assertRejects(
+    () =>
+      withProductionRepositoryRecoveryFailureLogging(
+        () => Promise.reject(original),
+        (entry) => logs.push(entry),
+      ),
+    ProductionRepositoryRecoveryStageError,
+  );
+  assertEquals(logs.length, 1);
+  const parsed = JSON.parse(logs[0]);
+  assertEquals(parsed.stage, "AUTHORITY_RPC");
+  assertEquals(parsed.diagnostic_code, "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_FAILED");
+});
+
+Deno.test("withProductionRepositoryRecoveryFailureLogging does not log on success", async () => {
+  const logs: string[] = [];
+  const result = await withProductionRepositoryRecoveryFailureLogging(
+    () => Promise.resolve("ok"),
+    (entry) => logs.push(entry),
+  );
+  assertEquals(result, "ok");
+  assertEquals(logs.length, 0);
+});

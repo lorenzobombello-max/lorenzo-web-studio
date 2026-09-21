@@ -108,6 +108,120 @@ export type ProductionRepositoryRecoveryResult = Readonly<{
   binding: unknown;
 }>;
 
+// Safe, machine-readable recovery failure stages. These are the ONLY values
+// that may ever reach the HTTP response or a server log for a recovery
+// failure; the underlying exception (which may carry provider/database
+// detail) is never surfaced past `guard`.
+export type ProductionRepositoryRecoveryStage =
+  | "CONFIG_LOAD"
+  | "AUTHORITY_RPC"
+  | "AUTHORITY_VALIDATE"
+  | "REPOSITORY_INSPECT"
+  | "TARGET_TOKEN_ACQUIRE"
+  | "STARTER_TOKEN_ACQUIRE"
+  | "STARTER_SNAPSHOT_READ"
+  | "EMPTY_REPOSITORY_INITIALIZE"
+  | "MARKER_WRITE"
+  | "COMPLETION_PROOF"
+  | "FINALIZE_RPC"
+  | "RESPONSE_VALIDATE";
+
+const STAGE_DIAGNOSTIC_CODES: Readonly<Record<ProductionRepositoryRecoveryStage, string>> = Object.freeze({
+  CONFIG_LOAD: "PRODUCTION_REPOSITORY_RECOVERY_CONFIG_FAILED",
+  AUTHORITY_RPC: "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_FAILED",
+  AUTHORITY_VALIDATE: "PRODUCTION_REPOSITORY_RECOVERY_AUTHORITY_INVALID",
+  REPOSITORY_INSPECT: "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED",
+  TARGET_TOKEN_ACQUIRE: "PRODUCTION_REPOSITORY_RECOVERY_TARGET_TOKEN_FAILED",
+  STARTER_TOKEN_ACQUIRE: "PRODUCTION_REPOSITORY_RECOVERY_STARTER_TOKEN_FAILED",
+  STARTER_SNAPSHOT_READ: "PRODUCTION_REPOSITORY_RECOVERY_SNAPSHOT_FAILED",
+  EMPTY_REPOSITORY_INITIALIZE: "PRODUCTION_REPOSITORY_RECOVERY_INITIALIZE_FAILED",
+  MARKER_WRITE: "PRODUCTION_REPOSITORY_RECOVERY_MARKER_FAILED",
+  COMPLETION_PROOF: "PRODUCTION_REPOSITORY_RECOVERY_PROOF_FAILED",
+  FINALIZE_RPC: "PRODUCTION_REPOSITORY_RECOVERY_FINALIZE_FAILED",
+  RESPONSE_VALIDATE: "PRODUCTION_REPOSITORY_RECOVERY_RESPONSE_INVALID",
+});
+
+// Thrown ONLY with a pre-approved, whitelisted diagnostic code (see
+// STAGE_DIAGNOSTIC_CODES above). The original underlying error (which may be
+// a raw GitHubHttpError, a network failure, or an RPC error carrying
+// provider/database detail) is intentionally discarded by `guard` and never
+// attached to this error, so this class can never leak sensitive detail.
+export class ProductionRepositoryRecoveryStageError extends Error {
+  readonly stage: ProductionRepositoryRecoveryStage;
+  constructor(stage: ProductionRepositoryRecoveryStage) {
+    super(STAGE_DIAGNOSTIC_CODES[stage]);
+    this.name = "ProductionRepositoryRecoveryStageError";
+    this.stage = stage;
+  }
+}
+
+// Returns the safe diagnostic code for a recovery failure, or null if the
+// error did not originate from the recovery stage machinery below (in which
+// case callers must continue to fail closed to a generic error code).
+export function productionRepositoryRecoveryDiagnosticCode(error: unknown): string | null {
+  return error instanceof ProductionRepositoryRecoveryStageError ? error.message : null;
+}
+
+// Runs `run` and, on any failure, reclassifies it as a stage-tagged,
+// pre-approved diagnostic error. Already stage-tagged errors (thrown by a
+// more specific inner `guard`) pass through unchanged so the most precise
+// stage is always preserved. This is the single choke point that prevents
+// raw provider/database error detail from ever escaping this module.
+async function guard<T>(
+  stage: ProductionRepositoryRecoveryStage,
+  run: () => T | Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ProductionRepositoryRecoveryStageError) throw error;
+    throw new ProductionRepositoryRecoveryStageError(stage);
+  }
+}
+
+// Safe, sanitized failure log record for server-side observability only.
+// Contains no JWTs, tokens, Authorization headers, private key material, or
+// raw provider/database payloads -- only the pre-approved stage and code.
+export function productionRepositoryRecoveryFailureLog(
+  error: unknown,
+): Readonly<Record<string, string>> {
+  return Object.freeze(
+    error instanceof ProductionRepositoryRecoveryStageError
+      ? {
+        event: "LWS_GIT001_RECOVERY_FAILURE",
+        action: "recover_existing_website_repository",
+        stage: error.stage,
+        diagnostic_code: error.message,
+      }
+      : {
+        event: "LWS_GIT001_RECOVERY_FAILURE",
+        action: "recover_existing_website_repository",
+        stage: "UNKNOWN",
+        diagnostic_code: "UNCLASSIFIED",
+      },
+  );
+}
+
+// Wraps the full recovery action (including the pre-flight config/signer
+// setup performed by the caller before `recover()` is invoked) so that any
+// failure -- classified or not -- is safely logged server-side before being
+// re-thrown unchanged to the caller.
+export async function withProductionRepositoryRecoveryFailureLogging<T>(
+  action: () => Promise<T>,
+  logger: (entry: string) => void = (entry) => console.error(entry),
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    logger(JSON.stringify(productionRepositoryRecoveryFailureLog(error)));
+    throw error;
+  }
+}
+
+// Exposed so `executeCallerJwtWebsiteRepositoryRecoveryAction` can classify
+// its own pre-flight (CONFIG_LOAD) failures using the same stage machinery.
+export { guard as guardProductionRepositoryRecoveryStage };
+
 function fail(): never {
   throw new Error("PRODUCTION_REPOSITORY_RECOVERY_FAILED");
 }
@@ -248,52 +362,55 @@ async function prepareSnapshot(
   authority: Authority,
 ): Promise<readonly SnapshotEntry[]> {
   const config = dependencies.config;
-  const token = await issue(
-    dependencies,
-    authority,
-    "STARTER_SNAPSHOT_READ",
-    config.templateRepositoryId,
-  );
-  const metadata = await dependencies.http.execute({
-    kind: "REPOSITORY_METADATA",
-    owner: config.templateOwner,
-    repository: config.templateName,
-    token,
-  }) as GitHubRepositoryMetadata;
-  if (
-    metadata.repositoryId !== config.templateRepositoryId ||
-    metadata.owner !== config.templateOwner || metadata.name !== config.templateName
-  ) fail();
-  const tree = await dependencies.http.execute({
-    kind: "REPOSITORY_TREE",
-    owner: config.templateOwner,
-    repository: config.templateName,
-    treeRef: authority.starterCommitSha,
-    token,
-  }) as Readonly<{ sha: string; truncated: false; entries: readonly GitHubTreeEntry[] }>;
-  if (!tree || tree.truncated !== false || !Array.isArray(tree.entries)) fail();
-  const entries: SnapshotEntry[] = [];
-  for (const entry of tree.entries) {
-    if (entry.type === "tree") continue;
-    if (entry.type !== "blob") fail();
-    const blob = await dependencies.http.execute({
-      kind: "READ_BLOB",
+  const token = await guard("STARTER_TOKEN_ACQUIRE", () =>
+    issue(
+      dependencies,
+      authority,
+      "STARTER_SNAPSHOT_READ",
+      config.templateRepositoryId,
+    ));
+  return await guard("STARTER_SNAPSHOT_READ", async () => {
+    const metadata = await dependencies.http.execute({
+      kind: "REPOSITORY_METADATA",
       owner: config.templateOwner,
       repository: config.templateName,
-      blobSha: entry.sha,
       token,
-    }) as Readonly<{ sha: string; encoding: "base64"; contentBase64: string; size: number }>;
-    const content = bytes(blob.contentBase64);
-    if (blob.sha !== entry.sha || blob.encoding !== "base64" || content.byteLength !== blob.size) fail();
-    entries.push(Object.freeze({
-      path: entry.path,
-      mode: entry.mode,
-      type: "blob" as const,
-      content,
-    }));
-  }
-  if (await computeGitHubSnapshotDigest(entries) !== config.starterTreeSha256) fail();
-  return Object.freeze(entries);
+    }) as GitHubRepositoryMetadata;
+    if (
+      metadata.repositoryId !== config.templateRepositoryId ||
+      metadata.owner !== config.templateOwner || metadata.name !== config.templateName
+    ) fail();
+    const tree = await dependencies.http.execute({
+      kind: "REPOSITORY_TREE",
+      owner: config.templateOwner,
+      repository: config.templateName,
+      treeRef: authority.starterCommitSha,
+      token,
+    }) as Readonly<{ sha: string; truncated: false; entries: readonly GitHubTreeEntry[] }>;
+    if (!tree || tree.truncated !== false || !Array.isArray(tree.entries)) fail();
+    const entries: SnapshotEntry[] = [];
+    for (const entry of tree.entries) {
+      if (entry.type === "tree") continue;
+      if (entry.type !== "blob") fail();
+      const blob = await dependencies.http.execute({
+        kind: "READ_BLOB",
+        owner: config.templateOwner,
+        repository: config.templateName,
+        blobSha: entry.sha,
+        token,
+      }) as Readonly<{ sha: string; encoding: "base64"; contentBase64: string; size: number }>;
+      const content = bytes(blob.contentBase64);
+      if (blob.sha !== entry.sha || blob.encoding !== "base64" || content.byteLength !== blob.size) fail();
+      entries.push(Object.freeze({
+        path: entry.path,
+        mode: entry.mode,
+        type: "blob" as const,
+        content,
+      }));
+    }
+    if (await computeGitHubSnapshotDigest(entries) !== config.starterTreeSha256) fail();
+    return Object.freeze(entries);
+  });
 }
 
 async function confirmTarget(
@@ -301,19 +418,21 @@ async function confirmTarget(
   authority: Authority,
   token: string,
 ): Promise<void> {
-  const metadata = await dependencies.http.execute({
-    kind: "REPOSITORY_METADATA",
-    owner: authority.owner,
-    repository: authority.repository,
-    token,
-  }) as GitHubRepositoryMetadata;
-  if (
-    metadata.repositoryId !== authority.repositoryId ||
-    metadata.nodeId !== authority.repositoryNodeId ||
-    metadata.owner !== authority.owner || metadata.name !== authority.repository ||
-    metadata.fullName !== `${authority.owner}/${authority.repository}` ||
-    metadata.private !== true || metadata.defaultBranch !== "main"
-  ) fail();
+  await guard("TARGET_TOKEN_ACQUIRE", async () => {
+    const metadata = await dependencies.http.execute({
+      kind: "REPOSITORY_METADATA",
+      owner: authority.owner,
+      repository: authority.repository,
+      token,
+    }) as GitHubRepositoryMetadata;
+    if (
+      metadata.repositoryId !== authority.repositoryId ||
+      metadata.nodeId !== authority.repositoryNodeId ||
+      metadata.owner !== authority.owner || metadata.name !== authority.repository ||
+      metadata.fullName !== `${authority.owner}/${authority.repository}` ||
+      metadata.private !== true || metadata.defaultBranch !== "main"
+    ) fail();
+  });
 }
 
 function conflict(error: unknown): boolean {
@@ -345,92 +464,96 @@ async function initializeEmptyRepository(
   dependencies: Dependencies,
   authority: Authority,
 ): Promise<void> {
-  const token = await issue(
-    dependencies,
-    authority,
-    "PRODUCTION_REPOSITORY_WRITE",
-    authority.repositoryId,
-  );
+  const token = await guard("TARGET_TOKEN_ACQUIRE", () =>
+    issue(
+      dependencies,
+      authority,
+      "PRODUCTION_REPOSITORY_WRITE",
+      authority.repositoryId,
+    ));
   await confirmTarget(dependencies, authority, token);
   const entries = await prepareSnapshot(dependencies, authority);
-  const bootstrap = `${JSON.stringify({
-    schema_version: 1,
-    purpose: "PRODUCTION_EXISTING_REPOSITORY_RECOVERY",
-    environment: "PRODUCTION",
-    organization: authority.owner,
-    repository: authority.repository,
-    repository_id: authority.repositoryId,
-    website_work_context_id: authority.websiteWorkContextId,
-    website_workspace_id: authority.websiteWorkspaceId,
-    repository_provisioning_operation_id: authority.operationId,
-  }, null, 2)}\n`;
-  const created: unknown = await dependencies.http.execute({
-    kind: "CREATE_BOOTSTRAP_FILE",
-    owner: authority.owner,
-    repository: authority.repository,
-    contentBase64: base64(new TextEncoder().encode(bootstrap)),
-    branch: "main",
-    token,
-  });
-  if (!exactRecord(created, ["path", "contentSha", "commitSha", "parentCount"]) ||
-    created.path !== ".lws/bootstrap.json" || !SHA.test(String(created.commitSha)) ||
-    created.parentCount !== 0) fail();
+  await guard("EMPTY_REPOSITORY_INITIALIZE", async () => {
+    const bootstrap = `${JSON.stringify({
+      schema_version: 1,
+      purpose: "PRODUCTION_EXISTING_REPOSITORY_RECOVERY",
+      environment: "PRODUCTION",
+      organization: authority.owner,
+      repository: authority.repository,
+      repository_id: authority.repositoryId,
+      website_work_context_id: authority.websiteWorkContextId,
+      website_workspace_id: authority.websiteWorkspaceId,
+      repository_provisioning_operation_id: authority.operationId,
+    }, null, 2)}\n`;
+    const created: unknown = await dependencies.http.execute({
+      kind: "CREATE_BOOTSTRAP_FILE",
+      owner: authority.owner,
+      repository: authority.repository,
+      contentBase64: base64(new TextEncoder().encode(bootstrap)),
+      branch: "main",
+      token,
+    });
+    if (!exactRecord(created, ["path", "contentSha", "commitSha", "parentCount"]) ||
+      created.path !== ".lws/bootstrap.json" || !SHA.test(String(created.commitSha)) ||
+      created.parentCount !== 0) fail();
 
-  const treeEntries: Array<Readonly<{ path: string; mode: string; type: "blob"; sha: string }>> = [];
-  for (const entry of entries) {
-    treeEntries.push(Object.freeze({
-      path: entry.path,
-      mode: entry.mode,
-      type: "blob",
-      sha: sha(await dependencies.http.execute({
-        kind: "CREATE_BLOB",
-        owner: authority.owner,
-        repository: authority.repository,
-        contentBase64: base64(entry.content),
-        token,
-      })),
+    const treeEntries: Array<Readonly<{ path: string; mode: string; type: "blob"; sha: string }>> = [];
+    for (const entry of entries) {
+      treeEntries.push(Object.freeze({
+        path: entry.path,
+        mode: entry.mode,
+        type: "blob",
+        sha: sha(await dependencies.http.execute({
+          kind: "CREATE_BLOB",
+          owner: authority.owner,
+          repository: authority.repository,
+          contentBase64: base64(entry.content),
+          token,
+        })),
+      }));
+    }
+    const treeSha = sha(await dependencies.http.execute({
+      kind: "CREATE_TREE",
+      owner: authority.owner,
+      repository: authority.repository,
+      entries: Object.freeze(treeEntries),
+      token,
     }));
-  }
-  const treeSha = sha(await dependencies.http.execute({
-    kind: "CREATE_TREE",
-    owner: authority.owner,
-    repository: authority.repository,
-    entries: Object.freeze(treeEntries),
-    token,
-  }));
-  const commitSha = sha(await dependencies.http.execute({
-    kind: "CREATE_COMMIT",
-    owner: authority.owner,
-    repository: authority.repository,
-    message: "chore: initialize approved starter snapshot",
-    treeSha,
-    parentSha: String(created.commitSha),
-    token,
-  }));
-  const ref: unknown = await dependencies.http.execute({
-    kind: "UPDATE_REF",
-    owner: authority.owner,
-    repository: authority.repository,
-    commitSha,
-    force: false,
-    token,
+    const commitSha = sha(await dependencies.http.execute({
+      kind: "CREATE_COMMIT",
+      owner: authority.owner,
+      repository: authority.repository,
+      message: "chore: initialize approved starter snapshot",
+      treeSha,
+      parentSha: String(created.commitSha),
+      token,
+    }));
+    const ref: unknown = await dependencies.http.execute({
+      kind: "UPDATE_REF",
+      owner: authority.owner,
+      repository: authority.repository,
+      commitSha,
+      force: false,
+      token,
+    });
+    if (!exactRecord(ref, ["ref", "commitSha"]) || ref.ref !== "refs/heads/main" || ref.commitSha !== commitSha) fail();
   });
-  if (!exactRecord(ref, ["ref", "commitSha"]) || ref.ref !== "refs/heads/main" || ref.commitSha !== commitSha) fail();
-  await writeMarker(dependencies, authority, token);
+  await guard("MARKER_WRITE", () => writeMarker(dependencies, authority, token));
 }
 
 async function completeMarker(
   dependencies: Dependencies,
   authority: Authority,
 ): Promise<void> {
-  const token = await issue(
-    dependencies,
-    authority,
-    "PRODUCTION_REPOSITORY_WRITE",
-    authority.repositoryId,
-  );
+  const token = await guard("TARGET_TOKEN_ACQUIRE", () =>
+    issue(
+      dependencies,
+      authority,
+      "PRODUCTION_REPOSITORY_WRITE",
+      authority.repositoryId,
+    ));
   await confirmTarget(dependencies, authority, token);
-  await writeMarker(dependencies, authority, token);
+  await guard("MARKER_WRITE", () => writeMarker(dependencies, authority, token));
 }
 
 function verification(authority: Authority, proof: GitHubRepositoryCompletionProof) {
@@ -473,25 +596,32 @@ export function createProductionRepositoryRecovery(dependencies: Dependencies) {
     async recover(input: ProductionRepositoryRecoveryInput): Promise<ProductionRepositoryRecoveryResult> {
       if (!input || !UUID.test(input.quoteRequestId) ||
         !UUID.test(input.websiteWorkContextId) || !UUID.test(input.websiteWorkspaceId)) fail();
-      const authorityResult = await dependencies.callerRpc(
-        "get_production_website_repository_recovery_authority_v1",
-        Object.freeze({
-          p_quote_request_id: input.quoteRequestId,
-          p_website_work_context_id: input.websiteWorkContextId,
-          p_website_workspace_id: input.websiteWorkspaceId,
-        }),
-      );
-      if (!authorityResult || authorityResult.error) fail();
-      const authority = projectAuthority(authorityResult.data, input, dependencies.config);
+      const authorityData = await guard("AUTHORITY_RPC", async () => {
+        const authorityResult = await dependencies.callerRpc(
+          "get_production_website_repository_recovery_authority_v1",
+          Object.freeze({
+            p_quote_request_id: input.quoteRequestId,
+            p_website_work_context_id: input.websiteWorkContextId,
+            p_website_workspace_id: input.websiteWorkspaceId,
+          }),
+        );
+        if (!authorityResult || authorityResult.error) fail();
+        return authorityResult.data;
+      });
+      const authority = await guard("AUTHORITY_VALIDATE", () =>
+        projectAuthority(authorityData, input, dependencies.config));
       const expected = inspectionAuthority(dependencies.config, authority);
       const inspect = createProductionRepositoryStateInspectionCapability(
         dependencies.config,
         expected,
         { tokenBroker: dependencies.tokenBroker, http: dependencies.http },
       );
-      const initial = await inspect();
+      const initial = await guard("REPOSITORY_INSPECT", async () => {
+        const result = await inspect();
+        if (result.state === "CONFLICT") fail();
+        return result;
+      });
       let status: ProductionRepositoryRecoveryResult["status"];
-      if (initial.state === "CONFLICT") fail();
       if (initial.state === "EMPTY_OR_UNINITIALIZED") {
         await initializeEmptyRepository(dependencies, authority);
         status = "RECOVERED_FROM_EMPTY";
@@ -509,19 +639,26 @@ export function createProductionRepositoryRecovery(dependencies: Dependencies) {
         expected,
         { tokenBroker: dependencies.tokenBroker, http: dependencies.http },
       );
-      const completed = await prove();
-      if (!completed || completed.state !== "ALREADY_COMPLETE") fail();
-      const finalized = await dependencies.serviceRpc(
-        "finalize_production_website_repository_recovery_v1",
-        Object.freeze({
-          p_quote_request_id: input.quoteRequestId,
-          p_operation_id: authority.operationId,
-          p_verification: verification(authority, completed.proof),
-          p_actor_auth_user_id: dependencies.actor.authUserId,
-          p_actor_aal: dependencies.actor.aal,
-        }),
-      );
-      if (!finalized || finalized.error) fail();
+      const completed = await guard("COMPLETION_PROOF", async () => {
+        const result = await prove();
+        if (!result || result.state !== "ALREADY_COMPLETE") fail();
+        return result;
+      });
+      const verified = await guard("COMPLETION_PROOF", () => verification(authority, completed.proof));
+      const finalized = await guard("FINALIZE_RPC", async () => {
+        const result = await dependencies.serviceRpc(
+          "finalize_production_website_repository_recovery_v1",
+          Object.freeze({
+            p_quote_request_id: input.quoteRequestId,
+            p_operation_id: authority.operationId,
+            p_verification: verified,
+            p_actor_auth_user_id: dependencies.actor.authUserId,
+            p_actor_aal: dependencies.actor.aal,
+          }),
+        );
+        if (!result || result.error) fail();
+        return result;
+      });
       return Object.freeze({
         status,
         operationId: authority.operationId,

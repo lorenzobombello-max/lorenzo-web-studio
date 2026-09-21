@@ -119,7 +119,11 @@ import {
   createGitHubTargetRepositoryProviderForRuntime,
 } from "../_shared/github-repository-runtime.ts";
 import { createRepositoryProvisioningStoreV2 } from "../_shared/repository-provisioning-store-v2.ts";
-import { createProductionRepositoryRecovery } from "../_shared/production-repository-recovery.ts";
+import {
+  createProductionRepositoryRecovery,
+  guardProductionRepositoryRecoveryStage,
+  withProductionRepositoryRecoveryFailureLogging,
+} from "../_shared/production-repository-recovery.ts";
 import {
   hasValidatedGitHubTokenAcquireDiagnostic,
   hasValidatedGitHubTokenLeaseCheck,
@@ -1009,44 +1013,52 @@ export async function executeCallerJwtWebsiteRepositoryRecoveryAction(
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
   serviceClient: () => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
-  const config = loadGitHubAppConfig();
-  if (config.target !== "PRODUCTION") {
-    throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
-  }
-  const http = createGitHubHttpClient({ fetch });
-  const signer = await initializeGitHubAppInputSigner(config.privateKey);
-  const tokenBroker = createGitHubAppTokenBroker({
-    now: Date.now,
-    sign: (_privateKey, signingInput) => signer(signingInput),
-    exchange: async (exchange) => {
-      const result = await http.execute({
-        kind: "TOKEN_EXCHANGE",
-        installationId: exchange.installationId,
-        appJwt: exchange.appJwt,
-        repositoryIds: exchange.repositoryIds,
-        permissions: exchange.permissions,
-      });
-      if (!("token" in result) || !("expiresAt" in result)) {
-        throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
-      }
-      return result;
-    },
+  return await withProductionRepositoryRecoveryFailureLogging(async () => {
+    const { config, http, tokenBroker } = await guardProductionRepositoryRecoveryStage(
+      "CONFIG_LOAD",
+      async () => {
+        const config = loadGitHubAppConfig();
+        if (config.target !== "PRODUCTION") {
+          throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+        }
+        const http = createGitHubHttpClient({ fetch });
+        const signer = await initializeGitHubAppInputSigner(config.privateKey);
+        const tokenBroker = createGitHubAppTokenBroker({
+          now: Date.now,
+          sign: (_privateKey, signingInput) => signer(signingInput),
+          exchange: async (exchange) => {
+            const result = await http.execute({
+              kind: "TOKEN_EXCHANGE",
+              installationId: exchange.installationId,
+              appJwt: exchange.appJwt,
+              repositoryIds: exchange.repositoryIds,
+              permissions: exchange.permissions,
+            });
+            if (!("token" in result) || !("expiresAt" in result)) {
+              throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+            }
+            return result;
+          },
+        });
+        return { config, http, tokenBroker };
+      },
+    );
+    const caller = clientFor(jwt);
+    const service = serviceClient();
+    const recovery = createProductionRepositoryRecovery({
+      config,
+      actor: Object.freeze({ authUserId: actorAuthUserId, aal: "aal2" }),
+      callerRpc: async (name, parameters) => await caller.rpc(name, parameters),
+      serviceRpc: async (name, parameters) => await service.rpc(name, parameters),
+      tokenBroker,
+      http,
+    });
+    return await recovery.recover(Object.freeze({
+      quoteRequestId: input.quote_request_id,
+      websiteWorkContextId: input.website_work_context_id,
+      websiteWorkspaceId: input.website_workspace_id,
+    }));
   });
-  const caller = clientFor(jwt);
-  const service = serviceClient();
-  const recovery = createProductionRepositoryRecovery({
-    config,
-    actor: Object.freeze({ authUserId: actorAuthUserId, aal: "aal2" }),
-    callerRpc: async (name, parameters) => await caller.rpc(name, parameters),
-    serviceRpc: async (name, parameters) => await service.rpc(name, parameters),
-    tokenBroker,
-    http,
-  });
-  return await recovery.recover(Object.freeze({
-    quoteRequestId: input.quote_request_id,
-    websiteWorkContextId: input.website_work_context_id,
-    websiteWorkspaceId: input.website_workspace_id,
-  }));
 }
 
 async function createWebsiteProjectFilesRuntimeService(

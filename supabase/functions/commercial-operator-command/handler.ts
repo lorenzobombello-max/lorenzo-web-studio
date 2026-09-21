@@ -1,5 +1,6 @@
 import { corsHeaders, rejectIfOriginNotAllowed } from "../_shared/cors.ts";
 import { validateVatReadinessAction } from "./vat-readiness.ts";
+import { productionRepositoryRecoveryDiagnosticCode } from "../_shared/production-repository-recovery.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
 const UUID =
@@ -3622,6 +3623,10 @@ export async function handleCommercialOperator(
   } catch (error) {
     if (error instanceof RequestError) {
       return response(error.status, error.code);
+    }
+    const recoveryDiagnosticCode = productionRepositoryRecoveryDiagnosticCode(error);
+    if (recoveryDiagnosticCode) {
+      return response(500, recoveryDiagnosticCode);
     }
     return mapDatabaseError(error);
   }

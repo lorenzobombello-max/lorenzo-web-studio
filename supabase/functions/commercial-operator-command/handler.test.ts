@@ -19,6 +19,7 @@ import {
   handleCommercialOperator,
   withCommercialOperatorCors,
 } from "./handler.ts";
+import { ProductionRepositoryRecoveryStageError } from "../_shared/production-repository-recovery.ts";
 import {
   OPERATOR_CURSOR_TTL_MS,
   signOperatorCursor,
@@ -7533,4 +7534,60 @@ Deno.test("Website Requirements production dispatch uses caller JWT and fixed RP
     assertEquals(rpcCalls, [expected[index]]);
     assertEquals(result, { accepted: true });
   }
+});
+
+Deno.test("production repository recovery failure surfaces the exact sanitized backend diagnostic code", async () => {
+  const verifyOwner = async () => ({
+    id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  });
+  const harness = dependencies({
+    verifyUser: verifyOwner,
+    executeApplicationAction: async () => {
+      throw new ProductionRepositoryRecoveryStageError("FINALIZE_RPC");
+    },
+  });
+  const result = await handleCommercialOperator(
+    request(websiteRepositoryRecoveryRequest, ownerAal2Jwt),
+    harness.deps,
+  );
+  assertEquals(result.status, 500);
+  assertEquals(await result.json(), {
+    ok: false,
+    code: "PRODUCTION_REPOSITORY_RECOVERY_FINALIZE_FAILED",
+  });
+});
+
+Deno.test("production repository recovery unclassified failures still fail closed to INTERNAL_ERROR", async () => {
+  const verifyOwner = async () => ({
+    id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  });
+  const harness = dependencies({
+    verifyUser: verifyOwner,
+    executeApplicationAction: async () => {
+      throw new Error("some raw unclassified failure with sensitive detail");
+    },
+  });
+  const result = await handleCommercialOperator(
+    request(websiteRepositoryRecoveryRequest, ownerAal2Jwt),
+    harness.deps,
+  );
+  assertEquals(result.status, 500);
+  const body = await result.json();
+  assertEquals(body, { ok: false, code: "INTERNAL_ERROR" });
+});
+
+Deno.test("production repository recovery success path is unaffected by the diagnostic classifier", async () => {
+  const verifyOwner = async () => ({
+    id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0",
+  });
+  const harness = dependencies({ verifyUser: verifyOwner });
+  const result = await handleCommercialOperator(
+    request(websiteRepositoryRecoveryRequest, ownerAal2Jwt),
+    harness.deps,
+  );
+  assertEquals(result.status, 200);
+  assertEquals(harness.calls, [{
+    jwt: ownerAal2Jwt,
+    input: websiteRepositoryRecoveryRequest,
+  }]);
 });
