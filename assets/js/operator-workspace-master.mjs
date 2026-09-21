@@ -55,20 +55,51 @@ function validWindowClaims(value) {
 }
 
 function inactiveWorkspaceMaster(reason) {
+  const openButtons = new Map();
+
+  function openOperatorModuleWindow(_moduleKey, _slotKey, _reservationId, onLaunchFailure = ()=>{}) {
+    onLaunchFailure("WORKSPACE_INACTIVE");
+    return false;
+  }
+
+  function bindModuleButton(button, moduleKey, slotKey = "main") {
+    if (!button) return;
+    const descriptor = resolveStandaloneOperatorModule(moduleKey);
+    if (!descriptor || !validOperatorSlotKey(slotKey)) {
+      button.hidden = true;
+      button.disabled = true;
+      return;
+    }
+    if (openButtons.has(button)) return;
+    const listener = ()=>openOperatorModuleWindow(
+      button.dataset?.operatorWindowModule || moduleKey,
+      button.dataset?.operatorWindowSlot || slotKey,
+      undefined,
+      (code)=>presentLaunchFailure(button, code),
+    );
+    openButtons.set(button, listener);
+    button.addEventListener("click", listener);
+  }
+
+  function unbindModuleButton(button) {
+    const listener = openButtons.get(button);
+    if (!listener) return false;
+    button.removeEventListener("click", listener);
+    openButtons.delete(button);
+    return true;
+  }
+
   return Object.freeze({
     active: false,
     reason,
     resumeHint: null,
-    bindModuleButton() {},
+    bindModuleButton,
     dispose() {},
     invalidate() {},
     lockWorkspace() {},
-    openOperatorModuleWindow(_moduleKey, _slotKey, _reservationId, onLaunchFailure = ()=>{}) {
-      onLaunchFailure("WORKSPACE_INACTIVE");
-      return false;
-    },
+    openOperatorModuleWindow,
     shutdownWorkspace() { return Promise.resolve(false); },
-    unbindModuleButton() { return false; },
+    unbindModuleButton,
   });
 }
 
