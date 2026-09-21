@@ -9,14 +9,17 @@ import {
   OPEN_RESERVATION_TIMEOUT_MS,
   SERVER_LEASE_DURATION_MS,
   createWorkspaceEvent,
+  cleanChildWindowUrl,
   clearOperatorWorkspaceResumeHint,
   managedChildUrl,
   operatorWorkspaceResumeHint,
   parseChildBootstrap,
+  readChildBootstrapVisibleState,
   readOperatorWorkspaceResumeHint,
   shouldLockForLease,
   validWorkspaceEvent,
   workspaceReservationWindowName,
+  writeChildBootstrapVisibleState,
   writeOperatorWorkspaceResumeHint,
 } from "../assets/js/operator-workspace-protocol.mjs";
 import { createOperatorWorkspaceChild } from "../assets/js/operator-workspace-child.mjs";
@@ -842,6 +845,16 @@ test("multi-screen runtime remains origin-relative and production portable", asy
   for (const source of sources) assert.doesNotMatch(source, /127\.0\.0\.1|localhost|Mailpit|Playwright|SUPABASE_SERVICE_ROLE_KEY/);
 });
 
+test("operator window guard falls back to history-state bootstrap and only cleans the URL after a server-validated join", async ()=>{
+  const source = await read("assets/js/operator-window-guard.mjs");
+  assert.match(source, /parseChildBootstrap\(window\.location\.href, window\.location\.origin\)\s*\n\s*\|\|\s*readChildBootstrapVisibleState\(window\.history\)/);
+  const joinIndex = source.indexOf("join_operator_workspace_v1");
+  const writeIndex = source.indexOf("writeChildBootstrapVisibleState(");
+  assert.ok(joinIndex > -1 && writeIndex > -1 && writeIndex > joinIndex,
+    "URL cleanup must occur only after the workspace join RPC, never before");
+  assert.match(source, /cleanChildWindowUrl\(window\.location\.href, window\.location\.origin\)/);
+});
+
 test("master refresh hint survives only in history state and contains no authority capability", ()=>{
   const historyObject = {
     state: { unrelated: true },
@@ -857,6 +870,61 @@ test("master refresh hint survives only in history state and contains no authori
   assert.equal(clearOperatorWorkspaceResumeHint(historyObject), true);
   assert.equal(readOperatorWorkspaceResumeHint(historyObject), null);
   assert.equal(historyObject.state.unrelated, true);
+});
+
+test("child window URL cleans workspace/epoch/window/launch/slot while keeping only module", ()=>{
+  const url = managedChildUrl({ workspaceId, epoch, windowId: childWindowId, launchNonce, moduleKey: "dossiers", slotKey: "main" });
+  assert.match(url.hash, /workspace=/);
+  const clean = cleanChildWindowUrl(url.href);
+  assert.equal(clean.pathname, "/operator/window/");
+  assert.equal(clean.hash, "");
+  assert.equal(clean.searchParams.get("module"), "dossiers");
+  assert.equal(clean.searchParams.has("workspace"), false);
+  assert.equal(clean.searchParams.has("epoch"), false);
+  assert.equal(clean.searchParams.has("window"), false);
+  assert.equal(clean.searchParams.has("launch"), false);
+  assert.equal(clean.searchParams.has("slot"), false);
+});
+
+test("child bootstrap survives only in history state, preserves refresh, and fails closed on tampering or a copied clean URL", ()=>{
+  const historyObject = {
+    state: { unrelated: true },
+    replaceState(state) { this.state = state; },
+  };
+  const url = managedChildUrl({ workspaceId, epoch, windowId: childWindowId, launchNonce, moduleKey: "dossiers", slotKey: "main" });
+  const bootstrap = parseChildBootstrap(url);
+  const clean = cleanChildWindowUrl(url.href);
+  assert.equal(writeChildBootstrapVisibleState(historyObject, bootstrap, clean.href), true);
+  assert.deepEqual(readChildBootstrapVisibleState(historyObject), bootstrap);
+  assert.equal(historyObject.state.unrelated, true);
+
+  // A same-window refresh has no hash left, so parseChildBootstrap(clean URL)
+  // fails -- the caller must fall back to readChildBootstrapVisibleState,
+  // which still resolves the exact same identity from history.state.
+  assert.equal(parseChildBootstrap(clean.href), null);
+  assert.deepEqual(readChildBootstrapVisibleState(historyObject), bootstrap);
+
+  // A copied clean URL pasted into a fresh navigation carries no history
+  // state at all -- this must fail closed.
+  const freshHistory = { state: null, replaceState(state) { this.state = state; } };
+  assert.equal(readChildBootstrapVisibleState(freshHistory), null);
+  assert.equal(parseChildBootstrap(clean.href) || readChildBootstrapVisibleState(freshHistory), null);
+
+  // Tampered history.state (any shape not exactly matching the six trusted
+  // fields) must also fail closed.
+  const tamperedShape = { state: { lwsOperatorChildBootstrapV1: { ...bootstrap, extra: true } }, replaceState(state) { this.state = state; } };
+  assert.equal(readChildBootstrapVisibleState(tamperedShape), null);
+  const tamperedModule = { state: { lwsOperatorChildBootstrapV1: { ...bootstrap, moduleKey: "not a module!" } }, replaceState(state) { this.state = state; } };
+  assert.equal(readChildBootstrapVisibleState(tamperedModule), null);
+  const tamperedWindowId = { state: { lwsOperatorChildBootstrapV1: { ...bootstrap, windowId: "not-a-uuid" } }, replaceState(state) { this.state = state; } };
+  assert.equal(readChildBootstrapVisibleState(tamperedWindowId), null);
+
+  assert.equal(writeChildBootstrapVisibleState(historyObject, { ...bootstrap, epoch: "not-a-number" }, clean.href), false);
+});
+
+test("child bootstrap history state never uses localStorage/sessionStorage as authority", async ()=>{
+  const source = await read("assets/js/operator-workspace-protocol.mjs");
+  assert.doesNotMatch(source, /localStorage|sessionStorage/);
 });
 
 test("master refresh resumes the same workspace without locking children or acquiring a second epoch", async ()=>{
