@@ -140,6 +140,40 @@ export async function websiteProjectFilesGateway(client, request) {
   return body.result;
 }
 
+export async function websiteRepositoryRecoveryGateway(client, request) {
+  if (request?.action !== "recover_existing_website_repository") {
+    throw new Error("WEBSITE_REPOSITORY_RECOVERY_ACTION_NOT_ALLOWED");
+  }
+  const response = await client.functions.invoke("commercial-operator-command", {
+    body: request,
+  });
+  if (response?.error) {
+    let code = "NETWORK_ERROR";
+    const status = Number(response.error?.context?.status || 0);
+    try {
+      const payload = await response.error.context.clone().json();
+      if (typeof payload?.code === "string") code = payload.code;
+    } catch {}
+    throw Object.assign(new Error(code), { code, status });
+  }
+  const body = response?.data;
+  if (!body || body.ok !== true || !Object.hasOwn(body, "result")) {
+    throw new Error(body?.code || "INVALID_WEBSITE_REPOSITORY_RECOVERY_RESPONSE");
+  }
+  return body.result;
+}
+
+// Only a bare machine-readable identifier (e.g. "GITHUB_TOKEN_EXCHANGE_FAILED") is ever
+// surfaced to the operator UI. Any other error shape (raw messages, provider payloads,
+// stack traces) is reduced to "UNKNOWN" so no diagnostic/secret detail can leak.
+const SAFE_RECOVERY_ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
+function safeWebsiteRepositoryRecoveryErrorCode(error) {
+  const candidate = typeof error?.code === "string" ? error.code
+    : typeof error?.message === "string" ? error.message
+    : "";
+  return SAFE_RECOVERY_ERROR_CODE.test(candidate) ? candidate : "UNKNOWN";
+}
+
 export function websiteChildDetailRequest(slotKey) {
   const quoteRequestId = quoteRequestIdFromWebsiteExecutionSlot(slotKey);
   if (!quoteRequestId) throw new Error("INVALID_WEBSITE_EXECUTION_SLOT");
@@ -801,17 +835,21 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         websiteWorkContextId: context.websiteWorkContextId,
         websiteWorkspaceId: workspaceProjection.website_workspace_id,
       });
-      validateWebsiteRepositoryRecoveryResult(await authority.gateway(request));
+      validateWebsiteRepositoryRecoveryResult(
+        await websiteRepositoryRecoveryGateway(client, request),
+      );
       if (!await refresh() || disposed) return false;
       options.onInvalidate?.("dossiers");
       message.textContent = "Bestaande technische werkruimte is hersteld.";
       return true;
-    } catch {
+    } catch (error) {
       if (!disposed) {
         await refresh();
         if (!disposed) {
+          const code = safeWebsiteRepositoryRecoveryErrorCode(error);
           message.textContent =
-            "Bestaande technische werkruimte kon niet veilig worden hersteld.";
+            "Bestaande technische werkruimte kon niet veilig worden hersteld."
+              + ` (RECOVERY_ERROR: ${code})`;
         }
       }
       return false;

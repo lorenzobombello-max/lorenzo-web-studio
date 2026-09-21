@@ -18,6 +18,7 @@ import {
   websiteRepositoryRecoveryRequest,
 } from "../assets/js/operator-website-execution.mjs";
 import { createOperatorDossierAuthority } from "../assets/js/operator-dossiers.mjs";
+import { websiteRepositoryRecoveryGateway } from "../assets/js/operator-website-execution-child.mjs";
 import * as requirementsModule from "../assets/js/operator-project-requirements.mjs";
 
 const quoteRequestId = "a1800000-0000-4000-8000-000000000001";
@@ -900,6 +901,21 @@ const client = { functions: { async invoke(_name, { body }) {
     window.task8RecoveryRequests.push(structuredClone(body));
     if (params.get("recoveryAction") === "delay") await new Promise((resolve) => setTimeout(resolve, 150));
     if (params.get("recoveryAction") === "fail") return { data: null, error: new Error("recovery detail must stay private") };
+    if (params.get("recoveryAction") === "structuredFail") {
+      return {
+        data: null,
+        error: {
+          context: new Response(
+            JSON.stringify({
+              ok: false,
+              code: "GITHUB_TOKEN_EXCHANGE_FAILED",
+              message: "installation token exchange failed: refresh_token=super-secret",
+            }),
+            { status: 502, headers: { "content-type": "application/json" } },
+          ),
+        },
+      };
+    }
     const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
     Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), repository_recovery_operation_id: null, capabilities: { project_files_read: true, project_files_write: true, repository_retry_allowed: false, repository_recovery_required: false } });
     result = { status: "RECOVERED_FROM_EMPTY", operationId: "a1800000-0000-4000-8000-000000000012", binding: { result: "BOUND" } };
@@ -1998,10 +2014,12 @@ test("existing repository recovery permits one in-flight request and failure nev
     await recovery.click();
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
+    const failureMessage = await page.locator("[data-website-message]").textContent();
     assert.equal(
-      await page.locator("[data-website-message]").textContent(),
-      "Bestaande technische werkruimte kon niet veilig worden hersteld.",
+      failureMessage,
+      "Bestaande technische werkruimte kon niet veilig worden hersteld. (RECOVERY_ERROR: NETWORK_ERROR)",
     );
+    assert.equal(failureMessage.includes("recovery detail must stay private"), false);
     await page.waitForTimeout(200);
     assert.equal(await page.evaluate(() => window.task8RecoveryRequests.length), 1);
     assert.equal(await recovery.isVisible(), false);
@@ -2011,4 +2029,87 @@ test("existing repository recovery permits one in-flight request and failure nev
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("existing repository recovery preserves a structured backend error code without leaking raw payloads", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser,
+      server,
+      "role=owner&mode=PRE_PROJECT&workspace=failed&recovery=required&recoveryAction=structuredFail",
+    );
+    const recovery = page.locator('[data-website-action="repository-recovery"]');
+    await recovery.click();
+    await page.waitForTimeout(300);
+    const failureMessage = await page.locator("[data-website-message]").textContent();
+    assert.equal(
+      failureMessage,
+      "Bestaande technische werkruimte kon niet veilig worden hersteld."
+        + " (RECOVERY_ERROR: GITHUB_TOKEN_EXCHANGE_FAILED)",
+    );
+    assert.equal(failureMessage.includes("installation"), false);
+    assert.equal(failureMessage.includes("token"), false);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("websiteRepositoryRecoveryGateway preserves a structured backend error code", async () => {
+  const client = {
+    functions: {
+      async invoke() {
+        return {
+          data: null,
+          error: {
+            context: new Response(
+              JSON.stringify({ ok: false, code: "GITHUB_TOKEN_EXCHANGE_FAILED" }),
+              { status: 502, headers: { "content-type": "application/json" } },
+            ),
+          },
+        };
+      },
+    },
+  };
+  let thrown;
+  try {
+    await websiteRepositoryRecoveryGateway(client, {
+      action: "recover_existing_website_repository",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+      idempotency_key: crypto.randomUUID(),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.equal(thrown?.code, "GITHUB_TOKEN_EXCHANGE_FAILED");
+  assert.equal(thrown?.status, 502);
+});
+
+test("websiteRepositoryRecoveryGateway never surfaces a raw non-JSON error message as a code", async () => {
+  const client = {
+    functions: {
+      async invoke() {
+        return { data: null, error: new Error("recovery detail must stay private") };
+      },
+    },
+  };
+  let thrown;
+  try {
+    await websiteRepositoryRecoveryGateway(client, {
+      action: "recover_existing_website_repository",
+      quote_request_id: quoteRequestId,
+      website_work_context_id: websiteWorkContextId,
+      website_workspace_id: "a1800000-0000-4000-8000-000000000006",
+      idempotency_key: crypto.randomUUID(),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.equal(thrown?.code, "NETWORK_ERROR");
+  assert.equal(String(thrown?.message).includes("private"), false);
 });
