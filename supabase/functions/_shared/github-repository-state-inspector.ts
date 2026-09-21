@@ -1,8 +1,11 @@
 import type { GitHubAppConfig } from "./github-app-config.ts";
-import type {
-  GitHubInstallationTokenLease,
-  GitHubTokenAuthority,
-  GitHubTokenRequest,
+import {
+  GITHUB_TOKEN_BROKER_CODES,
+  GitHubTokenBrokerError,
+  type GitHubInstallationTokenLease,
+  type GitHubTokenAuthority,
+  type GitHubTokenBrokerCode,
+  type GitHubTokenRequest,
 } from "./github-app-token.ts";
 import {
   getValidatedGitHubHttpRefReadDiagnostic,
@@ -111,6 +114,7 @@ export type GitHubRepositoryStateInspectionRuntimeDependencies = Readonly<{
 
 export class GitHubRepositoryStateInspectionError extends Error {
   declare readonly snapshotReadbackCheck?: GitHubSnapshotReadbackCheck;
+  declare readonly tokenBrokerCode?: GitHubTokenBrokerCode;
 
   constructor(
     readonly code:
@@ -126,6 +130,7 @@ export class GitHubRepositoryStateInspectionError extends Error {
     >,
     snapshotReadbackCheck?: GitHubSnapshotReadbackCheck,
     refReadDiagnostic?: GitHubRefReadDiagnostic,
+    tokenBrokerCode?: GitHubTokenBrokerCode,
   ) {
     if (
       postCreateSubphase !== undefined &&
@@ -138,7 +143,10 @@ export class GitHubRepositoryStateInspectionError extends Error {
         ].includes(postCreateSubphase) ||
       snapshotReadbackCheck !== undefined &&
         (postCreateSubphase !== "LAB_POST_CREATE_SNAPSHOT_READBACK" ||
-          !GITHUB_SNAPSHOT_READBACK_CHECKS.includes(snapshotReadbackCheck))
+          !GITHUB_SNAPSHOT_READBACK_CHECKS.includes(snapshotReadbackCheck)) ||
+      tokenBrokerCode !== undefined &&
+        (postCreateSubphase !== "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE" ||
+          !GITHUB_TOKEN_BROKER_CODES.includes(tokenBrokerCode))
     ) throw new Error("REPOSITORY_STATE_INSPECTION_DIAGNOSTIC_INVALID");
     super(code);
     this.name = "GitHubRepositoryStateInspectionError";
@@ -150,6 +158,12 @@ export class GitHubRepositoryStateInspectionError extends Error {
     });
     Object.defineProperty(this, "snapshotReadbackCheck", {
       value: snapshotReadbackCheck,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+    Object.defineProperty(this, "tokenBrokerCode", {
+      value: tokenBrokerCode,
       enumerable: true,
       writable: false,
       configurable: false,
@@ -203,12 +217,14 @@ function uncertain(
   subphase?: GitHubRepositoryStateInspectionError["postCreateSubphase"],
   snapshotReadbackCheck?: GitHubSnapshotReadbackCheck,
   refReadDiagnostic?: GitHubRefReadDiagnostic,
+  tokenBrokerCode?: GitHubTokenBrokerCode,
 ): never {
   throw new GitHubRepositoryStateInspectionError(
     "REPOSITORY_STATE_UNCERTAIN",
     subphase,
     snapshotReadbackCheck,
     refReadDiagnostic,
+    tokenBrokerCode,
   );
 }
 
@@ -503,8 +519,13 @@ function repositoryStateInspectionCapability(
     try {
       tokenLease ??= dependencies.tokenBroker.issue(config, request, authority);
       lease = await tokenLease;
-    } catch {
-      return uncertain("LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE");
+    } catch (error) {
+      return uncertain(
+        "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE",
+        undefined,
+        undefined,
+        error instanceof GitHubTokenBrokerError ? error.code : undefined,
+      );
     }
     if (!lease || typeof lease.token !== "string") {
       uncertain("LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE");
