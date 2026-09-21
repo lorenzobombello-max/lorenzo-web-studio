@@ -1,8 +1,10 @@
 import type { GitHubAppConfig } from "./github-app-config.ts";
-import type {
-  GitHubInstallationTokenLease,
-  GitHubTokenAuthority,
-  GitHubTokenRequest,
+import {
+  GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES,
+  type GitHubInstallationTokenLease,
+  type GitHubTokenAuthority,
+  type GitHubTokenExchangeHttpClass,
+  type GitHubTokenRequest,
 } from "./github-app-token.ts";
 import {
   GitHubHttpError,
@@ -180,8 +182,25 @@ type RepositoryInspectSubstep = keyof typeof REPOSITORY_INSPECT_SUBSTEP_DIAGNOST
 // this class can never leak sensitive detail.
 export class ProductionRepositoryRecoveryStageError extends Error {
   readonly stage: ProductionRepositoryRecoveryStage;
-  constructor(stage: ProductionRepositoryRecoveryStage, inspectSubstep?: RepositoryInspectSubstep) {
+  // Carries only the already-safe, already-whitelisted GitHub HTTP status
+  // class (e.g. a 4xx/5xx bucket) for a token-exchange HTTP-status failure --
+  // never the raw provider status, body, or headers. Populated only from an
+  // upstream GitHubRepositoryStateInspectionError's own validated field, so
+  // this class still never receives or stores unvalidated/raw error detail.
+  readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
+  constructor(
+    stage: ProductionRepositoryRecoveryStage,
+    inspectSubstep?: RepositoryInspectSubstep,
+    tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
+  ) {
     if (inspectSubstep !== undefined && stage !== "REPOSITORY_INSPECT") {
+      throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
+    }
+    if (
+      tokenExchangeHttpClass !== undefined &&
+      (inspectSubstep !== "TOKEN_EXCHANGE_HTTP_STATUS_FAILED" ||
+        !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass))
+    ) {
       throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
     }
     super(
@@ -191,6 +210,7 @@ export class ProductionRepositoryRecoveryStageError extends Error {
     );
     this.name = "ProductionRepositoryRecoveryStageError";
     this.stage = stage;
+    this.tokenExchangeHttpClass = tokenExchangeHttpClass;
   }
 }
 
@@ -254,6 +274,20 @@ function classifyRepositoryInspectionFailure(error: unknown): RepositoryInspectS
   }
 }
 
+// Extracts the already-safe, already-whitelisted GitHub token-exchange HTTP
+// status class from a repository-inspection failure, but only for the exact
+// substep it applies to (TOKEN_EXCHANGE_HTTP_STATUS_FAILED). Returns
+// undefined for every other substep/error shape, so absence is always
+// handled the same safe way as before this field existed.
+function classifyRepositoryInspectionTokenExchangeHttpClass(
+  error: unknown,
+  substep: RepositoryInspectSubstep | undefined,
+): GitHubTokenExchangeHttpClass | undefined {
+  if (substep !== "TOKEN_EXCHANGE_HTTP_STATUS_FAILED") return undefined;
+  if (!(error instanceof GitHubRepositoryStateInspectionError)) return undefined;
+  return error.tokenExchangeHttpClass;
+}
+
 // Returns the safe diagnostic code for a recovery failure, or null if the
 // error did not originate from the recovery stage machinery below (in which
 // case callers must continue to fail closed to a generic error code).
@@ -280,25 +314,29 @@ async function guard<T>(
 
 // Safe, sanitized failure log record for server-side observability only.
 // Contains no JWTs, tokens, Authorization headers, private key material, or
-// raw provider/database payloads -- only the pre-approved stage and code.
+// raw provider/database payloads -- only the pre-approved stage and code,
+// plus (only when present) the already-safe, already-whitelisted GitHub
+// token-exchange HTTP status class for the one substep it applies to.
 export function productionRepositoryRecoveryFailureLog(
   error: unknown,
 ): Readonly<Record<string, string>> {
-  return Object.freeze(
-    error instanceof ProductionRepositoryRecoveryStageError
-      ? {
-        event: "LWS_GIT001_RECOVERY_FAILURE",
-        action: "recover_existing_website_repository",
-        stage: error.stage,
-        diagnostic_code: error.message,
-      }
-      : {
-        event: "LWS_GIT001_RECOVERY_FAILURE",
-        action: "recover_existing_website_repository",
-        stage: "UNKNOWN",
-        diagnostic_code: "UNCLASSIFIED",
-      },
-  );
+  if (!(error instanceof ProductionRepositoryRecoveryStageError)) {
+    return Object.freeze({
+      event: "LWS_GIT001_RECOVERY_FAILURE",
+      action: "recover_existing_website_repository",
+      stage: "UNKNOWN",
+      diagnostic_code: "UNCLASSIFIED",
+    });
+  }
+  return Object.freeze({
+    event: "LWS_GIT001_RECOVERY_FAILURE",
+    action: "recover_existing_website_repository",
+    stage: error.stage,
+    diagnostic_code: error.message,
+    ...(error.tokenExchangeHttpClass !== undefined
+      ? { token_exchange_http_class: error.tokenExchangeHttpClass }
+      : {}),
+  });
 }
 
 // Wraps the full recovery action (including the pre-flight config/signer
@@ -722,9 +760,11 @@ export function createProductionRepositoryRecovery(dependencies: Dependencies) {
           return result;
         } catch (error) {
           if (error instanceof ProductionRepositoryRecoveryStageError) throw error;
+          const substep = classifyRepositoryInspectionFailure(error);
           throw new ProductionRepositoryRecoveryStageError(
             "REPOSITORY_INSPECT",
-            classifyRepositoryInspectionFailure(error),
+            substep,
+            classifyRepositoryInspectionTokenExchangeHttpClass(error, substep),
           );
         }
       });
