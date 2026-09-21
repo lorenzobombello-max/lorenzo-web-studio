@@ -116,6 +116,10 @@ function exchangeHttpClass(error: unknown): string | undefined {
   return (error as { tokenExchangeHttpClass?: string }).tokenExchangeHttpClass;
 }
 
+function exchangeHttpStatus(error: unknown): number | undefined {
+  return (error as { tokenExchangeHttpStatus?: number }).tokenExchangeHttpStatus;
+}
+
 async function task13TokenAcquisition(
   rawResponse: unknown,
   clocks: Readonly<{
@@ -367,6 +371,100 @@ Deno.test("GitHub App broker rejects an HTTP class attached to a non-HTTP-status
     Error,
     "GITHUB_TOKEN_BROKER_ERROR_HTTP_CLASS_INVALID",
   );
+});
+
+// The exact numeric status is only ever meaningful for the
+// GITHUB_HTTP_CONFLICT class (which is only ever 409 or 422 at the
+// github-http.ts source); every other class must never carry one.
+Deno.test("GitHub App broker preserves the exact safe numeric status for a GITHUB_HTTP_CONFLICT exchange failure", async () => {
+  for (const status of [409, 422] as const) {
+    const broker = createGitHubAppTokenBroker({
+      now: () => NOW,
+      sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+      exchange: () =>
+        Promise.reject(
+          new GitHubHttpError(
+            "GITHUB_HTTP_CONFLICT",
+            null,
+            null,
+            "TOKEN_HTTP_STATUS",
+            "HTTP_STATUS",
+            undefined,
+            status,
+          ),
+        ),
+    });
+    const error = await assertRejects(
+      () => broker.issue(config(), request(), authority()),
+      GitHubTokenBrokerError,
+      "GITHUB_TOKEN_EXCHANGE_FAILED",
+    );
+    assertEquals(exchangeHttpClass(error), "GITHUB_HTTP_CONFLICT");
+    assertEquals(exchangeHttpStatus(error), status);
+  }
+});
+
+Deno.test("GitHub App broker never fabricates a numeric status for non-conflict classes even when the underlying error carries one", async () => {
+  const broker = createGitHubAppTokenBroker({
+    now: () => NOW,
+    sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+    exchange: () =>
+      Promise.reject(
+        // A GITHUB_HTTP_SERVER_ERROR (500) never has a retained numeric
+        // status at the github-http.ts source (only 409/422 do), but this
+        // proves the broker itself would still refuse to surface one even
+        // if a caller tried to smuggle a status through for the wrong class.
+        new GitHubHttpError(
+          "GITHUB_HTTP_SERVER_ERROR",
+          null,
+          null,
+          "TOKEN_HTTP_STATUS",
+          "HTTP_STATUS",
+        ),
+      ),
+  });
+  const error = await assertRejects(
+    () => broker.issue(config(), request(), authority()),
+    GitHubTokenBrokerError,
+    "GITHUB_TOKEN_EXCHANGE_FAILED",
+  );
+  assertEquals(exchangeHttpClass(error), "GITHUB_HTTP_SERVER_ERROR");
+  assertEquals(exchangeHttpStatus(error), undefined);
+});
+
+Deno.test("GitHubTokenBrokerError rejects a numeric status attached to a non-conflict class", () => {
+  assertThrows(
+    () =>
+      new GitHubTokenBrokerError(
+        "GITHUB_TOKEN_EXCHANGE_FAILED",
+        "TOKEN_HTTP_STATUS",
+        undefined,
+        undefined,
+        "GITHUB_HTTP_NOT_FOUND",
+        409,
+      ),
+    Error,
+    "GITHUB_TOKEN_BROKER_ERROR_HTTP_STATUS_INVALID",
+  );
+});
+
+Deno.test("GitHubTokenBrokerError rejects an out-of-whitelist numeric status even for the conflict class", () => {
+  for (const status of [400, 418, 500] as const) {
+    assertThrows(
+      () =>
+        new GitHubTokenBrokerError(
+          "GITHUB_TOKEN_EXCHANGE_FAILED",
+          "TOKEN_HTTP_STATUS",
+          undefined,
+          undefined,
+          "GITHUB_HTTP_CONFLICT",
+          // deno-lint-ignore no-explicit-any
+          status as any,
+        ),
+      Error,
+      "GITHUB_TOKEN_BROKER_ERROR_HTTP_STATUS_INVALID",
+    );
+  }
 });
 
 Deno.test("GitHub App broker preserves a trusted token response check", async () => {

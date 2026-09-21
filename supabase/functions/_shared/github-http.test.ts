@@ -11,6 +11,7 @@ import {
 } from "./github-ref-read-diagnostic.ts";
 import {
   createGitHubHttpClient,
+  getValidatedGitHubHttpStatus,
   GitHubHttpError,
   type GitHubHttpOperation,
 } from "./github-http.ts";
@@ -2285,6 +2286,45 @@ Deno.test("GitHub HTTP client normalizes status, retry and timeout failures", as
     GitHubHttpError,
     "GITHUB_HTTP_TIMEOUT",
   );
+});
+
+// The exact numeric GitHub HTTP status (409/422 only) must survive the
+// TOKEN_EXCHANGE-specific re-wrap in createGitHubHttpClient's execute() --
+// this is the exact point where the earlier version of this code discarded
+// it while reconstructing the error with tokenAcquireSubphase set.
+Deno.test("GitHub HTTP token-exchange conflict statuses preserve the exact safe numeric status", async () => {
+  for (const status of [409, 422] as const) {
+    const client = createGitHubHttpClient({
+      fetch: () => Promise.resolve(json({ message: `raw ${TOKEN}` }, status)),
+    });
+    const error = await assertRejects(
+      () => executeTokenExchange(client),
+      GitHubHttpError,
+      "GITHUB_HTTP_CONFLICT",
+    );
+    assertEquals(tokenSubphase(error), "TOKEN_HTTP_STATUS");
+    assertEquals(getValidatedGitHubHttpStatus(error), status);
+  }
+});
+
+Deno.test("GitHub HTTP token-exchange non-conflict statuses never fabricate a numeric status", async () => {
+  for (const [status, code] of [
+    [400, "GITHUB_HTTP_FAILED"],
+    [401, "GITHUB_HTTP_UNAUTHORIZED"],
+    [418, "GITHUB_HTTP_FAILED"],
+    [500, "GITHUB_HTTP_SERVER_ERROR"],
+  ] as const) {
+    const client = createGitHubHttpClient({
+      fetch: () => Promise.resolve(json({ message: `raw ${TOKEN}` }, status)),
+    });
+    const error = await assertRejects(
+      () => executeTokenExchange(client),
+      GitHubHttpError,
+      code,
+    );
+    assertEquals(tokenSubphase(error), "TOKEN_HTTP_STATUS");
+    assertEquals(getValidatedGitHubHttpStatus(error), null);
+  }
 });
 
 Deno.test("GitHub HTTP errors never disclose raw bodies, headers, credentials or URLs", async () => {

@@ -337,7 +337,17 @@ export class GitHubHttpError extends GitHubTokenAcquireDiagnosticError {
       boundary !== undefined &&
       !GITHUB_HTTP_FAILURE_BOUNDARIES.includes(boundary)
     ) throw new Error("GITHUB_HTTP_DIAGNOSTIC_INVALID");
-    super(code, tokenAcquireSubphase, undefined, tokenResponseCheck);
+    // Forwarded to the shared base class in ADDITION to (not instead of) the
+    // existing WeakMap below -- this lets an already-safe 409/422 reach
+    // github-app-token.ts through inheritance alone, with no new import edge
+    // back into this module (see the base class's own comment).
+    super(
+      code,
+      tokenAcquireSubphase,
+      undefined,
+      tokenResponseCheck,
+      status === 409 || status === 422 ? status : undefined,
+    );
     this.name = "GitHubHttpError";
     Object.defineProperty(this, "boundary", {
       value: boundary,
@@ -1702,6 +1712,8 @@ export function createGitHubHttpClient(
               error.retryAt,
               "TOKEN_HTTP_STATUS",
               error.boundary,
+              undefined,
+              getValidatedGitHubHttpStatus(error) ?? undefined,
             )
             : error;
         }

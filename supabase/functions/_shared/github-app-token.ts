@@ -125,9 +125,16 @@ export const GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES = [
 export type GitHubTokenExchangeHttpClass =
   (typeof GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES)[number];
 
+// Only these two GITHUB_HTTP_CONFLICT-class statuses ever carry an exact
+// numeric value through this diagnostic path -- every other status (401,
+// 403, 404, 429, 5xx, ...) is fully described by tokenExchangeHttpClass
+// alone and must never be narrowed further here.
+export type GitHubTokenExchangeHttpStatus = 409 | 422;
+
 export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
   readonly code: GitHubTokenBrokerCode;
   declare readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
+  declare readonly tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus;
 
   constructor(
     code: GitHubTokenBrokerCode,
@@ -135,6 +142,7 @@ export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
     tokenLeaseCheck?: GitHubTokenLeaseCheck,
     tokenResponseCheck?: GitHubTokenResponseCheck,
     tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
+    tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus,
   ) {
     if (!GITHUB_TOKEN_BROKER_CODES.includes(code)) {
       throw new Error("GITHUB_TOKEN_BROKER_ERROR_CODE_INVALID");
@@ -144,11 +152,28 @@ export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
       (tokenAcquireSubphase !== "TOKEN_HTTP_STATUS" ||
         !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass))
     ) throw new Error("GITHUB_TOKEN_BROKER_ERROR_HTTP_CLASS_INVALID");
-    super(code, tokenAcquireSubphase, tokenLeaseCheck, tokenResponseCheck);
+    if (
+      tokenExchangeHttpStatus !== undefined &&
+      (tokenExchangeHttpClass !== "GITHUB_HTTP_CONFLICT" ||
+        (tokenExchangeHttpStatus !== 409 && tokenExchangeHttpStatus !== 422))
+    ) throw new Error("GITHUB_TOKEN_BROKER_ERROR_HTTP_STATUS_INVALID");
+    super(
+      code,
+      tokenAcquireSubphase,
+      tokenLeaseCheck,
+      tokenResponseCheck,
+      tokenExchangeHttpStatus,
+    );
     this.name = "GitHubTokenBrokerError";
     this.code = code;
     Object.defineProperty(this, "tokenExchangeHttpClass", {
       value: tokenExchangeHttpClass,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+    Object.defineProperty(this, "tokenExchangeHttpStatus", {
+      value: tokenExchangeHttpStatus,
       enumerable: true,
       writable: false,
       configurable: false,
@@ -389,8 +414,22 @@ function validatedTokenExchangeHttpClass(
     : undefined;
 }
 
+// The exact numeric status is only ever meaningful (and only ever present)
+// for the GITHUB_HTTP_CONFLICT class -- every other class is already fully
+// described by tokenExchangeHttpClass and must never gain a fabricated
+// status here.
+function validatedTokenExchangeHttpStatus(
+  error: GitHubTokenAcquireDiagnosticError,
+  httpClass: GitHubTokenExchangeHttpClass | undefined,
+): GitHubTokenExchangeHttpStatus | undefined {
+  if (httpClass !== "GITHUB_HTTP_CONFLICT") return undefined;
+  const status = error.tokenAcquireHttpStatus;
+  return status === 409 || status === 422 ? status : undefined;
+}
+
 function normalizedExchangeError(error: unknown): GitHubTokenBrokerError {
   if (error instanceof GitHubTokenAcquireDiagnosticError) {
+    const httpClass = validatedTokenExchangeHttpClass(error);
     return new GitHubTokenBrokerError(
       "GITHUB_TOKEN_EXCHANGE_FAILED",
       error.tokenAcquireSubphase,
@@ -398,7 +437,8 @@ function normalizedExchangeError(error: unknown): GitHubTokenBrokerError {
       hasValidatedGitHubTokenResponseCheck(error)
         ? error.tokenResponseCheck
         : undefined,
-      validatedTokenExchangeHttpClass(error),
+      httpClass,
+      validatedTokenExchangeHttpStatus(error, httpClass),
     );
   }
   if (error instanceof GitHubTokenExchangeFailure) {

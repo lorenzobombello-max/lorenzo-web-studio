@@ -6,7 +6,7 @@ import {
   assertThrows,
 } from "jsr:@std/assert@1";
 import { GitHubHttpError } from "./github-http.ts";
-import { GitHubTokenBrokerError, type GitHubTokenBrokerCode, type GitHubTokenExchangeHttpClass } from "./github-app-token.ts";
+import { GitHubTokenBrokerError, type GitHubTokenBrokerCode, type GitHubTokenExchangeHttpClass, type GitHubTokenExchangeHttpStatus } from "./github-app-token.ts";
 import type { GitHubTokenAcquireSubphase } from "./repository-provisioning-diagnostics.ts";
 import { computeGitHubSnapshotDigest } from "./github-snapshot-digest.ts";
 import {
@@ -167,6 +167,7 @@ type HarnessOptions = Readonly<{
   tokenIssueFailsWith?: GitHubTokenBrokerCode;
   tokenIssueFailsWithSubphase?: GitHubTokenAcquireSubphase;
   tokenIssueFailsWithHttpClass?: GitHubTokenExchangeHttpClass;
+  tokenIssueFailsWithHttpStatus?: GitHubTokenExchangeHttpStatus;
   starterMetadataMismatch?: boolean;
   createTreeFailure?: boolean;
   finalizeError?: unknown;
@@ -273,6 +274,7 @@ async function recoveryHarness(
                 undefined,
                 undefined,
                 options.tokenIssueFailsWithHttpClass,
+                options.tokenIssueFailsWithHttpStatus,
               )
               : new Error("token exchange failed with sensitive installation detail"),
           );
@@ -814,6 +816,115 @@ Deno.test("ProductionRepositoryRecoveryStageError rejects a token-exchange HTTP 
       "GITHUB_HTTP_NOT_FOUND",
     )
   );
+});
+
+// ==========================================================================
+// token_exchange_http_status (exact numeric 409/422 only)
+// ==========================================================================
+
+Deno.test("production recovery GITHUB_HTTP_CONFLICT token exchange failure propagates the exact numeric status (409 and 422)", async () => {
+  for (const status of [409, 422] as const) {
+    const test = await recoveryHarness("ALREADY_COMPLETE", {
+      tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+      tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+      tokenIssueFailsWithSubphase: "TOKEN_HTTP_STATUS",
+      tokenIssueFailsWithHttpClass: "GITHUB_HTTP_CONFLICT",
+      tokenIssueFailsWithHttpStatus: status,
+    });
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    assertZeroCreate(test.operations);
+    assert(error instanceof ProductionRepositoryRecoveryStageError);
+    // Public/client-facing diagnostic code and the existing safe class field
+    // both stay exactly as before -- only the log gains the numeric status.
+    assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED");
+    assert(!error.message.includes(String(status)));
+    const log = productionRepositoryRecoveryFailureLog(error);
+    assertEquals(log.token_exchange_http_class, "GITHUB_HTTP_CONFLICT");
+    assertEquals(log.token_exchange_http_status, String(status));
+    assertEquals(log.stage, "REPOSITORY_INSPECT");
+    assertEquals(log.diagnostic_code, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED");
+    assert(!JSON.stringify(log).match(/jwt|bearer|authorization|private.?key/i));
+  }
+});
+
+Deno.test("production recovery never fabricates a numeric status for non-conflict HTTP classes", async () => {
+  for (const httpClass of ["GITHUB_HTTP_UNAUTHORIZED", "GITHUB_HTTP_FORBIDDEN", "GITHUB_HTTP_NOT_FOUND", "GITHUB_HTTP_RATE_LIMITED", "GITHUB_HTTP_SERVER_ERROR"] as const) {
+    const test = await recoveryHarness("ALREADY_COMPLETE", {
+      tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+      tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+      tokenIssueFailsWithSubphase: "TOKEN_HTTP_STATUS",
+      tokenIssueFailsWithHttpClass: httpClass,
+    });
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    const log = productionRepositoryRecoveryFailureLog(error);
+    assertEquals(log.token_exchange_http_class, httpClass);
+    assert(!Object.hasOwn(log, "token_exchange_http_status"));
+  }
+});
+
+Deno.test("production recovery omits the numeric status for a JSON-parse token-exchange substep even for a conflict-shaped class", async () => {
+  // The wrong substep must never carry a class OR a status.
+  const test = await recoveryHarness("ALREADY_COMPLETE", {
+    tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+    tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+    tokenIssueFailsWithSubphase: "TOKEN_JSON_PARSE",
+  });
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  const log = productionRepositoryRecoveryFailureLog(error);
+  assert(!Object.hasOwn(log, "token_exchange_http_class"));
+  assert(!Object.hasOwn(log, "token_exchange_http_status"));
+});
+
+Deno.test("ProductionRepositoryRecoveryStageError rejects a numeric status attached to a non-conflict class", () => {
+  assertThrows(() =>
+    new ProductionRepositoryRecoveryStageError(
+      "REPOSITORY_INSPECT",
+      "TOKEN_EXCHANGE_HTTP_STATUS_FAILED",
+      "GITHUB_HTTP_NOT_FOUND",
+      409,
+    )
+  );
+});
+
+Deno.test("ProductionRepositoryRecoveryStageError rejects an out-of-whitelist numeric status even for the conflict class", () => {
+  for (const status of [400, 418, 500] as const) {
+    assertThrows(() =>
+      new ProductionRepositoryRecoveryStageError(
+        "REPOSITORY_INSPECT",
+        "TOKEN_EXCHANGE_HTTP_STATUS_FAILED",
+        "GITHUB_HTTP_CONFLICT",
+        // deno-lint-ignore no-explicit-any
+        status as any,
+      )
+    );
+  }
+});
+
+Deno.test("ProductionRepositoryRecoveryStageError rejects a numeric status with no class at all", () => {
+  assertThrows(() =>
+    new ProductionRepositoryRecoveryStageError(
+      "REPOSITORY_INSPECT",
+      "TOKEN_EXCHANGE_HTTP_STATUS_FAILED",
+      undefined,
+      409,
+    )
+  );
+});
+
+Deno.test("production recovery keeps its repository-create/finalize path and fail-closed behavior unaffected by the numeric status field", async () => {
+  // A conflict-class token exchange failure with an exact numeric status
+  // must still fail before EMPTY_REPOSITORY_INITIALIZE/FINALIZE_RPC are ever
+  // reached -- the new field only enriches the log, never the control flow.
+  const test = await recoveryHarness("EMPTY_OR_UNINITIALIZED", {
+    tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+    tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+    tokenIssueFailsWithSubphase: "TOKEN_HTTP_STATUS",
+    tokenIssueFailsWithHttpClass: "GITHUB_HTTP_CONFLICT",
+    tokenIssueFailsWithHttpStatus: 409,
+  });
+  await assertRejects(() => test.recovery.recover(test.input));
+  assertZeroCreate(test.operations);
+  assertEquals(test.serviceCalls.length, 0);
 });
 
 Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and machine-readable", () => {
