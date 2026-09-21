@@ -63,10 +63,35 @@ function inactiveWorkspaceMaster(reason) {
     dispose() {},
     invalidate() {},
     lockWorkspace() {},
-    openOperatorModuleWindow() { return false; },
+    openOperatorModuleWindow(_moduleKey, _slotKey, _reservationId, onLaunchFailure = ()=>{}) {
+      onLaunchFailure("WORKSPACE_INACTIVE");
+      return false;
+    },
     shutdownWorkspace() { return Promise.resolve(false); },
     unbindModuleButton() { return false; },
   });
+}
+
+// A module-window launch must never fail silently. Every safe failure code
+// below is machine-readable and non-sensitive; the rendered message never
+// includes raw provider/browser error text.
+const LAUNCH_FAILURE_MESSAGE = "Venster kon niet worden geopend.";
+const LAUNCH_FAILURE_MESSAGE_ATTRIBUTE = "data-operator-window-launch-message";
+
+function presentLaunchFailure(button, code) {
+  if (!button || typeof button.insertAdjacentElement !== "function") return;
+  const doc = button.ownerDocument;
+  if (!doc || typeof doc.createElement !== "function") return;
+  let node = button.nextElementSibling;
+  if (!node || typeof node.hasAttribute !== "function" || !node.hasAttribute(LAUNCH_FAILURE_MESSAGE_ATTRIBUTE)) {
+    node = doc.createElement("p");
+    node.setAttribute(LAUNCH_FAILURE_MESSAGE_ATTRIBUTE, "");
+    node.setAttribute("role", "status");
+    node.setAttribute("aria-live", "polite");
+    node.className = "action-message action-message--dark";
+    button.insertAdjacentElement("afterend", node);
+  }
+  node.textContent = `${LAUNCH_FAILURE_MESSAGE} (${code})`;
 }
 
 export function createOperatorWorkspaceRecovery({
@@ -310,9 +335,10 @@ export async function createOperatorWorkspaceMaster({
     onInvalidWorkspace(reason);
   }
 
-  async function completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId) {
+  async function completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId, onLaunchFailure = ()=>{}) {
     if (!await renew({ recoverExpired: true }) || !active) {
       try { reservation?.close(); } catch {}
+      onLaunchFailure("LEASE_RENEWAL_FAILED");
       return false;
     }
     const childKey = `${moduleKey}:${slotKey}`;
@@ -336,6 +362,7 @@ export async function createOperatorWorkspaceMaster({
       reservation.location.replace(url.href);
     } catch {
       try { reservation.close(); } catch {}
+      onLaunchFailure("CHILD_NAVIGATION_FAILED");
       return false;
     }
     childWindows.set(childKey, { windowId, reference: reservation });
@@ -343,9 +370,20 @@ export async function createOperatorWorkspaceMaster({
     return true;
   }
 
-  function openOperatorModuleWindow(moduleKey, slotKey = "main", reservationId) {
+  function openOperatorModuleWindow(moduleKey, slotKey = "main", reservationId, onLaunchFailure = ()=>{}) {
     const descriptor = resolveStandaloneOperatorModule(moduleKey);
-    if (!active || !descriptor || !validOperatorSlotKey(slotKey)) return false;
+    if (!active) {
+      onLaunchFailure("WORKSPACE_INACTIVE");
+      return false;
+    }
+    if (!descriptor) {
+      onLaunchFailure("MODULE_INVALID");
+      return false;
+    }
+    if (!validOperatorSlotKey(slotKey)) {
+      onLaunchFailure("SLOT_INVALID");
+      return false;
+    }
     const childKey = `${moduleKey}:${slotKey}`;
     const pending = pendingLaunches.get(childKey);
     if (pending) {
@@ -358,8 +396,11 @@ export async function createOperatorWorkspaceMaster({
       workspaceReservationWindowName(memory.workspaceId, launchReservationId),
       "popup",
     );
-    if (!reservation) return false;
-    const launch = completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId)
+    if (!reservation) {
+      onLaunchFailure("POPUP_BLOCKED");
+      return false;
+    }
+    const launch = completeOperatorModuleLaunch(moduleKey, slotKey, reservation, launchReservationId, onLaunchFailure)
       .finally(()=>pendingLaunches.delete(childKey));
     pendingLaunches.set(childKey, { reference: reservation, launch });
     return true;
@@ -377,6 +418,8 @@ export async function createOperatorWorkspaceMaster({
     const listener = ()=>openOperatorModuleWindow(
       button.dataset?.operatorWindowModule || moduleKey,
       button.dataset?.operatorWindowSlot || slotKey,
+      undefined,
+      (code)=>presentLaunchFailure(button, code),
     );
     openButtons.set(button, listener);
     button.hidden = false;
