@@ -353,7 +353,7 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardHtml, /data-module-panel="dossiers"[^>]*data-dossiers-workspace/);
   assert.match(dashboardGuard, /operatorDossiersController\?\.dispose/);
   assert.match(dashboardGuard, /loadModule: async \(_module, context\)=>\{\s*disposeDossiers\(\)/);
-  assert.match(dashboardGuard, /workspaceMaster\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
+  assert.match(dashboardGuard, /master\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
   const dashboardDossierCacheIdentity = "20260917-pre-project-workspace-r2";
   const registryDossierCacheIdentity = "20260912-project-refresh-retention-r1";
   const windowGuardCacheIdentity = "20260917-pre-project-workspace-r2";

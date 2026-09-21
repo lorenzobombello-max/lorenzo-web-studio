@@ -294,6 +294,8 @@ test("generic child shell mounts registered modules only after independent autho
   assert.match(dashboardGuard, /createOperatorWorkspaceMaster/);
   assert.match(dashboardGuard, /createOperatorWorkspaceRecovery/);
   assert.match(dashboardGuard, /workspaceMaster\.reason === "SERVER_MASTER_EXISTS"/);
+  assert.match(dashboardGuard, /bindManagedWindowButtons\(master\);[\s\S]*if \(!master\.active\) return;/);
+  assert.match(dashboardGuard, /bindManagedWindowButtons\(workspaceMaster\);/);
   assert.match(dashboardGuard, /shutdownWorkspace/);
   assert.match(dashboardGuard, /pushState\(window\.history\.state/);
   assert.match(dashboardGuard, /pagehide", \(\)=>workspaceRecovery\?\.dispose\(\)/);
@@ -817,6 +819,22 @@ test("a bound module button renders a visible safe message next to itself on any
   const firstMessageNode = button.nextElementSibling;
   listeners.get("click")();
   assert.equal(button.nextElementSibling, firstMessageNode, "repeated failures update the same message node instead of stacking new ones");
+});
+
+test("inactive workspace masters still bind launch controls so secondary tabs never click into silence", async ()=>{
+  const { button, listeners } = fakeDomButton();
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async()=>({ data: { acquired: false, lease_expires_at: new Date(10_000).toISOString() }, error: null }) },
+    navigatorObject: availableWebLock(),
+    windowObject: { crypto: { randomUUID: ()=>masterWindowId } },
+    now: ()=>10_000,
+    setTimeoutFn: async (callback)=>callback(),
+  });
+  master.bindModuleButton(button, "dossiers", "main");
+  assert.equal(typeof listeners.get("click"), "function");
+  listeners.get("click")();
+  assert.match(button.nextElementSibling.textContent, /WORKSPACE_INACTIVE/);
+  assert.equal(master.unbindModuleButton(button), true);
 });
 
 test("master manages all six required modules as separate children in one workspace", async ()=>{
