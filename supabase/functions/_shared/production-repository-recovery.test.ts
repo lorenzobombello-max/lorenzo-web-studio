@@ -741,7 +741,7 @@ Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange failure
   assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED");
 });
 
-Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange HTTP status failure never leaks the underlying safe HTTP class in the public code", async () => {
+Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange HTTP status failure never leaks the underlying safe HTTP class in the public diagnostic code", async () => {
   const test = await recoveryHarness("ALREADY_COMPLETE", {
     tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
     tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
@@ -752,9 +752,68 @@ Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange HTTP st
   assertZeroCreate(test.operations);
   assert(error instanceof ProductionRepositoryRecoveryStageError);
   assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED");
+  // The public/client-facing diagnostic code itself must stay generic --
+  // only the server-side-only log record below may carry the safe HTTP class.
   assert(!error.message.includes("NOT_FOUND"));
   const log = productionRepositoryRecoveryFailureLog(error);
-  assert(!JSON.stringify(log).includes("GITHUB_HTTP_NOT_FOUND"));
+  assertEquals(log.token_exchange_http_class, "GITHUB_HTTP_NOT_FOUND");
+});
+
+Deno.test("productionRepositoryRecoveryFailureLog includes the safe token-exchange HTTP class only for the TOKEN_HTTP_STATUS substep", async () => {
+  for (const httpClass of ["GITHUB_HTTP_UNAUTHORIZED", "GITHUB_HTTP_FORBIDDEN", "GITHUB_HTTP_SERVER_ERROR", "GITHUB_HTTP_CONFLICT"] as const) {
+    const test = await recoveryHarness("ALREADY_COMPLETE", {
+      tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+      tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+      tokenIssueFailsWithSubphase: "TOKEN_HTTP_STATUS",
+      tokenIssueFailsWithHttpClass: httpClass,
+    });
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    const log = productionRepositoryRecoveryFailureLog(error);
+    assertEquals(log.token_exchange_http_class, httpClass);
+    assertEquals(log.stage, "REPOSITORY_INSPECT");
+    assertEquals(log.diagnostic_code, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED");
+  }
+});
+
+Deno.test("productionRepositoryRecoveryFailureLog omits the token-exchange HTTP class for every other substep/stage", async () => {
+  // A non-HTTP-status token-exchange substep (e.g. a JSON parse failure) has
+  // no meaningful HTTP status class -- the log must not fabricate one.
+  const jsonParseFailure = await recoveryHarness("ALREADY_COMPLETE", {
+    tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+    tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+    tokenIssueFailsWithSubphase: "TOKEN_JSON_PARSE",
+  });
+  const jsonParseError = await assertRejects(() => jsonParseFailure.recovery.recover(jsonParseFailure.input));
+  const jsonParseLog = productionRepositoryRecoveryFailureLog(jsonParseError);
+  assert(!Object.hasOwn(jsonParseLog, "token_exchange_http_class"));
+
+  // A completely unrelated stage (e.g. metadata read) must not carry the
+  // field either.
+  const metadataFailure = await recoveryHarness("ALREADY_COMPLETE", { networkReadFailure: true });
+  const metadataError = await assertRejects(() => metadataFailure.recovery.recover(metadataFailure.input));
+  const metadataLog = productionRepositoryRecoveryFailureLog(metadataError);
+  assert(!Object.hasOwn(metadataLog, "token_exchange_http_class"));
+
+  // The unclassified/UNKNOWN fallback branch must not carry the field.
+  const unclassifiedLog = productionRepositoryRecoveryFailureLog(new Error("unrelated"));
+  assert(!Object.hasOwn(unclassifiedLog, "token_exchange_http_class"));
+});
+
+Deno.test("ProductionRepositoryRecoveryStageError rejects a token-exchange HTTP class attached to the wrong substep", () => {
+  assertThrows(() =>
+    new ProductionRepositoryRecoveryStageError(
+      "REPOSITORY_INSPECT",
+      "TOKEN_EXCHANGE_JSON_PARSE_FAILED",
+      "GITHUB_HTTP_NOT_FOUND",
+    )
+  );
+  assertThrows(() =>
+    new ProductionRepositoryRecoveryStageError(
+      "REPOSITORY_INSPECT",
+      undefined,
+      "GITHUB_HTTP_NOT_FOUND",
+    )
+  );
 });
 
 Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and machine-readable", () => {
