@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import type { GitHubAppConfig } from "./github-app-config.ts";
 import {
   createGitHubAppTokenBroker,
@@ -110,6 +110,10 @@ function leaseCheck(error: unknown): string | undefined {
 
 function responseCheck(error: unknown): string | undefined {
   return (error as { tokenResponseCheck?: string }).tokenResponseCheck;
+}
+
+function exchangeHttpClass(error: unknown): string | undefined {
+  return (error as { tokenExchangeHttpClass?: string }).tokenExchangeHttpClass;
 }
 
 async function task13TokenAcquisition(
@@ -296,6 +300,73 @@ Deno.test("GitHub App broker preserves every first causal token boundary", async
     );
     assertEquals(tokenSubphase(error), subphase);
   }
+});
+
+Deno.test("GitHub App broker preserves the safe HTTP status class for a TOKEN_HTTP_STATUS exchange failure", async () => {
+  const scenarios = [
+    "GITHUB_HTTP_UNAUTHORIZED",
+    "GITHUB_HTTP_FORBIDDEN",
+    "GITHUB_HTTP_NOT_FOUND",
+    "GITHUB_HTTP_CONFLICT",
+    "GITHUB_HTTP_RATE_LIMITED",
+    "GITHUB_HTTP_SERVER_ERROR",
+    "GITHUB_HTTP_FAILED",
+  ] as const;
+  for (const code of scenarios) {
+    const broker = createGitHubAppTokenBroker({
+      now: () => NOW,
+      sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+      exchange: () =>
+        Promise.reject(
+          new GitHubHttpError(code, null, null, "TOKEN_HTTP_STATUS", "HTTP_STATUS"),
+        ),
+    });
+    const error = await assertRejects(
+      () => broker.issue(config(), request(), authority()),
+      GitHubTokenBrokerError,
+      "GITHUB_TOKEN_EXCHANGE_FAILED",
+    );
+    assertEquals(tokenSubphase(error), "TOKEN_HTTP_STATUS");
+    assertEquals(exchangeHttpClass(error), code);
+  }
+});
+
+Deno.test("GitHub App broker never carries an HTTP status class for a non-HTTP-status exchange boundary", async () => {
+  const broker = createGitHubAppTokenBroker({
+    now: () => NOW,
+    sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+    exchange: () =>
+      Promise.reject(
+        new GitHubHttpError(
+          "GITHUB_HTTP_NETWORK_ERROR",
+          null,
+          null,
+          "TOKEN_HTTP_REQUEST",
+        ),
+      ),
+  });
+  const error = await assertRejects(
+    () => broker.issue(config(), request(), authority()),
+    GitHubTokenBrokerError,
+    "GITHUB_TOKEN_EXCHANGE_FAILED",
+  );
+  assertEquals(tokenSubphase(error), "TOKEN_HTTP_REQUEST");
+  assertEquals(exchangeHttpClass(error), undefined);
+});
+
+Deno.test("GitHub App broker rejects an HTTP class attached to a non-HTTP-status subphase", () => {
+  assertThrows(
+    () =>
+      new GitHubTokenBrokerError(
+        "GITHUB_TOKEN_EXCHANGE_FAILED",
+        "TOKEN_HTTP_REQUEST",
+        undefined,
+        undefined,
+        "GITHUB_HTTP_FORBIDDEN",
+      ),
+    Error,
+    "GITHUB_TOKEN_BROKER_ERROR_HTTP_CLASS_INVALID",
+  );
 });
 
 Deno.test("GitHub App broker preserves a trusted token response check", async () => {

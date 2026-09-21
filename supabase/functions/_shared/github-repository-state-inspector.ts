@@ -1,10 +1,12 @@
 import type { GitHubAppConfig } from "./github-app-config.ts";
 import {
   GITHUB_TOKEN_BROKER_CODES,
+  GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES,
   GitHubTokenBrokerError,
   type GitHubInstallationTokenLease,
   type GitHubTokenAuthority,
   type GitHubTokenBrokerCode,
+  type GitHubTokenExchangeHttpClass,
   type GitHubTokenRequest,
 } from "./github-app-token.ts";
 import {
@@ -25,8 +27,10 @@ import {
 } from "./github-snapshot-digest.ts";
 import {
   GITHUB_SNAPSHOT_READBACK_CHECKS,
+  GITHUB_TOKEN_ACQUIRE_SUBPHASES,
   type GitHubLabPostCreateSubphase,
   type GitHubSnapshotReadbackCheck,
+  type GitHubTokenAcquireSubphase,
 } from "./repository-provisioning-diagnostics.ts";
 
 export { GITHUB_SNAPSHOT_READBACK_CHECKS };
@@ -115,6 +119,8 @@ export type GitHubRepositoryStateInspectionRuntimeDependencies = Readonly<{
 export class GitHubRepositoryStateInspectionError extends Error {
   declare readonly snapshotReadbackCheck?: GitHubSnapshotReadbackCheck;
   declare readonly tokenBrokerCode?: GitHubTokenBrokerCode;
+  declare readonly tokenAcquireSubphase?: GitHubTokenAcquireSubphase;
+  declare readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
 
   constructor(
     readonly code:
@@ -131,6 +137,8 @@ export class GitHubRepositoryStateInspectionError extends Error {
     snapshotReadbackCheck?: GitHubSnapshotReadbackCheck,
     refReadDiagnostic?: GitHubRefReadDiagnostic,
     tokenBrokerCode?: GitHubTokenBrokerCode,
+    tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
+    tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
   ) {
     if (
       postCreateSubphase !== undefined &&
@@ -146,7 +154,13 @@ export class GitHubRepositoryStateInspectionError extends Error {
           !GITHUB_SNAPSHOT_READBACK_CHECKS.includes(snapshotReadbackCheck)) ||
       tokenBrokerCode !== undefined &&
         (postCreateSubphase !== "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE" ||
-          !GITHUB_TOKEN_BROKER_CODES.includes(tokenBrokerCode))
+          !GITHUB_TOKEN_BROKER_CODES.includes(tokenBrokerCode)) ||
+      tokenAcquireSubphase !== undefined &&
+        (postCreateSubphase !== "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE" ||
+          !GITHUB_TOKEN_ACQUIRE_SUBPHASES.includes(tokenAcquireSubphase)) ||
+      tokenExchangeHttpClass !== undefined &&
+        (tokenAcquireSubphase !== "TOKEN_HTTP_STATUS" ||
+          !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass))
     ) throw new Error("REPOSITORY_STATE_INSPECTION_DIAGNOSTIC_INVALID");
     super(code);
     this.name = "GitHubRepositoryStateInspectionError";
@@ -164,6 +178,18 @@ export class GitHubRepositoryStateInspectionError extends Error {
     });
     Object.defineProperty(this, "tokenBrokerCode", {
       value: tokenBrokerCode,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+    Object.defineProperty(this, "tokenAcquireSubphase", {
+      value: tokenAcquireSubphase,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+    Object.defineProperty(this, "tokenExchangeHttpClass", {
+      value: tokenExchangeHttpClass,
       enumerable: true,
       writable: false,
       configurable: false,
@@ -218,6 +244,8 @@ function uncertain(
   snapshotReadbackCheck?: GitHubSnapshotReadbackCheck,
   refReadDiagnostic?: GitHubRefReadDiagnostic,
   tokenBrokerCode?: GitHubTokenBrokerCode,
+  tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
+  tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
 ): never {
   throw new GitHubRepositoryStateInspectionError(
     "REPOSITORY_STATE_UNCERTAIN",
@@ -225,6 +253,8 @@ function uncertain(
     snapshotReadbackCheck,
     refReadDiagnostic,
     tokenBrokerCode,
+    tokenAcquireSubphase,
+    tokenExchangeHttpClass,
   );
 }
 
@@ -525,6 +555,12 @@ function repositoryStateInspectionCapability(
         undefined,
         undefined,
         error instanceof GitHubTokenBrokerError ? error.code : undefined,
+        error instanceof GitHubTokenBrokerError
+          ? error.tokenAcquireSubphase
+          : undefined,
+        error instanceof GitHubTokenBrokerError
+          ? error.tokenExchangeHttpClass
+          : undefined,
       );
     }
     if (!lease || typeof lease.token !== "string") {

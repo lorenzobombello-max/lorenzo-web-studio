@@ -6,7 +6,8 @@ import {
   assertThrows,
 } from "jsr:@std/assert@1";
 import { GitHubHttpError } from "./github-http.ts";
-import { GitHubTokenBrokerError, type GitHubTokenBrokerCode } from "./github-app-token.ts";
+import { GitHubTokenBrokerError, type GitHubTokenBrokerCode, type GitHubTokenExchangeHttpClass } from "./github-app-token.ts";
+import type { GitHubTokenAcquireSubphase } from "./repository-provisioning-diagnostics.ts";
 import { computeGitHubSnapshotDigest } from "./github-snapshot-digest.ts";
 import {
   createProductionRepositoryRecovery,
@@ -164,6 +165,8 @@ type HarnessOptions = Readonly<{
   replay?: boolean;
   tokenIssueFailsFor?: "STARTER_SNAPSHOT_READ" | "PRODUCTION_REPOSITORY_WRITE" | "PRODUCTION_REPOSITORY_READ";
   tokenIssueFailsWith?: GitHubTokenBrokerCode;
+  tokenIssueFailsWithSubphase?: GitHubTokenAcquireSubphase;
+  tokenIssueFailsWithHttpClass?: GitHubTokenExchangeHttpClass;
   starterMetadataMismatch?: boolean;
   createTreeFailure?: boolean;
   finalizeError?: unknown;
@@ -264,7 +267,13 @@ async function recoveryHarness(
         if (options.tokenIssueFailsFor === request.operation) {
           return Promise.reject(
             options.tokenIssueFailsWith !== undefined
-              ? new GitHubTokenBrokerError(options.tokenIssueFailsWith)
+              ? new GitHubTokenBrokerError(
+                options.tokenIssueFailsWith,
+                options.tokenIssueFailsWithSubphase,
+                undefined,
+                undefined,
+                options.tokenIssueFailsWithHttpClass,
+              )
               : new Error("token exchange failed with sensitive installation detail"),
           );
         }
@@ -680,6 +689,72 @@ Deno.test("production recovery PRODUCTION_REPOSITORY_READ token failure with an 
   assert(!error.message.includes("sensitive installation detail"));
   const log = productionRepositoryRecoveryFailureLog(error);
   assert(!JSON.stringify(log).includes("sensitive installation detail"));
+});
+
+// Narrows GITHUB_TOKEN_EXCHANGE_FAILED (and its TIMEOUT/RATE_LIMITED/
+// REDIRECT_DENIED siblings, which all share the exchange bucket) one level
+// further using the already-safe GitHubTokenAcquireSubphase the broker
+// preserves on GitHubHttpError-derived failures. This is the exact HTTP
+// exchange boundary (request prepare / HTTP transport / HTTP status /
+// content-type / body read / JSON parse / response schema / adapter
+// projection) -- still a pre-approved, whitelisted, safe code, never raw
+// provider text.
+const TOKEN_EXCHANGE_SUBPHASE_SCENARIOS: ReadonlyArray<
+  readonly [GitHubTokenAcquireSubphase, string]
+> = [
+  ["TOKEN_REQUEST_PREPARE", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_REQUEST_PREPARE_FAILED"],
+  ["TOKEN_HTTP_REQUEST", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_REQUEST_FAILED"],
+  ["TOKEN_HTTP_STATUS", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED"],
+  ["TOKEN_CONTENT_TYPE_VALIDATE", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_CONTENT_TYPE_FAILED"],
+  ["TOKEN_RESPONSE_BODY_READ", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_BODY_READ_FAILED"],
+  ["TOKEN_JSON_PARSE", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_JSON_PARSE_FAILED"],
+  ["TOKEN_RESPONSE_SCHEMA", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_RESPONSE_SCHEMA_FAILED"],
+  ["TOKEN_ADAPTER_PROJECT", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_ADAPTER_FAILED"],
+];
+
+for (const [subphase, expectedDiagnosticCode] of TOKEN_EXCHANGE_SUBPHASE_SCENARIOS) {
+  Deno.test(`production recovery PRODUCTION_REPOSITORY_READ token exchange failure (${subphase}) classifies to ${expectedDiagnosticCode}`, async () => {
+    const test = await recoveryHarness("ALREADY_COMPLETE", {
+      tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+      tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+      tokenIssueFailsWithSubphase: subphase,
+    });
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    assertZeroCreate(test.operations);
+    assert(error instanceof ProductionRepositoryRecoveryStageError);
+    assertEquals(error.stage, "REPOSITORY_INSPECT");
+    assertEquals(error.message, expectedDiagnosticCode);
+    const log = productionRepositoryRecoveryFailureLog(error);
+    assertEquals(log.diagnostic_code, expectedDiagnosticCode);
+  });
+}
+
+Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange failure with an unrecognized subphase falls back to the generic exchange code", async () => {
+  const test = await recoveryHarness("ALREADY_COMPLETE", {
+    tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+    tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+    tokenIssueFailsWithSubphase: "TOKEN_LEASE_VALIDATE",
+  });
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assertZeroCreate(test.operations);
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED");
+});
+
+Deno.test("production recovery PRODUCTION_REPOSITORY_READ token exchange HTTP status failure never leaks the underlying safe HTTP class in the public code", async () => {
+  const test = await recoveryHarness("ALREADY_COMPLETE", {
+    tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+    tokenIssueFailsWith: "GITHUB_TOKEN_EXCHANGE_FAILED",
+    tokenIssueFailsWithSubphase: "TOKEN_HTTP_STATUS",
+    tokenIssueFailsWithHttpClass: "GITHUB_HTTP_NOT_FOUND",
+  });
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assertZeroCreate(test.operations);
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_HTTP_STATUS_FAILED");
+  assert(!error.message.includes("NOT_FOUND"));
+  const log = productionRepositoryRecoveryFailureLog(error);
+  assert(!JSON.stringify(log).includes("GITHUB_HTTP_NOT_FOUND"));
 });
 
 Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and machine-readable", () => {

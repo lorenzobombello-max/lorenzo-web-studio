@@ -100,21 +100,59 @@ export const GITHUB_TOKEN_BROKER_CODES = [
 
 export type GitHubTokenBrokerCode = (typeof GITHUB_TOKEN_BROKER_CODES)[number];
 
+// Mirrors the closed, safe set of GitHubHttpErrorCode values from
+// github-http.ts (duplicated here, not imported, to avoid a circular
+// dependency -- github-http.ts already imports types from this module).
+// Used only to validate that a duck-typed `.code` field found on a caught
+// GitHubHttpError-shaped error is one of these pre-approved safe HTTP status
+// classes before it is ever forwarded through the broker's own diagnostic.
+export const GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES = [
+  "GITHUB_HTTP_OPERATION_INVALID",
+  "GITHUB_HTTP_REDIRECT_DENIED",
+  "GITHUB_HTTP_RESPONSE_INVALID",
+  "GITHUB_HTTP_RESPONSE_TOO_LARGE",
+  "GITHUB_HTTP_UNAUTHORIZED",
+  "GITHUB_HTTP_FORBIDDEN",
+  "GITHUB_HTTP_NOT_FOUND",
+  "GITHUB_HTTP_CONFLICT",
+  "GITHUB_HTTP_RATE_LIMITED",
+  "GITHUB_HTTP_SERVER_ERROR",
+  "GITHUB_HTTP_TIMEOUT",
+  "GITHUB_HTTP_NETWORK_ERROR",
+  "GITHUB_HTTP_FAILED",
+] as const;
+
+export type GitHubTokenExchangeHttpClass =
+  (typeof GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES)[number];
+
 export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
   readonly code: GitHubTokenBrokerCode;
+  declare readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
 
   constructor(
     code: GitHubTokenBrokerCode,
     tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
     tokenLeaseCheck?: GitHubTokenLeaseCheck,
     tokenResponseCheck?: GitHubTokenResponseCheck,
+    tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
   ) {
     if (!GITHUB_TOKEN_BROKER_CODES.includes(code)) {
       throw new Error("GITHUB_TOKEN_BROKER_ERROR_CODE_INVALID");
     }
+    if (
+      tokenExchangeHttpClass !== undefined &&
+      (tokenAcquireSubphase !== "TOKEN_HTTP_STATUS" ||
+        !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass))
+    ) throw new Error("GITHUB_TOKEN_BROKER_ERROR_HTTP_CLASS_INVALID");
     super(code, tokenAcquireSubphase, tokenLeaseCheck, tokenResponseCheck);
     this.name = "GitHubTokenBrokerError";
     this.code = code;
+    Object.defineProperty(this, "tokenExchangeHttpClass", {
+      value: tokenExchangeHttpClass,
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
   }
 }
 
@@ -340,6 +378,17 @@ function validateResponse(
   return { token, expiresAt };
 }
 
+function validatedTokenExchangeHttpClass(
+  error: GitHubTokenAcquireDiagnosticError,
+): GitHubTokenExchangeHttpClass | undefined {
+  if (error.tokenAcquireSubphase !== "TOKEN_HTTP_STATUS") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" &&
+      (GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES as readonly string[]).includes(code)
+    ? code as GitHubTokenExchangeHttpClass
+    : undefined;
+}
+
 function normalizedExchangeError(error: unknown): GitHubTokenBrokerError {
   if (error instanceof GitHubTokenAcquireDiagnosticError) {
     return new GitHubTokenBrokerError(
@@ -349,6 +398,7 @@ function normalizedExchangeError(error: unknown): GitHubTokenBrokerError {
       hasValidatedGitHubTokenResponseCheck(error)
         ? error.tokenResponseCheck
         : undefined,
+      validatedTokenExchangeHttpClass(error),
     );
   }
   if (error instanceof GitHubTokenExchangeFailure) {
