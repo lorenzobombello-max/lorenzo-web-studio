@@ -83,15 +83,35 @@ export class GitHubTokenExchangeFailure extends Error {
   }
 }
 
+// The complete, exhaustive set of safe machine-readable codes the broker can
+// ever throw. Consumers (e.g. the repository state inspector) may safely
+// forward one of these values through further diagnostic layers -- they
+// never carry raw provider/credential detail.
+export const GITHUB_TOKEN_BROKER_CODES = [
+  "GITHUB_TOKEN_AUTHORITY_INVALID",
+  "GITHUB_APP_SIGNING_FAILED",
+  "GITHUB_TOKEN_EXCHANGE_FAILED",
+  "GITHUB_TOKEN_TIMEOUT",
+  "GITHUB_TOKEN_RATE_LIMITED",
+  "GITHUB_TOKEN_FORBIDDEN",
+  "GITHUB_TOKEN_REDIRECT_DENIED",
+  "GITHUB_TOKEN_RESPONSE_INVALID",
+] as const;
+
+export type GitHubTokenBrokerCode = (typeof GITHUB_TOKEN_BROKER_CODES)[number];
+
 export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
-  readonly code: string;
+  readonly code: GitHubTokenBrokerCode;
 
   constructor(
-    code: string,
+    code: GitHubTokenBrokerCode,
     tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
     tokenLeaseCheck?: GitHubTokenLeaseCheck,
     tokenResponseCheck?: GitHubTokenResponseCheck,
   ) {
+    if (!GITHUB_TOKEN_BROKER_CODES.includes(code)) {
+      throw new Error("GITHUB_TOKEN_BROKER_ERROR_CODE_INVALID");
+    }
     super(code, tokenAcquireSubphase, tokenLeaseCheck, tokenResponseCheck);
     this.name = "GitHubTokenBrokerError";
     this.code = code;
@@ -332,7 +352,7 @@ function normalizedExchangeError(error: unknown): GitHubTokenBrokerError {
     );
   }
   if (error instanceof GitHubTokenExchangeFailure) {
-    const codes: Record<GitHubTokenExchangeFailureKind, string> = {
+    const codes: Record<GitHubTokenExchangeFailureKind, GitHubTokenBrokerCode> = {
       TIMEOUT: "GITHUB_TOKEN_TIMEOUT",
       RATE_LIMITED: "GITHUB_TOKEN_RATE_LIMITED",
       FORBIDDEN: "GITHUB_TOKEN_FORBIDDEN",

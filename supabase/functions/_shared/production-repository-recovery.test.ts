@@ -6,6 +6,7 @@ import {
   assertThrows,
 } from "jsr:@std/assert@1";
 import { GitHubHttpError } from "./github-http.ts";
+import { GitHubTokenBrokerError, type GitHubTokenBrokerCode } from "./github-app-token.ts";
 import { computeGitHubSnapshotDigest } from "./github-snapshot-digest.ts";
 import {
   createProductionRepositoryRecovery,
@@ -161,7 +162,8 @@ type HarnessOptions = Readonly<{
   writeFailure?: boolean;
   readbackFailure?: boolean;
   replay?: boolean;
-  tokenIssueFailsFor?: "STARTER_SNAPSHOT_READ" | "PRODUCTION_REPOSITORY_WRITE";
+  tokenIssueFailsFor?: "STARTER_SNAPSHOT_READ" | "PRODUCTION_REPOSITORY_WRITE" | "PRODUCTION_REPOSITORY_READ";
+  tokenIssueFailsWith?: GitHubTokenBrokerCode;
   starterMetadataMismatch?: boolean;
   createTreeFailure?: boolean;
   finalizeError?: unknown;
@@ -261,7 +263,9 @@ async function recoveryHarness(
         tokenRequests.push(request);
         if (options.tokenIssueFailsFor === request.operation) {
           return Promise.reject(
-            new Error("token exchange failed with sensitive installation detail"),
+            options.tokenIssueFailsWith !== undefined
+              ? new GitHubTokenBrokerError(options.tokenIssueFailsWith)
+              : new Error("token exchange failed with sensitive installation detail"),
           );
         }
         return Promise.resolve({
@@ -632,6 +636,52 @@ Deno.test("production recovery unrecognized REPOSITORY_INSPECT failure falls bac
   assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_FAILED");
 });
 
+// Distinguishes the safe GitHubTokenBrokerError code the inspector's own
+// token acquisition previously discarded (LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE
+// collapsed every broker failure into one generic code). Each broker code is
+// itself already pre-approved/safe (see GITHUB_TOKEN_BROKER_CODES); this only
+// narrows which known broker failure occurred.
+const TOKEN_SUBSTEP_SCENARIOS: ReadonlyArray<
+  readonly [GitHubTokenBrokerCode, string]
+> = [
+  ["GITHUB_TOKEN_AUTHORITY_INVALID", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_AUTHORITY_FAILED"],
+  ["GITHUB_APP_SIGNING_FAILED", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_SIGNING_FAILED"],
+  ["GITHUB_TOKEN_EXCHANGE_FAILED", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED"],
+  ["GITHUB_TOKEN_TIMEOUT", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED"],
+  ["GITHUB_TOKEN_RATE_LIMITED", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED"],
+  ["GITHUB_TOKEN_REDIRECT_DENIED", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED"],
+  ["GITHUB_TOKEN_FORBIDDEN", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FORBIDDEN"],
+  ["GITHUB_TOKEN_RESPONSE_INVALID", "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_RESPONSE_INVALID"],
+];
+
+for (const [brokerCode, expectedDiagnosticCode] of TOKEN_SUBSTEP_SCENARIOS) {
+  Deno.test(`production recovery PRODUCTION_REPOSITORY_READ token failure (${brokerCode}) classifies to ${expectedDiagnosticCode}`, async () => {
+    const test = await recoveryHarness("ALREADY_COMPLETE", {
+      tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ",
+      tokenIssueFailsWith: brokerCode,
+    });
+    const error = await assertRejects(() => test.recovery.recover(test.input));
+    assertZeroCreate(test.operations);
+    assert(error instanceof ProductionRepositoryRecoveryStageError);
+    assertEquals(error.stage, "REPOSITORY_INSPECT");
+    assertEquals(error.message, expectedDiagnosticCode);
+    assert(!error.message.includes(brokerCode.toLowerCase()));
+    const log = productionRepositoryRecoveryFailureLog(error);
+    assertEquals(log.diagnostic_code, expectedDiagnosticCode);
+  });
+}
+
+Deno.test("production recovery PRODUCTION_REPOSITORY_READ token failure with an unrecognized broker error falls back to the generic token code", async () => {
+  const test = await recoveryHarness("ALREADY_COMPLETE", { tokenIssueFailsFor: "PRODUCTION_REPOSITORY_READ" });
+  const error = await assertRejects(() => test.recovery.recover(test.input));
+  assertZeroCreate(test.operations);
+  assert(error instanceof ProductionRepositoryRecoveryStageError);
+  assertEquals(error.message, "PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FAILED");
+  assert(!error.message.includes("sensitive installation detail"));
+  const log = productionRepositoryRecoveryFailureLog(error);
+  assert(!JSON.stringify(log).includes("sensitive installation detail"));
+});
+
 Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and machine-readable", () => {
   const codes: string[] = source.match(/PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_[A-Z_]+/g) ?? [];
   assert(codes.length > 0);
@@ -641,6 +691,11 @@ Deno.test("REPOSITORY_INSPECT substep diagnostic codes are all pre-approved and 
   assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_METADATA_FAILED"));
   assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_REF_READ_FAILED"));
   assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_AUTHORITY_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_SIGNING_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_EXCHANGE_FAILED"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_FORBIDDEN"));
+  assert(codes.includes("PRODUCTION_REPOSITORY_RECOVERY_INSPECTION_TOKEN_RESPONSE_INVALID"));
 });
 
 Deno.test("production recovery stage errors never leak the underlying raw exception text", async () => {
