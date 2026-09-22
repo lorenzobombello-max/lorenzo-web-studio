@@ -289,13 +289,17 @@ function safeTokenAcquireFailureFields(error: unknown): Readonly<Record<string, 
   const exchangeClass = (error as { tokenExchangeHttpClass?: unknown })
     .tokenExchangeHttpClass;
   if (
+    error.tokenAcquireSubphase === "TOKEN_HTTP_STATUS" &&
     typeof exchangeClass === "string" &&
     (GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES as readonly string[]).includes(exchangeClass)
   ) {
     fields.token_exchange_http_class = exchangeClass;
     const exchangeStatus = (error as { tokenExchangeHttpStatus?: unknown })
       .tokenExchangeHttpStatus;
-    if (exchangeStatus === 409 || exchangeStatus === 422) {
+    if (
+      exchangeClass === "GITHUB_HTTP_CONFLICT" &&
+      (exchangeStatus === 409 || exchangeStatus === 422)
+    ) {
       fields.token_exchange_http_status = String(exchangeStatus);
     }
   }

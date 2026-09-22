@@ -8,6 +8,7 @@ import {
 } from "./website-project-files-provider.ts";
 import { GitHubTokenBrokerError } from "./github-app-token.ts";
 import { GitHubHttpError } from "./github-http.ts";
+import { GitHubTokenAcquireDiagnosticError } from "./repository-provisioning-diagnostics.ts";
 
 const source = await Deno.readTextFile(
   new URL("./website-project-files-provider.ts", import.meta.url),
@@ -911,6 +912,66 @@ Deno.test("a successful token acquisition through resolveSnapshot emits no failu
   });
   assertEquals(logs, []);
   assertEquals(test.tokenCalls.length, 1);
+});
+
+// ==========================================================================
+// token_exchange_http_class / token_exchange_http_status pair invariant
+// ==========================================================================
+//
+// class may only ever be logged for the TOKEN_HTTP_STATUS subphase, and the
+// exact numeric status may only ever accompany GITHUB_HTTP_CONFLICT (409 or
+// 422) -- never any other class, even if a future/different trusted
+// GitHubTokenAcquireDiagnosticError-derived shape were to carry a
+// conflicting pairing.
+
+for (const status of [409, 422] as const) {
+  Deno.test(`buildProjectFilesFailureLog logs GITHUB_HTTP_CONFLICT with its exact status ${status}`, () => {
+    const error = new GitHubTokenBrokerError(
+      "GITHUB_TOKEN_EXCHANGE_FAILED",
+      "TOKEN_HTTP_STATUS",
+      undefined,
+      undefined,
+      "GITHUB_HTTP_CONFLICT",
+      status,
+    );
+    const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+    assertEquals(log.token_exchange_http_class, "GITHUB_HTTP_CONFLICT");
+    assertEquals(log.token_exchange_http_status, String(status));
+  });
+}
+
+for (
+  const [httpClass, forgedStatus] of [
+    ["GITHUB_HTTP_FORBIDDEN", 409],
+    ["GITHUB_HTTP_SERVER_ERROR", 422],
+  ] as const
+) {
+  Deno.test(`buildProjectFilesFailureLog logs the class but never a numeric status for ${httpClass} even with a forged/injected ${forgedStatus}`, () => {
+    // A genuinely trusted GitHubTokenAcquireDiagnosticError-derived instance
+    // (passes hasValidatedGitHubTokenAcquireDiagnostic) that carries an
+    // invalid class/status pairing GitHubTokenBrokerError's own constructor
+    // would never allow -- proves the independent pairwise gate in
+    // safeTokenAcquireFailureFields, not just constructor rejection.
+    const trusted = Object.assign(
+      new GitHubTokenAcquireDiagnosticError("GITHUB_TOKEN_EXCHANGE_FAILED", "TOKEN_HTTP_STATUS"),
+      { tokenExchangeHttpClass: httpClass, tokenExchangeHttpStatus: forgedStatus },
+    );
+    const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", trusted);
+    assertEquals(log.token_exchange_http_class, httpClass);
+    assert(!Object.hasOwn(log, "token_exchange_http_status"));
+  });
+}
+
+Deno.test("buildProjectFilesFailureLog omits both the exchange class and status when attached outside TOKEN_HTTP_STATUS", () => {
+  const trusted = Object.assign(
+    new GitHubTokenAcquireDiagnosticError("GITHUB_TOKEN_EXCHANGE_FAILED", "TOKEN_JSON_PARSE"),
+    { tokenExchangeHttpClass: "GITHUB_HTTP_CONFLICT", tokenExchangeHttpStatus: 409 },
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", trusted);
+  assert(!Object.hasOwn(log, "token_exchange_http_class"));
+  assert(!Object.hasOwn(log, "token_exchange_http_status"));
+  // The rest of the genuinely-validated record is unaffected.
+  assertEquals(log.token_acquire_subphase, "TOKEN_JSON_PARSE");
 });
 
 Deno.test("buildProjectFilesFailureLog reports the exact safe stage/diagnostic for a trusted GitHubHttpError", () => {
