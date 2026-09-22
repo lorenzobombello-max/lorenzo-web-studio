@@ -996,6 +996,21 @@ const client = { functions: { async invoke(_name, { body }) {
   } else if (body.action === "build_website_project_preview") {
     window.task8Events.push("gateway");
     window.task8Requests.push(structuredClone(body));
+    if (params.get("preview") === "structuredFail") {
+      return {
+        data: null,
+        error: {
+          context: new Response(
+            JSON.stringify({
+              ok: false,
+              code: "PREVIEW_ARTIFACT_STORAGE_FAILED",
+              message: "storage detail must stay private token=super-secret",
+            }),
+            { status: 503, headers: { "content-type": "application/json" } },
+          ),
+        },
+      };
+    }
     result = { contract_version: 1, snapshot: { commit_sha: body.expected_commit_sha }, build: { status: "PASS" }, preview: { signed_url: \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\` } };
   }
   return { data: { ok: true, result }, error: null };
@@ -1465,6 +1480,31 @@ test("Projectbestanden expands lazily and renders exact inert redacted entry beh
     await page.getByRole("treeitem", { name: /README\.md/ }).click();
     await page.waitForFunction(() => window.task8Requests.some((request) => request.action === "read_website_project_file"));
     assert.equal(await page.locator("[data-project-file-content], .website-project-files__content").count(), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview failure surfaces only the safe backend machine code", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&preview=structuredFail",
+    );
+    await page.locator('[data-website-action="files"]').click();
+    await page.locator('[data-website-action="preview-build"]').click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent?.includes("PREVIEW_ERROR"));
+    const message = await page.locator("[data-website-message]").textContent();
+    assert.equal(
+      message,
+      "Preview kon niet veilig worden gebouwd. (PREVIEW_ERROR: PREVIEW_ARTIFACT_STORAGE_FAILED)",
+    );
+    assert.doesNotMatch(message, /storage detail|super-secret|token=/i);
+    assert.equal(await page.locator("[data-website-preview-open]").isHidden(), true);
     await page.close();
   } finally {
     await browser.close();
