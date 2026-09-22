@@ -1,6 +1,7 @@
 import type { GitHubAppConfig } from "./github-app-config.ts";
 import {
-  GitHubTokenBrokerError,
+  GITHUB_TOKEN_BROKER_CODES,
+  GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES,
   type GitHubInstallationTokenLease,
   type GitHubTokenAuthority,
   type GitHubTokenRequest,
@@ -11,6 +12,12 @@ import {
   type GitHubHttpOperation,
   type GitHubHttpResult,
 } from "./github-http.ts";
+import {
+  GITHUB_TOKEN_ACQUIRE_SUBPHASES,
+  hasValidatedGitHubTokenAcquireDiagnostic,
+  hasValidatedGitHubTokenLeaseCheck,
+  hasValidatedGitHubTokenResponseCheck,
+} from "./repository-provisioning-diagnostics.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -245,24 +252,61 @@ const PROJECT_FILES_OPERATION_STAGES: Readonly<Record<string, string>> = Object.
   WRITE_PROJECT_MARKER: "WRITE_MARKER",
 });
 
-// Extracts only already-safe, already-validated fields from a caught
-// GitHubTokenBrokerError/GitHubHttpError -- never raw provider bodies,
-// headers, tokens, JWTs, private keys, or Authorization values. Absence on
-// any other error shape is always handled the same safe way (no fields).
-function safeProjectFilesFailureFields(error: unknown): Readonly<Record<string, string>> {
-  if (error instanceof GitHubTokenBrokerError) {
-    return Object.freeze({
-      ...(error.tokenAcquireSubphase !== undefined
-        ? { token_acquire_subphase: error.tokenAcquireSubphase }
-        : {}),
-      ...(error.tokenExchangeHttpClass !== undefined
-        ? { token_exchange_http_class: error.tokenExchangeHttpClass }
-        : {}),
-      ...(error.tokenExchangeHttpStatus !== undefined
-        ? { token_exchange_http_status: String(error.tokenExchangeHttpStatus) }
-        : {}),
-    });
+// Extracts only already-safe, already-validated token-broker fields from a
+// caught TOKEN_ACQUIRE failure. Uses the existing trusted validators
+// (hasValidatedGitHubTokenAcquireDiagnostic/...LeaseCheck/...ResponseCheck)
+// rather than a bare `instanceof` check -- these are WeakSet-backed and can
+// only ever be true for objects that passed through the real, validating
+// constructor, so a prototype-forged object can never satisfy them. Every
+// individual field is additionally re-checked against its own exported
+// closed enum before being included, so nothing beyond the pre-approved
+// whitelists can ever reach the log even if a future caller mutates one of
+// these (readonly, but defense in depth) fields after construction.
+function safeTokenAcquireFailureFields(error: unknown): Readonly<Record<string, string>> {
+  if (!hasValidatedGitHubTokenAcquireDiagnostic(error)) return Object.freeze({});
+  const fields: Record<string, string> = {};
+  const brokerCode = (error as { code?: unknown }).code;
+  if (
+    typeof brokerCode === "string" &&
+    (GITHUB_TOKEN_BROKER_CODES as readonly string[]).includes(brokerCode)
+  ) {
+    fields.token_broker_code = brokerCode;
   }
+  if (
+    error.tokenAcquireSubphase !== undefined &&
+    (GITHUB_TOKEN_ACQUIRE_SUBPHASES as readonly string[]).includes(
+      error.tokenAcquireSubphase,
+    )
+  ) {
+    fields.token_acquire_subphase = error.tokenAcquireSubphase;
+  }
+  if (hasValidatedGitHubTokenLeaseCheck(error)) {
+    fields.token_lease_check = error.tokenLeaseCheck;
+  }
+  if (hasValidatedGitHubTokenResponseCheck(error)) {
+    fields.token_response_check = error.tokenResponseCheck;
+  }
+  const exchangeClass = (error as { tokenExchangeHttpClass?: unknown })
+    .tokenExchangeHttpClass;
+  if (
+    typeof exchangeClass === "string" &&
+    (GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES as readonly string[]).includes(exchangeClass)
+  ) {
+    fields.token_exchange_http_class = exchangeClass;
+    const exchangeStatus = (error as { tokenExchangeHttpStatus?: unknown })
+      .tokenExchangeHttpStatus;
+    if (exchangeStatus === 409 || exchangeStatus === 422) {
+      fields.token_exchange_http_status = String(exchangeStatus);
+    }
+  }
+  return Object.freeze(fields);
+}
+
+// Extracts only already-safe, already-validated fields from a caught
+// GitHubHttpError -- never raw provider bodies, headers, tokens, JWTs,
+// private keys, or Authorization values. Absence on any other error shape
+// is always handled the same safe way (no fields).
+function safeGithubHttpFailureFields(error: unknown): Readonly<Record<string, string>> {
   if (error instanceof GitHubHttpError) {
     const status = getValidatedGitHubHttpStatus(error);
     return Object.freeze({
@@ -292,7 +336,9 @@ export function buildProjectFilesFailureLog(
     action,
     stage,
     diagnostic_code: classifyProjectFilesFailure(error),
-    ...safeProjectFilesFailureFields(error),
+    ...(stage === "TOKEN_ACQUIRE"
+      ? safeTokenAcquireFailureFields(error)
+      : safeGithubHttpFailureFields(error)),
   });
 }
 

@@ -789,10 +789,128 @@ Deno.test("buildProjectFilesFailureLog reports the exact safe stage/diagnostic f
   assertEquals(log.action, "WEBSITE_PROJECT_FILES_READ");
   assertEquals(log.stage, "TOKEN_ACQUIRE");
   assertEquals(log.diagnostic_code, "PROJECT_FILES_PROVIDER_UNAVAILABLE");
+  assertEquals(log.token_broker_code, "GITHUB_TOKEN_EXCHANGE_FAILED");
   assertEquals(log.token_acquire_subphase, "TOKEN_HTTP_STATUS");
   assertEquals(log.token_exchange_http_class, "GITHUB_HTTP_CONFLICT");
   assertEquals(log.token_exchange_http_status, "409");
   assert(!Object.hasOwn(log, "github_http_class"));
+});
+
+// ==========================================================================
+// TOKEN_ACQUIRE detail refinement -- uses the existing trusted validators
+// (hasValidatedGitHubTokenAcquireDiagnostic / ...LeaseCheck / ...ResponseCheck)
+// rather than a bare `instanceof` check, and independently re-validates every
+// individual field against its own exported closed enum before logging it.
+// ==========================================================================
+
+const TOKEN_ACQUIRE_SUBPHASE_SCENARIOS = [
+  ["GITHUB_TOKEN_AUTHORITY_INVALID", "TOKEN_AUTHORITY_VALIDATE"],
+  ["GITHUB_APP_SIGNING_FAILED", "TOKEN_JWT_SIGN"],
+  ["GITHUB_TOKEN_EXCHANGE_FAILED", "TOKEN_HTTP_STATUS"],
+  ["GITHUB_TOKEN_EXCHANGE_FAILED", "TOKEN_ADAPTER_PROJECT"],
+] as const;
+
+for (const [brokerCode, subphase] of TOKEN_ACQUIRE_SUBPHASE_SCENARIOS) {
+  Deno.test(`buildProjectFilesFailureLog logs the validated ${subphase} subphase safely`, () => {
+    const error = new GitHubTokenBrokerError(brokerCode, subphase);
+    const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+    assertEquals(log.token_broker_code, brokerCode);
+    assertEquals(log.token_acquire_subphase, subphase);
+    assert(!Object.hasOwn(log, "token_lease_check"));
+    assert(!Object.hasOwn(log, "token_response_check"));
+  });
+}
+
+Deno.test("buildProjectFilesFailureLog logs the validated TOKEN_LEASE_VALIDATE subphase and lease check safely", () => {
+  const error = new GitHubTokenBrokerError(
+    "GITHUB_TOKEN_RESPONSE_INVALID",
+    "TOKEN_LEASE_VALIDATE",
+    "LEASE_TOKEN_FORMAT_VALIDATE",
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+  assertEquals(log.token_broker_code, "GITHUB_TOKEN_RESPONSE_INVALID");
+  assertEquals(log.token_acquire_subphase, "TOKEN_LEASE_VALIDATE");
+  assertEquals(log.token_lease_check, "LEASE_TOKEN_FORMAT_VALIDATE");
+});
+
+Deno.test("buildProjectFilesFailureLog only preserves a lease check through its own validator, never a bare property read", () => {
+  // A subphase other than TOKEN_LEASE_VALIDATE never carries a lease check
+  // at all (the GitHubTokenBrokerError constructor itself refuses to
+  // construct such a combination), so hasValidatedGitHubTokenLeaseCheck must
+  // correctly report false and the field must be absent.
+  const error = new GitHubTokenBrokerError("GITHUB_APP_SIGNING_FAILED", "TOKEN_JWT_SIGN");
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+  assert(!Object.hasOwn(log, "token_lease_check"));
+});
+
+Deno.test("buildProjectFilesFailureLog logs a validated token response check safely", () => {
+  const error = new GitHubTokenBrokerError(
+    "GITHUB_TOKEN_RESPONSE_INVALID",
+    "TOKEN_RESPONSE_SCHEMA",
+    undefined,
+    "TOKEN_SCHEMA_TOKEN",
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+  assertEquals(log.token_acquire_subphase, "TOKEN_RESPONSE_SCHEMA");
+  assertEquals(log.token_response_check, "TOKEN_SCHEMA_TOKEN");
+});
+
+Deno.test("buildProjectFilesFailureLog only preserves a response check through its own validator, never a bare property read", () => {
+  const error = new GitHubTokenBrokerError("GITHUB_TOKEN_AUTHORITY_INVALID", "TOKEN_AUTHORITY_VALIDATE");
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+  assert(!Object.hasOwn(log, "token_response_check"));
+});
+
+Deno.test("buildProjectFilesFailureLog omits a forged/unapproved broker code even on an otherwise-trusted instance", () => {
+  const error = new GitHubTokenBrokerError("GITHUB_TOKEN_AUTHORITY_INVALID", "TOKEN_AUTHORITY_VALIDATE");
+  // `code` is a plain (writable) instance property -- simulate a corrupted
+  // value reaching the logger after construction and prove the independent
+  // whitelist re-check still refuses to log it.
+  Object.assign(error, { code: "FORGED_BROKER_CODE" });
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", error);
+  assert(!Object.hasOwn(log, "token_broker_code"));
+  // The rest of the genuinely-validated record is unaffected.
+  assertEquals(log.token_acquire_subphase, "TOKEN_AUTHORITY_VALIDATE");
+});
+
+Deno.test("buildProjectFilesFailureLog omits every field for a prototype-forged (untrusted) token diagnostic", () => {
+  // Not constructed through the real class -- never added to the trusted
+  // WeakSet, so hasValidatedGitHubTokenAcquireDiagnostic must reject it
+  // outright regardless of what fields it fakes, including an arbitrary
+  // (non-enum) tokenAcquireSubphase.
+  const forged = Object.assign(
+    Object.create(GitHubTokenBrokerError.prototype),
+    {
+      code: "GITHUB_TOKEN_AUTHORITY_INVALID",
+      tokenAcquireSubphase: "ARBITRARY_UNAPPROVED_SUBPHASE",
+      tokenLeaseCheck: "ARBITRARY_UNAPPROVED_CHECK",
+      name: "GitHubTokenBrokerError",
+      message: "GITHUB_TOKEN_AUTHORITY_INVALID",
+    },
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", forged);
+  assertEquals(Object.keys(log).sort(), ["action", "diagnostic_code", "event", "stage"]);
+});
+
+Deno.test("buildProjectFilesFailureLog never includes raw message, body, headers, token, JWT, or private key for a token-acquire failure", () => {
+  const secret = "raw exchange body with a token and Authorization header";
+  const forged = Object.assign(
+    new GitHubTokenBrokerError("GITHUB_TOKEN_EXCHANGE_FAILED", "TOKEN_HTTP_REQUEST"),
+    { rawBody: secret, headers: { authorization: secret }, jwt: secret, privateKey: secret },
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ", "TOKEN_ACQUIRE", forged);
+  const serialized = JSON.stringify(log);
+  assert(!serialized.includes(secret));
+  assert(!/authorization|bearer|jwt|private.?key/i.test(serialized));
+});
+
+Deno.test("a successful token acquisition through resolveSnapshot emits no failure log", async () => {
+  const test = harness();
+  const logs = await withCapturedConsoleError(async () => {
+    await test.provider.resolveSnapshot(authority());
+  });
+  assertEquals(logs, []);
+  assertEquals(test.tokenCalls.length, 1);
 });
 
 Deno.test("buildProjectFilesFailureLog reports the exact safe stage/diagnostic for a trusted GitHubHttpError", () => {
