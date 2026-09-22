@@ -273,15 +273,31 @@ const githubTokenAcquireDiagnostics = new WeakSet<object>();
 const githubTokenLeaseDiagnostics = new WeakSet<object>();
 const githubTokenResponseDiagnostics = new WeakSet<object>();
 
+export type GitHubTokenAcquireHttpStatus = 409 | 422;
+
 export class GitHubTokenAcquireDiagnosticError extends Error {
   readonly tokenLeaseCheck?: GitHubTokenLeaseCheck;
   declare readonly tokenResponseCheck?: GitHubTokenResponseCheck;
+  // The exact, already-validated numeric GitHub HTTP status, but ONLY ever
+  // one of the two safe conflict-class statuses (409/422) -- never any other
+  // numeric status. This base class is shared by every GitHub HTTP call
+  // (repository reads as well as token exchange), so this field is
+  // intentionally NOT restricted to a particular tokenAcquireSubphase here;
+  // narrower context-specific gating (e.g. requiring TOKEN_HTTP_STATUS +
+  // GITHUB_HTTP_CONFLICT) is enforced one layer up, in
+  // GitHubTokenBrokerError. This mirrors (does not replace) the WeakMap-based
+  // status already retained by GitHubHttpError in github-http.ts; it exists
+  // purely so this already-safe value can reach github-app-token.ts without
+  // introducing a new cross-module import back into github-http.ts (see the
+  // "avoid circular dependency" note there).
+  declare readonly tokenAcquireHttpStatus?: GitHubTokenAcquireHttpStatus;
 
   constructor(
     message: string,
     readonly tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
     tokenLeaseCheck?: GitHubTokenLeaseCheck,
     tokenResponseCheck?: GitHubTokenResponseCheck,
+    tokenAcquireHttpStatus?: GitHubTokenAcquireHttpStatus,
   ) {
     if (
       tokenAcquireSubphase !== undefined &&
@@ -297,6 +313,10 @@ export class GitHubTokenAcquireDiagnosticError extends Error {
       (tokenAcquireSubphase !== "TOKEN_RESPONSE_SCHEMA" ||
         !GITHUB_TOKEN_RESPONSE_CHECKS.includes(tokenResponseCheck))
     ) throw new Error("GITHUB_TOKEN_RESPONSE_DIAGNOSTIC_INVALID");
+    if (
+      tokenAcquireHttpStatus !== undefined &&
+      tokenAcquireHttpStatus !== 409 && tokenAcquireHttpStatus !== 422
+    ) throw new Error("GITHUB_TOKEN_ACQUIRE_HTTP_STATUS_INVALID");
     super(message);
     this.name = "GitHubTokenAcquireDiagnosticError";
     Object.defineProperty(this, "tokenAcquireSubphase", {
@@ -305,6 +325,14 @@ export class GitHubTokenAcquireDiagnosticError extends Error {
       writable: false,
       configurable: false,
     });
+    if (tokenAcquireHttpStatus !== undefined) {
+      Object.defineProperty(this, "tokenAcquireHttpStatus", {
+        value: tokenAcquireHttpStatus,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
     if (tokenLeaseCheck !== undefined) {
       Object.defineProperty(this, "tokenLeaseCheck", {
         value: tokenLeaseCheck,

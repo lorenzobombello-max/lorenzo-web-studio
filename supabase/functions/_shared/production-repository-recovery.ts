@@ -4,6 +4,7 @@ import {
   type GitHubInstallationTokenLease,
   type GitHubTokenAuthority,
   type GitHubTokenExchangeHttpClass,
+  type GitHubTokenExchangeHttpStatus,
   type GitHubTokenRequest,
 } from "./github-app-token.ts";
 import {
@@ -188,10 +189,17 @@ export class ProductionRepositoryRecoveryStageError extends Error {
   // upstream GitHubRepositoryStateInspectionError's own validated field, so
   // this class still never receives or stores unvalidated/raw error detail.
   readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
+  // The exact numeric GitHub HTTP status, but ONLY ever 409 or 422 and ONLY
+  // ever alongside tokenExchangeHttpClass === "GITHUB_HTTP_CONFLICT" -- every
+  // other status stays fully described by the class alone. Declared (not a
+  // plain class field) and only ever assigned when present, so this property
+  // never appears as an own key on instances where it wasn't supplied.
+  declare readonly tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus;
   constructor(
     stage: ProductionRepositoryRecoveryStage,
     inspectSubstep?: RepositoryInspectSubstep,
     tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
+    tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus,
   ) {
     if (inspectSubstep !== undefined && stage !== "REPOSITORY_INSPECT") {
       throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
@@ -203,6 +211,13 @@ export class ProductionRepositoryRecoveryStageError extends Error {
     ) {
       throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
     }
+    if (
+      tokenExchangeHttpStatus !== undefined &&
+      (tokenExchangeHttpClass !== "GITHUB_HTTP_CONFLICT" ||
+        (tokenExchangeHttpStatus !== 409 && tokenExchangeHttpStatus !== 422))
+    ) {
+      throw new Error("PRODUCTION_REPOSITORY_RECOVERY_STAGE_ERROR_INVALID");
+    }
     super(
       inspectSubstep !== undefined
         ? REPOSITORY_INSPECT_SUBSTEP_DIAGNOSTIC_CODES[inspectSubstep]
@@ -211,6 +226,9 @@ export class ProductionRepositoryRecoveryStageError extends Error {
     this.name = "ProductionRepositoryRecoveryStageError";
     this.stage = stage;
     this.tokenExchangeHttpClass = tokenExchangeHttpClass;
+    if (tokenExchangeHttpStatus !== undefined) {
+      this.tokenExchangeHttpStatus = tokenExchangeHttpStatus;
+    }
   }
 }
 
@@ -288,6 +306,22 @@ function classifyRepositoryInspectionTokenExchangeHttpClass(
   return error.tokenExchangeHttpClass;
 }
 
+// Extracts the already-safe, already-validated exact numeric GitHub HTTP
+// status (409 or 422 only) from a repository-inspection failure. Only ever
+// meaningful alongside the GITHUB_HTTP_CONFLICT class; every other class
+// (401/403/404/429/5xx/...) is already fully described by the class alone
+// and must never gain a fabricated numeric status here.
+function classifyRepositoryInspectionTokenExchangeHttpStatus(
+  error: unknown,
+  substep: RepositoryInspectSubstep | undefined,
+  httpClass: GitHubTokenExchangeHttpClass | undefined,
+): GitHubTokenExchangeHttpStatus | undefined {
+  if (substep !== "TOKEN_EXCHANGE_HTTP_STATUS_FAILED") return undefined;
+  if (httpClass !== "GITHUB_HTTP_CONFLICT") return undefined;
+  if (!(error instanceof GitHubRepositoryStateInspectionError)) return undefined;
+  return error.tokenExchangeHttpStatus;
+}
+
 // Returns the safe diagnostic code for a recovery failure, or null if the
 // error did not originate from the recovery stage machinery below (in which
 // case callers must continue to fail closed to a generic error code).
@@ -316,7 +350,9 @@ async function guard<T>(
 // Contains no JWTs, tokens, Authorization headers, private key material, or
 // raw provider/database payloads -- only the pre-approved stage and code,
 // plus (only when present) the already-safe, already-whitelisted GitHub
-// token-exchange HTTP status class for the one substep it applies to.
+// token-exchange HTTP status class for the one substep it applies to, and
+// (only for the GITHUB_HTTP_CONFLICT class) the exact already-validated
+// numeric status (409 or 422 only -- never any other value).
 export function productionRepositoryRecoveryFailureLog(
   error: unknown,
 ): Readonly<Record<string, string>> {
@@ -335,6 +371,9 @@ export function productionRepositoryRecoveryFailureLog(
     diagnostic_code: error.message,
     ...(error.tokenExchangeHttpClass !== undefined
       ? { token_exchange_http_class: error.tokenExchangeHttpClass }
+      : {}),
+    ...(error.tokenExchangeHttpStatus !== undefined
+      ? { token_exchange_http_status: String(error.tokenExchangeHttpStatus) }
       : {}),
   });
 }
@@ -761,10 +800,12 @@ export function createProductionRepositoryRecovery(dependencies: Dependencies) {
         } catch (error) {
           if (error instanceof ProductionRepositoryRecoveryStageError) throw error;
           const substep = classifyRepositoryInspectionFailure(error);
+          const httpClass = classifyRepositoryInspectionTokenExchangeHttpClass(error, substep);
           throw new ProductionRepositoryRecoveryStageError(
             "REPOSITORY_INSPECT",
             substep,
-            classifyRepositoryInspectionTokenExchangeHttpClass(error, substep),
+            httpClass,
+            classifyRepositoryInspectionTokenExchangeHttpStatus(error, substep, httpClass),
           );
         }
       });

@@ -7,6 +7,7 @@ import {
   type GitHubTokenAuthority,
   type GitHubTokenBrokerCode,
   type GitHubTokenExchangeHttpClass,
+  type GitHubTokenExchangeHttpStatus,
   type GitHubTokenRequest,
 } from "./github-app-token.ts";
 import {
@@ -121,6 +122,7 @@ export class GitHubRepositoryStateInspectionError extends Error {
   declare readonly tokenBrokerCode?: GitHubTokenBrokerCode;
   declare readonly tokenAcquireSubphase?: GitHubTokenAcquireSubphase;
   declare readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
+  declare readonly tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus;
 
   constructor(
     readonly code:
@@ -139,6 +141,7 @@ export class GitHubRepositoryStateInspectionError extends Error {
     tokenBrokerCode?: GitHubTokenBrokerCode,
     tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
     tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
+    tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus,
   ) {
     if (
       postCreateSubphase !== undefined &&
@@ -160,7 +163,10 @@ export class GitHubRepositoryStateInspectionError extends Error {
           !GITHUB_TOKEN_ACQUIRE_SUBPHASES.includes(tokenAcquireSubphase)) ||
       tokenExchangeHttpClass !== undefined &&
         (tokenAcquireSubphase !== "TOKEN_HTTP_STATUS" ||
-          !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass))
+          !GITHUB_TOKEN_EXCHANGE_HTTP_CLASSES.includes(tokenExchangeHttpClass)) ||
+      tokenExchangeHttpStatus !== undefined &&
+        (tokenExchangeHttpClass !== "GITHUB_HTTP_CONFLICT" ||
+          (tokenExchangeHttpStatus !== 409 && tokenExchangeHttpStatus !== 422))
     ) throw new Error("REPOSITORY_STATE_INSPECTION_DIAGNOSTIC_INVALID");
     super(code);
     this.name = "GitHubRepositoryStateInspectionError";
@@ -194,6 +200,14 @@ export class GitHubRepositoryStateInspectionError extends Error {
       writable: false,
       configurable: false,
     });
+    if (tokenExchangeHttpStatus !== undefined) {
+      Object.defineProperty(this, "tokenExchangeHttpStatus", {
+        value: tokenExchangeHttpStatus,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
     repositoryStateInspectionErrors.add(this);
     if (
       postCreateSubphase === "LAB_POST_CREATE_SNAPSHOT_READBACK" &&
@@ -246,6 +260,7 @@ function uncertain(
   tokenBrokerCode?: GitHubTokenBrokerCode,
   tokenAcquireSubphase?: GitHubTokenAcquireSubphase,
   tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass,
+  tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus,
 ): never {
   throw new GitHubRepositoryStateInspectionError(
     "REPOSITORY_STATE_UNCERTAIN",
@@ -255,6 +270,7 @@ function uncertain(
     tokenBrokerCode,
     tokenAcquireSubphase,
     tokenExchangeHttpClass,
+    tokenExchangeHttpStatus,
   );
 }
 
@@ -560,6 +576,9 @@ function repositoryStateInspectionCapability(
           : undefined,
         error instanceof GitHubTokenBrokerError
           ? error.tokenExchangeHttpClass
+          : undefined,
+        error instanceof GitHubTokenBrokerError
+          ? error.tokenExchangeHttpStatus
           : undefined,
       );
     }

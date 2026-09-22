@@ -9,6 +9,7 @@ import type {
   GitHubRepositoryMetadata,
 } from "./github-http.ts";
 import { createGitHubHttpClient, GitHubHttpError } from "./github-http.ts";
+import { GitHubTokenBrokerError } from "./github-app-token.ts";
 import { createGitHubRefReadDiagnostic } from "./github-ref-read-diagnostic.ts";
 import {
   computeGitHubSnapshotDigest,
@@ -1174,6 +1175,181 @@ Deno.test("state inspection capability identifies all five recovery readback bou
     ) as Error & { postCreateSubphase?: string };
     assertEquals(error.postCreateSubphase, subphase, failure);
   }
+});
+
+// ==========================================================================
+// tokenExchangeHttpStatus propagation (exact numeric 409/422 only)
+// ==========================================================================
+//
+// These prove the inspector correctly threads a trusted GitHubTokenBrokerError's
+// tokenExchangeHttpClass/tokenExchangeHttpStatus onto the resulting
+// GitHubRepositoryStateInspectionError, using a REAL GitHubTokenBrokerError
+// (not a synthetic string), and that the inspector's own public error code
+// (REPOSITORY_STATE_UNCERTAIN) is completely unaffected.
+
+Deno.test("state inspector propagates a trusted broker GITHUB_HTTP_CONFLICT with its exact numeric status (409 and 422)", async () => {
+  const implementation = await module();
+  for (const status of [409, 422] as const) {
+    const inspect = implementation.createGitHubRepositoryStateInspectionCapability!(
+      { target: "TEST", organization: EXPECTED.owner },
+      EXPECTED,
+      {
+        tokenBroker: {
+          issue: () =>
+            Promise.reject(
+              new GitHubTokenBrokerError(
+                "GITHUB_TOKEN_EXCHANGE_FAILED",
+                "TOKEN_HTTP_STATUS",
+                undefined,
+                undefined,
+                "GITHUB_HTTP_CONFLICT",
+                status,
+              ),
+            ),
+        },
+        http: { execute: () => Promise.reject(new Error("must not be reached")) },
+      },
+    );
+    const error = await assertRejects(
+      () => inspect(),
+      implementation.GitHubRepositoryStateInspectionError!,
+    ) as Error & {
+      code?: string;
+      postCreateSubphase?: string;
+      tokenExchangeHttpClass?: string;
+      tokenExchangeHttpStatus?: number;
+    };
+    // The inspector's own public error code stays exactly REPOSITORY_STATE_UNCERTAIN
+    // for every scenario -- adding the numeric status never changes it.
+    assertEquals(error.code, "REPOSITORY_STATE_UNCERTAIN");
+    assertEquals(error.postCreateSubphase, "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE");
+    assertEquals(error.tokenExchangeHttpClass, "GITHUB_HTTP_CONFLICT");
+    assertEquals(error.tokenExchangeHttpStatus, status);
+  }
+});
+
+Deno.test("state inspector never fabricates a numeric status for non-conflict broker classes", async () => {
+  const implementation = await module();
+  for (
+    const httpClass of [
+      "GITHUB_HTTP_UNAUTHORIZED",
+      "GITHUB_HTTP_FORBIDDEN",
+      "GITHUB_HTTP_NOT_FOUND",
+      "GITHUB_HTTP_SERVER_ERROR",
+    ] as const
+  ) {
+    const inspect = implementation.createGitHubRepositoryStateInspectionCapability!(
+      { target: "TEST", organization: EXPECTED.owner },
+      EXPECTED,
+      {
+        tokenBroker: {
+          issue: () =>
+            Promise.reject(
+              new GitHubTokenBrokerError(
+                "GITHUB_TOKEN_EXCHANGE_FAILED",
+                "TOKEN_HTTP_STATUS",
+                undefined,
+                undefined,
+                httpClass,
+              ),
+            ),
+        },
+        http: { execute: () => Promise.reject(new Error("must not be reached")) },
+      },
+    );
+    const error = await assertRejects(
+      () => inspect(),
+      implementation.GitHubRepositoryStateInspectionError!,
+    ) as Error & {
+      code?: string;
+      tokenExchangeHttpClass?: string;
+      tokenExchangeHttpStatus?: number;
+    };
+    assertEquals(error.code, "REPOSITORY_STATE_UNCERTAIN");
+    assertEquals(error.tokenExchangeHttpClass, httpClass);
+    assertEquals(error.tokenExchangeHttpStatus, undefined);
+  }
+});
+
+Deno.test("state inspector never fabricates a numeric status for a non-TOKEN_HTTP_STATUS broker subphase", async () => {
+  const implementation = await module();
+  const inspect = implementation.createGitHubRepositoryStateInspectionCapability!(
+    { target: "TEST", organization: EXPECTED.owner },
+    EXPECTED,
+    {
+      tokenBroker: {
+        issue: () =>
+          Promise.reject(
+            new GitHubTokenBrokerError(
+              "GITHUB_TOKEN_EXCHANGE_FAILED",
+              "TOKEN_JSON_PARSE",
+            ),
+          ),
+      },
+      http: { execute: () => Promise.reject(new Error("must not be reached")) },
+    },
+  );
+  const error = await assertRejects(
+    () => inspect(),
+    implementation.GitHubRepositoryStateInspectionError!,
+  ) as Error & {
+    code?: string;
+    tokenExchangeHttpClass?: string;
+    tokenExchangeHttpStatus?: number;
+  };
+  assertEquals(error.code, "REPOSITORY_STATE_UNCERTAIN");
+  assertEquals(error.tokenExchangeHttpClass, undefined);
+  assertEquals(error.tokenExchangeHttpStatus, undefined);
+});
+
+Deno.test("GitHubRepositoryStateInspectionError rejects an invalid numeric status even when constructed directly", async () => {
+  const implementation = await module();
+  const ErrorClass = implementation.GitHubRepositoryStateInspectionError!;
+  for (const status of [400, 418, 500] as const) {
+    assertThrows(() =>
+      new (ErrorClass as unknown as new (
+        code: string,
+        postCreateSubphase?: string,
+        snapshotReadbackCheck?: string,
+        refReadDiagnostic?: unknown,
+        tokenBrokerCode?: string,
+        tokenAcquireSubphase?: string,
+        tokenExchangeHttpClass?: string,
+        tokenExchangeHttpStatus?: number,
+      ) => Error)(
+        "REPOSITORY_STATE_UNCERTAIN",
+        "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE",
+        undefined,
+        undefined,
+        "GITHUB_TOKEN_EXCHANGE_FAILED",
+        "TOKEN_HTTP_STATUS",
+        "GITHUB_HTTP_CONFLICT",
+        status,
+      )
+    );
+  }
+  // Also rejects a status attached to a non-conflict class.
+  assertThrows(() =>
+    new (ErrorClass as unknown as new (
+      code: string,
+      postCreateSubphase?: string,
+      snapshotReadbackCheck?: string,
+      refReadDiagnostic?: unknown,
+      tokenBrokerCode?: string,
+      tokenAcquireSubphase?: string,
+      tokenExchangeHttpClass?: string,
+      tokenExchangeHttpStatus?: number,
+    ) => Error)(
+      "REPOSITORY_STATE_UNCERTAIN",
+      "LAB_POST_CREATE_READBACK_TOKEN_ACQUIRE",
+      undefined,
+      undefined,
+      "GITHUB_TOKEN_EXCHANGE_FAILED",
+      "TOKEN_HTTP_STATUS",
+      "GITHUB_HTTP_NOT_FOUND",
+      409,
+    )
+  );
 });
 
 Deno.test("state inspector rejects accessor-backed expected authority before reads", async () => {
