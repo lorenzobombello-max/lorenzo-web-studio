@@ -356,8 +356,8 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   assert.match(dashboardGuard, /master\.bindModuleButton\(button, button\.dataset\.operatorWindowModule/);
   const dashboardDossierCacheIdentity = "20260917-pre-project-workspace-r2";
   const registryDossierCacheIdentity = "20260912-project-refresh-retention-r1";
-  const windowGuardCacheIdentity = "20260917-pre-project-workspace-r2";
-  const windowRegistryCacheIdentity = "20260917-pre-project-workspace-r2";
+  const windowGuardCacheIdentity = "20260922-preview-error-code-r1";
+  const windowRegistryCacheIdentity = "20260922-preview-error-code-r1";
   const dossierCssCacheIdentity = "20260922-action-message-readable-r2";
   const dashboardGuardCacheIdentity = "20260920-launch-recovery-r1";
   const dashboardModuleCacheIdentity = "20260917-pre-project-workspace-r2";

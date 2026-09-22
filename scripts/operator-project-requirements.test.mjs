@@ -685,8 +685,6 @@ test("Task 11 synchronization has one coherent source hard-refresh cache chain",
   const paths = [
     "../assets/js/operator-dashboard-guard.mjs",
     "../assets/js/operator-workspace-master.mjs",
-    "../operator/window/index.html",
-    "../assets/js/operator-window-guard.mjs",
     "../assets/js/operator-project-requirements-child.mjs",
     "../assets/js/operator-project-workspace-child.mjs",
     "../assets/js/operator-website-execution-child.mjs",
@@ -695,6 +693,19 @@ test("Task 11 synchronization has one coherent source hard-refresh cache chain",
     assert.match(readFileSync(new URL(path, import.meta.url), "utf8"), new RegExp(token));
   }
   assert.match(registrySource, new RegExp(token));
+  const managedToken = "20260922-preview-error-code-r1";
+  assert.equal(
+    readFileSync(new URL("../operator/window/index.html", import.meta.url), "utf8").includes(managedToken),
+    true,
+  );
+  assert.equal(
+    readFileSync(new URL("../assets/js/operator-window-guard.mjs", import.meta.url), "utf8").includes(managedToken),
+    true,
+  );
+  assert.equal(
+    registrySource.includes(`operator-website-execution-child.mjs?v=${managedToken}`),
+    true,
+  );
 });
 
 test("requirements slot roundtrips exactly one quote request", () => {
