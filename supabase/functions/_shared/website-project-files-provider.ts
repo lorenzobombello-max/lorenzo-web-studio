@@ -12,6 +12,7 @@ import {
   type GitHubHttpOperation,
   type GitHubHttpResult,
 } from "./github-http.ts";
+import { isGitHubInstallationAccessToken } from "./github-installation-token.ts";
 import {
   GITHUB_TOKEN_ACQUIRE_SUBPHASES,
   hasValidatedGitHubTokenAcquireDiagnostic,
@@ -28,7 +29,6 @@ const NODE_ID = /^[A-Za-z0-9_=-]{1,128}$/;
 const SHA = /^[0-9a-f]{40}$/;
 const REF =
   /^(?:heads|tags)\/[A-Za-z0-9](?:[A-Za-z0-9._\/-]{0,253}[A-Za-z0-9])?$/;
-const TOKEN = /^(?:ghs_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})$/;
 const MAX_FILE_BYTES = 1_048_576;
 
 export type WebsiteProjectFilesAuthority = Readonly<{
@@ -578,7 +578,7 @@ export function createWebsiteProjectFilesProvider(
         }),
         dependencies.signal,
       );
-      if (!TOKEN.test(lease.token)) {
+      if (!isGitHubInstallationAccessToken(lease.token)) {
         return fail("PROJECT_FILES_PROVIDER_UNAVAILABLE");
       }
       return lease.token;
