@@ -8,6 +8,21 @@ on:
       - "supabase/functions/commercial-operator-command/**"
       - "supabase/functions/_shared/**"
       - "supabase/functions/github-app-gate6-probe/runtime.ts"
+      # Release-gate call graph: the continuity-predeploy/continuity-postdeploy
+      # steps below execute exactly these files. Any one of them can change
+      # whether a production release is allowed, so this workflow must
+      # re-trigger on current main whenever any of them change - otherwise a
+      # historical Edge run can silently keep using an outdated gate
+      # implementation. Keep this list explicit and bounded to the actual
+      # call graph; do NOT replace it with a broad scripts wildcard glob.
+      - ".github/workflows/deploy-commercial-operator-command.yml"
+      - "scripts/invoke-dossier-continuity-ci-gate.ps1"
+      - "scripts/invoke-dossier-continuity-release-gate.ps1"
+      - "scripts/dossier-continuity-regression-gate.mjs"
+      - "scripts/dossier-continuity-regression-gate.test.mjs"
+      - "scripts/dossier-continuity-release-integration.test.mjs"
+      - "scripts/operator-dossiers-pricing-refresh.test.mjs"
+      - "scripts/operator-pricing-vat-edge-contract.test.mjs"
   workflow_dispatch:
 
 permissions:

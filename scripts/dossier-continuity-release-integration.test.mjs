@@ -302,6 +302,42 @@ test("Pages and Edge releases require the same runtime-authenticated pre and pos
   assert.match(preservation, /invoke-dossier-continuity-release-gate\.ps1 -Phase Local/);
 });
 
+test("Edge release workflow re-triggers on every file in the release-gate call graph", async () => {
+  const edge = await text(".github/workflows/deploy-commercial-operator-command.yml");
+
+  // This is the exact call graph the continuity-predeploy/continuity-postdeploy
+  // steps execute (see the assertions above): the CI wrapper, the release-gate
+  // runner it invokes, the regression-gate module the runner invokes directly,
+  // and every test file the runner's local gate executes via `node --test`.
+  // A change to any one of these can change whether a production release is
+  // allowed, so the Edge workflow must re-trigger on current main when any of
+  // them change - otherwise a historical run can silently keep using an
+  // outdated gate implementation (as happened when PR #48 landed without
+  // triggering a fresh Edge run).
+  const REQUIRED_EDGE_GATE_TRIGGER_PATHS = [
+    ".github/workflows/deploy-commercial-operator-command.yml",
+    "scripts/invoke-dossier-continuity-ci-gate.ps1",
+    "scripts/invoke-dossier-continuity-release-gate.ps1",
+    "scripts/dossier-continuity-regression-gate.mjs",
+    "scripts/dossier-continuity-regression-gate.test.mjs",
+    "scripts/dossier-continuity-release-integration.test.mjs",
+    "scripts/operator-dossiers-pricing-refresh.test.mjs",
+    "scripts/operator-pricing-vat-edge-contract.test.mjs",
+  ];
+  for (const path of REQUIRED_EDGE_GATE_TRIGGER_PATHS) {
+    const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(edge, new RegExp(`"${escaped}"`), `expected Edge workflow paths trigger to include ${path}`);
+  }
+
+  // Guard against silently replacing the explicit, bounded allowlist above
+  // with an unsafe broad trigger. If a future change genuinely needs a
+  // wildcard, this assertion (and this test's rationale) must be revisited
+  // deliberately, not bypassed incidentally.
+  assert.doesNotMatch(edge, /"scripts\/\*\*"/);
+  assert.doesNotMatch(edge, /"\*\*"/);
+  assert.doesNotMatch(edge, /^\s*paths-ignore\s*:/m);
+});
+
 test("PRE_PROJECT release evidence includes deterministic desktop and mobile frame sampling", async () => {
   const preview = await text("scripts/website-concept-pre-project-live-preview.test.mjs");
   assert.match(preview, /initializeOperatorWebsiteExecution/);
