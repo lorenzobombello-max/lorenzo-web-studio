@@ -94,6 +94,109 @@ test("CI auth wrapper mints only a short-lived caller JWT and fails closed", asy
   }
 });
 
+// ==========================================================================
+// Safe Auth HTTP status observability (server/CI-log-only)
+// ==========================================================================
+//
+// Every Auth failure previously collapsed into the same RELEASE_SMOKE_AUTH_FAILED
+// code with zero HTTP-status detail. These prove the new
+// RELEASE_SMOKE_AUTH_HTTP_STATUS field is populated only from an
+// already-validated, safe numeric status (400-599), that it degrades to
+// UNAVAILABLE for any exception shape without a trustworthy HTTP status,
+// and that no secret/credential material is ever emitted regardless of
+// which failure path fires.
+
+const wrapperPath = fileURLToPath(new URL("scripts/invoke-dossier-continuity-ci-gate.ps1", root));
+
+function mockHttpResponseException(statusCodeName, message = "synthetic") {
+  return [
+    "function global:Invoke-RestMethod {",
+    "  param($Method,$Uri,$Headers,$ContentType,$Body);",
+    `  $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::${statusCodeName});`,
+    `  throw [Microsoft.PowerShell.Commands.HttpResponseException]::new(${psQuote(message)}, $response)`,
+    "}",
+  ].join(" ");
+}
+
+function runAuthScenario(mockScript) {
+  return spawnSync("pwsh", ["-NoProfile", "-Command", [
+    mockScript,
+    `& ${psQuote(wrapperPath)} -Phase PreDeploy`,
+  ].join("; ")], { encoding: "utf8", env: ciEnvironment() });
+}
+
+function assertNoSecretMaterial(output) {
+  assert.doesNotMatch(output, /synthetic-password-never-use/);
+  assert.doesNotMatch(output, /release-smoke@example\.invalid/);
+  assert.doesNotMatch(output, /access_token/i);
+  assert.doesNotMatch(output, /refresh_token/i);
+  assert.doesNotMatch(output, /\beyJ[A-Za-z0-9_-]{10,}/); // common base64url JWT header prefix
+  assert.doesNotMatch(output, /synthetic (?:401|429|500)\b.*\{/); // no serialized/raw body-shaped text
+}
+
+test("synthetic 401 Auth exception reports the exact safe HTTP status and fails closed", () => {
+  const result = runAuthScenario(mockHttpResponseException("Unauthorized", "synthetic 401"));
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.match(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=401/);
+  assert.match(output, /DOSSIER_CONTINUITY_CI_GATE_ERROR=RELEASE_SMOKE_AUTH_FAILED/);
+  assert.match(output, /PRODUCTION_RELEASE_ALLOWED=NEE/);
+  assertNoSecretMaterial(output);
+});
+
+test("synthetic 429 Auth exception reports the exact safe HTTP status and fails closed", () => {
+  const result = runAuthScenario(mockHttpResponseException("TooManyRequests", "synthetic 429"));
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.match(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=429/);
+  assert.match(output, /DOSSIER_CONTINUITY_CI_GATE_ERROR=RELEASE_SMOKE_AUTH_FAILED/);
+  assert.match(output, /PRODUCTION_RELEASE_ALLOWED=NEE/);
+  assertNoSecretMaterial(output);
+});
+
+test("synthetic 500 Auth exception reports the exact safe HTTP status only", () => {
+  const result = runAuthScenario(mockHttpResponseException("InternalServerError", "synthetic 500"));
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.match(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=500/);
+  assert.doesNotMatch(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=(?!500\b)\d+/);
+  assertNoSecretMaterial(output);
+});
+
+test("a generic Auth exception with no HTTP response reports UNAVAILABLE", () => {
+  const result = runAuthScenario(
+    "function global:Invoke-RestMethod { param($Method,$Uri,$Headers,$ContentType,$Body) throw 'synthetic rejection' }",
+  );
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.match(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=UNAVAILABLE/);
+  assert.match(output, /DOSSIER_CONTINUITY_CI_GATE_ERROR=RELEASE_SMOKE_AUTH_FAILED/);
+  assertNoSecretMaterial(output);
+});
+
+test("an out-of-range HTTP status (e.g. a 3xx) is never logged as a numeric Auth status", () => {
+  // Invoke-RestMethod only ever throws HttpResponseException for non-2xx
+  // responses, but this proves the safe extractor's own 400-599 gate holds
+  // regardless of what status value a caught exception might carry.
+  const result = runAuthScenario(mockHttpResponseException("Found", "synthetic 302"));
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.match(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=UNAVAILABLE/);
+  assert.doesNotMatch(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS=302/);
+  assertNoSecretMaterial(output);
+});
+
+test("a non-Auth failure never emits a RELEASE_SMOKE_AUTH_HTTP_STATUS line", () => {
+  const missingEmail = spawnSync("pwsh", ["-NoProfile", "-File", wrapperPath, "-Phase", "PreDeploy"], {
+    encoding: "utf8",
+    env: ciEnvironment({ LWS_RELEASE_SMOKE_EMAIL: "" }),
+  });
+  assert.notEqual(missingEmail.status, 0);
+  const output = `${missingEmail.stdout}\n${missingEmail.stderr}`;
+  assert.match(output, /LWS_RELEASE_SMOKE_EMAIL_REQUIRED/);
+  assert.doesNotMatch(output, /RELEASE_SMOKE_AUTH_HTTP_STATUS/);
+});
+
 test("every mandatory continuity failure blocks production", () => {
   const passing = Object.fromEntries(REQUIRED_RELEASE_CHECKS.map((name) => [name, true]));
   assert.equal(evaluateReleaseGate(passing).productionReleaseAllowed, "JA");
