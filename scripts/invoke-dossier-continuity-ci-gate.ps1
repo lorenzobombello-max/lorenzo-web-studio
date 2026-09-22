@@ -18,6 +18,7 @@ $publishableKey = $null
 $authBody = $null
 $authResponse = $null
 $accessToken = $null
+$authHttpStatus = $null
 
 function Get-JwtExpiry {
   param([Parameter(Mandatory = $true)][string]$Token)
@@ -45,6 +46,39 @@ function Get-JwtExpiry {
   return $expiry
 }
 
+# Extracts only an already-validated, safe numeric HTTP status (400-599) from
+# a caught error, using ONLY trusted, well-known response/status properties
+# already present on the .NET exception shapes Invoke-RestMethod produces
+# (Microsoft.PowerShell.Commands.HttpResponseException.Response.StatusCode).
+# Never stringifies/serializes the exception, never reads message/body/
+# headers, and safely returns $null for every other exception shape
+# (network failures, mocked/synthetic throws, etc.) without ever triggering
+# a "property not found" error under Set-StrictMode -Version Latest -- a
+# direct `$_.Exception.Response` access would throw for exception types
+# (e.g. System.Net.Http.HttpRequestException) that simply lack that
+# property, so every property read below goes through the safe
+# PSObject.Properties indexer instead of dot-notation.
+function Get-SafeHttpStatusCode {
+  param([AllowNull()]$ErrorRecord)
+  try {
+    $exception = $ErrorRecord.Exception
+    if ($null -eq $exception) { return $null }
+    $responseProperty = $exception.PSObject.Properties["Response"]
+    if ($null -eq $responseProperty) { return $null }
+    $response = $responseProperty.Value
+    if ($null -eq $response) { return $null }
+    $statusProperty = $response.PSObject.Properties["StatusCode"]
+    if ($null -eq $statusProperty) { return $null }
+    $statusValue = $statusProperty.Value
+    if ($null -eq $statusValue) { return $null }
+    $code = [int]$statusValue
+    if ($code -lt 400 -or $code -gt 599) { return $null }
+    return $code
+  } catch {
+    return $null
+  }
+}
+
 try {
   $email = [string]$env:LWS_RELEASE_SMOKE_EMAIL
   $password = [string]$env:LWS_RELEASE_SMOKE_PASSWORD
@@ -64,6 +98,7 @@ try {
       -ContentType "application/json" `
       -Body $authBody
   } catch {
+    $authHttpStatus = Get-SafeHttpStatusCode -ErrorRecord $_
     throw "RELEASE_SMOKE_AUTH_FAILED"
   }
 
@@ -91,6 +126,10 @@ try {
     "^(LWS_RELEASE_SMOKE_EMAIL_REQUIRED|LWS_RELEASE_SMOKE_PASSWORD_REQUIRED|LWS_SUPABASE_PUBLISHABLE_KEY_REQUIRED|LWS_SUPABASE_PUBLISHABLE_KEY_INVALID|RELEASE_SMOKE_AUTH_FAILED|RELEASE_SMOKE_ACCESS_TOKEN_INVALID|RELEASE_SMOKE_ACCESS_TOKEN_EXPIRES_TOO_SOON|DOSSIER_CONTINUITY_GATE_FAILED)$" { $failureMessage; break }
     default { "DOSSIER_CONTINUITY_CI_GATE_FAILED" }
   }
+  if ($safeCode -eq "RELEASE_SMOKE_AUTH_FAILED") {
+    $statusText = if ($null -ne $authHttpStatus) { [string]$authHttpStatus } else { "UNAVAILABLE" }
+    Write-Host "RELEASE_SMOKE_AUTH_HTTP_STATUS=$statusText"
+  }
   Write-Host "DOSSIER_CONTINUITY_CI_GATE_ERROR=$safeCode"
   Write-Host "PRODUCTION_RELEASE_ALLOWED=NEE"
   throw $safeCode
@@ -105,4 +144,5 @@ try {
   $password = $null
   $email = $null
   $publishableKey = $null
+  $authHttpStatus = $null
 }
