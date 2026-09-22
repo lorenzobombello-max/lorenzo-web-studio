@@ -63,7 +63,17 @@ async function websiteProjectPreviewGateway(client, request) {
   const response = await client.functions.invoke("commercial-operator-command", {
     body: request,
   });
-  if (response?.error) throw response.error;
+  if (response?.error) {
+    let code = "NETWORK_ERROR";
+    const status = Number(response.error?.context?.status || 0);
+    try {
+      const payload = await response.error.context.clone().json();
+      if (typeof payload?.code === "string" && /^[A-Z][A-Z0-9_]*$/.test(payload.code)) {
+        code = payload.code;
+      }
+    } catch {}
+    throw Object.assign(new Error(code), { code, status });
+  }
   const result = response?.data?.result;
   if (!result || result.contract_version !== 1
     || result.snapshot?.commit_sha !== request.expected_commit_sha
@@ -487,10 +497,15 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       open.hidden = false;
       message.textContent = "Preview is gereed voor de opgeslagen commit.";
       return true;
-    } catch {
+    } catch (error) {
       open.hidden = true;
       open.removeAttribute("href");
-      message.textContent = "Preview kon niet veilig worden gebouwd.";
+      const candidate = typeof error?.code === "string" ? error.code
+        : typeof error?.message === "string" ? error.message
+        : "";
+      const code = /^[A-Z][A-Z0-9_]*$/.test(candidate) ? candidate : "UNKNOWN";
+      message.textContent = "Preview kon niet veilig worden gebouwd."
+        + ` (PREVIEW_ERROR: ${code})`;
       return false;
     } finally {
       previewPending = false;
