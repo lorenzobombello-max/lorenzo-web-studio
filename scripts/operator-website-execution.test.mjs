@@ -656,6 +656,12 @@ test("Website Workspace exposes only the Task 7 managed Requirements route", asy
   assert.doesNotMatch(child, /window\.open|location\.reload/);
 });
 
+test("Operator action messages use the globally readable dark text color", async () => {
+  const css = await read("assets/css/operator-dashboard.css");
+  assert.match(css, /\.action-message\s*\{[^}]*color:var\(--text\)/);
+  assert.doesNotMatch(css, /\.action-message\s*\{[^}]*color:#bdf8df/);
+});
+
 test("Website child has compact and mobile overflow contracts", async () => {
   const css = await read("assets/css/operator-dashboard.css");
   assert.match(css, /\.website-execution-workspace,\.website-execution \{ width:100%; min-width:0/);

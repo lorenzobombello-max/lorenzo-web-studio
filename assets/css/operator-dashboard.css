@@ -611,7 +611,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .primary-action[hidden] { display:none; }
 .primary-action:disabled { cursor:not-allowed; opacity:.5; }
 .primary-action--compact { min-height:40px; margin:0; padding:.55rem .75rem; }
-.action-message { min-height:1.5em; margin:.7rem 0 0; color:#bdf8df; font-weight:700; animation:status-enter var(--motion-duration-normal) var(--motion-ease) both; }
+.action-message { min-height:1.5em; margin:.7rem 0 0; color:var(--text); font-weight:700; animation:status-enter var(--motion-duration-normal) var(--motion-ease) both; }
 .action-message--dark { color:var(--text); }
 .panel { min-width:0; padding:clamp(1.1rem,2vw,1.5rem); border:1px solid var(--line); border-radius:var(--radius); background:var(--white); box-shadow:0 10px 28px rgba(27,42,74,.07); transition:transform var(--motion-duration-fast) ease,border-color var(--motion-duration-fast) ease,box-shadow var(--motion-duration-normal) ease; }
 .panel__heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-bottom:1rem; border-bottom:1px solid var(--line); }
