@@ -172,12 +172,14 @@ export class GitHubTokenBrokerError extends GitHubTokenAcquireDiagnosticError {
       writable: false,
       configurable: false,
     });
-    Object.defineProperty(this, "tokenExchangeHttpStatus", {
-      value: tokenExchangeHttpStatus,
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
+    if (tokenExchangeHttpStatus !== undefined) {
+      Object.defineProperty(this, "tokenExchangeHttpStatus", {
+        value: tokenExchangeHttpStatus,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
   }
 }
 

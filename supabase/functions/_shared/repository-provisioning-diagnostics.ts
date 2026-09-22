@@ -325,12 +325,14 @@ export class GitHubTokenAcquireDiagnosticError extends Error {
       writable: false,
       configurable: false,
     });
-    Object.defineProperty(this, "tokenAcquireHttpStatus", {
-      value: tokenAcquireHttpStatus,
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
+    if (tokenAcquireHttpStatus !== undefined) {
+      Object.defineProperty(this, "tokenAcquireHttpStatus", {
+        value: tokenAcquireHttpStatus,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
     if (tokenLeaseCheck !== undefined) {
       Object.defineProperty(this, "tokenLeaseCheck", {
         value: tokenLeaseCheck,

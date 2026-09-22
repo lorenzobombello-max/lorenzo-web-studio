@@ -191,8 +191,10 @@ export class ProductionRepositoryRecoveryStageError extends Error {
   readonly tokenExchangeHttpClass?: GitHubTokenExchangeHttpClass;
   // The exact numeric GitHub HTTP status, but ONLY ever 409 or 422 and ONLY
   // ever alongside tokenExchangeHttpClass === "GITHUB_HTTP_CONFLICT" -- every
-  // other status stays fully described by the class alone.
-  readonly tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus;
+  // other status stays fully described by the class alone. Declared (not a
+  // plain class field) and only ever assigned when present, so this property
+  // never appears as an own key on instances where it wasn't supplied.
+  declare readonly tokenExchangeHttpStatus?: GitHubTokenExchangeHttpStatus;
   constructor(
     stage: ProductionRepositoryRecoveryStage,
     inspectSubstep?: RepositoryInspectSubstep,
@@ -224,7 +226,9 @@ export class ProductionRepositoryRecoveryStageError extends Error {
     this.name = "ProductionRepositoryRecoveryStageError";
     this.stage = stage;
     this.tokenExchangeHttpClass = tokenExchangeHttpClass;
-    this.tokenExchangeHttpStatus = tokenExchangeHttpStatus;
+    if (tokenExchangeHttpStatus !== undefined) {
+      this.tokenExchangeHttpStatus = tokenExchangeHttpStatus;
+    }
   }
 }
 
