@@ -1,10 +1,17 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { GitHubAppConfig } from "./github-app-config.ts";
 import {
+  buildProjectFilesFailureLog,
   createWebsiteProjectFilesProvider,
   type WebsiteProjectFilesAuthority,
   WebsiteProjectFilesProviderError,
 } from "./website-project-files-provider.ts";
+import { GitHubTokenBrokerError } from "./github-app-token.ts";
+import { GitHubHttpError } from "./github-http.ts";
+
+const source = await Deno.readTextFile(
+  new URL("./website-project-files-provider.ts", import.meta.url),
+);
 
 const TOKEN = "gh" + `s_${"a".repeat(36)}`;
 const COMMIT = "a".repeat(40);
@@ -113,6 +120,8 @@ function harness(overrides: {
   blobDeclaredSize?: number;
   blobSha?: string;
   failKind?: string;
+  tokenIssueFailsWith?: unknown;
+  httpExecuteFailsWith?: unknown;
 } = {}) {
   const calls: Array<
     { operation: Record<string, unknown>; signal?: AbortSignal }
@@ -131,6 +140,9 @@ function harness(overrides: {
         passedSignal?: AbortSignal,
       ) {
         tokenCalls.push({ request, tokenAuthority, passedSignal });
+        if (overrides.tokenIssueFailsWith !== undefined) {
+          return Promise.reject(overrides.tokenIssueFailsWith);
+        }
         return Promise.resolve({
           token: TOKEN,
           expiresAt: "2099-01-01T00:00:00Z",
@@ -149,6 +161,13 @@ function harness(overrides: {
             overrides.failKind === (operation as { kind: string }).kind)
         ) {
           return Promise.reject(new Error(overrides.failCode));
+        }
+        if (
+          overrides.httpExecuteFailsWith !== undefined &&
+          (!overrides.failKind ||
+            overrides.failKind === (operation as { kind: string }).kind)
+        ) {
+          return Promise.reject(overrides.httpExecuteFailsWith);
         }
         const kind = (operation as { kind: string }).kind;
         if (kind === "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA") {
@@ -728,4 +747,238 @@ Deno.test("provider file failures normalize once with no retry", async () => {
     assertEquals(test.calls.length, 1);
     assertEquals(JSON.stringify(error).includes(injected), false);
   }
+});
+
+// ==========================================================================
+// LWS_GIT001_PROJECT_FILES_FAILURE stage observability
+// ==========================================================================
+//
+// resolveSnapshot()'s single-attempt read pipeline (token acquire, metadata,
+// ref, commit, marker) previously collapsed every failure into the same
+// generic public code with zero server-side stage detail. These prove the
+// exact safe stage/diagnostic/field record buildProjectFilesFailureLog()
+// produces, both as a pure function and end-to-end through the real
+// provider, without ever changing the public/client-facing error.
+
+function withCapturedConsoleError(run: () => Promise<void>) {
+  const original = console.error;
+  const calls: string[] = [];
+  console.error = (...args: unknown[]) => {
+    calls.push(args.map(String).join(" "));
+  };
+  return run().finally(() => {
+    console.error = original;
+  }).then(() => calls);
+}
+
+Deno.test("buildProjectFilesFailureLog reports the exact safe stage/diagnostic for a trusted GitHubTokenBrokerError", () => {
+  const error = new GitHubTokenBrokerError(
+    "GITHUB_TOKEN_EXCHANGE_FAILED",
+    "TOKEN_HTTP_STATUS",
+    undefined,
+    undefined,
+    "GITHUB_HTTP_CONFLICT",
+    409,
+  );
+  const log = buildProjectFilesFailureLog(
+    "WEBSITE_PROJECT_FILES_READ",
+    "TOKEN_ACQUIRE",
+    error,
+  );
+  assertEquals(log.event, "LWS_GIT001_PROJECT_FILES_FAILURE");
+  assertEquals(log.action, "WEBSITE_PROJECT_FILES_READ");
+  assertEquals(log.stage, "TOKEN_ACQUIRE");
+  assertEquals(log.diagnostic_code, "PROJECT_FILES_PROVIDER_UNAVAILABLE");
+  assertEquals(log.token_acquire_subphase, "TOKEN_HTTP_STATUS");
+  assertEquals(log.token_exchange_http_class, "GITHUB_HTTP_CONFLICT");
+  assertEquals(log.token_exchange_http_status, "409");
+  assert(!Object.hasOwn(log, "github_http_class"));
+});
+
+Deno.test("buildProjectFilesFailureLog reports the exact safe stage/diagnostic for a trusted GitHubHttpError", () => {
+  const error = new GitHubHttpError(
+    "GITHUB_HTTP_NOT_FOUND",
+    null,
+    null,
+    undefined,
+    "HTTP_STATUS",
+  );
+  const log = buildProjectFilesFailureLog(
+    "WEBSITE_PROJECT_FILES_READ_REF",
+    "REF_READ",
+    error,
+  );
+  assertEquals(log.stage, "REF_READ");
+  assertEquals(log.diagnostic_code, "PROJECT_FILES_SNAPSHOT_UNAVAILABLE");
+  assertEquals(log.github_http_class, "GITHUB_HTTP_NOT_FOUND");
+  assertEquals(log.github_http_boundary, "HTTP_STATUS");
+  assert(!Object.hasOwn(log, "token_acquire_subphase"));
+  assert(!Object.hasOwn(log, "github_http_status"));
+});
+
+Deno.test("buildProjectFilesFailureLog omits every optional field for an untrusted/unrelated error", () => {
+  const log = buildProjectFilesFailureLog(
+    "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA",
+    "REPOSITORY_METADATA",
+    new Error("raw network body token url"),
+  );
+  assertEquals(log.diagnostic_code, "PROJECT_FILES_PROVIDER_UNAVAILABLE");
+  assertEquals(Object.keys(log).sort(), [
+    "action",
+    "diagnostic_code",
+    "event",
+    "stage",
+  ]);
+  assert(!JSON.stringify(log).includes("raw network body token url"));
+});
+
+Deno.test("buildProjectFilesFailureLog never includes secrets, tokens, JWTs, headers, or raw provider payloads", () => {
+  const secret = "raw provider body with a token and Authorization: Bearer x";
+  const forged = Object.assign(
+    new GitHubHttpError("GITHUB_HTTP_SERVER_ERROR", null, null, undefined, "HTTP_STATUS"),
+    { rawBody: secret, headers: { authorization: secret }, cause: secret },
+  );
+  const log = buildProjectFilesFailureLog("WEBSITE_PROJECT_FILES_READ_COMMIT", "COMMIT_READ", forged);
+  const serialized = JSON.stringify(log);
+  assert(!serialized.includes(secret));
+  assert(!/authorization|bearer|jwt|private.?key/i.test(serialized));
+});
+
+Deno.test("resolveSnapshot token acquisition failure reports stage TOKEN_ACQUIRE end-to-end", async () => {
+  const test = harness({
+    tokenIssueFailsWith: new GitHubTokenBrokerError(
+      "GITHUB_TOKEN_EXCHANGE_FAILED",
+      "TOKEN_HTTP_STATUS",
+      undefined,
+      undefined,
+      "GITHUB_HTTP_SERVER_ERROR",
+    ),
+  });
+  const logs = await withCapturedConsoleError(async () => {
+    await assertRejects(
+      () => test.provider.resolveSnapshot(authority()),
+      WebsiteProjectFilesProviderError,
+    );
+  });
+  assertEquals(logs.length, 1);
+  const record = JSON.parse(logs[0]);
+  assertEquals(record.event, "LWS_GIT001_PROJECT_FILES_FAILURE");
+  assertEquals(record.stage, "TOKEN_ACQUIRE");
+  assertEquals(record.token_exchange_http_class, "GITHUB_HTTP_SERVER_ERROR");
+});
+
+Deno.test("resolveSnapshot stage-by-stage failures each report their exact safe stage end-to-end", async () => {
+  const scenarios = [
+    ["WEBSITE_PROJECT_FILES_REPOSITORY_METADATA", "REPOSITORY_METADATA"],
+    ["WEBSITE_PROJECT_FILES_READ_REF", "REF_READ"],
+    ["WEBSITE_PROJECT_FILES_READ_COMMIT", "COMMIT_READ"],
+    ["WEBSITE_PROJECT_FILES_READ_MARKER", "MARKER_READ"],
+  ] as const;
+  for (const [kind, stage] of scenarios) {
+    const test = harness({
+      failKind: kind,
+      httpExecuteFailsWith: new GitHubHttpError(
+        "GITHUB_HTTP_NOT_FOUND",
+        null,
+        null,
+        undefined,
+        "HTTP_STATUS",
+      ),
+    });
+    const logs = await withCapturedConsoleError(async () => {
+      await assertRejects(() => test.provider.resolveSnapshot(authority()));
+    });
+    assertEquals(logs.length, 1, `stage ${stage}`);
+    const record = JSON.parse(logs[0]);
+    assertEquals(record.action, kind);
+    assertEquals(record.stage, stage);
+    assertEquals(record.github_http_class, "GITHUB_HTTP_NOT_FOUND");
+  }
+});
+
+Deno.test("root directory tree-read failure reports stage TREE_READ end-to-end", async () => {
+  const test = harness({
+    failKind: "WEBSITE_PROJECT_FILES_READ_TREE",
+    httpExecuteFailsWith: new GitHubHttpError(
+      "GITHUB_HTTP_SERVER_ERROR",
+      null,
+      null,
+      undefined,
+      "HTTP_STATUS",
+    ),
+  });
+  const logs = await withCapturedConsoleError(async () => {
+    await assertRejects(() =>
+      readCapable(test.provider).readFile({
+        authority: authority(),
+        commitSha: COMMIT,
+        rootTreeSha: ROOT_TREE,
+        path: "safe.txt",
+      })
+    );
+  });
+  assertEquals(logs.length, 1);
+  const record = JSON.parse(logs[0]);
+  assertEquals(record.stage, "TREE_READ");
+  assertEquals(record.github_http_class, "GITHUB_HTTP_SERVER_ERROR");
+});
+
+Deno.test("the public/client-facing thrown error is completely unaffected by the new observability", async () => {
+  const test = harness({
+    failKind: "WEBSITE_PROJECT_FILES_READ_REF",
+    httpExecuteFailsWith: new GitHubHttpError(
+      "GITHUB_HTTP_NOT_FOUND",
+      null,
+      null,
+      undefined,
+      "HTTP_STATUS",
+    ),
+  });
+  await withCapturedConsoleError(async () => {
+    const error = await assertRejects(
+      () => test.provider.resolveSnapshot(authority()),
+      WebsiteProjectFilesProviderError,
+      "PROJECT_FILES_SNAPSHOT_UNAVAILABLE",
+    );
+    // Exactly the same closed shape as every other provider error -- only
+    // `code`/`name`, nothing from the new safe log fields leaks onto it.
+    assertEquals(Object.keys(error).sort(), ["code", "name"]);
+  });
+});
+
+Deno.test("a fully successful resolveSnapshot produces no failure log at all", async () => {
+  const test = harness();
+  const logs = await withCapturedConsoleError(async () => {
+    await test.provider.resolveSnapshot(authority());
+  });
+  assertEquals(logs, []);
+});
+
+Deno.test("Project Files provider observability introduces no repository-create dependency", () => {
+  // This provider module has no repository-creation capability at all --
+  // the new logging is purely additive around the existing read/write
+  // operations and must never gain one.
+  assert(!source.includes("CREATE_REPOSITORY"));
+  assert(!source.includes("github-repository-runtime.ts"));
+  assert(!source.includes("github-repository-provider.ts"));
+});
+
+Deno.test("lease/authority validation is unaffected by the new observability", async () => {
+  // A stale/invalid authority must still fail closed on REPOSITORY_BINDING_STALE
+  // before any token acquisition or HTTP call -- and must never log a failure
+  // record, since it never reaches access()/execute() at all.
+  const test = harness();
+  const logs = await withCapturedConsoleError(async () => {
+    await assertRejects(
+      () =>
+        test.provider.resolveSnapshot(authority({
+          bindingRevision: -1,
+        }) as unknown as WebsiteProjectFilesAuthority),
+      WebsiteProjectFilesProviderError,
+      "REPOSITORY_BINDING_STALE",
+    );
+  });
+  assertEquals(logs, []);
+  assertEquals(test.tokenCalls.length, 0);
+  assertEquals(test.calls.length, 0);
 });

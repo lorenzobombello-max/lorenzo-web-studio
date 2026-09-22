@@ -1,10 +1,16 @@
 import type { GitHubAppConfig } from "./github-app-config.ts";
-import type {
-  GitHubInstallationTokenLease,
-  GitHubTokenAuthority,
-  GitHubTokenRequest,
+import {
+  GitHubTokenBrokerError,
+  type GitHubInstallationTokenLease,
+  type GitHubTokenAuthority,
+  type GitHubTokenRequest,
 } from "./github-app-token.ts";
-import type { GitHubHttpOperation, GitHubHttpResult } from "./github-http.ts";
+import {
+  getValidatedGitHubHttpStatus,
+  GitHubHttpError,
+  type GitHubHttpOperation,
+  type GitHubHttpResult,
+} from "./github-http.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -194,23 +200,110 @@ function validAuthority(
     Number.isFinite(Date.parse(value.expiresAt));
 }
 
-function normalize(error: unknown): never {
-  if (error instanceof WebsiteProjectFilesProviderError) throw error;
+// Pure classification, reused by both the throwing normalize() below and the
+// safe server-side failure log -- guarantees the logged diagnostic_code is
+// always exactly the same value the client-visible thrown error carries,
+// without duplicating the mapping logic.
+function classifyProjectFilesFailure(error: unknown): string {
+  if (error instanceof WebsiteProjectFilesProviderError) return error.code;
   const code = isRecord(error) && typeof error.code === "string"
     ? error.code
     : error instanceof Error
     ? error.message
     : "";
   if (code.includes("TIMEOUT") || code.includes("ABORT")) {
-    return fail("PROJECT_FILES_PROVIDER_TIMEOUT");
+    return "PROJECT_FILES_PROVIDER_TIMEOUT";
   }
   if (code.includes("RATE_LIMIT") || code.includes("THROTTL")) {
-    return fail("PROJECT_FILES_PROVIDER_THROTTLED");
+    return "PROJECT_FILES_PROVIDER_THROTTLED";
   }
   if (code.includes("NOT_FOUND") || code.includes("GONE")) {
-    return fail("PROJECT_FILES_SNAPSHOT_UNAVAILABLE");
+    return "PROJECT_FILES_SNAPSHOT_UNAVAILABLE";
   }
-  return fail("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+  return "PROJECT_FILES_PROVIDER_UNAVAILABLE";
+}
+
+function normalize(error: unknown): never {
+  if (error instanceof WebsiteProjectFilesProviderError) throw error;
+  return fail(classifyProjectFilesFailure(error));
+}
+
+// Maps each GitHub HTTP operation kind this provider ever issues to the
+// safe, machine-readable Project Files failure stage it belongs to. Only
+// used for observability labeling -- never for control flow.
+const PROJECT_FILES_OPERATION_STAGES: Readonly<Record<string, string>> = Object.freeze({
+  WEBSITE_PROJECT_FILES_REPOSITORY_METADATA: "REPOSITORY_METADATA",
+  WEBSITE_PROJECT_FILES_READ_REF: "REF_READ",
+  WEBSITE_PROJECT_FILES_READ_COMMIT: "COMMIT_READ",
+  WEBSITE_PROJECT_FILES_READ_MARKER: "MARKER_READ",
+  WEBSITE_PROJECT_FILES_READ_TREE: "TREE_READ",
+  READ_BLOB: "BLOB_READ",
+  CREATE_BLOB: "CREATE_BLOB",
+  CREATE_TREE: "CREATE_TREE",
+  CREATE_COMMIT: "CREATE_COMMIT",
+  UPDATE_REF: "UPDATE_REF",
+  WRITE_PROJECT_MARKER: "WRITE_MARKER",
+});
+
+// Extracts only already-safe, already-validated fields from a caught
+// GitHubTokenBrokerError/GitHubHttpError -- never raw provider bodies,
+// headers, tokens, JWTs, private keys, or Authorization values. Absence on
+// any other error shape is always handled the same safe way (no fields).
+function safeProjectFilesFailureFields(error: unknown): Readonly<Record<string, string>> {
+  if (error instanceof GitHubTokenBrokerError) {
+    return Object.freeze({
+      ...(error.tokenAcquireSubphase !== undefined
+        ? { token_acquire_subphase: error.tokenAcquireSubphase }
+        : {}),
+      ...(error.tokenExchangeHttpClass !== undefined
+        ? { token_exchange_http_class: error.tokenExchangeHttpClass }
+        : {}),
+      ...(error.tokenExchangeHttpStatus !== undefined
+        ? { token_exchange_http_status: String(error.tokenExchangeHttpStatus) }
+        : {}),
+    });
+  }
+  if (error instanceof GitHubHttpError) {
+    const status = getValidatedGitHubHttpStatus(error);
+    return Object.freeze({
+      github_http_class: error.code,
+      ...(error.boundary !== undefined
+        ? { github_http_boundary: error.boundary }
+        : {}),
+      ...(status !== null ? { github_http_status: String(status) } : {}),
+    });
+  }
+  return Object.freeze({});
+}
+
+// Safe, sanitized failure log record for server-side observability only.
+// Contains no JWTs, tokens, Authorization headers, private key material, or
+// raw provider/database payloads -- only the pre-approved action/stage/code
+// plus (only when present) already-safe, already-validated GitHub fields.
+// Exported so tests can assert its exact shape without needing to intercept
+// console output.
+export function buildProjectFilesFailureLog(
+  action: string,
+  stage: string,
+  error: unknown,
+): Readonly<Record<string, string>> {
+  return Object.freeze({
+    event: "LWS_GIT001_PROJECT_FILES_FAILURE",
+    action,
+    stage,
+    diagnostic_code: classifyProjectFilesFailure(error),
+    ...safeProjectFilesFailureFields(error),
+  });
+}
+
+// Never reaches the browser/client -- the thrown (and unchanged) normalize()
+// result is the only thing callers ever see.
+function logProjectFilesFailure(
+  action: string,
+  stage: string,
+  error: unknown,
+): void {
+  console.error(JSON.stringify(buildProjectFilesFailureLog(action, stage, error)));
 }
 
 function decodeMarker(value: unknown): Record<string, unknown> {
@@ -440,6 +533,7 @@ export function createWebsiteProjectFilesProvider(
       }
       return lease.token;
     } catch (error) {
+      logProjectFilesFailure(operation, "TOKEN_ACQUIRE", error);
       return normalize(error);
     }
   }
@@ -453,6 +547,11 @@ export function createWebsiteProjectFilesProvider(
         dependencies.signal,
       );
     } catch (error) {
+      logProjectFilesFailure(
+        operation.kind,
+        PROJECT_FILES_OPERATION_STAGES[operation.kind] ?? operation.kind,
+        error,
+      );
       return normalize(error);
     }
   }
