@@ -683,7 +683,6 @@ test("Requirements invalidation is exact-quote scoped and shared by all three ch
 test("Task 11 synchronization has one coherent source hard-refresh cache chain", () => {
   const token = "20260917-pre-project-workspace-r2";
   const paths = [
-    "../operator/dashboard/index.html",
     "../assets/js/operator-dashboard-guard.mjs",
     "../assets/js/operator-workspace-master.mjs",
     "../operator/window/index.html",
@@ -995,7 +994,7 @@ test("Website Requirements interaction copy and accessibility are closed", () =>
 });
 
 test("Requirements visual CSS has a coherent managed-window cache key", () => {
-  const token = "operator-dashboard.css?v=20260917-pre-project-workspace-r2";
+  const token = "operator-dashboard.css?v=20260922-action-message-readable-r2";
   for (const path of ["../operator/dashboard/index.html", "../operator/window/index.html"]) {
     assert.equal(readFileSync(new URL(path, import.meta.url), "utf8").includes(token), true);
   }

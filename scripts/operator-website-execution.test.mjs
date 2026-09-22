@@ -776,6 +776,7 @@ test("Website Requirements summary has compact responsive no-overflow contracts"
 
 test("PRE_PROJECT workspace release has one coherent active cache chain", async () => {
   const token = "20260917-pre-project-workspace-r2";
+  const cssToken = "20260922-action-message-readable-r2";
   const [windowPage, guard, registry, child, dossiers] = await Promise.all([
     "operator/window/index.html",
     "assets/js/operator-window-guard.mjs",
@@ -783,7 +784,7 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
     "assets/js/operator-website-execution-child.mjs",
     "assets/js/operator-dossiers.mjs",
   ].map(read));
-  assert.equal(windowPage.includes(`operator-dashboard.css?v=${token}`), true);
+  assert.equal(windowPage.includes(`operator-dashboard.css?v=${cssToken}`), true);
   assert.equal(windowPage.includes(`operator-window-guard.mjs?v=${token}`), true);
   assert.equal(guard.includes(`operator-module-registry.mjs?v=${token}`), true);
   assert.equal(registry.includes(`operator-website-execution-child.mjs?v=${token}`), true);

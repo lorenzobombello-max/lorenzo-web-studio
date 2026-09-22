@@ -358,10 +358,10 @@ test("embedded dashboard and generic child use the same Dossiers initializer", a
   const registryDossierCacheIdentity = "20260912-project-refresh-retention-r1";
   const windowGuardCacheIdentity = "20260917-pre-project-workspace-r2";
   const windowRegistryCacheIdentity = "20260917-pre-project-workspace-r2";
-  const dossierCssCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dossierCssCacheIdentity = "20260922-action-message-readable-r2";
   const dashboardGuardCacheIdentity = "20260920-launch-recovery-r1";
   const dashboardModuleCacheIdentity = "20260917-pre-project-workspace-r2";
-  const dashboardCssCacheIdentity = "20260917-pre-project-workspace-r2";
+  const dashboardCssCacheIdentity = "20260922-action-message-readable-r2";
   assert.ok(dashboardHtml.includes(`operator-dashboard-guard.mjs?v=${dashboardGuardCacheIdentity}`));
   assert.ok(dashboardGuard.includes(`operator-dashboard.js?v=${dashboardModuleCacheIdentity}`));
   assert.ok(dashboard.includes(`operator-dossiers.mjs?v=${dashboardDossierCacheIdentity}`));
@@ -519,7 +519,7 @@ test("Pending retention and trash-first lifecycle commands remain server-bound",
     read("operator/dashboard/index.html"),
   ]);
   assert.match(source, />Actief<\/button><button[^>]+>Gearchiveerd<\/button>/);
-  assert.match(html, /operator-dashboard\.css\?v=20260917-pre-project-workspace-r2/);
+  assert.match(html, /operator-dashboard\.css\?v=20260922-action-message-readable-r2/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\][^{]*\{[^}]*animation:dossiers-zone-heartbeat 4\.8s ease-in-out infinite/);
   assert.match(css, /\.dossiers-status-overview button\[aria-current="true"\]::before[^{]*\{[^}]*animation:dossier-card-light-sweep 9s \.6s[^}]*infinite/);
   for (const accent of ["#c79828", "var(--turquoise)", "var(--green)", "var(--red)"]) {
@@ -783,7 +783,7 @@ test("Dossiers wires VAT remediation and cache versions without a dashboard dupl
   assert.match(source, /buildVatReadinessAction\(\s*"request_vat_turnover_refresh"/);
   assert.match(source, /async function executeVatRemediation[\s\S]*await options\.requireAal2\(\)[\s\S]*await authority\.gateway\(request\)[\s\S]*await refreshWebsiteQuotationAuthorities/);
   assert.doesNotMatch(source, /approve_quotation_vat_review|governed_turnover_minor\s*:|classification_code\s*:/);
-  assert.match(html, /operator-dashboard\.css\?v=20260917-pre-project-workspace-r2/);
+  assert.match(html, /operator-dashboard\.css\?v=20260922-action-message-readable-r2/);
   assert.match(html, /operator-dashboard-guard\.mjs\?v=20260920-launch-recovery-r1/);
   assert.match(guard, /operator-dashboard\.js\?v=20260917-pre-project-workspace-r2/);
   assert.match(dashboard, /operator-dossiers\.mjs\?v=20260917-pre-project-workspace-r2/);
