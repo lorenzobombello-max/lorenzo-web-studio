@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   REQUIRED_RELEASE_CHECKS,
+  RPC_STAGES,
   SENTINEL_REFERENCE,
   compareDossierCounts,
+  describeRpcFailureDiagnostics,
   evaluateDossierProjections,
   evaluateReleaseGate,
   inspectDossierContinuitySourceContracts,
@@ -260,4 +262,217 @@ test("production smoke fails closed on CORS or detail regressions", async () => 
     runProductionReadOnlySmoke({ apiKey: "public", jwt: "caller", fetchImpl: smokeFetch({ detailStatus: 400 }) }),
     /DETAIL_RPC_FAILED/,
   );
+});
+
+// Builds a fetchImpl for the RPC-status-observability tests below. Every
+// production read-only action can have its HTTP status and/or raw payload
+// shape overridden independently, so each test below can isolate exactly one
+// failing stage while leaving the others healthy.
+function rpcStatusSmokeFetch({
+  corsStatus = 204,
+  pendingStatus = 200,
+  pendingResult = { items: [{ quote_request_id: pending.quote_request_id }] },
+  activeStatus = 200,
+  archivedStatus = 200,
+  trashedStatus = 200,
+  detailStatus = 200,
+  pendingResponseOverride = null,
+} = {}) {
+  const jsonResponse = (result, status = 200) => new Response(JSON.stringify({ ok: status === 200, result }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+  return async (_url, options) => {
+    if (options.method === "OPTIONS") {
+      return new Response(null, {
+        status: corsStatus,
+        headers: {
+          "access-control-allow-origin": "https://lorenzowebsolutions.be",
+          "access-control-allow-headers": "apikey,authorization,content-type,x-client-info",
+        },
+      });
+    }
+    const body = JSON.parse(options.body);
+    if (body.action === "list_pending_intakes") {
+      if (pendingResponseOverride) return pendingResponseOverride;
+      return jsonResponse(pendingResult, pendingStatus);
+    }
+    if (body.action === "list_applications_v2") {
+      const statusByZone = { ACTIVE: activeStatus, ARCHIVED: archivedStatus, TRASHED: trashedStatus };
+      const items = body.zone === "ACTIVE"
+        ? [{ quote_request_id: active.quote_request_id, application_reference: SENTINEL_REFERENCE }]
+        : [];
+      return jsonResponse({ items, next_cursor: null, has_more: false }, statusByZone[body.zone] ?? 200);
+    }
+    if (body.action === "get_dossier_substance") {
+      return jsonResponse({ quote_request_id: active.quote_request_id }, detailStatus);
+    }
+    throw new Error("UNEXPECTED_SMOKE_REQUEST");
+  };
+}
+
+test("PENDING RPC failure at HTTP 522 reports stage PENDING and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ pendingStatus: 522 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "PENDING_RPC_FAILED");
+      assert.equal(error.rpcStage, "PENDING");
+      assert.equal(error.rpcHttpStatus, 522);
+      return true;
+    },
+  );
+});
+
+test("PENDING RPC failure at HTTP 503 reports stage PENDING and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ pendingStatus: 503 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "PENDING_RPC_FAILED");
+      assert.equal(error.rpcStage, "PENDING");
+      assert.equal(error.rpcHttpStatus, 503);
+      return true;
+    },
+  );
+});
+
+test("PENDING RPC failure at HTTP 200 with a malformed contract still reports status 200", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ pendingStatus: 200, pendingResult: { itemsWrongKey: [] } }),
+    }),
+    (error) => {
+      assert.equal(error.message, "PENDING_RPC_FAILED");
+      assert.equal(error.rpcStage, "PENDING");
+      assert.equal(error.rpcHttpStatus, 200);
+      return true;
+    },
+  );
+});
+
+test("ACTIVE RPC failure reports stage ACTIVE and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ activeStatus: 500 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "ACTIVE_RPC_FAILED");
+      assert.equal(error.rpcStage, "ACTIVE");
+      assert.equal(error.rpcHttpStatus, 500);
+      return true;
+    },
+  );
+});
+
+test("ARCHIVED RPC failure reports stage ARCHIVED and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ archivedStatus: 502 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "ARCHIVED_RPC_FAILED");
+      assert.equal(error.rpcStage, "ARCHIVED");
+      assert.equal(error.rpcHttpStatus, 502);
+      return true;
+    },
+  );
+});
+
+test("TRASHED RPC failure reports stage TRASHED and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ trashedStatus: 429 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "TRASHED_RPC_FAILED");
+      assert.equal(error.rpcStage, "TRASHED");
+      assert.equal(error.rpcHttpStatus, 429);
+      return true;
+    },
+  );
+});
+
+test("DETAIL RPC failure reports stage DETAIL and the exact safe status", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({ detailStatus: 404 }),
+    }),
+    (error) => {
+      assert.equal(error.message, "DETAIL_RPC_FAILED");
+      assert.equal(error.rpcStage, "DETAIL");
+      assert.equal(error.rpcHttpStatus, 404);
+      return true;
+    },
+  );
+});
+
+test("a PENDING RPC failure with no trustworthy HTTP status reports UNAVAILABLE", async () => {
+  await assert.rejects(
+    runProductionReadOnlySmoke({
+      apiKey: "public",
+      jwt: "caller",
+      fetchImpl: rpcStatusSmokeFetch({
+        pendingResponseOverride: { status: undefined, json: async () => null },
+      }),
+    }),
+    (error) => {
+      assert.equal(error.message, "PENDING_RPC_FAILED");
+      assert.equal(error.rpcStage, "PENDING");
+      assert.equal(error.rpcHttpStatus, "UNAVAILABLE");
+      return true;
+    },
+  );
+});
+
+test("describeRpcFailureDiagnostics emits only the fixed stage and safe status, never other error detail", () => {
+  const error = new Error("PENDING_RPC_FAILED");
+  error.rpcStage = "PENDING";
+  error.rpcHttpStatus = 522;
+  // Attach realistic secret-shaped decoys to prove they can never leak
+  // through the diagnostic lines below, regardless of what else ends up on
+  // the error object.
+  error.payload = { result: { items: [{ quote_request_id: "leak-me" }] } };
+  error.requestBody = JSON.stringify({ email: "release-smoke@example.invalid", password: "synthetic" });
+  error.headers = { Authorization: "should-never-appear", apikey: "should-never-appear" };
+
+  const lines = describeRpcFailureDiagnostics(error);
+  assert.deepEqual(lines, [
+    "DOSSIER_CONTINUITY_RPC_STAGE=PENDING",
+    "DOSSIER_CONTINUITY_RPC_HTTP_STATUS=522",
+  ]);
+  const rendered = lines.join("\n");
+  for (const forbidden of ["leak-me", "release-smoke@example.invalid", "synthetic", "should-never-appear", "payload", "requestBody"]) {
+    assert.ok(!rendered.includes(forbidden), `diagnostic output must never contain ${forbidden}`);
+  }
+});
+
+test("describeRpcFailureDiagnostics refuses to print a non-allowlisted stage name", () => {
+  const spoofed = new Error("PENDING_RPC_FAILED");
+  spoofed.rpcStage = "DROP TABLE operators;";
+  spoofed.rpcHttpStatus = 200;
+  assert.equal(describeRpcFailureDiagnostics(spoofed), null);
+  assert.ok(!RPC_STAGES.includes(spoofed.rpcStage));
+});
+
+test("describeRpcFailureDiagnostics is null for non-RPC gate failures, preserving existing output", () => {
+  assert.equal(describeRpcFailureDiagnostics(new Error("CORS_PREFLIGHT_FAILED")), null);
+  assert.equal(describeRpcFailureDiagnostics(new Error("SENTINEL_ACTIVE_LIST_MISSING")), null);
+  assert.equal(describeRpcFailureDiagnostics(undefined), null);
 });

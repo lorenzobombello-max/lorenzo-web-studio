@@ -25,6 +25,47 @@ const COUNT_FIELDS = Object.freeze([
 const PRODUCTION_ORIGIN = "https://lorenzowebsolutions.be";
 const EDGE_URL = "https://xcsptvntvrizwhskaphr.supabase.co/functions/v1/commercial-operator-command";
 
+// Fixed allowlist of production read-only RPC stages. Never derived from a
+// remote/user-controlled value - only these five literal names may ever be
+// attached to a thrown error as `rpcStage`.
+export const RPC_STAGES = Object.freeze(["PENDING", "ACTIVE", "ARCHIVED", "TRASHED", "DETAIL"]);
+
+// Normalizes a candidate HTTP status into either a safe diagnostic integer
+// (100-599 - this intentionally includes 200, because a 200 response with a
+// malformed/missing payload contract is itself useful failure evidence) or
+// the literal string "UNAVAILABLE". Never touches response/request bodies,
+// headers, or any other exception detail.
+function safeRpcHttpStatus(status) {
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : "UNAVAILABLE";
+}
+
+// Throws a read-only production RPC failure while attaching only a
+// pre-validated, fixed stage name and a safe HTTP status (or "UNAVAILABLE")
+// for later CLI diagnostics. `stage` must be one of RPC_STAGES; any other
+// value is silently dropped rather than attached, so a caller can never
+// surface an arbitrary string as a "stage name". The existing failure `code`
+// is preserved exactly as the error message.
+function failRpc(stage, status, code) {
+  const error = new Error(code);
+  if (RPC_STAGES.includes(stage)) {
+    error.rpcStage = stage;
+    error.rpcHttpStatus = safeRpcHttpStatus(status);
+  }
+  throw error;
+}
+
+// Extracts only the pre-validated RPC diagnostic fields from a caught error,
+// for CLI printing. Returns null when the error carries no trusted RPC
+// diagnostic (e.g. a non-RPC gate failure), so nothing beyond the existing
+// safe failure code is ever printed for those.
+export function describeRpcFailureDiagnostics(error) {
+  if (!error || typeof error.rpcStage !== "string" || !RPC_STAGES.includes(error.rpcStage)) return null;
+  return [
+    `DOSSIER_CONTINUITY_RPC_STAGE=${error.rpcStage}`,
+    `DOSSIER_CONTINUITY_RPC_HTTP_STATUS=${error.rpcHttpStatus}`,
+  ];
+}
+
 function fail(code) {
   throw new Error(code);
 }
@@ -211,7 +252,7 @@ async function listAll(fetchImpl, apiKey, jwt, zone) {
       cursor,
       limit: 100,
     });
-    if (response.status !== 200) fail(`${zone}_RPC_FAILED`);
+    if (response.status !== 200) failRpc(zone, response.status, `${zone}_RPC_FAILED`);
     const envelope = validateActiveEnvelope(response.payload?.result);
     items.push(...envelope.items);
     cursor = envelope.has_more ? envelope.next_cursor : null;
@@ -235,7 +276,9 @@ export async function runProductionReadOnlySmoke({ apiKey, jwt, fetchImpl = fetc
     ["apikey", "authorization", "content-type", "x-client-info"].every((header) => allowHeaders.has(header));
   if (!cors) fail("CORS_PREFLIGHT_FAILED");
   const pendingResponse = await edgeRequest(fetchImpl, apiKey, jwt, { action: "list_pending_intakes", retention_state: "ACTIVE" });
-  if (pendingResponse.status !== 200 || !Array.isArray(pendingResponse.payload?.result?.items)) fail("PENDING_RPC_FAILED");
+  if (pendingResponse.status !== 200 || !Array.isArray(pendingResponse.payload?.result?.items)) {
+    failRpc("PENDING", pendingResponse.status, "PENDING_RPC_FAILED");
+  }
   const [active, archived, trash] = await Promise.all([
     listAll(fetchImpl, apiKey, jwt, "ACTIVE"),
     listAll(fetchImpl, apiKey, jwt, "ARCHIVED"),
@@ -247,7 +290,7 @@ export async function runProductionReadOnlySmoke({ apiKey, jwt, fetchImpl = fetc
     action: "get_dossier_substance",
     quote_request_id: sentinel.quote_request_id,
   });
-  if (detail.status !== 200 || !detail.payload?.result) fail("DETAIL_RPC_FAILED");
+  if (detail.status !== 200 || !detail.payload?.result) failRpc("DETAIL", detail.status, "DETAIL_RPC_FAILED");
   if (trash.some((item) => item.application_reference === SENTINEL_REFERENCE)) fail("SENTINEL_TRASHED");
   const pending = pendingResponse.payload.result.items;
   const rawIds = new Set([...pending, ...active, ...archived, ...trash].map((item) => item.quote_request_id));
@@ -319,6 +362,7 @@ async function main(argumentsList) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2)).catch((error) => {
+    for (const line of describeRpcFailureDiagnostics(error) ?? []) console.error(line);
     console.error(`DOSSIER_CONTINUITY_GATE_ERROR=${error.message}`);
     console.error("PRODUCTION_RELEASE_ALLOWED=NEE");
     process.exitCode = 1;
