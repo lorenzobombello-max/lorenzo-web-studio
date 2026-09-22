@@ -6,7 +6,7 @@ import {
   type WebsiteProjectFilesAuthority,
   WebsiteProjectFilesProviderError,
 } from "./website-project-files-provider.ts";
-import { GitHubTokenBrokerError } from "./github-app-token.ts";
+import { createGitHubAppTokenBroker, GitHubTokenBrokerError } from "./github-app-token.ts";
 import { GitHubHttpError } from "./github-http.ts";
 import { GitHubTokenAcquireDiagnosticError } from "./repository-provisioning-diagnostics.ts";
 
@@ -123,6 +123,7 @@ function harness(overrides: {
   failKind?: string;
   tokenIssueFailsWith?: unknown;
   httpExecuteFailsWith?: unknown;
+  issuedToken?: string;
 } = {}) {
   const calls: Array<
     { operation: Record<string, unknown>; signal?: AbortSignal }
@@ -145,7 +146,7 @@ function harness(overrides: {
           return Promise.reject(overrides.tokenIssueFailsWith);
         }
         return Promise.resolve({
-          token: TOKEN,
+          token: overrides.issuedToken ?? TOKEN,
           expiresAt: "2099-01-01T00:00:00Z",
         });
       },
@@ -253,6 +254,134 @@ function harness(overrides: {
   });
   return { provider, calls, tokenCalls, signal };
 }
+
+// ==========================================================================
+// Installation-token format acceptance (root-cause regression coverage)
+// ==========================================================================
+//
+// A stale, duplicated, narrower local TOKEN regex previously rejected
+// otherwise-valid installation tokens containing "_", "-", or "." even
+// though they already satisfied the authoritative shared validator
+// (isGitHubInstallationAccessToken) inside the real token broker's own
+// validateResponse(). These prove the provider now accepts every token
+// shape the authoritative validator accepts, and nothing else.
+//
+// IMPORTANT: these are synthetic, clearly-fake test tokens only -- never a
+// real production installation token.
+
+const VALID_INSTALLATION_TOKENS = [
+  ["alphanumeric-only body", `ghs_${"a".repeat(36)}`],
+  ["body containing an underscore", `ghs_${"a".repeat(35)}_`],
+  ["body containing a hyphen", `ghs_${"a".repeat(35)}-`],
+  ["body containing a dot", `ghs_${"a".repeat(35)}.`],
+] as const;
+
+for (const [label, token] of VALID_INSTALLATION_TOKENS) {
+  Deno.test(`Project Files accepts a valid installation token with ${label}`, async () => {
+    const test = harness({ issuedToken: token });
+    const snapshot = await test.provider.resolveSnapshot(authority());
+    assertEquals(snapshot.commitSha, COMMIT);
+    // Proves execution proceeded past TOKEN_ACQUIRE to the next stage
+    // (repository metadata) rather than failing closed at token validation.
+    assert(
+      test.calls.some(({ operation }) =>
+        operation.kind === "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA"
+      ),
+    );
+  });
+}
+
+const MALFORMED_INSTALLATION_TOKENS = [
+  ["too short", "ghs_short"],
+  ["wrong prefix", `ghp_${"a".repeat(36)}`],
+  ["legacy fine-grained PAT prefix (no longer accepted here)", `github_pat_${"a".repeat(20)}`],
+  ["empty string", ""],
+] as const;
+
+for (const [label, token] of MALFORMED_INSTALLATION_TOKENS) {
+  Deno.test(`Project Files rejects a malformed installation token (${label})`, async () => {
+    const test = harness({ issuedToken: token });
+    await assertRejects(
+      () => test.provider.resolveSnapshot(authority()),
+      WebsiteProjectFilesProviderError,
+      "PROJECT_FILES_PROVIDER_UNAVAILABLE",
+    );
+    // Fails before any repository-read call is ever attempted.
+    assertEquals(test.calls.length, 0);
+  });
+}
+
+Deno.test("website-project-files-provider.ts defines no second/divergent GitHub installation-token regex", () => {
+  // Only the shared, authoritative isGitHubInstallationAccessToken() import
+  // may validate the lease token -- a locally re-declared "ghs_" pattern
+  // here would silently drift from the authoritative validator again.
+  assert(source.includes('from "./github-installation-token.ts"'));
+  assert(source.includes("isGitHubInstallationAccessToken(lease.token)"));
+  assert(!/const\s+\w*TOKEN\w*\s*=\s*\/\^/.test(source));
+});
+
+Deno.test("real createGitHubAppTokenBroker + createWebsiteProjectFilesProvider accepts a lease token containing '_', '-', and '.'", async () => {
+  const issuedToken = `ghs_${"a".repeat(28)}_bc-de.fg`;
+  const realBroker = createGitHubAppTokenBroker({
+    now: () => Date.parse("2026-09-19T00:00:00Z"),
+    sign: () => Promise.resolve(new Uint8Array([1, 2, 3, 4])),
+    exchange: () =>
+      Promise.resolve({
+        token: issuedToken,
+        expiresAt: "2026-09-19T01:00:00Z",
+        permissions: { metadata: "read", contents: "read" },
+      }),
+  });
+  const calls: Array<{ operation: Record<string, unknown> }> = [];
+  const provider = createWebsiteProjectFilesProvider({
+    config,
+    signal: new AbortController().signal,
+    tokenBroker: realBroker,
+    httpClient: {
+      execute(operation: Record<string, unknown>) {
+        calls.push({ operation });
+        const kind = String(operation.kind);
+        if (kind === "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA") {
+          return Promise.resolve({
+            repositoryId: "7100000001",
+            nodeId: "R_context_a",
+            owner: "lws-phase-a-fixtures",
+            name: "project-a",
+            fullName: "lws-phase-a-fixtures/project-a",
+            private: true,
+            defaultBranch: "main",
+            description: null,
+            createdAt: "2026-09-19T00:00:00Z",
+          });
+        }
+        if (kind === "WEBSITE_PROJECT_FILES_READ_REF") {
+          return Promise.resolve({ ref: "refs/heads/main", commitSha: COMMIT });
+        }
+        if (kind === "WEBSITE_PROJECT_FILES_READ_COMMIT") {
+          return Promise.resolve({ sha: COMMIT, treeSha: ROOT_TREE });
+        }
+        if (kind === "WEBSITE_PROJECT_FILES_READ_MARKER") {
+          return Promise.resolve({
+            path: ".lws/project.json",
+            sha: BLOB,
+            encoding: "base64",
+            contentBase64: marker(),
+            size: 200,
+          });
+        }
+        return Promise.reject(new Error("UNEXPECTED_OPERATION"));
+      },
+    },
+  });
+  const snapshot = await provider.resolveSnapshot(authority());
+  assertEquals(snapshot.commitSha, COMMIT);
+  assert(
+    calls.some(({ operation }) =>
+      operation.kind === "WEBSITE_PROJECT_FILES_REPOSITORY_METADATA"
+    ),
+    "execution must reach repository metadata, not fail closed at TOKEN_ACQUIRE",
+  );
+});
 
 Deno.test("directory listing resolves ref to immutable commit", async () => {
   const test = harness();
