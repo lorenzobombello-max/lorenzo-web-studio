@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "change": "GIT-001C",
+  "status": "OPEN",
+  "resumeFrom": "b4fc16e2e754a31b111408a8450376332e5f3a90",
+  "secretsContainValues": false,
+  "supabase": {
+    "projectRef": "xcsptvntvrizwhskaphr",
+    "migrations": [
+      "20260922180000",
+      "20260923060000",
+      "20260923070000",
+      "20260923080000",
+      "20260923100000",
+      "20260923110000",
+      "20260923120000"
+    ],
+    "functions": [
+      "website-project-preview-artifact",
+      "website-project-preview-source-token",
+      "website-project-preview-host"
+    ],
+    "existingSecretNames": [
+      "LWS_GITHUB_APP_ID",
+      "LWS_GITHUB_APP_INSTALLATION_ID",
+      "LWS_GITHUB_APP_PRIVATE_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL"
+    ],
+    "requiredPreviewBindingNames": [
+      "LWS_PREVIEW_OIDC_AUDIENCE",
+      "LWS_PREVIEW_WORKFLOW_REPOSITORY",
+      "LWS_PREVIEW_WORKFLOW_REPOSITORY_ID",
+      "LWS_PREVIEW_WORKFLOW_REF",
+      "LWS_PREVIEW_WORKFLOW_REF_NAME",
+      "LWS_PREVIEW_HOST_URL",
+      "LWS_PREVIEW_ORIGIN_TOKEN"
+    ]
+  },
+  "github": {
+    "repository": "lorenzobombello-max/lorenzo-web-studio",
+    "repositoryId": "1320223175",
+    "ref": "refs/heads/main",
+    "workflow": ".github/workflows/build-website-project-preview.yml",
+    "workflowRef": "lorenzobombello-max/lorenzo-web-studio/.github/workflows/build-website-project-preview.yml@refs/heads/main",
+    "trigger": "workflow_dispatch",
+    "variables": [
+      "LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT",
+      "LWS_PREVIEW_ARTIFACT_ENDPOINT",
+      "LWS_PREVIEW_OIDC_AUDIENCE"
+    ]
+  },
+  "customerSource": {
+    "repository": "lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b",
+    "repositoryId": "1378797607",
+    "commit": "1f19bf01c61c6da79fa4c7374333a91b70f9bf48"
+  },
+  "cloudflare": {
+    "accountLogin": "bombello.lorenzo1972@gmail.com",
+    "accountId": "acbc1b86d8c3f0ce809dc4600783a48b",
+    "projectId": "56ba0651-2499-4b40-b3f7-ad2b690dfa3c",
+    "projectName": "lws-website-project-preview-host",
+    "pagesHostname": "lws-website-project-preview-host.pages.dev",
+    "customHostname": "preview.lorenzowebsolutions.be",
+    "existingWorker": "lorenzobombello-api-proxy",
+    "pagesDevPolicy": "REDIRECT_BEFORE_ORIGIN",
+    "requiredVariableNames": [
+      "LWS_PREVIEW_ORIGIN_URL"
+    ],
+    "requiredSecretNames": [
+      "LWS_PREVIEW_ORIGIN_TOKEN"
+    ]
+  }
+}
