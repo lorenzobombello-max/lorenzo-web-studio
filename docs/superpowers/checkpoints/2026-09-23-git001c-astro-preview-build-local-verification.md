@@ -1,0 +1,201 @@
+# GIT-001C Astro preview build - lokaal verificatiecheckpoint (§18 vervolg)
+
+Datum: 2026-09-23
+Status: **OPEN**
+Scope: uitsluitend lokale worktree en lokale Supabase; geen productie- of hostingactivatie.
+
+## C1 - Operatorbesturing
+
+Lokaal bewezen:
+
+- De gemonteerde Website Execution-child verstuurt één build-start bij twee synchrone klikken.
+- De controller pollt status tot een terminale toestand en vraagt daarna een previewsessie aan.
+- De UI opent uitsluitend de servergeretourneerde handoff-URL.
+- De commandhandler accepteert alleen de gesloten start/status/session-acties en vereist caller-JWT plus AAL2.
+
+Bewijs: `node scripts/operator-website-execution.test.mjs` - 76/76 geslaagd.
+
+## C2 - Artifactautoriteit en ontvangst
+
+Lokaal bewezen:
+
+- GitHub Actions OIDC wordt cryptografisch als RS256 tegen JWKS gecontroleerd. De claims worden exact gebonden aan de platform-workflowrepository, repository-id, ref, workflow-ref, run-id en audience; legacy en immutable GitHub-subjectvormen zijn getest. Klantrepository en klantcommit komen uitsluitend uit de leaseautoriteit en worden niet langer met platformclaims verward.
+- Acquire maakt één servergeautoriseerde build-ID. Authority-resolve en database-triggers weigeren iedere andere build-ID bij receipt-token- en uploadsession-inserts.
+- Alleen SHA-256-hashes van het 256-bit receipt-token en het afzonderlijke 256-bit uploadsession-token worden opgeslagen.
+- Het eenmalige receipt-token opent atomair precies één lease/build/repository/commit/workflow-gebonden uploadsession met een vast verwacht manifest.
+- Ieder bestand komt als afzonderlijke raw request body binnen; de handler stopt en annuleert bij 5 MiB + 1, ook bij een onjuiste `Content-Length`. Pad, MIME, grootte en SHA-256 worden vóór een atomische `EXPECTED -> UPLOADING`-claim gecontroleerd.
+- Een duplicate/concurrent fileclaim heeft precies één winnaar. Replay, verkeerde binding en expiry worden geweigerd.
+- Workflow-finalize is een aparte `service_role`-RPC en vereist dat ieder verwacht bestand `RECEIVED` is. De bestaande operator-`finalize_v2` blijft uitsluitend `authenticated` en vereist ongewijzigd caller-AAL2.
+- Incomplete en late finalize aborteren fail-closed; de database levert de cleanup-paden en de private Storage-objecten worden werkelijk verwijderd.
+
+Bewijs:
+
+- Gerichte receipt/OIDC/handler-runs - 14/14 geslaagd, inclusief immutable OIDC-subject, bounded streaming, completion-cleanup en cleanup-herhaling na een mislukte Storage-delete.
+- `node scripts/website-preview-artifact-receipt-concurrency.integration.cjs` - één winnaar; replay, verkeerde repository en expiry geweigerd.
+- `node scripts/website-preview-upload-session.integration.cjs` - echte lokale RPC/private Storage: claimrace, receipt-replay, verkeerde binding, incomplete finalize, expiry, cleanup en succesvolle finalize geslaagd.
+- Migraties `20260923100000_add_website_project_preview_upload_session_v1.sql` en `20260923110000_authorize_website_project_preview_build_id_v1.sql` lokaal toegepast.
+- `deno test -A --no-check supabase/functions/_shared/website-project-preview-e2e-real-build.integration.test.ts` - 1/1 geslaagd in 1m45s. De test gebruikt authenticated acquire, de productie-runtimefactory en echte HTTP-handler, de workflow-upload-CLI, echte lokale PostgreSQL-RPC's en private Storage. Verkeerde buildbinding, verlopen OIDC, receipt-replay en incomplete finalize worden aan de HTTP-grens geweigerd; abort verwijdert het reeds ontvangen object.
+
+De GitHub-providergrens in deze lokale proef is bewust gesimuleerd: een lokale RSA-provider geeft tokens met officiële GitHub issuer-, audience-, platformrepository-, workflow-, ref- en runclaims uit en levert gecontroleerde JWKS. De productie-OIDC-verifier en volledige applicatieketen zijn echt; GitHub-hosted tokenuitgifte en live JWKS-ophaling zijn dit nog niet.
+
+**C2 lokale integratie via applicatie-endpoints bewezen.**
+
+## C3 - Build, database, Storage en serving
+
+Lokaal bewezen met exact repository `lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b` op commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`:
+
+- De test clonet alleen die remote, checkt detached exact die SHA uit, verifieert `origin` en `HEAD`, en verwijdert `.git` vóór de buildmount.
+- De klantbron bevat een lockfile; de container gebruikt `npm ci` en Astro 7.3.2.
+- De buildcontainer draait op een intern Docker-netwerk; directe outbound HTTPS naar `example.com` faalt in dezelfde run.
+- Alleen de tinyproxy met npm-registryallowlist heeft externe netwerktoegang.
+- Authenticated acquire levert de servergebonden lease en build-ID; receipt issuance, uploadsession, afzonderlijke bestandsoverdracht en workflow-finalize lopen door de echte artifact-handler en productieadapters.
+- De bestaande workflow-upload-CLI bouwt het manifest, haalt OIDC op, opent de ontvangst/sessionketen en uploadt alle geaccepteerde bestanden.
+- `favicon.svg` en `social-card.svg` worden als waarschuwing afgewezen; ieder geaccepteerd Storage-object is bytegelijk aan de buildoutput en heeft de verwachte SHA-256.
+- Workflow-finalize persisteert uitsluitend na volledige ontvangst. Buildstatus, primary artifact, totaalbytes en het volledige manifest zijn daarna via echte lokale PostgreSQL bewezen.
+
+Bewijs: `deno test -A --no-check supabase/functions/_shared/website-project-preview-e2e-real-build.integration.test.ts` - 1/1 geslaagd in 1m45s.
+
+## C3 - Zichtbare lokale operator- en klantpreview
+
+Lokaal zichtbaar en bruikbaar bewezen met de bestaande operatorpagina en controllers:
+
+- Operator: `http://127.0.0.1:61588/operator/window/?module=dossiers`.
+- Klantpreview: `https://preview.local/#principles` binnen het door de launcher gestarte Chromiumprofiel; `preview.local` is bewust een geïsoleerde Playwright DNS/TLS-route en geen publieke host.
+- De zichtbare flow doorloopt `Preview bouwen / vernieuwen` -> `Preview wordt gebouwd` -> `Preview gereed` -> `Preview openen`.
+- De geopende preview toont de echte opgeslagen `index.html`, de berekende body-CSS is toegepast en de zichtbare navigatielink `Principles` brengt de pagina naar `#principles`.
+- De klantbron bevat geen zichtbaar `<img>`-element; C3 verzint daarom geen klantbeeld en presenteert uitsluitend de werkelijk gebouwde bron.
+- De launcher leest de bestaande 0006-binding, buildmetadata en private Storage-objecten read-only. Er zijn geen klantrecords, tweede repository of productieobjecten aangemaakt.
+- Voor iedere zichtbare run wordt eerst bewezen dat een request zonder previewsessie door de echte hostinggateway met HTTP 401 wordt geweigerd en dat een verlopen operator-AAL2-sessie fail-closed `C3_OPERATOR_SESSION_EXPIRED` oplevert.
+- De zwarte strook in het gemaximaliseerde demo-venster kwam niet uit de gedeelde operator-CSS, maar uit de vaste Playwrightviewport van 1440 bij 960 binnen een groter native Chromiumwindow. De launcher gebruikt nu voor de hele context `--start-maximized` en `viewport: null`; operatorvensters en previewtabs benutten daardoor de native browserruimte, terwijl lange inhoud via de ongewijzigde documentscroll bereikbaar blijft. Een gemaximaliseerde Windows-opname van 2575 bij 1407 px toont het operatorvlak zonder letterboxing en met de klantpreview in de naastliggende tab.
+
+Gericht bewijs: `node --test scripts/git001c-local-c3-demo.test.mjs` - 6/6 geslaagd. De headed launch voltooide daarnaast alle browserasserties en meldde build `7bca8377-f4d0-4403-a8ab-f7f6cc525159` als `PASS_WITH_WARNINGS` met zes private Storage-artifacts.
+
+Reëel in deze proef: operatorpagina en controllers, status-/resultaatweergave, private Storage-bytes, eenmalige hostinggateway-handoff/session, CSS en navigatie. Lokaal gesimuleerd: operator session/AAL2 backendresponses, builddispatch/polltiming en de `preview.local` DNS/TLS-route.
+
+## Productiegang stap 1 - hostingvoorstel
+
+**Aanbevolen route:** Cloudflare Pages Functions op Workers Paid met custom subdomain `preview.lorenzowebsolutions.be`, vóór een purpose-authenticated Supabase Edge Function origin. Een catch-all Pages Function ontvangt alle normale websitepaden op een afzonderlijke origin; de Supabase origin houdt service-role, sessie-RPC en private Storage afgeschermd. Er wordt geen Supabase custom domain aangeschaft.
+
+1. **Passend bij de bestaande code.** `LWS_PREVIEW_HOST_URL` accepteert al een zelfstandige HTTPS-origin en geeft `/handoff?token=...` terug. De database heeft reeds actor/build-gebonden hash-only previewsessies, 30-minutenexpiry, service-role resolution en cleanup. De lokale gateway bewijst `/`, `/about/`, assets, directory-indexen en sessie-isolatie. Cloudflare Pages Functions ondersteunen een catch-allroute en `_routes.json` met `/*`; path/query/cookie kunnen daarom onveranderd naar de Supabase origin.
+2. **Waarom Supabase custom domain afvalt.** Supabase documenteert dat custom domains niet bedoeld zijn voor frontendhosting, dat Edge Functions geen HTML ondersteunen en dat functies bereikbaar blijven onder `/functions/v1/<function>`. De add-on toont dus wel een branded API-host en kan HTML-content-typegedrag veranderen, maar levert geen root-router voor `/`, `/about/` en `/_astro/...`, geen aparte function-only origin en verandert bovendien Supabase Auth-callbacks projectbreed.
+3. **Kosten.** Bestaande OVH-, GitHub- en Supabasebedragen zijn niet uit read-only accountdata af te leiden. Het Supabase-project is `ACTIVE_HEALTHY`, maar de custom-domain API meldt alleen dat de organisatie geen entitlement heeft; exact plan en spend cap blijven onbekend. Extra vast: Cloudflare Workers Paid minimaal `$5 USD per account per maand`, exclusief belasting; Pages Functions vallen onder die Workersquota. Inbegrepen: 10 miljoen Function/Workerrequests en 30 miljoen CPU-ms per maand; daarboven `$0.30 USD per miljoen requests` en `$0.02 USD per miljoen CPU-ms`. Cloudflare rekent geen Worker-egress. Supabase Function/Storage-egress blijft gebruik binnen het bestaande, onbekende plan; officiële planoverschrijdingen zijn niet per klant en worden vóór activatie tegen billing/spend cap gecontroleerd. De Supabase custom-domainadd-on van `$10/domain/maand/project` is niet nodig.
+4. **DNS/TLS en impact.** Huidige nameservers blijven `dns106.ovh.net` en `ns106.ovh.net`; apex, `www`, MX en TXT blijven ongewijzigd. `preview` heeft nu geen A/CNAME. Na associatie van het custom subdomain in Cloudflare Pages komt bij OVH precies één record: CNAME `preview` naar de nog toe te wijzen `<project>.pages.dev`; Cloudflare beheert het certificaat. Geen nameserver-, apex-, `www`-, MX-, SPF-, DKIM- of DMARC-wijziging. Website en e-mail hebben daarom geen routingimpact. Supabase Auth blijft op `xcsptvntvrizwhskaphr.supabase.co`; OAuth/SAML-callbacks wijzigen niet. CAA-compatibiliteit moet vóór TLS-activatie read-only worden gecontroleerd.
+5. **Ontbrekende code en volgorde.** Eerst een additive RPC voor eenmalige handoffconsumptie en rotatie naar een afzonderlijke viewer-sessionhash; daarna de Supabase originhandler met purpose-secret, pathnormalisatie, bestaande session resolver en private Storage streaming; vervolgens een catch-all Cloudflare Pages Function plus `_routes.json` voor `/*`, content types en no-store; daarna gerichte lokale integratie. Pas na afzonderlijke goedkeuring: Cloudflare-account/Pages-project/Workers Paid, origin deploy, Pages direct upload, custom-domainassociatie, één OVH CNAME, TLS, `LWS_PREVIEW_HOST_URL`, negatieve authprobes en één gecontroleerde 0006-dispatch.
+6. **Publicatiestatus.** Gereed: C1/C2, exacte 0006-build, private Storage-artifacts, operatorflow, sessionschema/resolver/cleanup, lokale veilige hostingsemantiek en secretvrije configuratievoorbeelden. Niet gereed: handoffrotatiemigratie, Supabase originhandler, Pages Function, origin-authintegratie, Cloudflare-account/Pages-project/Workers-plan, toegewezen `pages.dev`-hostname, productieconfiguratie, deployment en live negatieve probes.
+7. **Beslissing voor Lorenzo.** Goedkeuring gevraagd voor de vaste Cloudflare Workers Paid-basis van **`$5 USD per maand per account` plus alleen officieel gemeten overage**, en later precies één OVH CNAME voor `preview.lorenzowebsolutions.be`. Dit akkoord activeert nog niets; deployment, CNAME en 0006-dispatch blijven afzonderlijke uitvoeringsgates.
+
+Officiële bronnen gecontroleerd op 2026-09-23: [Supabase custom domains](https://supabase.com/docs/guides/platform/custom-domains), [Supabase Edge routing](https://supabase.com/docs/guides/functions/http-methods), [Supabase pricing](https://supabase.com/pricing), [Cloudflare Pages custom domains](https://developers.cloudflare.com/pages/configuration/custom-domains/), [Pages Functions routing](https://developers.cloudflare.com/pages/functions/routing/), [Pages Functions pricing](https://developers.cloudflare.com/pages/functions/pricing/) en [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
+
+## Productiegang stap 2 - releaseklare lokale koppeling
+
+Lokaal geïmplementeerd, zonder externe mutatie:
+
+- `website-project-preview-source-token` accepteert alleen POST plus GitHub Actions OIDC en de drie authoritysleutels `leaseId`, `buildId` en `workflowRunId`. De server resolveert repository, repository-ID, commit, run en build; daarna wordt precies één GitHub App-installatietoken met `repository_ids: [resolved_id]` en `contents:read` uitgegeven. App-JWT, private key en providerdetails verlaten de server niet.
+- De workflow haalt zijn eigen fetch-OIDC op, gebruikt het installatietoken alleen voor de exacte klantcheckout, verifieert `HEAD`, verwijdert `.git` en draagt geen credential over aan build of upload. Build heeft `permissions: {}`; upload vraagt afzonderlijk OIDC aan voor artifactontvangst. De workflow blijft uitsluitend `workflow_dispatch`.
+- De Cloudflare Pages Function is catch-all via `_routes.json` met `/*`, stuurt alleen path/query/cookie plus een purpose-token naar de vaste Supabase-origin, zet no-store, verwijdert interne headers en redirect de standaard `pages.dev`-host naar `preview.lorenzowebsolutions.be`.
+- De Supabase-origin weigert requests zonder purpose-token vóór RPC/Storage, consumeert een handoff atomair naar een nieuwe 256-bit viewer-sessionhash en zet een host-only `HttpOnly; Secure; SameSite=Lax; Path=/`-cookie. Assetselectie loopt uitsluitend via session -> build -> manifest -> private Storage; build-ID en Storageprefix zijn niet client-selecteerbaar.
+- Migratie `20260923120000_add_website_project_preview_handoff_rotation_v1.sql` is lokaal toegepast. Een SQL-probe bewees eenmalige consumptie, replayweigering en behoud van dezelfde buildbinding en is teruggerold. Alleen de lokale migratieledger is gerepareerd voor de reeds aanwezige, inhoudelijk geverifieerde migratie `20260923110000`; productie is niet geraakt.
+- De echte lokale integratie doorloopt Pages -> Supabase origin -> handoff-RPC -> session-RPC -> private Storage, bewijst bij twee concurrente handoffs exact één 302-winnaar en één 403-replay, en verwijdert zijn tijdelijke sessie en object. Bewijs: 1/1 geslaagd. Aanvullend: hostinghandlers 8/8, source-tokenbroker 6/6 en workflowcontract 3/3; beide hostingruntimes en de source-tokenruntime typechecken.
+
+Exacte files van deze productie-koppelingssnede:
+
+- `.github/workflows/build-website-project-preview.yml`
+- `.gitignore`
+- `scripts/website-project-preview-workflow.test.mjs`
+- `cloudflare/website-project-preview-host/.dev.vars.example`
+- `cloudflare/website-project-preview-host/functions/[[path]].ts`
+- `cloudflare/website-project-preview-host/functions/preview-host.test.ts`
+- `cloudflare/website-project-preview-host/public/_routes.json`
+- `cloudflare/website-project-preview-host/wrangler.example.jsonc`
+- `cloudflare/website-project-preview-host/wrangler.jsonc`
+- `supabase/config.toml`
+- `supabase/functions/.env.example`
+- `supabase/functions/_shared/website-project-preview-local-hosting-gateway.ts`
+- `supabase/functions/website-project-preview-source-token/handler.ts`
+- `supabase/functions/website-project-preview-source-token/handler.test.ts`
+- `supabase/functions/website-project-preview-source-token/index.ts`
+- `supabase/functions/website-project-preview-source-token/service.ts`
+- `supabase/functions/website-project-preview-host.env.example`
+- `supabase/functions/website-project-preview-host/handler.ts`
+- `supabase/functions/website-project-preview-host/handler.test.ts`
+- `supabase/functions/website-project-preview-host/hosting.integration.test.ts`
+- `supabase/functions/website-project-preview-host/index.ts`
+- `supabase/migrations/20260923120000_add_website_project_preview_handoff_rotation_v1.sql`
+- `docs/superpowers/checkpoints/2026-09-23-git001c-astro-preview-build-local-verification.md`
+- `docs/superpowers/plans/2026-09-23-git001c-live-coupling.md`
+- `.superpowers/sdd/009-git001c-astro-preview-build-plan/progress.md`
+
+Configuratie-inventaris zonder waarden:
+
+- Supabase server-only: `SUPABASE_URL`, service-keybinding, GitHub App ID/installatie-ID/private key, `LWS_PREVIEW_OIDC_AUDIENCE`, `LWS_PREVIEW_WORKFLOW_REPOSITORY`, `LWS_PREVIEW_WORKFLOW_REPOSITORY_ID`, `LWS_PREVIEW_WORKFLOW_REF`, `LWS_PREVIEW_WORKFLOW_REF_NAME`, `LWS_PREVIEW_HOST_URL` en `LWS_PREVIEW_ORIGIN_TOKEN`.
+- GitHub Actions vars: `LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT`, `LWS_PREVIEW_ARTIFACT_ENDPOINT` en `LWS_PREVIEW_OIDC_AUDIENCE`.
+- Cloudflare: vaste `LWS_PREVIEW_ORIGIN_URL` en encrypted secret `LWS_PREVIEW_ORIGIN_TOKEN`; nooit een Supabase service role.
+
+Officiële Cloudflare-voorwaarden opnieuw gecontroleerd vóór activatie op 2026-09-23: de goedgekeurde basis is ongewijzigd en er is geen materieel verschil. Workers Paid kost minimaal `$5 USD/account/maand`, bevat maandelijks 10 miljoen requests en 30 miljoen CPU-ms, en rekent daarna `$0.30/miljoen requests` en `$0.02/miljoen CPU-ms`. Pages Functions worden als Workers gefactureerd; Worker-egress/bandwidth heeft geen aanvullende prijs. Er is niets gekocht of geactiveerd.
+
+Exacte volgende productieactie na afzonderlijke toestemming: maak eerst een recoverycheckpoint en pas de additieve migraties in volgorde toe; deploy daarna artifact-, source-token- en preview-originfuncties terwijl de workflow ongedispatched blijft. Configureer vervolgens het overeenkomende encrypted origin-token, deploy Pages zonder DNS en voer negatieve authprobes uit. Pas daarna: custom subdomain associëren, precies één OVH CNAME toevoegen, TLS/path/cookie/no-cache controleren, `LWS_PREVIEW_HOST_URL` instellen en uiteindelijk één gecontroleerde 0006-dispatch autoriseren.
+
+Rollback: schakel dispatch/source-token uit, revoke previewsessies en ruim incomplete uploadobjecten via de bestaande abort/cleanupautoriteit op; verwijder bij hostingfalen uitsluitend de Pages custom-domainassociatie en OVH-CNAME. Apex, `www`, MX/TXT, Supabase Auth, klantrepository, commit en afgeronde builddata blijven onaangeraakt.
+
+## Open grenzen
+
+- GitHub-hosted live OIDC-uitgifte en een live JWKS-uitwisseling zijn niet uitgevoerd; de cryptografische proef gebruikt een lokaal ondertekende token en gecontroleerde JWKS-provider.
+- `website-project-preview-artifact`, `website-project-preview-source-token` en `website-project-preview-host` zijn geïmplementeerd maar niet gedeployed.
+- De exacte Git-bron is echt gelezen; repository-id/authoritybinding gebruikt een unieke lokale fixture en de OIDC-provider is lokaal gesimuleerd. Dit is geen live GitHub Actions-providerbewijs.
+- De uploadjob is executable bedraad aan raw-file/session/finalize en de fetchjob aan de GitHub App OIDC-installatietokenbroker; beide wachten op gecontroleerde deployment en live providerbewijs.
+- De hostingroute en lokale productiecode zijn gereed maar niet geactiveerd: Cloudflare-account/Pages-project/Workers Paid, toegewezen `pages.dev`-hostname, functiondeployments, één OVH CNAME, CAA/TLS-probe, retention scheduler en productie-observability blijven open.
+- `.github/workflows/build-website-project-preview.yml` blijft `workflow_dispatch` en is niet live uitgevoerd.
+- Brede typechecked run zonder `--no-check`: 1366/1369 geslaagd. De acht door GIT-001C veroorzaakte fixturetypefouten zijn gecorrigeerd; de enige drie Windows-fouten zijn symlinkfixturecreaties met OS-fout 1314. De volledige manifestfile draaide in Linux 10/10 groen, inclusief alle drie symlinkgevallen.
+- De workflow is statisch bedraad met verplichte servergeautoriseerde `build_id`-input en genereert geen eigen UUID meer. De fetch-tokenbroker is lokaal gebouwd; de dispatchgrens en live GitHub OIDC/tokenexchange blijven onuitgevoerd.
+
+## Herstelpunt en read-only productiepreflight 2026-09-23
+
+### Lokale herstelidentiteit
+
+- Worktree: `C:\Users\info\Project-Worktrees\lorenzo-web-studio-git001c-astro-preview-build-20260922`.
+- Branch: `git001c-astro-preview-build-20260922`.
+- Basis vóór het herstelcommit: `ededdd6043c3ad749a1faf9a3993221c24fc3971`.
+- Het herstelcommit omvat de volledige lokale GIT-001C-slice: operatorbesturing, async buildautoriteit, artifactontvangst en uploadsession, exacte-sourcebuild, workflow, source-tokenbroker, Supabase preview-origin, Cloudflare front door, zeven additieve migraties, tests, fixtures en bewijsdocumenten. `supabase/.temp`, echte `.env`/`.dev.vars`, credentials en providerwaarden zijn uitgesloten.
+- De eerder gebruikte lokale C3-fixture-ID `8541939033` was niet de immutable ID van de benoemde repository. GitHub rapporteert voor `lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b` exact ID `1378797607` en node `R_kgDOUi7IJw`; commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48` bestaat en is GitHub-verified. De C3- en brokerfixtures zijn daarop gecorrigeerd en beide gerichte suites slagen 6/6.
+
+### Provideraccessmatrix
+
+| Provider | Read-only resultaat | Productieblokker |
+| --- | --- | --- |
+| Supabase `xcsptvntvrizwhskaphr` | Toegang beschikbaar; project `ACTIVE_HEALTHY`, PostgreSQL 17.6. Remote ledger eindigt op `20260920231950`. Dagelijkse backup is compleet; PITR is uit. Private bucket `website-project-previews` bestaat. Er zijn 19 actieve Edge Functions en geen `website-project-preview-*`-functie. | Exact plan/spend cap blijft onbekend. Een directe read-only workspacequery kon zonder niet-beschikbare databasecredential niet worden uitgevoerd; de immutable production workspacebinding moet vóór migratie/deploy authoritative worden bevestigd. |
+| GitHub | Repositorynaam, immutable ID/node en exact verified commit zijn via REST bevestigd. | De beschikbare credential mag GitHub App-installaties en Actions environment/secret/variablebindings niet lezen (`403`/`404`). Daardoor zijn installatie `161436785`, één-repository `contents:read`, platformrepository/ref en live Actions-binding nog niet provider-side bewezen. Geen dispatch. |
+| Cloudflare | Geen geauthenticeerde accounttoegang beschikbaar. | Account, Workers Paid-status, Pages-project, encrypted origin-secret, quota/fail-closed-instellingen en toegewezen `<project>.pages.dev` zijn onbekend. De exacte CNAME-target is daarom **onbekend**; geen placeholder publiceren. |
+| OVH/DNS | Managementtoegang ontbreekt. Publieke DNS toont authoritative nameservers `dns106.ovh.net` en `ns106.ovh.net`, `preview.lorenzowebsolutions.be` als NXDOMAIN en mail ongewijzigd op `mx1.mail.ovh.net`, `mx2.mail.ovh.net`, `mx3.mail.ovh.net`. | CAA/TLS moet bij Pages-domainassociatie opnieuw live worden geprobed; rollback-owner en wijzigingsbevoegdheid zijn niet account-side bevestigd. Geen DNS-wijziging. |
+
+Supabase secretnamen zijn alleen als namen geïnventariseerd; waarden zijn niet gelezen of vastgelegd. De vereiste nieuwe origin/source/workflowbindings zijn niet als volledige productiecontractset bewezen. De lokale poolerbinding bevatte geen databasewachtwoord; er is geen credential gevraagd, afgeleid of opgeslagen.
+
+### Exacte productionvolgorde na afzonderlijke autorisatie
+
+1. Bevestig de bestaande 0006 production workspacebinding als repository ID `1378797607`, node `R_kgDOUi7IJw`, naam `lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b` en commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`. Bevestig daarnaast GitHub App-installatie `161436785`, exact één repository en `contents:read`, plus platform Actions repository/ref/workflow-ref. Bij iedere afwijking: stop; `NO_SECOND_CREATE` blijft HARD.
+2. Maak/controleer een verse productionbackup en verantwoord dat PITR uit staat. Pas daarna exact in deze volgorde toe: `20260922180000`, `20260923060000`, `20260923070000`, `20260923080000`, `20260923100000`, `20260923110000`, `20260923120000`. Markeer niets handmatig als toegepast; met name `20260923110000` niet.
+3. Verifieer na iedere migratie definities, triggers en grants. Deploy vervolgens `website-project-preview-artifact`, `website-project-preview-source-token` en `website-project-preview-host`; workflow blijft ongedispatched. Zet uitsluitend reviewed server-side secrets/vars en bewijs dat direct-originverkeer zonder purpose-token vóór database/Storage faalt.
+4. Deploy één Cloudflare Pages-project zonder DNS, configureer het overeenkomende encrypted `LWS_PREVIEW_ORIGIN_TOKEN`, voer negatieve auth/cache/originprobes uit en noteer pas dan de werkelijk toegewezen `<project>.pages.dev`-hostname.
+5. Associeer eerst `preview.lorenzowebsolutions.be` in Pages. Voeg daarna bij OVH precies één CNAME `preview` naar die werkelijk toegewezen hostname toe. Verifieer CAA, managed TLS, redirect van de standaardhost, normale paths, host-only cookie, content types en `private, no-store`; wijzig geen nameservers, apex, `www`, MX/TXT of Supabase Auth.
+6. Zet `LWS_PREVIEW_HOST_URL=https://preview.lorenzowebsolutions.be`, publiceer het reviewed workflowcommit met `workflow_dispatch` als enige trigger en voer pas na een aparte controlled-dispatchgoedkeuring één 0006-run uit.
+
+Rollbackvolgorde: blokkeer dispatch en source-tokenuitgifte; revoke previewsessies; abort incomplete uploads en herhaal private-objectcleanup; laat afgeronde builddata staan. Verwijder bij hostingfalen uitsluitend de Pages custom-domainassociatie en de ene OVH-CNAME. Revert additieve migraties alleen dependency-safe en na expliciete databasebeslissing. Klantrepository, commit, apex/`www`, mail, Supabase Auth en bestaande klantdata worden nooit verwijderd of gemuteerd.
+
+Preflightbesluit: **NO-GO voor productie-uitvoering** totdat de production workspacebinding, GitHub App/Actions-bindings, Cloudflare account/plan/project/hostname, Supabase plan/spend cap en OVH wijzigings-/rollbackbevoegdheid authoritative zijn bevestigd. Deze NO-GO is geen afwijzing van de reeds gegeven kostenrichting; hij voorkomt uitvoering met onbevestigde providerauthority.
+
+## Gerichte codebeoordeling 2026-09-23
+
+- Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
+- Gecorrigeerd: platform/klant-OIDC-identiteitsverwarring, caller-selected build-ID, onbegrensd bodybufferen, verouderde typecheckfixtures en afwijkende `/directory/`-previewrouting.
+- Niet overgenomen: AAL2 opnieuw afdwingen in service-role finalize. AAL2 autoriseert acquire; de korte actor-, repository-, commit-, workflow-, run- en buildgebonden lease is de gedelegeerde workflowautoriteit.
+- Niet bevestigd als defect: tokenconsumptie bij een falende sessioninsert (transactionele rollback) en upload-complete-cleanup. Cleanup en herhaling zijn nu expliciet door tests vastgezet.
+- Liveplan: `docs/superpowers/plans/2026-09-23-git001c-live-coupling.md`. Er is niets gedeployed, gemigreerd in productie, gedispatched, betaald of aan DNS gewijzigd.
+
+## Resume-identiteit
+
+- Worktree: `C:\Users\info\Project-Worktrees\lorenzo-web-studio-git001c-astro-preview-build-20260922`
+- Branch: `git001c-astro-preview-build-20260922`
+- HEAD: `ededdd6043c3ad749a1faf9a3993221c24fc3971`
+- Historische autoriteit: `C:\Users\info\.copilot\session-state\ab268b4e-f133-426c-8bf5-8e96610acbe3\checkpoints\009-git001c-astro-preview-build-plan.md`
+- Volgend hervatpunt: los de in de productiepreflight genoemde provider- en authorityblockers op. Daarna pas migratie/deployment, Pages-project/CNAME en live GitHub OIDC/workflowdispatch, ieder uitsluitend na afzonderlijke expliciete autorisatie.
+
+Daarom blijft **GIT-001C OPEN**.

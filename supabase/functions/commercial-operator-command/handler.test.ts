@@ -367,6 +367,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       executeWebsiteProjectFileRead: async () => ({ file: {} }),
       executeWebsiteProjectFileSave: async () => ({ file: {} }),
       executeWebsiteProjectPreviewBuild: async () => ({ build: {} }),
+      executeWebsiteProjectPreviewControl: async () => ({ accepted: true }),
       executeApplicationAction: async (
         token: string,
         input: Record<string, unknown>,
@@ -528,6 +529,22 @@ const websiteProjectPreviewBuildRequest = {
   expected_commit_sha: "a".repeat(40),
   idempotency_key: "c1a00000-0000-4000-8000-000000000005",
 };
+const websiteProjectPreviewControlRequests = [
+  {
+    action: "request_website_project_preview_build",
+    quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
+    expected_commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
+    idempotency_key: "c1a00000-0000-4000-8000-000000000006",
+  },
+  {
+    action: "get_website_project_preview_build_status",
+    lease_id: "c1a00000-0000-4000-8000-000000000007",
+  },
+  {
+    action: "create_website_project_preview_session",
+    preview_build_id: "c1a00000-0000-4000-8000-000000000008",
+  },
+] as const;
 
 const projectFileAuthorityFields = [
   "website_work_context_id",
@@ -1277,6 +1294,31 @@ Deno.test("project preview build accepts only bounded browser intent", async () 
       400,
       field,
     );
+  }
+});
+
+Deno.test("async project preview controls route closed intent with caller JWT", async () => {
+  const seen: Array<{ token: string; input: unknown }> = [];
+  const harness = dependencies({
+    verifyUser: async () => ({ id: "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0" }),
+    executeWebsiteProjectPreviewControl: async (token: string, input: unknown) => {
+      seen.push({ token, input });
+      return { accepted: true };
+    },
+  });
+  for (const input of websiteProjectPreviewControlRequests) {
+    const response = await handleCommercialOperator(request(input, ownerAal2Jwt), harness.deps);
+    assertEquals(response.status, 200);
+  }
+  assertEquals(seen.map(({ token }) => token), [ownerAal2Jwt, ownerAal2Jwt, ownerAal2Jwt]);
+  assertEquals(seen.map(({ input }) => input), [...websiteProjectPreviewControlRequests]);
+
+  for (const input of websiteProjectPreviewControlRequests) {
+    const response = await handleCommercialOperator(
+      request({ ...input, repository_owner: "attacker" }, ownerAal2Jwt),
+      harness.deps,
+    );
+    assertEquals(response.status, 400);
   }
 });
 

@@ -35,6 +35,7 @@ import {
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
   type WebsiteProjectPreviewBuildActionInput,
+  type WebsiteProjectPreviewControlActionInput,
   type WebsiteProjectFileSaveActionInput,
   type WebsiteRequirementsActionInput,
   type RecruitmentVacancyActionInput,
@@ -651,6 +652,72 @@ type WebsiteProjectPreviewRuntimeDependencies = Readonly<{
   createService(signal: AbortSignal): PromiseLike<WebsiteProjectPreviewBuilderService>;
   createDeadline?(): AbortSignal;
 }>;
+
+export async function executeCallerJwtWebsiteProjectPreviewControlAction(
+  jwt: string,
+  input: WebsiteProjectPreviewControlActionInput,
+  dependencies: Readonly<{
+    clientFor(jwt: string): WebsiteProjectPreviewBuildRpcClient;
+    previewHostUrl?: string;
+  }>,
+): Promise<unknown> {
+  const client = dependencies.clientFor(jwt);
+  if (input.action === "request_website_project_preview_build") {
+    const { data, error } = await client.rpc(
+      "acquire_website_project_preview_build_v1",
+      {
+        p_quote_request_id: input.quote_request_id,
+        p_expected_commit_sha: input.expected_commit_sha,
+        p_idempotency_key: input.idempotency_key,
+      },
+    );
+    if (error) throw new Error(error.message);
+    const leaseId = (data as { leaseId?: unknown } | null)?.leaseId;
+    const buildId = (data as { buildId?: unknown } | null)?.buildId;
+    if (typeof leaseId !== "string" || !UUID.test(leaseId)
+      || typeof buildId !== "string" || !UUID.test(buildId)) {
+      throw new Error("PROJECT_PREVIEW_LEASE_RESPONSE_INVALID");
+    }
+    return { lease_id: leaseId, build_id: buildId, status: "BUILD_IN_PROGRESS" };
+  }
+  if (input.action === "get_website_project_preview_build_status") {
+    const { data, error } = await client.rpc(
+      "get_website_project_preview_build_status_v1",
+      { p_lease_id: input.lease_id },
+    );
+    if (error) throw new Error(error.message);
+    const status = (data as { buildStatus?: unknown } | null)?.buildStatus;
+    const previewBuildId = (data as { previewBuildId?: unknown } | null)?.previewBuildId;
+    if (typeof status !== "string") {
+      throw new Error("PROJECT_PREVIEW_STATUS_RESPONSE_INVALID");
+    }
+    return {
+      status,
+      preview_build_id: typeof previewBuildId === "string" ? previewBuildId : null,
+    };
+  }
+
+  const previewHostUrl = String(dependencies.previewHostUrl || "").replace(/\/$/, "");
+  if (!/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(previewHostUrl)
+    && !/^https:\/\/[a-z0-9.-]+$/i.test(previewHostUrl)) {
+    throw new Error("PROJECT_PREVIEW_HOST_NOT_CONFIGURED");
+  }
+  const sessionToken = [...crypto.getRandomValues(new Uint8Array(32))]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const sessionTokenHash = await sha256Hex(new TextEncoder().encode(sessionToken));
+  const { data, error } = await client.rpc(
+    "create_website_project_preview_session_v1",
+    {
+      p_preview_build_id: input.preview_build_id,
+      p_session_token_hash: sessionTokenHash,
+    },
+  );
+  if (error) throw new Error(error.message);
+  if (!(data as { previewSessionId?: unknown } | null)?.previewSessionId) {
+    throw new Error("PROJECT_PREVIEW_SESSION_RESPONSE_INVALID");
+  }
+  return { handoff_url: `${previewHostUrl}/handoff?token=${sessionToken}` };
+}
 
 function projectFilesError(code: string): Error {
   return new Error(code);
@@ -2127,6 +2194,14 @@ if (import.meta.main) {
                 signal,
                 serviceClient(),
               ),
+          }),
+        executeWebsiteProjectPreviewControl: async (
+          jwt: string,
+          input: WebsiteProjectPreviewControlActionInput,
+        ) =>
+          await executeCallerJwtWebsiteProjectPreviewControlAction(jwt, input, {
+            clientFor,
+            previewHostUrl: Deno.env.get("LWS_PREVIEW_HOST_URL"),
           }),
         consumeRateLimit: async (jwt: string, projectId: string) => {
           const { data, error } = await clientFor(jwt).rpc(

@@ -17,6 +17,8 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.dev.vars*
+!.dev.vars.example
 supabase/.env
 supabase/functions/.env
 

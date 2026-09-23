@@ -81,6 +81,9 @@ const APPLICATION_ACTIONS = new Set([
   "read_website_project_file",
   "save_website_project_file",
   "build_website_project_preview",
+  "request_website_project_preview_build",
+  "get_website_project_preview_build_status",
+  "create_website_project_preview_session",
   "get_website_requirements_board",
   "sync_website_requirements_from_intake",
   "start_website_requirement",
@@ -492,6 +495,22 @@ export type WebsiteProjectPreviewBuildActionInput = Readonly<{
   expected_commit_sha: string;
   idempotency_key: string;
 }>;
+export type WebsiteProjectPreviewControlActionInput = Readonly<
+  | {
+    action: "request_website_project_preview_build";
+    quote_request_id: string;
+    expected_commit_sha: string;
+    idempotency_key: string;
+  }
+  | {
+    action: "get_website_project_preview_build_status";
+    lease_id: string;
+  }
+  | {
+    action: "create_website_project_preview_session";
+    preview_build_id: string;
+  }
+>;
 export type WebsiteRequirementsActionInput = Readonly<
   Record<string, unknown> & {
     action: string;
@@ -586,6 +605,10 @@ type CommercialOperatorDependencies = Readonly<{
   executeWebsiteProjectPreviewBuild(
     jwt: string,
     input: WebsiteProjectPreviewBuildActionInput,
+  ): PromiseLike<unknown>;
+  executeWebsiteProjectPreviewControl(
+    jwt: string,
+    input: WebsiteProjectPreviewControlActionInput,
   ): PromiseLike<unknown>;
   consumeRateLimit(
     jwt: string,
@@ -1227,6 +1250,12 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "expected_commit_sha",
       "idempotency_key",
     ])
+    : action === "request_website_project_preview_build"
+    ? new Set(["action", "quote_request_id", "expected_commit_sha", "idempotency_key"])
+    : action === "get_website_project_preview_build_status"
+    ? new Set(["action", "lease_id"])
+    : action === "create_website_project_preview_session"
+    ? new Set(["action", "preview_build_id"])
     : action === "get_website_requirements_board"
     ? new Set(["action", "quote_request_id", "website_work_context_id"])
     : action === "sync_website_requirements_from_intake"
@@ -2204,6 +2233,34 @@ function validateApplicationAction(value: UnvalidatedInput) {
       expected_commit_sha: value.expected_commit_sha,
       idempotency_key: value.idempotency_key,
     } as WebsiteProjectPreviewBuildActionInput;
+  }
+  if (action === "request_website_project_preview_build") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      !/^[0-9a-f]{40}$/.test(String(value.expected_commit_sha || "")) ||
+      !UUID.test(String(value.idempotency_key || ""))
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      expected_commit_sha: value.expected_commit_sha,
+      idempotency_key: value.idempotency_key,
+    } as WebsiteProjectPreviewControlActionInput;
+  }
+  if (action === "get_website_project_preview_build_status") {
+    if (!UUID.test(String(value.lease_id || ""))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, lease_id: value.lease_id } as WebsiteProjectPreviewControlActionInput;
+  }
+  if (action === "create_website_project_preview_session") {
+    if (!UUID.test(String(value.preview_build_id || ""))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      preview_build_id: value.preview_build_id,
+    } as WebsiteProjectPreviewControlActionInput;
   }
   if (action === "get_website_execution_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
@@ -3487,6 +3544,9 @@ export async function handleCommercialOperator(
         input.action === "read_website_project_file" ||
         input.action === "save_website_project_file" ||
         input.action === "build_website_project_preview" ||
+        input.action === "request_website_project_preview_build" ||
+        input.action === "get_website_project_preview_build_status" ||
+        input.action === "create_website_project_preview_session" ||
         input.action === "provision_website_repository" ||
         input.action === "recover_existing_website_repository"
       ) {
@@ -3592,6 +3652,17 @@ export async function handleCommercialOperator(
         const result = await deps.executeWebsiteProjectPreviewBuild(
           jwt,
           input as WebsiteProjectPreviewBuildActionInput,
+        );
+        return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
+      }
+      if (
+        input.action === "request_website_project_preview_build" ||
+        input.action === "get_website_project_preview_build_status" ||
+        input.action === "create_website_project_preview_session"
+      ) {
+        const result = await deps.executeWebsiteProjectPreviewControl(
+          jwt,
+          input as WebsiteProjectPreviewControlActionInput,
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
