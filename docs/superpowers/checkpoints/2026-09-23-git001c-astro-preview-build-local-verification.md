@@ -155,8 +155,89 @@ Rollback: schakel dispatch/source-token uit, revoke previewsessies en ruim incom
 - Worktree: `C:\Users\info\Project-Worktrees\lorenzo-web-studio-git001c-astro-preview-build-20260922`.
 - Branch: `git001c-astro-preview-build-20260922`.
 - Basis vóór het herstelcommit: `ededdd6043c3ad749a1faf9a3993221c24fc3971`.
+- Lokaal recoverycommit: `35fbb65730966430d16432f8dea8ded8f655f474` (`checkpoint GIT-001C preview production preflight`), tree `fda203f289304e81417165164e6cb7b715e6626f`; niet gepusht.
 - Het herstelcommit omvat de volledige lokale GIT-001C-slice: operatorbesturing, async buildautoriteit, artifactontvangst en uploadsession, exacte-sourcebuild, workflow, source-tokenbroker, Supabase preview-origin, Cloudflare front door, zeven additieve migraties, tests, fixtures en bewijsdocumenten. `supabase/.temp`, echte `.env`/`.dev.vars`, credentials en providerwaarden zijn uitgesloten.
 - De eerder gebruikte lokale C3-fixture-ID `8541939033` was niet de immutable ID van de benoemde repository. GitHub rapporteert voor `lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b` exact ID `1378797607` en node `R_kgDOUi7IJw`; commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48` bestaat en is GitHub-verified. De C3- en brokerfixtures zijn daarop gecorrigeerd en beide gerichte suites slagen 6/6.
+
+Exacte `git show --name-status --no-renames 35fbb65730966430d16432f8dea8ded8f655f474`-set:
+
+```text
+A .github/workflows/build-website-project-preview.yml
+M .gitignore
+A .superpowers/sdd/009-git001c-astro-preview-build-plan/progress.md
+M assets/js/operator-website-execution-child.mjs
+A assets/js/operator-website-preview-build.mjs
+A assets/js/operator-website-preview-build.test.mjs
+A cloudflare/website-project-preview-host/.dev.vars.example
+A cloudflare/website-project-preview-host/functions/[[path]].ts
+A cloudflare/website-project-preview-host/functions/preview-host.test.ts
+A cloudflare/website-project-preview-host/public/_routes.json
+A cloudflare/website-project-preview-host/wrangler.example.jsonc
+A cloudflare/website-project-preview-host/wrangler.jsonc
+M deno.lock
+A docs/superpowers/checkpoints/2026-09-23-git001c-astro-preview-build-local-verification.md
+A docs/superpowers/plans/2026-09-23-git001c-live-coupling.md
+A scripts/fixtures/website-preview-astro/astro.config.mjs
+A scripts/fixtures/website-preview-astro/package-lock.json
+A scripts/fixtures/website-preview-astro/package.json
+A scripts/fixtures/website-preview-astro/public/favicon.svg
+A scripts/fixtures/website-preview-astro/public/hero.png
+A scripts/fixtures/website-preview-astro/public/hero.png.base64
+A scripts/fixtures/website-preview-astro/src/pages/index.astro
+A scripts/fixtures/website-preview-astro/src/pages/over.astro
+A scripts/fixtures/website-preview-astro/src/styles/global.css
+A scripts/git001c-local-c3-demo.mjs
+A scripts/git001c-local-c3-demo.test.mjs
+M scripts/operator-website-execution.test.mjs
+A scripts/preview-build-proxy/filter.allow
+A scripts/preview-build-proxy/tinyproxy.conf
+A scripts/website-preview-artifact-receipt-concurrency.integration.cjs
+A scripts/website-preview-upload-session.integration.cjs
+A scripts/website-project-preview-upload.ts
+A scripts/website-project-preview-workflow.test.mjs
+M supabase/config.toml
+M supabase/functions/.env.example
+A supabase/functions/_shared/website-project-preview-artifact-manifest.test.ts
+A supabase/functions/_shared/website-project-preview-artifact-manifest.ts
+A supabase/functions/_shared/website-project-preview-artifact-receipt.test.ts
+A supabase/functions/_shared/website-project-preview-artifact-receipt.ts
+A supabase/functions/_shared/website-project-preview-async-build.test.ts
+A supabase/functions/_shared/website-project-preview-async-build.ts
+M supabase/functions/_shared/website-project-preview-builder.ts
+A supabase/functions/_shared/website-project-preview-e2e-real-build.integration.test.ts
+A supabase/functions/_shared/website-project-preview-hosting-gateway.ts
+A supabase/functions/_shared/website-project-preview-local-hosting-gateway.test.ts
+A supabase/functions/_shared/website-project-preview-local-hosting-gateway.ts
+A supabase/functions/_shared/website-project-preview-oidc-broker.test.ts
+A supabase/functions/_shared/website-project-preview-oidc-broker.ts
+A supabase/functions/_shared/website-project-preview-sanitizer.ts
+A supabase/functions/_shared/website-project-preview-single-use-token.test.ts
+A supabase/functions/_shared/website-project-preview-single-use-token.ts
+M supabase/functions/commercial-operator-command/caller-jwt-read-path.test.ts
+M supabase/functions/commercial-operator-command/dossier-substance-request-contract.test.ts
+M supabase/functions/commercial-operator-command/handler.test.ts
+M supabase/functions/commercial-operator-command/handler.ts
+M supabase/functions/commercial-operator-command/index.ts
+A supabase/functions/website-project-preview-artifact/handler.test.ts
+A supabase/functions/website-project-preview-artifact/handler.ts
+A supabase/functions/website-project-preview-artifact/index.ts
+A supabase/functions/website-project-preview-host.env.example
+A supabase/functions/website-project-preview-host/handler.test.ts
+A supabase/functions/website-project-preview-host/handler.ts
+A supabase/functions/website-project-preview-host/hosting.integration.test.ts
+A supabase/functions/website-project-preview-host/index.ts
+A supabase/functions/website-project-preview-source-token/handler.test.ts
+A supabase/functions/website-project-preview-source-token/handler.ts
+A supabase/functions/website-project-preview-source-token/index.ts
+A supabase/functions/website-project-preview-source-token/service.ts
+A supabase/migrations/20260922180000_extend_website_project_preview_build_async_contract_v1.sql
+A supabase/migrations/20260923060000_add_website_project_preview_build_finalize_and_session_v1.sql
+A supabase/migrations/20260923070000_add_website_project_preview_artifact_receipt_v1.sql
+A supabase/migrations/20260923080000_add_website_project_preview_artifact_authority_v1.sql
+A supabase/migrations/20260923100000_add_website_project_preview_upload_session_v1.sql
+A supabase/migrations/20260923110000_authorize_website_project_preview_build_id_v1.sql
+A supabase/migrations/20260923120000_add_website_project_preview_handoff_rotation_v1.sql
+```
 
 ### Provideraccessmatrix
 
