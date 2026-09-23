@@ -257,10 +257,10 @@ De rechten van installatie `161436785` vormen het maximale App-bereik en zijn br
 - de HTTP-endpoint accepteert alleen `leaseId`, `buildId` en `workflowRunId`; caller-supplied repository- of permissionvelden worden afgewezen;
 - de server resolveert de klantrepository uit de production lease/workspaceauthority en maakt exact één `repositoryIds`-entry;
 - operatie `WEBSITE_PROJECT_FILES_READ` wordt door de gedeelde broker vertaald naar `metadata:read` plus `contents:read`;
-- de GitHub tokenexchange verstuurt `repository_ids: [1378797607]` en `permissions: { contents: "read" }`;
-- de runtimeadapter projecteert na de exchange de aangevraagde scope terug naar de generieke leasevalidator; hij leest de permissionmetadata uit GitHubs response momenteel niet onafhankelijk terug.
+- de GitHub tokenexchange verstuurt `repository_ids: [1378797607]` en exact `permissions: { metadata: "read", contents: "read" }`;
+- de runtimeadapter geeft de werkelijke `permissions` uit GitHubs response door aan de bestaande generieke leasevalidator; ontbrekende metadata, ongeldige waarden, `contents:write` en extra `administration:write` worden fail-closed geweigerd met `GITHUB_TOKEN_RESPONSE_INVALID` voordat een tokenlease wordt teruggegeven.
 
-Daarmee is de lokale tokenrequest smaller dan de Provisioner-installatie: uitsluitend klantrepository ID `1378797607`, metadata read als impliciet GitHub-basisrecht en Contents read. Dit is code- en unittestbewijs voor de requestgrens, niet voor de effectieve scope van een live uitgegeven token. Live tokenuitgifte blijft geblokkeerd totdat de functie en vereiste productiebindings afzonderlijk zijn goedgekeurd en gedeployed; bij de eerste gecontroleerde uitgifte moet de effectieve scope provider-side worden geverifieerd.
+Daarmee is het lokale uitgiftecontract smaller dan de Provisioner-installatie: uitsluitend klantrepository ID `1378797607`, Metadata read en Contents read. Gericht TDD-bewijs: de geldige response wordt aanvaard en ontbrekende, ongeldige of ruimere responsepermissions leveren geen tokenlease op (`3/3` geslaagd via de echte adapter en bestaande broker-validator). Live tokenuitgifte blijft geblokkeerd totdat de functie en vereiste productiebindings afzonderlijk zijn goedgekeurd en gedeployed; bij de eerste gecontroleerde uitgifte blijft provider-side verificatie van de effectieve scope vereist.
 
 ### Exacte productionvolgorde na afzonderlijke autorisatie
 

@@ -1,11 +1,47 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadGitHubAppConfig } from "../_shared/github-app-config.ts";
-import { createGitHubAppTokenBroker } from "../_shared/github-app-token.ts";
+import {
+  createGitHubAppTokenBroker,
+  type GitHubTokenExchangeInput,
+} from "../_shared/github-app-token.ts";
 import { verifyGitHubActionsOidcToken } from "../_shared/website-project-preview-oidc-broker.ts";
 import { getSupabaseServerSecretKey, type SupabaseKeyBindingEnvironment } from "../_shared/supabase-key-bindings.ts";
 import { initializeGitHubAppInputSigner } from "../github-app-gate6-probe/runtime.ts";
 import { handleWebsiteProjectPreviewSourceToken } from "./handler.ts";
 import { createWebsiteProjectPreviewSourceTokenService } from "./service.ts";
+
+export function createWebsiteProjectPreviewGitHubTokenExchange(
+  runtimeFetch: typeof fetch,
+) {
+  return async (input: GitHubTokenExchangeInput, signal?: AbortSignal) => {
+    const response = await runtimeFetch(
+      `https://api.github.com/app/installations/${input.installationId}/access_tokens`,
+      {
+        method: "POST",
+        redirect: "error",
+        signal: signal ?? AbortSignal.timeout(10_000),
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${input.appJwt}`,
+          "content-type": "application/json",
+          "x-github-api-version": "2022-11-28",
+        },
+        body: JSON.stringify({
+          repository_ids: input.repositoryIds.map(Number),
+          permissions: input.permissions,
+        }),
+      },
+    );
+    if (!response.ok) throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+    const body = await response.json() as Record<string, unknown>;
+    return {
+      token: body.token,
+      expiresAt: body.expires_at,
+      repositorySelection: body.repository_selection,
+      permissions: body.permissions,
+    };
+  };
+}
 
 export async function createWebsiteProjectPreviewSourceTokenRuntime(
   environment: SupabaseKeyBindingEnvironment = Deno.env,
@@ -30,34 +66,7 @@ export async function createWebsiteProjectPreviewSourceTokenRuntime(
   const broker = createGitHubAppTokenBroker({
     now: Date.now,
     sign: (_privateKey, signingInput) => signer(signingInput),
-    exchange: async (input, signal) => {
-      const response = await runtimeFetch(
-        `https://api.github.com/app/installations/${input.installationId}/access_tokens`,
-        {
-          method: "POST",
-          redirect: "error",
-          signal: signal ?? AbortSignal.timeout(10_000),
-          headers: {
-            accept: "application/vnd.github+json",
-            authorization: `Bearer ${input.appJwt}`,
-            "content-type": "application/json",
-            "x-github-api-version": "2022-11-28",
-          },
-          body: JSON.stringify({
-            repository_ids: input.repositoryIds.map(Number),
-            permissions: { contents: "read" },
-          }),
-        },
-      );
-      if (!response.ok) throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
-      const body = await response.json() as Record<string, unknown>;
-      return {
-        token: body.token,
-        expiresAt: body.expires_at,
-        repositorySelection: body.repository_selection,
-        permissions: input.permissions,
-      };
-    },
+    exchange: createWebsiteProjectPreviewGitHubTokenExchange(runtimeFetch),
   });
 
   return createWebsiteProjectPreviewSourceTokenService({
