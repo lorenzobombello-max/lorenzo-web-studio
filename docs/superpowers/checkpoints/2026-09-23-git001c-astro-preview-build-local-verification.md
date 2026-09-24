@@ -310,6 +310,18 @@ Frisse release/securityreview leidde tot strengere Cloudflare-responsevalidatie 
 
 Het zware exacte-source-, concurrency-, uploadsession-, Linux-manifest- en operatorbewijs is hergebruikt omdat de controlerende runtimecode niet wijzigde. Alleen releaseconfiguratie, runbook en de concrete resterende toegangspaden zijn opnieuw getest. Er is geen deployment, migratie, secret-/varwrite, DNS-wijziging, aankoop, push of merge uitgevoerd.
 
+## Productierecoverycheck 2026-09-24
+
+- Uitvoeringsidentiteit vóór de check: branch `git001c-astro-preview-build-20260922`, reviewed HEAD `284fc48b30660bf4aeea40e113292af2ecd1581f`, schone worktree en operator `info`.
+- Supabase Management API bevestigde opnieuw project `xcsptvntvrizwhskaphr` (`Lorenzo Web Solutions`), regio `eu-west-1`, status `ACTIVE_HEALTHY`, PostgreSQL `17.6.1.155`.
+- De guarded read-only preflight slaagde en noemde nog steeds exact zeven pending migraties: `20260922180000`, `20260923060000`, `20260923070000`, `20260923080000`, `20260923100000`, `20260923110000` en `20260923120000`. Er waren geen previewfuncties, Pages-deployments of Pages-domains; preview-DNS bleef `NXDOMAIN` en Worker `lorenzobombello-api-proxy` bleef behouden.
+- Nieuwste recoverypoint bleef fysieke backup `1759100262`, status `COMPLETED`, voltooid op `2026-09-23T05:25:23.466Z`. Op `2026-09-24T03:45:24.5140940Z` was deze `22.334` uur oud en dus formeel binnen de scriptgrens van 24 uur, maar PITR bleef `OFF` en er was geen nieuwere backup.
+- Een read-only timestampaggregatie over `public` en `lws_internal` vond geen zichtbare rijen na het backupmoment. De uitgebreidere check over `auth` en `storage` vond wel productie-mutaties na het recoverypoint: `auth.sessions` 1 rij, `auth.users` 1 rij en `auth.refresh_tokens` 3 rijen; laatste timestamps respectievelijk `2026-09-23T06:30:55.119478Z`, `2026-09-23T06:30:55.081115Z` en `2026-09-23T06:30:55.070847Z`.
+- Zonder PITR zou een restore naar backup `1759100262` deze latere auth-toestand kunnen verliezen. Bovendien kan timestampaggregatie deletes of mutaties zonder bijgewerkte timestamp niet uitsluiten. Daarom is dit recoverypoint niet geschikt verklaard voor de eerste productiemutatie.
+- **HARD STOP vóór mutatie:** `ApplyMigrations` is niet aangeroepen; alle zeven migraties blijven pending. Er is geen functiondeploy, secret-/varwrite, Pages-wijziging, custom domain, DNS-wijziging, workflowdispatch, push of merge uitgevoerd. `NO_SECOND_CREATE` en de bestaande Worker/klantrepository blijven intact.
+
+Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeurde gelijkwaardige herstelmogelijkheid die de post-backupwijzigingen dekt. Herhaal daarna de volledige read-only preflight en wijzigingen-sinds-backupbeoordeling; gebruik nooit automatisch backup `1759100262` omdat deze in een historisch commando staat.
+
 ## Gerichte codebeoordeling 2026-09-23
 
 - Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
