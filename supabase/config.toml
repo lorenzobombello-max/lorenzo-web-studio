@@ -73,3 +73,12 @@ verify_jwt = false
 
 [functions.github-task13-test-island]
 verify_jwt = false
+
+[functions.website-project-preview-artifact]
+verify_jwt = false
+
+[functions.website-project-preview-source-token]
+verify_jwt = false
+
+[functions.website-project-preview-host]
+verify_jwt = false

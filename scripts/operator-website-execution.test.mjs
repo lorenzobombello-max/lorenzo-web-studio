@@ -994,7 +994,7 @@ const client = { functions: { async invoke(_name, { body }) {
     savedContent = body.content;
     snapshot.commit_sha = "b".repeat(40);
     result = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", workspace_state: "REPOSITORY_READY", repository: { display_name: "lws-studio/lws-web-2099-0001", binding_revision: 1 }, snapshot, file: { path: body.path, created: false } };
-  } else if (body.action === "build_website_project_preview") {
+  } else if (body.action === "request_website_project_preview_build") {
     window.task8Events.push("gateway");
     window.task8Requests.push(structuredClone(body));
     if (params.get("preview") === "structuredFail") {
@@ -1012,7 +1012,23 @@ const client = { functions: { async invoke(_name, { body }) {
         },
       };
     }
-    result = { contract_version: 1, snapshot: { commit_sha: body.expected_commit_sha }, build: { status: "PASS" }, preview: { signed_url: \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\` } };
+    window.previewStatusCalls = 0;
+    result = { lease_id: "lease-1", status: "BUILD_IN_PROGRESS" };
+  } else if (body.action === "get_website_project_preview_build_status") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    window.previewStatusCalls += 1;
+    result = params.get("preview") === "async" && window.previewStatusCalls < 2
+      ? { status: "BUILD_IN_PROGRESS", preview_build_id: null }
+      : { status: "PASS", preview_build_id: "build-1" };
+  } else if (body.action === "create_website_project_preview_session") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    result = {
+      handoff_url: params.get("preview") === "async"
+        ? "https://preview.example.test/session-1"
+        : \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\`,
+    };
   }
   return { data: { ok: true, result }, error: null };
 } } };
@@ -1513,6 +1529,60 @@ test("Preview failure surfaces only the safe backend machine code", async () => 
   }
 });
 
+test("Preview button starts once, polls to success, and opens the terminal preview", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&preview=async",
+    );
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.locator('[data-website-action="files"]').click();
+    await page.waitForSelector(".website-project-files__row");
+    await page.locator('[data-website-action="preview-build"]').evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    try {
+      await page.waitForSelector("[data-website-preview-open]:not([hidden])");
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        message: document.querySelector("[data-website-message]")?.textContent,
+        requests: window.task8Requests,
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify({ ...diagnostics, pageErrors })}`);
+    }
+    const previewRequests = await page.evaluate(() => window.task8Requests.filter(
+      (request) => request.action?.includes("website_project_preview"),
+    ));
+    assert.equal(
+      previewRequests.filter((request) => request.action === "request_website_project_preview_build").length,
+      1,
+    );
+    assert.equal(
+      previewRequests.filter((request) => request.action === "get_website_project_preview_build_status").length >= 2,
+      true,
+    );
+    assert.equal(
+      previewRequests.some((request) => request.action === "create_website_project_preview_session"),
+      true,
+    );
+    assert.equal(
+      await page.locator("[data-website-message]").textContent(),
+      "Preview gereed",
+    );
+    assert.equal(
+      await page.locator("[data-website-preview-open]").getAttribute("href"),
+      "https://preview.example.test/session-1",
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("edited index.html is saved and visible in the opened preview", async () => {
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
@@ -1549,7 +1619,7 @@ test("edited index.html is saved and visible in the opened preview", async () =>
     await page.locator('[data-website-action="preview-build"]').click();
     await page.waitForSelector("[data-website-preview-open]:not([hidden])");
     const buildRequest = await page.evaluate(() => window.task8Requests.find(
-      (request) => request.action === "build_website_project_preview",
+      (request) => request.action === "request_website_project_preview_build",
     ));
     assert.equal(buildRequest.expected_commit_sha, "b".repeat(40));
     const [preview] = await Promise.all([
@@ -1647,7 +1717,9 @@ test("HIT001 keeps one Website child with bounded editor and preview actions", a
   assert.doesNotMatch(child, /scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
   assert.match(child, /Preview bouwen \/ vernieuwen/);
   assert.match(child, /Preview openen/);
-  assert.match(child, /build_website_project_preview/);
+  assert.match(child, /request_website_project_preview_build/);
+  assert.match(child, /get_website_project_preview_build_status/);
+  assert.match(child, /create_website_project_preview_session/);
   assert.doesNotMatch(child, /Open in VS Code Web|data-website-link="vscode"/);
   assert.doesNotMatch(child, /window\.open|vscode\.dev|github\.dev/);
   assert.equal((registry.match(/startsWith\("website-"\)/g) || []).length, 1);

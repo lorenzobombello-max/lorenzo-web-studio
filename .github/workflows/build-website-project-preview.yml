@@ -1,0 +1,225 @@
+name: Build Website Project Preview (async, multi-file)
+
+# GIT-001C (checkpoint 009-git001c-astro-preview-build-plan.md §16.1/§16.4):
+# the async build pipeline's three-job structure (fetch/build/upload),
+# captured here as real, reviewable workflow YAML.
+#
+# INTENTIONALLY workflow_dispatch-only - there is deliberately NO `on: push`
+# trigger. This workflow must never run automatically, and per the explicit
+# scope of this task it has not been run at all (manually or otherwise).
+# The artifact endpoint, raw-file upload session, workflow-finalize client,
+# source-token broker and preview host exist locally but are not deployed.
+# This workflow therefore stays fail-closed and is not operational yet.
+on:
+  workflow_dispatch:
+    inputs:
+      repository_owner:
+        description: "Customer repository owner (already-authorized, single repo)"
+        required: true
+      repository_name:
+        description: "Customer repository name"
+        required: true
+      repository_id:
+        description: "Exact GitHub numeric repository id resolved by the platform authority"
+        required: true
+      commit_sha:
+        description: "Exact, already-authorized 40-hex commit SHA to build"
+        required: true
+      lease_id:
+        description: "Preview-build lease id from acquire_website_project_preview_build_v1"
+        required: true
+      build_id:
+        description: "Server-authorized build id from acquire_website_project_preview_build_v1"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-project-preview-build-${{ github.event.inputs.lease_id }}
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    # Scoped, minimal permissions per checkpoint §14.1/§16.1: only the
+    # OIDC id-token needed to authenticate to the not-yet-deployed
+    # token-broker backend. No `contents: write`, no secrets.
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      source_artifact: source-${{ github.event.inputs.lease_id }}
+    steps:
+      - name: Checkout platform support files without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          path: platform
+          persist-credentials: false
+
+      - name: Require exact commit SHA format
+        shell: pwsh
+        run: |
+          if ($env:COMMIT_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw "HARD STOP - commit_sha must be an exact 40-hex SHA"
+          }
+        env:
+          COMMIT_SHA: ${{ github.event.inputs.commit_sha }}
+
+      - name: Exchange job OIDC for one scoped source token
+        id: source_token
+        shell: pwsh
+        run: |
+          $oidcUrl = "$env:ACTIONS_ID_TOKEN_REQUEST_URL&audience=$([uri]::EscapeDataString($env:LWS_PREVIEW_OIDC_AUDIENCE))"
+          $oidc = Invoke-RestMethod -Uri $oidcUrl -Headers @{
+            Authorization = "Bearer $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+          }
+          $body = @{
+            leaseId = $env:LWS_PREVIEW_LEASE_ID
+            buildId = $env:LWS_PREVIEW_BUILD_ID
+            workflowRunId = $env:GITHUB_RUN_ID
+          } | ConvertTo-Json -Compress
+          $lease = Invoke-RestMethod -Method Post -Uri $env:LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT `
+            -Headers @{ Authorization = "Bearer $($oidc.value)" } `
+            -ContentType "application/json" -Body $body
+          if (-not $lease.ok -or -not $lease.token -or -not $lease.expires_at) {
+            throw "HARD STOP - source token broker rejected the exact workflow authority"
+          }
+          Write-Output "::add-mask::$($lease.token)"
+          "token=$($lease.token)" >> $env:GITHUB_OUTPUT
+        env:
+          LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT: ${{ vars.LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT }}
+          LWS_PREVIEW_OIDC_AUDIENCE: ${{ vars.LWS_PREVIEW_OIDC_AUDIENCE }}
+          LWS_PREVIEW_LEASE_ID: ${{ github.event.inputs.lease_id }}
+          LWS_PREVIEW_BUILD_ID: ${{ github.event.inputs.build_id }}
+          LWS_PREVIEW_REPOSITORY_ID: ${{ github.event.inputs.repository_id }}
+
+      - name: Checkout exact authorized commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.repository_owner }}/${{ github.event.inputs.repository_name }}
+          ref: ${{ github.event.inputs.commit_sha }}
+          token: ${{ steps.source_token.outputs.token }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact authorized checkout
+        shell: pwsh
+        run: |
+          $actual = git -C source rev-parse HEAD
+          if ($actual -ne $env:COMMIT_SHA) {
+            throw "HARD STOP - checkout does not match the authorized commit"
+          }
+        env:
+          COMMIT_SHA: ${{ github.event.inputs.commit_sha }}
+
+      - name: Remove .git (source only, no history needed downstream)
+        run: rm -rf source/.git
+
+      - name: Publish source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-${{ github.event.inputs.lease_id }}
+          path: |
+            source
+            platform/scripts/preview-build-proxy
+          retention-days: 1
+
+  build:
+    runs-on: ubuntu-latest
+    needs: fetch
+    # No permissions, no secrets, no id-token: this job must never be
+    # able to reach any platform credential - checkpoint §14.1's core
+    # isolation guarantee. It receives ONLY the source artifact.
+    permissions: {}
+    steps:
+      - name: Download source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: source-${{ github.event.inputs.lease_id }}
+          path: .
+
+      # Checkpoint §14.1: an --internal Docker network with no default
+      # route, plus a forward-proxy allowing only the npm registry -
+      # never a bare `--network bridge` with unrestricted egress.
+      - name: Create isolated build network
+        run: docker network create --internal lws-preview-build-net
+
+      - name: Start npm-registry-only forward proxy
+        run: |
+          docker run -d --name lws-preview-build-proxy --network bridge \
+            -v "${{ github.workspace }}/platform/scripts/preview-build-proxy/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro" \
+            -v "${{ github.workspace }}/platform/scripts/preview-build-proxy/filter.allow:/etc/tinyproxy/filter.allow:ro" \
+            vimagick/tinyproxy
+          docker network connect lws-preview-build-net lws-preview-build-proxy
+
+      - name: Run isolated npm ci + astro build
+        run: |
+          PROXY_IP=$(docker inspect lws-preview-build-proxy --format '{{(index .NetworkSettings.Networks "lws-preview-build-net").IPAddress}}')
+          docker run --rm \
+            --network lws-preview-build-net \
+            -e HOME=/tmp/home \
+            -e npm_config_cache=/tmp/npm-cache \
+            -e npm_config_proxy="http://${PROXY_IP}:8888" \
+            -e npm_config_https_proxy="http://${PROXY_IP}:8888" \
+            -e HTTP_PROXY="http://${PROXY_IP}:8888" \
+            -e HTTPS_PROXY="http://${PROXY_IP}:8888" \
+            -v "${{ github.workspace }}/source:/workspace:rw" \
+            -w /workspace \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --pids-limit=512 --memory=2g --cpus=2 \
+            node:24.21.0-slim \
+            sh -c "npm ci --no-audit --no-fund --loglevel=warn && npm run build --loglevel=warn"
+
+      - name: Tear down isolated build network/proxy
+        if: always()
+        run: |
+          docker rm -f lws-preview-build-proxy || true
+          docker network rm lws-preview-build-net || true
+
+      - name: Publish dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.event.inputs.lease_id }}
+          path: source/dist
+          retention-days: 1
+
+  upload:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout platform upload client without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          path: platform
+          persist-credentials: false
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.event.inputs.lease_id }}
+          path: dist
+
+      # Reuses the real, tested manifest validator/finalizer logic from
+      # supabase/functions/_shared/website-project-preview-artifact-manifest.ts
+      # and website-project-preview-async-build.ts via a small Deno CLI
+      # entry point - not duplicated here.
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.5"
+
+      - name: Validate manifest, upload raw assets, and workflow-finalize
+        run: deno run --allow-env --allow-net --allow-read platform/scripts/website-project-preview-upload.ts
+        env:
+          LWS_PREVIEW_ARTIFACT_ENDPOINT: ${{ vars.LWS_PREVIEW_ARTIFACT_ENDPOINT }}
+          LWS_PREVIEW_OIDC_AUDIENCE: ${{ vars.LWS_PREVIEW_OIDC_AUDIENCE }}
+          LWS_PREVIEW_DIST_ROOT: ${{ github.workspace }}/dist
+          LWS_PREVIEW_LEASE_ID: ${{ github.event.inputs.lease_id }}
+          LWS_PREVIEW_BUILD_ID: ${{ github.event.inputs.build_id }}
+          LWS_PREVIEW_REPOSITORY_ID: ${{ github.event.inputs.repository_id }}
+          LWS_PREVIEW_COMMIT_SHA: ${{ github.event.inputs.commit_sha }}

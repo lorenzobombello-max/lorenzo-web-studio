@@ -31,6 +31,9 @@ import {
 import {
   mountWebsiteProjectFilesTree,
 } from "./operator-website-project-files.mjs?v=20260919-project-files-tree-r1";
+import {
+  createPreviewBuildController,
+} from "./operator-website-preview-build.mjs?v=20260923-async-preview-r1";
 
 const WEBSITE_CHILD_ROLES = new Set([
   "owner",
@@ -49,7 +52,7 @@ function websiteProjectPreviewRequest(quoteRequestId, expectedCommitSha) {
     throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_REQUEST");
   }
   return Object.freeze({
-    action: "build_website_project_preview",
+    action: "request_website_project_preview_build",
     quote_request_id: quoteRequestId,
     expected_commit_sha: expectedCommitSha,
     idempotency_key: crypto.randomUUID(),
@@ -57,7 +60,8 @@ function websiteProjectPreviewRequest(quoteRequestId, expectedCommitSha) {
 }
 
 async function websiteProjectPreviewGateway(client, request) {
-  if (request?.action !== "build_website_project_preview") {
+  if (!["request_website_project_preview_build", "get_website_project_preview_build_status",
+    "create_website_project_preview_session"].includes(request?.action)) {
     throw new Error("WEBSITE_PROJECT_PREVIEW_ACTION_NOT_ALLOWED");
   }
   const response = await client.functions.invoke("commercial-operator-command", {
@@ -75,11 +79,7 @@ async function websiteProjectPreviewGateway(client, request) {
     throw Object.assign(new Error(code), { code, status });
   }
   const result = response?.data?.result;
-  if (!result || result.contract_version !== 1
-    || result.snapshot?.commit_sha !== request.expected_commit_sha
-    || result.build?.status !== "PASS"
-    || typeof result.preview?.signed_url !== "string"
-    || !result.preview.signed_url.startsWith("https://")) {
+  if (!result || typeof result !== "object") {
     throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
   }
   return Object.freeze(structuredClone(result));
@@ -474,6 +474,32 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let repositoryRetryAuthorityEligible = false;
   let repositoryRecoveryPending = false;
   let repositoryRecoveryAuthorityEligible = false;
+  const previewController = createPreviewBuildController({
+    startBuild: async (input) => {
+      const result = await websiteProjectPreviewGateway(client, input);
+      if (typeof result.lease_id !== "string") {
+        throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
+      }
+      return { leaseId: result.lease_id };
+    },
+    getBuildStatus: async (leaseId) => {
+      const result = await websiteProjectPreviewGateway(client, {
+        action: "get_website_project_preview_build_status",
+        lease_id: leaseId,
+      });
+      if (typeof result.status !== "string") {
+        throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
+      }
+      return {
+        status: result.status,
+        previewBuildId: result.preview_build_id ?? null,
+      };
+    },
+    onStateChange: (state) => {
+      if (disposed) return;
+      workspace.querySelector("[data-website-message]").textContent = state.label;
+    },
+  });
 
   async function buildPreview() {
     const commitSha = projectFiles.currentCommitSha()
@@ -488,14 +514,22 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     message.textContent = "Preview wordt gebouwd.";
     try {
       await options.requireAal2();
-      const result = await websiteProjectPreviewGateway(client,
-        websiteProjectPreviewRequest(
-          currentSnapshot.context.quoteRequestId,
-          commitSha,
-        ));
-      open.href = result.preview.signed_url;
+      const result = await previewController.start(websiteProjectPreviewRequest(
+        currentSnapshot.context.quoteRequestId,
+        commitSha,
+      ));
+      if (!["PASS", "PASS_WITH_WARNINGS"].includes(result.status)
+        || typeof result.previewBuildId !== "string") return false;
+      const session = await websiteProjectPreviewGateway(client, {
+        action: "create_website_project_preview_session",
+        preview_build_id: result.previewBuildId,
+      });
+      if (typeof session.handoff_url !== "string"
+        || !session.handoff_url.startsWith("https://")) {
+        throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
+      }
+      open.href = session.handoff_url;
       open.hidden = false;
-      message.textContent = "Preview is gereed voor de opgeslagen commit.";
       return true;
     } catch (error) {
       open.hidden = true;
@@ -1024,6 +1058,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     dispose() {
       if (disposed) return;
       disposed = true;
+      previewController.cancel();
       refreshGeneration.dispose();
       autoRefresh.dispose();
       workspace.removeEventListener("click", click);

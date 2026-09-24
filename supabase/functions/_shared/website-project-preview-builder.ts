@@ -3,15 +3,15 @@ import type {
   WebsiteProjectFilesProvider,
 } from "./website-project-files-provider.ts";
 import { inspectWebsiteProjectFile } from "./website-project-files-policy.ts";
+import {
+  sanitizeStaticPreviewHtml,
+  sha256Hex,
+} from "./website-project-preview-sanitizer.ts";
 
 const SHA = /^[0-9a-f]{40}$/;
 
 const PREVIEW_BUCKET = "website-project-previews";
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 300;
-
-const DANGEROUS_PATTERN = /<iframe\b|<object\b|<embed\b|<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?|<base\b|javascript\s*:/iu;
-const INLINE_HANDLER_PATTERN = /\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu;
-const SCRIPT_TAG_PATTERN = /<script\b[^>]*>[\s\S]*?<\/script\s*>|<script\b[^>]*\/\s*>/giu;
 
 export type WebsiteProjectPreviewBuildResult = Readonly<{
   contract_version: 1;
@@ -78,30 +78,6 @@ export class WebsiteProjectPreviewBuilderError extends Error {
 
 function fail(code: string): never {
   throw new WebsiteProjectPreviewBuilderError(code);
-}
-
-function sanitizeStaticPreviewHtml(content: string): string {
-  if (typeof content !== "string" || content.length < 1) {
-    return fail("PREVIEW_MARKUP_INVALID");
-  }
-  if (DANGEROUS_PATTERN.test(content)) {
-    return fail("PREVIEW_MARKUP_UNSAFE");
-  }
-  const withoutScripts = content.replaceAll(SCRIPT_TAG_PATTERN, "");
-  const withoutInlineHandlers = withoutScripts.replaceAll(
-    INLINE_HANDLER_PATTERN,
-    "",
-  );
-  return withoutInlineHandlers;
-}
-
-function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const buffer = Uint8Array.from(bytes).buffer;
-  return crypto.subtle.digest("SHA-256", buffer).then((digest) =>
-    [...new Uint8Array(digest)].map((byte) =>
-      byte.toString(16).padStart(2, "0")
-    ).join("")
-  );
 }
 
 function objectPath(

@@ -102,6 +102,11 @@ function dependencies(
       return {};
     },
     executeApplicationAction: async () => ({}),
+    executeWebsiteProjectDirectoryList: async () => ({ entries: [] }),
+    executeWebsiteProjectFileRead: async () => ({ file: {} }),
+    executeWebsiteProjectFileSave: async () => ({ file: {} }),
+    executeWebsiteProjectPreviewBuild: async () => ({ build: {} }),
+    executeWebsiteProjectPreviewControl: async () => ({ accepted: true }),
     consumeRateLimit: async () => ({ allowed: true, retry_after_seconds: 0 }),
     executeCommand: async () => ({}),
   };

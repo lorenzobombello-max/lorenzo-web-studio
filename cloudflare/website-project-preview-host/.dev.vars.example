@@ -1,0 +1,4 @@
+# Generate one random value at execution time and configure the identical value
+# as an encrypted Pages secret and a Supabase preview-origin secret.
+# Never commit the generated value.
+LWS_PREVIEW_ORIGIN_TOKEN=
