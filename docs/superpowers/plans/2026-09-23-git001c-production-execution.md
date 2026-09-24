@@ -1,6 +1,6 @@
 # GIT-001C Production Execution Runbook
 
-Status: **GATES 1-4 EXECUTED; GATE 5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
+Status: **GATES 1-4 EXECUTED; GATE 5 BLOCKED BEFORE MUTATION ON MISSING REMOTE WORKFLOW**. GIT-001C remains **OPEN** until live acceptance is proven.
 
 ## Fixed authority
 
@@ -115,6 +115,8 @@ Acceptance: managed TLS is active; pages.dev redirects; custom host without a se
 Rollback: remove only the OVH `preview` CNAME and Pages custom-domain association, revoke preview sessions and keep apex, `www`, MX/TXT, nameservers, Supabase Auth and unrelated redirect/domain behavior unchanged.
 
 ### Gate 5: publish workflow bindings and one controlled dispatch
+
+Preflight outcome 2026-09-24: **HARD STOP BEFORE MUTATION**. The exact platform repository and remote `main` SHA `ededdd6043c3ad749a1faf9a3993221c24fc3971` are verified, but remote `main` does not contain the preview workflow introduced locally at `35fbb65730966430d16432f8dea8ded8f655f474`. The branch is 19 commits ahead. The three required preview Actions-variables are absent and there are zero remote runs for the preview workflow path. Customer repository ID `1378797607`, exact commit and dossier binding are unchanged; all Supabase authority bindings match by digest; production has zero active previewleases/builds/tokens/upload/viewer sessions. Because publication requires a push/merge excluded from this execution, no variables, AAL2 authority or dispatch were created. Resume only after separate publication authorization and repeat this preflight before the one allowed run.
 
 Dependencies: Gates 1-4 accepted. Add exactly the three repository variables from the table, publish the reviewed workflow on `main`, confirm `workflow_dispatch` is its only trigger, then acquire one AAL2 lease/build authority. Dispatch once with the exact server-returned lease/build IDs, customer repository ID `1378797607` and commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`.
 

@@ -361,6 +361,15 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - Pas na deze checks is exact `LWS_PREVIEW_HOST_URL=https://preview.lorenzowebsolutions.be` gezet en provider-side via SHA-256-digest geverifieerd. Supabase heeft de bestaande `commercial-operator-command` runtime daardoor automatisch van versie 136 naar `137` ververst; status blijft `ACTIVE`, `verify_jwt=false` en bundle SHA-256 blijft exact `61df1e61776cb8656bb4908166d5b05bbcf9683a19bf1d499d3bbc952a2bb516`, dus er was geen bronredeploy. De live operatorgrens blijft `401 AUTHENTICATION_REQUIRED`.
 - Gate 4 is voor DNS/domain/TLS/hostconfiguratie geaccepteerd. Positieve one-time handoff/replay, host-only cookie en HTML/CSS/image-navigatie zijn nog niet uitvoerbaar zonder een geautoriseerde previewbuild en blijven onderdeel van de integrale Gate-5/liveacceptatie. Dossier-0006 blijft repository ID `1378797607`, node `R_kgDOUi7IJw`, commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`, revision 1, `REPOSITORY_READY/BOUND`. Geen workflowpublicatie/dispatch, push, merge, nieuw Pages-project/repository of Auth/AAL2-wijziging is uitgevoerd. **GIT-001C blijft OPEN**.
 
+### Gate 5 preflight en publicatieblokkade 2026-09-24
+
+- Gate 5 hervatte vanaf schone commit `dd6adcb741f91600e47b2173fa2bf52a559c693d`; Gates 1-4 zijn niet herhaald. Platformrepository `lorenzobombello-max/lorenzo-web-studio` is actueel ID `1320223175`, default branch `main`, remote SHA `ededdd6043c3ad749a1faf9a3993221c24fc3971` via GitHub API én gittransport.
+- De reviewed lokale workflow `.github/workflows/build-website-project-preview.yml` is toegevoegd in commit `35fbb65730966430d16432f8dea8ded8f655f474` en de lokale workflowcontracttest is 3/3 groen voor `workflow_dispatch`-only, exacte checkout en gescheiden credentials. Remote `main` bevat dit pad echter niet; de huidige branch staat 19 commits voor op remote `main`.
+- Geauthenticeerde GitHub-readback toont nul remote previewworkflows en nul runs voor dit workflowpad. De repository bevat alleen de bestaande Actions-variables `LWS_SUPABASE_PROJECT_REF` en `LWS_SUPABASE_PUBLISHABLE_KEY`; `LWS_PREVIEW_SOURCE_TOKEN_ENDPOINT`, `LWS_PREVIEW_ARTIFACT_ENDPOINT` en `LWS_PREVIEW_OIDC_AUDIENCE` ontbreken.
+- Customerrepository `lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b` blijft ID `1378797607`, default branch `main`, en broncommit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48` bestaat exact. De productie-dossierbinding blijft revision 1, `REPOSITORY_READY/BOUND` met node `R_kgDOUi7IJw`. Alle zes niet-geheime Supabase workflow/hostbindings matchen het releasecontract via digest.
+- Productie bevat acht historische, vrijgegeven previewleases en exact nul actieve leases, builds, artifacttokens, uploadsessions of viewersessions. Er is geen AAL2-authority aangevraagd en geen dispatch uitgevoerd; daarom bestaat geen Gate-5-run-ID.
+- **HARD STOP vóór eerste Gate-5-mutatie:** het publiceren van de reviewed workflow/ref op remote `main` vereist een push/merge, expliciet uitgesloten in deze opdracht. Er zijn daarom ook geen Actions-variables gezet. Eerst moet een afzonderlijk geautoriseerde publicatie de reviewed workflow op `main` brengen; daarna moet de volledige preflight opnieuw workflow/ref/trigger/variables en nul bestaande previewruns verifiëren vóór maximaal één authority-acquire en dispatch. **GIT-001C blijft OPEN**.
+
 ## Gerichte codebeoordeling 2026-09-23
 
 - Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
@@ -375,6 +384,6 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - Branch: `git001c-astro-preview-build-20260922`
 - HEAD bij hervatting van deze preflight: `2e5fdb80c0a40018cd48747b5897639ad8ec7170`
 - Historische autoriteit: `C:\Users\info\.copilot\session-state\ab268b4e-f133-426c-8bf5-8e96610acbe3\checkpoints\009-git001c-astro-preview-build-plan.md`
-- Volgend hervatpunt: voer Gate 5 uitsluitend na afzonderlijke autorisatie uit: publiceer de reviewed workflowbindings/workflow, acquire één AAL2-autoriteit en dispatch exact één dossier-0006-run. Leg daarna one-time handoff/replay, cookie, private Storage en HTML/CSS/image-navigatie vast.
+- Volgend hervatpunt: publiceer uitsluitend na afzonderlijke push/merge-autorisatie de reviewed workflow op remote `main`. Verifieer daarna opnieuw exact ref/trigger, zet de drie Actions-variables, controleer nul bestaande previewruns en acquire/dispatch vervolgens maximaal één dossier-0006-run.
 
 Daarom blijft **GIT-001C OPEN**.
