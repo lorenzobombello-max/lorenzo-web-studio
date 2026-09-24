@@ -1,6 +1,6 @@
 # GIT-001C Production Execution Runbook
 
-Status: **GATES 1-3 EXECUTED; GATE 4 DOMAIN ASSOCIATED BUT BLOCKED ON OVH CNAME; GATE 5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
+Status: **GATES 1-4 EXECUTED; GATE 5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
 
 ## Fixed authority
 
@@ -106,7 +106,7 @@ Rollback: delete only the failed Pages deployment and its project secret if nece
 
 ### Gate 4: custom domain, one OVH CNAME and host URL
 
-Outcome 2026-09-24: **PARTIALLY EXECUTED; HARD STOP AT OVH DNS**. Public preflight found no conflicting `preview` record and no apex CAA restriction while nameservers, apex, `www`, MX and TXT remained unchanged. The custom hostname was associated only with existing Pages project ID `56ba0651-2499-4b40-b3f7-ad2b690dfa3c`; Cloudflare now reports `pending/pending`. OVH API credentials and an authenticated dashboard session were unavailable, so no DNS write was attempted. Add exactly `preview CNAME lws-website-project-preview-host.pages.dev.` in OVH, then resume the acceptance sequence. Until DNS, active status and TLS pass, do not set `LWS_PREVIEW_HOST_URL`; it remains absent. Gate 5 remains untouched.
+Outcome 2026-09-24: **ACCEPTED AND EXECUTED**. Public preflight found no conflicting `preview` record and no apex CAA restriction while nameservers, apex, `www`, MX and TXT remained unchanged. The existing Pages association is `active/active`; Lorenzo added exactly `preview CNAME lws-website-project-preview-host.pages.dev.` in OVH. Both authoritative OVH servers and Cloudflare/Google public resolvers return that target with TTL 3600. TLS 1.3 has a valid chain and matching hostname through `2026-12-23T04:44:20Z`. The custom host returns unauthenticated `401 PREVIEW_SESSION_REQUIRED` with `private, no-store`, proving Pages-to-origin coupling; production and immutable pages.dev still redirect and direct origin remains 403. Only afterward was the exact host URL binding set and digest-verified. The existing operator runtime auto-refreshed to active version 137 with unchanged bundle digest. Positive handoff/replay, cookie and asset navigation remain required in integral Gate-5 acceptance. Gate 5 remains untouched.
 
 Dependencies: Gate 3 accepted; public `preview.lorenzowebsolutions.be` still NXDOMAIN; apex CAA is absent or permits Cloudflare issuance. Associate the custom domain in Pages first. Only after Cloudflare reports the expected validation target, add OVH CNAME `preview` to `lws-website-project-preview-host.pages.dev`.
 
