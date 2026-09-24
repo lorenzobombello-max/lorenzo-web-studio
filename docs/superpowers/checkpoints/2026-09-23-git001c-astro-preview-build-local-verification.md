@@ -351,6 +351,14 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - Live geven zowel `https://lws-website-project-preview-host.pages.dev/about/?gate=3` als de immutable deploymenthost exact `308` naar `https://preview.lorenzowebsolutions.be/about/?gate=3`, met `cache-control: private, no-store`. Direct originverkeer zonder purpose-token blijft `403 PREVIEW_ORIGIN_FORBIDDEN`, eveneens `private, no-store`. Custom domains blijven 0, preview-DNS blijft `NXDOMAIN` met nul CNAME-antwoorden en de bestaande Worker blijft ongewijzigd.
 - Dossier-0006 blijft exact repository ID `1378797607`, node `R_kgDOUi7IJw`, commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`, revision 1, `REPOSITORY_READY/BOUND`. Er is geen Pages-project aangemaakt, geen custom domain/DNS, `LWS_PREVIEW_HOST_URL`, workflowpublicatie/dispatch, push, merge of Auth/AAL2-wijziging uitgevoerd. Gate 3 is geaccepteerd; Gate 4 blijft afzonderlijk geblokkeerd op expliciete autorisatie voor custom-domainassociatie, één OVH CNAME, TLS-acceptatie en pas daarna de host-URL-binding. **GIT-001C blijft OPEN**.
 
+### Gate 4 custom-domainvoorbereiding 2026-09-24
+
+- Gate 4 hervatte exact vanaf schone commit `e59f3e4393932f7cf27b7671cff793bbd305d622`; Gate 1-3 zijn niet herhaald. De publieke DNS-snapshot bevestigde authoritative nameservers `dns106.ovh.net` en `ns106.ovh.net`, ongewijzigde apex-A-records naar GitHub Pages, `www` als CNAME naar `lorenzobombello-max.github.io`, ongewijzigde OVH MX-records en apex-TXT-records. Apex-CAA is afwezig. `preview.lorenzowebsolutions.be` was voor NS/A/AAAA/CNAME/MX/TXT/CAA volledig `NXDOMAIN`, dus er bestond geen conflicterend record.
+- `preview.lorenzowebsolutions.be` is om `2026-09-24T04:32:35.8606760Z` uitsluitend aan bestaand Pages-project ID `56ba0651-2499-4b40-b3f7-ad2b690dfa3c` gekoppeld. Cloudflare rapporteert domainstatus `pending` en verificationstatus `pending`, in afwachting van DNS.
+- OVH API-credentials ontbreken lokaal en de beschikbare OVH-browser opent het loginformulier; er is daarom geen DNS-record geschreven en niets blind overschreven. Vereiste handmatige handeling: voeg in de bestaande OVH-zone `lorenzowebsolutions.be` exact één `CNAME` toe met subdomain `preview` en target `lws-website-project-preview-host.pages.dev.`; wijzig geen ander record.
+- Na associatie blijft publieke DNS status 3/NXDOMAIN met nul CNAME-antwoorden. Daarom zijn actieve domeinstatus en HTTPS/TLS nog niet aantoonbaar en blijft `LWS_PREVIEW_HOST_URL` provider-side afwezig. Pages.dev blijft `308` naar het custom hostpad sturen en directe origin blijft `403 PREVIEW_ORIGIN_FORBIDDEN`; dit bewaart de beveiligingsgrenzen maar bewijst de Pages-origin-tokenkoppeling nog niet.
+- **HARD STOP vóór Gate-4-acceptatie:** wacht op de ene OVH-CNAME, verifieer daarna DNS, Cloudflare active status en geldig HTTPS/TLS, en vereis via het custom host `401 PREVIEW_SESSION_REQUIRED` met `private, no-store`. Zet pas daarna `LWS_PREVIEW_HOST_URL=https://preview.lorenzowebsolutions.be`. Geen workflowpublicatie/dispatch, push, merge, nieuw Pages-project/repository of wijziging aan dossier-0006 is uitgevoerd. **GIT-001C blijft OPEN**.
+
 ## Gerichte codebeoordeling 2026-09-23
 
 - Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
@@ -365,6 +373,6 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - Branch: `git001c-astro-preview-build-20260922`
 - HEAD bij hervatting van deze preflight: `2e5fdb80c0a40018cd48747b5897639ad8ec7170`
 - Historische autoriteit: `C:\Users\info\.copilot\session-state\ab268b4e-f133-426c-8bf5-8e96610acbe3\checkpoints\009-git001c-astro-preview-build-plan.md`
-- Volgend hervatpunt: voer alleen na afzonderlijke productieautorisatie Gate 4 uit: associeer `preview.lorenzowebsolutions.be` aan het bestaande Pages-project, voeg exact één OVH CNAME toe, accepteer managed TLS en zet pas daarna `LWS_PREVIEW_HOST_URL`. Workflowpublicatie en live dispatch blijven Gate 5.
+- Volgend hervatpunt: nadat handmatig in OVH exact `preview CNAME lws-website-project-preview-host.pages.dev.` is toegevoegd, verifieer publieke DNS, Pages-domainstatus en TLS; bewijs vervolgens custom-host `401 PREVIEW_SESSION_REQUIRED` en zet pas daarna `LWS_PREVIEW_HOST_URL`. Workflowpublicatie en live dispatch blijven Gate 5.
 
 Daarom blijft **GIT-001C OPEN**.
