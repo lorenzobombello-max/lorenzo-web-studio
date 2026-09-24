@@ -1,6 +1,6 @@
 # GIT-001C Production Execution Runbook
 
-Status: **PREPARED, NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
+Status: **GATE 1 EXECUTED; GATES 2-5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
 
 ## Fixed authority
 
@@ -38,6 +38,8 @@ Secret values never enter this runbook, git, shell history or Wrangler `vars`. P
 ## Ordered production gates
 
 ### Gate 1: recovery checkpoint and additive migrations
+
+Outcome 2026-09-24: **ACCEPTED AND EXECUTED** from exact clean HEAD `aaad95da5969b15f7bba5e3f9aee2fb1435e40db`. With no newer providerbackup and PITR off, the physical baseline was supplemented by checksummed, ignored schema/data exports for `auth,storage,public,lws_internal` plus an explicit isolated-restore procedure. All eight existing previewleases were released, the previewbucket contained zero objects, and current auth state was exported without assigning a cause to the observed `auth.users` change. The guarded script applied all seven migrations in order; focused verification found all seven ledger entries and zero pending migrations. The command below is retained as historical procedure only: always resolve the then-current reviewed HEAD and provider recovery evidence instead of reusing these values.
 
 Dependencies: reviewed exact HEAD; clean worktree; fresh completed backup recorded; PITR-off risk accepted; remote pending set exactly the seven contract migrations. Preflight is read-only:
 

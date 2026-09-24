@@ -322,6 +322,16 @@ Het zware exacte-source-, concurrency-, uploadsession-, Linux-manifest- en opera
 
 Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeurde gelijkwaardige herstelmogelijkheid die de post-backupwijzigingen dekt. Herhaal daarna de volledige read-only preflight en wijzigingen-sinds-backupbeoordeling; gebruik nooit automatisch backup `1759100262` omdat deze in een historisch commando staat.
 
+### Recoveryafhandeling en migratie-uitvoering 2026-09-24
+
+- Een eenmalige nieuwe providercheck vond geen nieuwere voltooide backup. Backup `1759100262` bleef de fysieke baseline met PITR `OFF`.
+- De zeven migraties zijn object voor object beoordeeld. Ze maken vijf previewtabellen en nieuwe RPC's/indexen/triggers, vervangen previewspecifieke functies en twee constraints, wijzigen de bestaande bucketrij `website-project-previews`, vullen `authorized_build_id` op acht bestaande previewleases en voegen `handoff_consumed_at` toe. Alle acht leases waren al released, er waren nul previewbuilds, nul actieve leases en nul objecten/nul bytes in de previewbucket.
+- Aanvullende supported recoverydekking is lokaal en git-ignored vastgelegd onder `.local-backups/git001c/2026-09-24-pre-migrations/`: `schema.sql` voor `auth,storage,public,lws_internal` (SHA-256 `8549e9aad7a81bb12efb920a9ec3d5a6effb79b4750583d7056a84f7e5971937`) en één intern consistente `data.sql`-snapshot voor dezelfde vier schema's (SHA-256 `99c1bee423186d4c0cb686ab8129862a3fec233470b15f1af464da9ef6f46f14`). Het recoverymanifest vereist restore naar een geïsoleerde omgeving en een gecontroleerde vergelijking/repair; nooit een blinde productie-import. De volledige actuele authscope is meegenomen zonder de wijziging in `auth.users` als login of tokenrefresh te classificeren.
+- De eerdere drie documentwijzigingen zijn vóór de clean-worktree gate vastgelegd als commit `aaad95da5969b15f7bba5e3f9aee2fb1435e40db` (`docs: record GIT-001C recovery gate`). Dit was de daadwerkelijk gebruikte `ExpectedHead`; de oudere `284fc48b30660bf4aeea40e113292af2ecd1581f` is niet hergebruikt.
+- Het guarded script heeft vanaf die schone HEAD exact `20260922180000`, `20260923060000`, `20260923070000`, `20260923080000`, `20260923100000`, `20260923110000` en `20260923120000` in volgorde toegepast en rapporteerde `GIT001C_MIGRATIONS_APPLIED=PASS`.
+- Post-apply verificatie: alle zeven remote ledgerregels bestaan; `supabase db push --linked --dry-run` geeft `upToDate=true` en nul pending; vijf nieuwe tabellen, twee triggers en twee vervangen constraints bestaan; alle acht leases hebben een unieke niet-null `authorized_build_id`; veertien RPC-signatures bestaan; grants zijn exact drie voor `authenticated` en elf voor `service_role`; de bucket heeft de bedoelde 5 MiB-limiet/MIME-lijst en nog steeds nul objecten. De releasecontracttest is 1/1 groen.
+- Geen functies, secrets, Pages, custom domain, DNS, workflowdispatch, push of merge zijn uitgevoerd. Worker, klantrepository en `NO_SECOND_CREATE` blijven ongewijzigd. Gate 1 is geaccepteerd; Gate 2 blijft de eerstvolgende afzonderlijke productiepoort en **GIT-001C blijft OPEN**.
+
 ## Gerichte codebeoordeling 2026-09-23
 
 - Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
