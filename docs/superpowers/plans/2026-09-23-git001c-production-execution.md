@@ -1,6 +1,6 @@
 # GIT-001C Production Execution Runbook
 
-Status: **GATE 1 EXECUTED; GATES 2-5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
+Status: **GATES 1-2 EXECUTED; GATES 3-5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
 
 ## Fixed authority
 
@@ -68,7 +68,9 @@ Rollback: stop before function deployment. Do not mark migrations manually. Beca
 
 ### Gate 2: Supabase bindings and three functions, workflow still absent
 
-Dependencies: Gate 1 accepted. Create the local ignored env file with the six workflow bindings plus `LWS_PREVIEW_ORIGIN_TOKEN`; retain existing App secret values without reading or rewriting them.
+Outcome 2026-09-24: **ACCEPTED AND EXECUTED** from clean evidence HEAD `305b1a28329d0a29f994482538892325876fc0eb`. Exactly the five workflow/OIDC bindings below plus `LWS_PREVIEW_ORIGIN_TOKEN` were set; `LWS_PREVIEW_HOST_URL` remains absent until Gate 4. The three contracted functions are active at version 1 with provider bundle digests recorded in the checkpoint. Live unauthenticated probes returned the required 403/401/403 fail-closed responses. No valid token issue/upload/session/browser flow was attempted, so this is not functional liveacceptance. Workflow, Pages and DNS remained untouched.
+
+Dependencies: Gate 1 accepted. Create the local ignored env file with the five workflow/OIDC bindings plus `LWS_PREVIEW_ORIGIN_TOKEN`; retain existing App secret values without reading or rewriting them.
 
 ```powershell
 npx supabase secrets set --project-ref xcsptvntvrizwhskaphr --env-file .local-backups/git001c/preview-supabase.env
