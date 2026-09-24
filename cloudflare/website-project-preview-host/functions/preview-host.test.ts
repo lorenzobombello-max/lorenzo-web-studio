@@ -44,6 +44,7 @@ Deno.test("Pages preview redirects pages.dev and never forwards the origin secre
   );
   assertEquals(response.status, 308);
   assertEquals(response.headers.get("location"), "https://preview.lorenzowebsolutions.be/about/?x=1");
+  assertEquals(response.headers.get("cache-control"), "private, no-store");
   assertEquals(response.headers.get("x-lws-preview-origin-token"), null);
   assertEquals(calls, 0);
 });

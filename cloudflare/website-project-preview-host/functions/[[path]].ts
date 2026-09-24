@@ -19,7 +19,13 @@ export async function handlePagesPreviewRequest(
 ): Promise<Response> {
   const incoming = new URL(request.url);
   if (incoming.hostname !== PUBLIC_HOST) {
-    return Response.redirect(`https://${PUBLIC_HOST}${incoming.pathname}${incoming.search}`, 308);
+    return new Response(null, {
+      status: 308,
+      headers: {
+        "cache-control": "private, no-store",
+        location: `https://${PUBLIC_HOST}${incoming.pathname}${incoming.search}`,
+      },
+    });
   }
 
   let origin: URL;
