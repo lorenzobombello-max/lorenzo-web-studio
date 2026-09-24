@@ -5,11 +5,6 @@
   "vars": {
     "LWS_PREVIEW_ORIGIN_URL": "https://xcsptvntvrizwhskaphr.supabase.co/functions/v1/website-project-preview-host"
   },
-  "secrets": {
-    "required": [
-      "LWS_PREVIEW_ORIGIN_TOKEN"
-    ]
-  },
   "limits": {
     "cpu_ms": 50
   }

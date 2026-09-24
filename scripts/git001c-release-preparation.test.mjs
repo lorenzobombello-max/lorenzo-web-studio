@@ -5,6 +5,10 @@ import test from "node:test";
 const contractPath = new URL("../.release/git001c-preview-release.json", import.meta.url);
 const runbookPath = new URL("../docs/superpowers/plans/2026-09-23-git001c-production-execution.md", import.meta.url);
 const scriptPath = new URL("./invoke-git001c-preview-release.ps1", import.meta.url);
+const pagesConfigPaths = [
+  new URL("../cloudflare/website-project-preview-host/wrangler.jsonc", import.meta.url),
+  new URL("../cloudflare/website-project-preview-host/wrangler.example.jsonc", import.meta.url),
+];
 
 const expectedMigrations = [
   "20260922180000",
@@ -17,10 +21,11 @@ const expectedMigrations = [
 ];
 
 test("GIT-001C release preparation is exact, value-free, and fail-closed", async () => {
-  const [contractSource, runbook, script] = await Promise.all([
+  const [contractSource, runbook, script, ...pagesConfigSources] = await Promise.all([
     readFile(contractPath, "utf8"),
     readFile(runbookPath, "utf8"),
     readFile(scriptPath, "utf8"),
+    ...pagesConfigPaths.map((path) => readFile(path, "utf8")),
   ]);
   const contract = JSON.parse(contractSource);
 
@@ -50,6 +55,18 @@ test("GIT-001C release preparation is exact, value-free, and fail-closed", async
   assert.equal(contract.cloudflare.customHostname, "preview.lorenzowebsolutions.be");
   assert.equal(contract.cloudflare.pagesDevPolicy, "REDIRECT_BEFORE_ORIGIN");
   assert.equal(contract.secretsContainValues, false);
+
+  for (const source of pagesConfigSources) {
+    const config = JSON.parse(source);
+    assert.equal(config.name, contract.cloudflare.projectName);
+    assert.equal(config.pages_build_output_dir, "./public");
+    assert.equal(
+      config.vars.LWS_PREVIEW_ORIGIN_URL,
+      "https://xcsptvntvrizwhskaphr.supabase.co/functions/v1/website-project-preview-host",
+    );
+    assert.equal(config.secrets, undefined);
+    assert.doesNotMatch(source, /LWS_PREVIEW_ORIGIN_TOKEN/);
+  }
 
   assert.match(script, /ValidateSet\("Preflight", "ApplyMigrations"\)/);
   assert.match(script, /if \(\$Phase -eq "ApplyMigrations" -and -not \$Execute\)/);
