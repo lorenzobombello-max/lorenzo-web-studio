@@ -1,6 +1,6 @@
 # GIT-001C Production Execution Runbook
 
-Status: **GATES 1-2 EXECUTED; GATES 3-5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
+Status: **GATES 1-3 EXECUTED; GATES 4-5 NOT EXECUTED**. GIT-001C remains **OPEN** until live acceptance is proven.
 
 ## Fixed authority
 
@@ -84,6 +84,8 @@ Acceptance: function list contains exactly these three new slugs; direct origin 
 Rollback: remove or disable only the three new functions/bindings. Do not alter the GitHub App installation, existing functions, bucket data or customer repository.
 
 ### Gate 3: Pages secret and deployment without DNS
+
+Outcome 2026-09-24: **ACCEPTED AND EXECUTED**. Preflight found the exact existing empty project, no domains/secrets, DNS NXDOMAIN and the preserved Worker. The DPAPI-protected Gate 2 token was written in memory as the sole Pages secret. Wrangler `4.137.0` rejected the unsupported config `secrets` field before the first write; tested commit `b8df38f73617e47aba60ab2bbcec3c14455c17f8` removed it. Deployment `dff59da2-f14c-4f4a-8186-0cdeedff8467` then revealed that the live 308 lacked `cache-control` and was rejected. Tested replacement commit `c79a72a26c6a4d958f43bdbca56d3c4bdc869ac1` added `private, no-store`; latest production deployment `84b61c2c-9672-4ffc-adb7-15581a095eae` is successful from that clean SHA. Primary and immutable pages.dev URLs now redirect path/query before origin contact with the required cache policy; direct origin remains fail-closed. Domains remain empty and DNS remains NXDOMAIN.
 
 Dependencies: Gate 2 accepted; Pages project GET still returns ID `56ba0651-2499-4b40-b3f7-ad2b690dfa3c`, zero unexpected deployments/domains and account Worker `lorenzobombello-api-proxy` unchanged. Use the existing-project deploy route confirmed by Wrangler 4.137.0; never run project-create.
 
