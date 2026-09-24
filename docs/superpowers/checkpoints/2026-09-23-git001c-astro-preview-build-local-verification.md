@@ -1,8 +1,8 @@
 # GIT-001C Astro preview build - lokaal verificatiecheckpoint (§18 vervolg)
 
 Datum: 2026-09-23
-Status: **OPEN**
-Scope: uitsluitend lokale worktree en lokale Supabase; geen productie- of hostingactivatie.
+Status: **CLOSED - GATES 1-5 ACCEPTED**
+Scope: lokale verificatie plus de afzonderlijk geautoriseerde productie- en liveacceptatiegates.
 
 ## C1 - Operatorbesturing
 
@@ -381,6 +381,16 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - TDD: eerste RED was twee verkeerde downloads onder `previewBuildId`; tweede RED was HTTP 200 voor ontbrekend/ongeldig `storageBuildId`; keten-RED was HTTP 401 waar 200 verwacht werd vóór de resolvermigratie. GREEN: host/front-door 9/9, echte lokale acquire -> upload -> finalize -> released lease -> viewer handoff -> Pages/origin/private Storage 1/1 voor `index.html` en `assets/app.css`, inclusief exact resolver-ID, onveranderde grants `anon=f|authenticated=f|service_role=t` en 404 voor een ander build-ID; uploadsession-integratie PASS. Formatter, Deno-check en editordiagnostiek zijn schoon.
 - Publicatie blijft apart gated: review en commit/PR vanaf deze main-basis; daarna eerst uitsluitend de additieve migratie toepassen en verifiëren, vervolgens alleen `website-project-preview-host` deployen en negatieve origin/sessionchecks uitvoeren. Een nieuwe authority-acquire of previewdispatch vereist daarna afzonderlijke expliciete toestemming. Er is nu niets naar productie gemigreerd of gedeployed. **GIT-001C blijft OPEN**.
 
+### Storage-prefixpublicatie en positieve live vieweracceptatie 2026-09-24
+
+- PR `#58` publiceerde exact reviewed head `08c8ec79acf6c426aeaf0de8c0c8fa59b05b6568` en mergecommit `ad3219e7bcfa50bd08ac7c99b299f5cb06549935`. Alleen migratie `20260924100000_resolve_website_project_preview_storage_build_id_v1.sql` is toegepast en alleen `website-project-preview-host` is naar actieve versie 3 gedeployed; artifact- en source-tokenfuncties bleven op versie 2. De automatische Pages-run `35968492043` was volledig groen.
+- Server-side readback bevestigde dossier `LWS-AAN-2026-0006`, quote request `7458c346-dfc9-40f3-ad0e-cb94a16636bf`, workspace `fa057e1f-d03d-47cf-a595-317447734298`, repository ID `1378797607` en commit `1f19bf01c61c6da79fa4c7374333a91b70f9bf48`. Build `b93a0deb-48f3-4148-b39b-a39fab94b6ea` bleef `PASS_WITH_WARNINGS`, primair `index.html`, met zes manifestregels en 9.876 bytes. De vrijgegeven lease `4b6f635f-2b05-45fd-a7ed-cdab443f6bda` bleef gekoppeld aan immutable Storage-prefix `aa685956-91a6-4891-af75-e11c50560bc7`; daar stonden exact dezelfde zes objecten met manifestgelijke paden en groottes.
+- Vanuit de bestaande owner-AAL2-context is uitsluitend viewersessie `2b0207c3-73b6-40a2-896d-9033f80f87cb` voor de bestaande build aangemaakt. Uitgifte was `2026-09-24T07:26:12.694252Z`, normale handoffconsumptie `2026-09-24T07:26:13.295686Z`; de eerdere sessie `ba609d11-c855-406d-b9b6-0f66a874612f` bleef revoked en is niet hergebruikt. De normale handoff op `preview.lorenzowebsolutions.be` zette een host-only sessiecookie met `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`; `document.cookie` bleef leeg. Replay gaf `403 PREVIEW_HANDOFF_INVALID`, beide met `private, no-store`.
+- De echte browserroute, zonder responsevervanging, toonde titel `Baseline | A clear start for the web` en H1 `Make the important thing unmistakable.`. `Principles` navigeerde naar `#principles`; toegepaste body-CSS was `Newsreader, Georgia, serif`, achtergrond `rgb(243, 239, 229)` en tekst `rgb(23, 34, 28)`. Alle zes manifestpaden gaven HTTP 200, het exacte content type, `private, no-store`, de exacte bytegrootte en de exacte SHA-256 uit het manifest: `index.html`, `_astro/BaseLayout.C0eCDV63.css`, `404.html`, `robots.txt`, `sitemap-0.xml` en `sitemap-index.xml`.
+- Securitygrenzen bleven dicht: custom host zonder cookie `401 PREVIEW_SESSION_REQUIRED`; directe Supabase-origin zonder purpose-token `403 PREVIEW_ORIGIN_FORBIDDEN`; `lws-website-project-preview-host.pages.dev/acceptance?case=git001c` gaf pad/query-behoudend `308`; een sessiegebonden build-ID-pad gaf `404 PREVIEW_ASSET_NOT_FOUND`. Iedere response was `private, no-store`. Omdat host v3 uitsluitend het server-resolved `storageBuildId` gebruikt, geen fallback heeft, de preview-buildprefix leeg is en alle zes objecten alleen onder `aa685956.../` bestaan, bewijst de succesvolle hashgelijke serving de runtime resolvermapping naar die canonical prefix. Een directe service-RPC-readback was niet beschikbaar omdat legacy keys disabled zijn en de CLI de nieuwe secret key alleen gemaskeerd retourneert; er is geen grant of debugoppervlak verruimd.
+- De immutable build bevat geen image-artifact of imageverwijzing. De generieke runbookregel `HTML/CSS/image paths work` is daarom voor image niet van toepassing, niet onbewezen: alle zes werkelijk aanwezige manifestartifacts zijn volledig geverifieerd. Post-readback bevestigde één ongewijzigde buildrij, één ongewijzigde lease, zes manifestregels en zes Storage-objecten. De Actions-API toont nog exact runs `35960635554` en `35965885425`; er ontstond geen nieuwe acquire, dispatch, build, Storage move of completed-buildmutatie.
+- Alle toepasselijke Gate-5- en viewercriteria zijn hiermee aantoonbaar voldaan. **Gate 5 is geaccepteerd en GIT-001C is CLOSED.**
+
 ## Gerichte codebeoordeling 2026-09-23
 
 - Onafhankelijke read-only review uitgevoerd door de `Explore`-subagent; bevindingen zijn vervolgens tegen de controlerende codepaden gevalideerd.
@@ -395,6 +405,6 @@ Hervat Task 5 alleen na een nieuw voltooid recoverypoint of expliciet goedgekeur
 - Branch: `git001c-astro-preview-build-20260922`
 - HEAD bij hervatting van deze preflight: `2e5fdb80c0a40018cd48747b5897639ad8ec7170`
 - Historische autoriteit: `C:\Users\info\.copilot\session-state\ab268b4e-f133-426c-8bf5-8e96610acbe3\checkpoints\009-git001c-astro-preview-build-plan.md`
-- Volgend hervatpunt: publiceer uitsluitend na afzonderlijke push/merge-autorisatie de reviewed workflow op remote `main`. Verifieer daarna opnieuw exact ref/trigger, zet de drie Actions-variables, controleer nul bestaande previewruns en acquire/dispatch vervolgens maximaal één dossier-0006-run.
+- Volgend hervatpunt: geen resterende GIT-001C-gate; vervolgwerk vereist een nieuwe, afzonderlijk begrensde opdracht.
 
-Daarom blijft **GIT-001C OPEN**.
+Daarom is **GIT-001C CLOSED**.
