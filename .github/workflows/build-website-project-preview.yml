@@ -157,7 +157,14 @@ jobs:
       - name: Run isolated npm ci + astro build
         run: |
           PROXY_IP=$(docker inspect lws-preview-build-proxy --format '{{(index .NetworkSettings.Networks "lws-preview-build-net").IPAddress}}')
+          BUILD_UID="$(stat -c '%u' "${{ github.workspace }}/source")"
+          BUILD_GID="$(stat -c '%g' "${{ github.workspace }}/source")"
+          if [ -z "$BUILD_UID" ] || [ -z "$BUILD_GID" ] || [ "$BUILD_UID" = "0" ] || [ "$BUILD_GID" = "0" ]; then
+            echo "HARD STOP - source artifact must be owned by a non-root build identity" >&2
+            exit 1
+          fi
           docker run --rm \
+            --user "${BUILD_UID}:${BUILD_GID}" \
             --network lws-preview-build-net \
             -e HOME=/tmp/home \
             -e npm_config_cache=/tmp/npm-cache \

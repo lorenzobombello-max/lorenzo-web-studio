@@ -37,6 +37,14 @@ test("installation credentials never cross into build or upload jobs", () => {
   assert.match(uploadJob, /id-token: write/);
 });
 
+test("isolated build uses the non-root owner of the writable source mount", () => {
+  assert.match(buildJob, /BUILD_UID="\$\(stat -c '%u' "\$\{\{ github\.workspace \}\}\/source"\)"/);
+  assert.match(buildJob, /BUILD_GID="\$\(stat -c '%g' "\$\{\{ github\.workspace \}\}\/source"\)"/);
+  assert.match(buildJob, /if \[ -z "\$BUILD_UID" \] \|\| \[ -z "\$BUILD_GID" \] \|\| \[ "\$BUILD_UID" = "0" \] \|\| \[ "\$BUILD_GID" = "0" \]/);
+  assert.match(buildJob, /--user "\$\{BUILD_UID\}:\$\{BUILD_GID\}"/);
+  assert.doesNotMatch(buildJob, /chmod|chown/);
+});
+
 test("workflow remains manual and preserves server-authorized lease and build inputs", () => {
   assert.match(workflow, /on:\s*\n\s+workflow_dispatch:/);
   assert.doesNotMatch(workflow, /\n\s+push:/);
