@@ -50,8 +50,9 @@ try {
   }
 
   $expectedMigrations = @($contract.supabase.migrations)
+  $expectedPendingMigrations = @($contract.supabase.pendingMigrations)
   $migrationFiles = @(Get-ChildItem supabase/migrations/*.sql |
-    Where-Object { $_.BaseName -match '^202609(22180000|23060000|23070000|23080000|23100000|23110000|23120000)_' } |
+    Where-Object { $_.BaseName -match '^202609(22180000|23060000|23070000|23080000|23100000|23110000|23120000|24100000)_' } |
     ForEach-Object { $_.BaseName.Substring(0, 14) })
   if (@(Compare-Object $expectedMigrations $migrationFiles).Count -ne 0) {
     throw "HARD STOP: local migration set differs from the release contract"
@@ -66,7 +67,7 @@ try {
   $pendingMigrations = @($migrationState.migrations |
     Where-Object { $_.local -and -not $_.remote } |
     ForEach-Object { [string]$_.local })
-  if (@(Compare-Object $expectedMigrations $pendingMigrations).Count -ne 0) {
+  if (@(Compare-Object $expectedPendingMigrations $pendingMigrations).Count -ne 0) {
     throw "HARD STOP: remote pending migration set differs from the reviewed contract"
   }
 

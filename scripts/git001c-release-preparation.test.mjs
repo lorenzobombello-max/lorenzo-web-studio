@@ -18,6 +18,7 @@ const expectedMigrations = [
   "20260923100000",
   "20260923110000",
   "20260923120000",
+  "20260924100000",
 ];
 
 test("GIT-001C release preparation is exact, value-free, and fail-closed", async () => {
@@ -31,6 +32,7 @@ test("GIT-001C release preparation is exact, value-free, and fail-closed", async
 
   assert.equal(contract.resumeFrom, "b4fc16e2e754a31b111408a8450376332e5f3a90");
   assert.deepEqual(contract.supabase.migrations, expectedMigrations);
+  assert.deepEqual(contract.supabase.pendingMigrations, ["20260924100000"]);
   assert.deepEqual(contract.supabase.functions, [
     "website-project-preview-artifact",
     "website-project-preview-source-token",
