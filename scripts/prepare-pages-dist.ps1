@@ -129,6 +129,7 @@ $requiredFiles = @(
   "assets/js/operator-shell.mjs",
   "assets/js/operator-website-execution.mjs",
   "assets/js/operator-website-execution-child.mjs",
+  "assets/js/operator-website-preview-build.mjs",
   "assets/js/operator-window-guard.mjs",
   "assets/js/operator-window-host.mjs",
   "assets/js/operator-workforce.mjs",

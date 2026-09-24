@@ -778,12 +778,13 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
   const token = "20260917-pre-project-workspace-r2";
   const managedToken = "20260922-preview-error-code-r1";
   const cssToken = "20260922-action-message-readable-r2";
-  const [windowPage, guard, registry, child, dossiers] = await Promise.all([
+  const [windowPage, guard, registry, child, dossiers, pagesArtifact] = await Promise.all([
     "operator/window/index.html",
     "assets/js/operator-window-guard.mjs",
     "assets/js/operator-module-registry.mjs",
     "assets/js/operator-website-execution-child.mjs",
     "assets/js/operator-dossiers.mjs",
+    "scripts/prepare-pages-dist.ps1",
   ].map(read));
   assert.equal(windowPage.includes(`operator-dashboard.css?v=${cssToken}`), true);
   assert.equal(windowPage.includes(`operator-window-guard.mjs?v=${managedToken}`), true);
@@ -791,6 +792,8 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
   assert.equal(registry.includes(`operator-website-execution-child.mjs?v=${managedToken}`), true);
   assert.equal(child.includes(`operator-website-execution.mjs?v=${token}`), true);
   assert.equal(child.includes(`operator-dossiers.mjs?v=${token}`), true);
+  assert.match(child, /operator-website-preview-build\.mjs\?v=20260923-async-preview-r1/);
+  assert.match(pagesArtifact, /"assets\/js\/operator-website-preview-build\.mjs"/);
   assert.equal(dossiers.includes(`operator-website-execution.mjs?v=${token}`), true);
   assert.doesNotMatch(
     registry,
