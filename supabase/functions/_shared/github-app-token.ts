@@ -1,6 +1,7 @@
 import type {
   GitHubAppConfig,
   GitHubProviderTarget,
+  WebsiteDeliveryPdfDispatchAppConfig,
 } from "./github-app-config.ts";
 import {
   GitHubTokenAcquireDiagnosticError,
@@ -25,6 +26,7 @@ export type GitHubTokenOperation =
   | "PRODUCTION_REPOSITORY_CREATE"
   | "PRODUCTION_REPOSITORY_READ"
   | "PRODUCTION_REPOSITORY_WRITE"
+  | "WEBSITE_DELIVERY_PDF_DISPATCH"
   | "LAB_REPOSITORY_CREATE"
   | "LAB_REPOSITORY_READ"
   | "LAB_REPOSITORY_WRITE";
@@ -46,6 +48,7 @@ export type GitHubTokenAuthority = Readonly<{
 
 export type GitHubInstallationPermissions =
   | Readonly<{ metadata: "read"; administration: "write" }>
+  | Readonly<{ metadata: "read"; actions: "write" }>
   | Readonly<{ metadata: "read"; contents: "read" }>
   | Readonly<{ metadata: "read"; contents: "write" }>;
 
@@ -214,10 +217,11 @@ function validRepositoryIds(
 }
 
 function validAuthority(
-  config: GitHubAppConfig,
+  config: GitHubAppConfig | WebsiteDeliveryPdfDispatchAppConfig,
   request: GitHubTokenRequest,
   authority: GitHubTokenAuthority,
 ): boolean {
+  const pdfDispatch = request.operation === "WEBSITE_DELIVERY_PDF_DISPATCH";
   if (
     !exactKeys(request, [
       "websiteWorkContextId",
@@ -234,7 +238,7 @@ function validAuthority(
     ]) ||
     !UUID.test(request.websiteWorkContextId) ||
     request.websiteWorkContextId !== authority.websiteWorkContextId ||
-    request.target !== authority.target || request.target !== config.target ||
+    request.target !== authority.target ||
     !ORGANIZATION.test(request.organization) ||
     request.organization !== authority.organization ||
     request.organization !== config.organization ||
@@ -242,6 +246,7 @@ function validAuthority(
       "STARTER_SNAPSHOT_READ",
       "WEBSITE_PROJECT_FILES_READ",
       "WEBSITE_PROJECT_FILES_WRITE",
+      "WEBSITE_DELIVERY_PDF_DISPATCH",
       "PRODUCTION_REPOSITORY_CREATE",
       "PRODUCTION_REPOSITORY_READ",
       "PRODUCTION_REPOSITORY_WRITE",
@@ -251,6 +256,19 @@ function validAuthority(
     ]
       .includes(request.operation)
   ) return false;
+
+  if (pdfDispatch) {
+    return !("target" in config) && request.target === "PRODUCTION" &&
+      request.organization === "lorenzobombello-max" &&
+      authority.organization === "lorenzobombello-max" &&
+      config.organization === "lorenzobombello-max" &&
+      config.repository === "lorenzo-web-studio" &&
+      config.repositoryId === "1320223175" &&
+      sameValues(request.repositoryIds, [config.repositoryId]) &&
+      sameValues(authority.repositoryIds, [config.repositoryId]);
+  }
+  if (!("target" in config) || request.target !== config.target ||
+      request.organization !== config.organization) return false;
 
   const repositoryCount = [
       "LAB_REPOSITORY_CREATE",
@@ -285,6 +303,9 @@ function validAuthority(
 function permissionsFor(
   operation: GitHubTokenOperation,
 ): GitHubInstallationPermissions {
+  if (operation === "WEBSITE_DELIVERY_PDF_DISPATCH") {
+    return Object.freeze({ metadata: "read", actions: "write" });
+  }
   if (operation === "STARTER_SNAPSHOT_READ") {
     return Object.freeze({ metadata: "read", contents: "read" });
   }
@@ -466,7 +487,7 @@ export function createGitHubAppTokenBroker(
 ) {
   return Object.freeze({
     async issue(
-      config: GitHubAppConfig,
+      config: GitHubAppConfig | WebsiteDeliveryPdfDispatchAppConfig,
       request: GitHubTokenRequest,
       authority: GitHubTokenAuthority,
       signal?: AbortSignal,

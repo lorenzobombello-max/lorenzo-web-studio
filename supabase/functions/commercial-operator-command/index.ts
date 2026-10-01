@@ -14,32 +14,47 @@ import {
   executeDossierLifecycleTransport,
   executeOperatorPersonalQueueTransport,
   executeRecruitmentVacancyTransport,
+  executeSdfM1InvoicePreparationTransport,
+  executeWebsiteConceptPromotionTransport,
+  executeWebsiteConceptStartTransport,
+  executeWebsiteDeliveryPdfC3TrialTransport,
   executeWorkforceCalendarTransport,
   handleCommercialOperator,
   type InternalE2EAcceptedFileCleanupActionInput,
   type QuotationBusinessApprovalPromotionActionInput,
   type QuotationBusinessDraftActionInput,
   type QuotationIssuanceActionInput,
+  type RecruitmentVacancyActionInput,
+  type SdfM1InvoicePreparationActionInput,
   type SdfQuotationDeliveryPreparationActionInput,
   type SdfQuotationDeliverySendActionInput,
   type SdfQuotationIssuanceActionInput,
-  type SdfM1InvoicePreparationActionInput,
-  executeSdfM1InvoicePreparationTransport,
-  executeWebsiteConceptPromotionTransport,
-  executeWebsiteConceptStartTransport,
+  validateWebsiteAgreementRegistrationStatusResult,
+  validateWebsiteCommercialDocumentStatusResult,
+  validateWebsiteQuotationApprovalStatusResult,
+  type WebsiteAgreementConceptActionInput,
+  type WebsiteAgreementRegistrationStatusActionInput,
+  type WebsiteCommercialDocumentStatusActionInput,
   type WebsiteConceptPromotionActionInput,
   type WebsiteConceptStartActionInput,
+  type WebsiteDeliveryDocumentActionInput,
+  type WebsiteDeliveryDocumentViewActionInput,
+  type WebsiteDeliveryPdfRerunActionInput,
+  type WebsiteDeliveryPdfC3TrialActionInput,
+  type WebsiteDeliveryPdfStatusActionInput,
   type WebsiteExecutionWorkspaceProvisionActionInput,
-  type WebsiteRepositoryProvisionActionInput,
-  type WebsiteRepositoryRecoveryActionInput,
+  type WebsiteInvoiceConceptActionInput,
   type WebsiteProjectDirectoryActionInput,
   type WebsiteProjectFileActionInput,
+  type WebsiteProjectFileSaveActionInput,
   type WebsiteProjectPreviewBuildActionInput,
   type WebsiteProjectPreviewControlActionInput,
-  type WebsiteProjectFileSaveActionInput,
-  type WebsiteRequirementsActionInput,
-  type RecruitmentVacancyActionInput,
+  type WebsiteProjectPreviewReadyActionInput,
+  type WebsiteQuotationApprovalStatusActionInput,
   type WebsiteQuotationPricingStateActionInput,
+  type WebsiteRepositoryProvisionActionInput,
+  type WebsiteRepositoryRecoveryActionInput,
+  type WebsiteRequirementsActionInput,
   withCommercialOperatorCors,
   type WorkforceCalendarActionInput,
 } from "./handler.ts";
@@ -59,19 +74,39 @@ import {
 } from "./quotation-runtime.ts";
 import { renderQuotationDocxBytes } from "./quotation-renderer-edge.ts";
 import { renderSdfQuotationDocxBytes } from "./sdf-quotation-renderer-edge.ts";
+import { renderWebsiteQuotationDocxBytes } from "./website-quotation-renderer-edge.ts";
+import {
+  renderWebsiteAgreementConceptDocxBytes,
+  renderWebsiteCommercialConceptDocxBytes,
+} from "./website-commercial-renderer-edge.ts";
+import { renderWebsiteDeliveryDocumentDocxBytes } from "./website-delivery-renderer-edge.ts";
 import {
   enrichOperatorApplicationDetailWithOutput,
   loadSubmittedApplicationOutputForOperator,
 } from "../_shared/submitted-application-output.ts";
+
+export function normalizeCommercialOperatorRateLimitResult(value: unknown) {
+  const row = Array.isArray(value) && value.length === 1 ? value[0] : null;
+  if (!row || typeof row !== "object"
+    || typeof row.allowed !== "boolean"
+    || !Number.isSafeInteger(row.retry_after_seconds)
+    || row.retry_after_seconds < 0) {
+    throw new Error("INVALID_COMMERCIAL_OPERATOR_RATE_LIMIT_RESULT");
+  }
+  return Object.freeze({
+    allowed: row.allowed,
+    retry_after_seconds: row.retry_after_seconds,
+  });
+}
 import {
   buildCustomerRequestUploadUrl,
   deriveCustomerRequestUploadCapabilityToken,
   hashCustomerRequestUploadCapabilityToken,
 } from "../_shared/customer-request-upload-capability.ts";
 import {
-  createRawIntakeToken,
   createApprovalTokenForIdempotencyKey,
   createInternalE2EIntakeTokenForIdempotencyKey,
+  createRawIntakeToken,
   deriveAdminIntakeCapability,
   encryptIntakeInvitationToken,
   hashAdminIntakeToken,
@@ -99,9 +134,12 @@ import {
   GitHubAppConfigurationError,
   GitHubProviderDisabledError,
   loadGitHubAppConfig,
+  loadWebsiteDeliveryPdfDispatchAppConfig,
 } from "../_shared/github-app-config.ts";
 import { createGitHubAppTokenBroker } from "../_shared/github-app-token.ts";
 import { createGitHubHttpClient } from "../_shared/github-http.ts";
+import { createWebsiteDeliveryPdfWorkflowDispatch } from "../_shared/website-delivery-pdf-workflow-dispatch.ts";
+import { createWebsiteDeliveryPdfWorkflowStarter } from "../_shared/website-delivery-pdf-workflow-starter.ts";
 import {
   createWebsiteProjectFilesProvider,
   type WebsiteProjectFilesAuthority,
@@ -246,6 +284,7 @@ type ValidatedApplicationActionInput =
     quote_request_id: string | null;
     website_work_context_id: string;
     website_workspace_id: string;
+    preview_build_id: string;
     requirement_id: string;
     expected_board_revision: number;
     expected_context_revision: number;
@@ -262,6 +301,14 @@ type ValidatedApplicationActionInput =
     artifact_sha256: string;
     artifact_bytes: number;
     project_id: string;
+    internal_e2e_run_id: string;
+    fixture_id: string;
+    delivery_date: string;
+    checklist: Record<string, "COMPLETED" | "NOT_APPLICABLE">;
+    remarks_state: "NONE_CONFIRMED" | "RECORDED";
+    remarks_text: string | null;
+    contractor_signature_date: string;
+    contractor_signature_place: string;
     operation: string;
     canonical_domain: string;
     evidence: string;
@@ -329,9 +376,12 @@ export async function executeApplicationDetailRead(
   Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>
 > {
   const primary = input.support_reference
-    ? await callerClient.rpc("get_operator_application_by_support_reference_v1", {
-      p_support_reference: input.support_reference,
-    })
+    ? await callerClient.rpc(
+      "get_operator_application_by_support_reference_v1",
+      {
+        p_support_reference: input.support_reference,
+      },
+    )
     : await callerClient.rpc("get_operator_application_v1", {
       p_quote_request_id: input.quote_request_id,
       p_application_reference: input.application_reference,
@@ -434,6 +484,24 @@ export async function executeCallerJwtWebsiteConceptPromotionAction(
   clientFor: (jwt: string) => DossierAssignmentClient,
 ): Promise<unknown> {
   return await executeWebsiteConceptPromotionTransport(clientFor(jwt), input);
+}
+
+export async function executeCallerJwtWebsiteProjectPreviewReadyAction(
+  jwt: string,
+  input: WebsiteProjectPreviewReadyActionInput,
+  clientFor: (jwt: string) => DossierAssignmentClient,
+): Promise<unknown> {
+  const { data, error } = await clientFor(jwt).rpc(
+    "record_website_project_preview_ready_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_project_id: input.project_id,
+      p_preview_build_id: input.preview_build_id,
+      p_idempotency_key: input.idempotency_key,
+    },
+  );
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
@@ -640,16 +708,20 @@ type WebsiteProjectFilesRuntimeDependencies = Readonly<{
 }>;
 
 type WebsiteProjectPreviewBuilderService = Readonly<{
-  build(input: Readonly<{
-    authority: WebsiteProjectFilesAuthority;
-    expectedCommitSha: string;
-    idempotencyKey: string;
-  }>): PromiseLike<WebsiteProjectPreviewBuildResult>;
+  build(
+    input: Readonly<{
+      authority: WebsiteProjectFilesAuthority;
+      expectedCommitSha: string;
+      idempotencyKey: string;
+    }>,
+  ): PromiseLike<WebsiteProjectPreviewBuildResult>;
 }>;
 
 type WebsiteProjectPreviewRuntimeDependencies = Readonly<{
   clientFor(jwt: string): WebsiteProjectPreviewBuildRpcClient;
-  createService(signal: AbortSignal): PromiseLike<WebsiteProjectPreviewBuilderService>;
+  createService(
+    signal: AbortSignal,
+  ): PromiseLike<WebsiteProjectPreviewBuilderService>;
   createDeadline?(): AbortSignal;
 }>;
 
@@ -674,11 +746,17 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
     if (error) throw new Error(error.message);
     const leaseId = (data as { leaseId?: unknown } | null)?.leaseId;
     const buildId = (data as { buildId?: unknown } | null)?.buildId;
-    if (typeof leaseId !== "string" || !UUID.test(leaseId)
-      || typeof buildId !== "string" || !UUID.test(buildId)) {
+    if (
+      typeof leaseId !== "string" || !UUID.test(leaseId) ||
+      typeof buildId !== "string" || !UUID.test(buildId)
+    ) {
       throw new Error("PROJECT_PREVIEW_LEASE_RESPONSE_INVALID");
     }
-    return { lease_id: leaseId, build_id: buildId, status: "BUILD_IN_PROGRESS" };
+    return {
+      lease_id: leaseId,
+      build_id: buildId,
+      status: "BUILD_IN_PROGRESS",
+    };
   }
   if (input.action === "get_website_project_preview_build_status") {
     const { data, error } = await client.rpc(
@@ -687,24 +765,34 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
     );
     if (error) throw new Error(error.message);
     const status = (data as { buildStatus?: unknown } | null)?.buildStatus;
-    const previewBuildId = (data as { previewBuildId?: unknown } | null)?.previewBuildId;
+    const previewBuildId = (data as { previewBuildId?: unknown } | null)
+      ?.previewBuildId;
     if (typeof status !== "string") {
       throw new Error("PROJECT_PREVIEW_STATUS_RESPONSE_INVALID");
     }
     return {
       status,
-      preview_build_id: typeof previewBuildId === "string" ? previewBuildId : null,
+      preview_build_id: typeof previewBuildId === "string"
+        ? previewBuildId
+        : null,
     };
   }
 
-  const previewHostUrl = String(dependencies.previewHostUrl || "").replace(/\/$/, "");
-  if (!/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(previewHostUrl)
-    && !/^https:\/\/[a-z0-9.-]+$/i.test(previewHostUrl)) {
+  const previewHostUrl = String(dependencies.previewHostUrl || "").replace(
+    /\/$/,
+    "",
+  );
+  if (
+    !/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(previewHostUrl) &&
+    !/^https:\/\/[a-z0-9.-]+$/i.test(previewHostUrl)
+  ) {
     throw new Error("PROJECT_PREVIEW_HOST_NOT_CONFIGURED");
   }
   const sessionToken = [...crypto.getRandomValues(new Uint8Array(32))]
     .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const sessionTokenHash = await sha256Hex(new TextEncoder().encode(sessionToken));
+  const sessionTokenHash = await sha256Hex(
+    new TextEncoder().encode(sessionToken),
+  );
   const { data, error } = await client.rpc(
     "create_website_project_preview_session_v1",
     {
@@ -798,7 +886,9 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
           p_created: created,
         },
       );
-      if (finalizedWrite.error) throw projectFilesError(finalizedWrite.error.message);
+      if (finalizedWrite.error) {
+        throw projectFilesError(finalizedWrite.error.message);
+      }
       finalized = true;
     }
 
@@ -834,11 +924,14 @@ export async function executeCallerJwtWebsiteProjectPreviewBuildAction(
   const signal = (dependencies.createDeadline ??
     (() => AbortSignal.timeout(10_000)))();
   const client = dependencies.clientFor(jwt);
-  const acquired = await client.rpc("acquire_website_project_preview_build_v1", {
-    p_quote_request_id: input.quote_request_id,
-    p_expected_commit_sha: input.expected_commit_sha,
-    p_idempotency_key: input.idempotency_key,
-  });
+  const acquired = await client.rpc(
+    "acquire_website_project_preview_build_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_expected_commit_sha: input.expected_commit_sha,
+      p_idempotency_key: input.idempotency_key,
+    },
+  );
   if (acquired.error) throw projectFilesError(acquired.error.message);
   if (
     !acquired.data || typeof acquired.data !== "object" ||
@@ -873,7 +966,9 @@ export async function executeCallerJwtWebsiteProjectPreviewBuildAction(
         p_build_status: result.build.status,
       },
     );
-    if (finalizedBuild.error) throw projectFilesError(finalizedBuild.error.message);
+    if (finalizedBuild.error) {
+      throw projectFilesError(finalizedBuild.error.message);
+    }
     finalized = true;
     return result;
   } catch (error) {
@@ -1014,63 +1109,65 @@ export async function executeCallerJwtWebsiteRepositoryProvisionAction(
   input: WebsiteRepositoryProvisionActionInput,
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
-  return await withWebsiteRepositoryProvisionFailureLogging(async (setStage) => {
-    setStage("CONFIG_LOAD");
-    const config = loadGitHubAppConfig();
-    setStage("TARGET_VALIDATE");
-    if (config.target !== "PRODUCTION") {
-      throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
-    }
-    setStage("SIGNER_INIT");
-    const http = createGitHubHttpClient({ fetch });
-    const signer = await initializeGitHubAppInputSigner(config.privateKey);
-    const tokenBroker = createGitHubAppTokenBroker({
-      now: Date.now,
-      sign: (_privateKey, signingInput) => signer(signingInput),
-      exchange: async (exchange) => {
-        const result = await http.execute({
-          kind: "TOKEN_EXCHANGE",
-          installationId: exchange.installationId,
-          appJwt: exchange.appJwt,
-          repositoryIds: exchange.repositoryIds,
-          permissions: exchange.permissions,
-        });
-        if (!("token" in result) || !("expiresAt" in result)) {
-          throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
-        }
-        return result;
-      },
-    });
-    setStage("STORE_INIT");
-    const store = createRepositoryProvisioningStoreV2({
-      rpc: async (name, parameters) =>
-        await clientFor(jwt).rpc(name, parameters),
-    }, {
-      claimRpcName: "claim_production_website_repository_provisioning_v1",
-      bindRpcName: "bind_production_website_repository_v1",
-      quoteRequestId: input.quote_request_id,
-    });
-    setStage("PROVIDER_INIT");
-    const provider = createGitHubTargetRepositoryProviderForRuntime(
-      config,
-      config,
-      { store, tokenBroker, http },
-    );
-    setStage("RUNTIME_PROVISION");
-    return await createGitHubRepositoryRuntimeFromProvider(provider, store)
-      .provision(Object.freeze({
-        contractVersion: 2 as const,
-        websiteWorkspaceId: input.website_workspace_id,
-        websiteWorkContextId: input.website_work_context_id,
-        idempotencyKey: input.idempotency_key,
-        starter: Object.freeze({
-          source: `${config.templateOwner}/${config.templateName}`,
-          version: config.starterVersion,
-          commitSha: config.starterCommitSha,
-          templateRepositoryId: config.templateRepositoryId,
-        }),
-      }));
-  });
+  return await withWebsiteRepositoryProvisionFailureLogging(
+    async (setStage) => {
+      setStage("CONFIG_LOAD");
+      const config = loadGitHubAppConfig();
+      setStage("TARGET_VALIDATE");
+      if (config.target !== "PRODUCTION") {
+        throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+      }
+      setStage("SIGNER_INIT");
+      const http = createGitHubHttpClient({ fetch });
+      const signer = await initializeGitHubAppInputSigner(config.privateKey);
+      const tokenBroker = createGitHubAppTokenBroker({
+        now: Date.now,
+        sign: (_privateKey, signingInput) => signer(signingInput),
+        exchange: async (exchange) => {
+          const result = await http.execute({
+            kind: "TOKEN_EXCHANGE",
+            installationId: exchange.installationId,
+            appJwt: exchange.appJwt,
+            repositoryIds: exchange.repositoryIds,
+            permissions: exchange.permissions,
+          });
+          if (!("token" in result) || !("expiresAt" in result)) {
+            throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+          }
+          return result;
+        },
+      });
+      setStage("STORE_INIT");
+      const store = createRepositoryProvisioningStoreV2({
+        rpc: async (name, parameters) =>
+          await clientFor(jwt).rpc(name, parameters),
+      }, {
+        claimRpcName: "claim_production_website_repository_provisioning_v1",
+        bindRpcName: "bind_production_website_repository_v1",
+        quoteRequestId: input.quote_request_id,
+      });
+      setStage("PROVIDER_INIT");
+      const provider = createGitHubTargetRepositoryProviderForRuntime(
+        config,
+        config,
+        { store, tokenBroker, http },
+      );
+      setStage("RUNTIME_PROVISION");
+      return await createGitHubRepositoryRuntimeFromProvider(provider, store)
+        .provision(Object.freeze({
+          contractVersion: 2 as const,
+          websiteWorkspaceId: input.website_workspace_id,
+          websiteWorkContextId: input.website_work_context_id,
+          idempotencyKey: input.idempotency_key,
+          starter: Object.freeze({
+            source: `${config.templateOwner}/${config.templateName}`,
+            version: config.starterVersion,
+            commitSha: config.starterCommitSha,
+            templateRepositoryId: config.templateRepositoryId,
+          }),
+        }));
+    },
+  );
 }
 
 export async function executeCallerJwtWebsiteRepositoryRecoveryAction(
@@ -1081,42 +1178,46 @@ export async function executeCallerJwtWebsiteRepositoryRecoveryAction(
   serviceClient: () => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
   return await withProductionRepositoryRecoveryFailureLogging(async () => {
-    const { config, http, tokenBroker } = await guardProductionRepositoryRecoveryStage(
-      "CONFIG_LOAD",
-      async () => {
-        const config = loadGitHubAppConfig();
-        if (config.target !== "PRODUCTION") {
-          throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
-        }
-        const http = createGitHubHttpClient({ fetch });
-        const signer = await initializeGitHubAppInputSigner(config.privateKey);
-        const tokenBroker = createGitHubAppTokenBroker({
-          now: Date.now,
-          sign: (_privateKey, signingInput) => signer(signingInput),
-          exchange: async (exchange) => {
-            const result = await http.execute({
-              kind: "TOKEN_EXCHANGE",
-              installationId: exchange.installationId,
-              appJwt: exchange.appJwt,
-              repositoryIds: exchange.repositoryIds,
-              permissions: exchange.permissions,
-            });
-            if (!("token" in result) || !("expiresAt" in result)) {
-              throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
-            }
-            return result;
-          },
-        });
-        return { config, http, tokenBroker };
-      },
-    );
+    const { config, http, tokenBroker } =
+      await guardProductionRepositoryRecoveryStage(
+        "CONFIG_LOAD",
+        async () => {
+          const config = loadGitHubAppConfig();
+          if (config.target !== "PRODUCTION") {
+            throw new Error("PRODUCTION_GITHUB_AUTHORITY_REQUIRED");
+          }
+          const http = createGitHubHttpClient({ fetch });
+          const signer = await initializeGitHubAppInputSigner(
+            config.privateKey,
+          );
+          const tokenBroker = createGitHubAppTokenBroker({
+            now: Date.now,
+            sign: (_privateKey, signingInput) => signer(signingInput),
+            exchange: async (exchange) => {
+              const result = await http.execute({
+                kind: "TOKEN_EXCHANGE",
+                installationId: exchange.installationId,
+                appJwt: exchange.appJwt,
+                repositoryIds: exchange.repositoryIds,
+                permissions: exchange.permissions,
+              });
+              if (!("token" in result) || !("expiresAt" in result)) {
+                throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+              }
+              return result;
+            },
+          });
+          return { config, http, tokenBroker };
+        },
+      );
     const caller = clientFor(jwt);
     const service = serviceClient();
     const recovery = createProductionRepositoryRecovery({
       config,
       actor: Object.freeze({ authUserId: actorAuthUserId, aal: "aal2" }),
       callerRpc: async (name, parameters) => await caller.rpc(name, parameters),
-      serviceRpc: async (name, parameters) => await service.rpc(name, parameters),
+      serviceRpc: async (name, parameters) =>
+        await service.rpc(name, parameters),
       tokenBroker,
       http,
     });
@@ -1276,16 +1377,24 @@ function isWebsitePricingDecisionResponse(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const result = value as Record<string, unknown>;
   const expected = [
-    "decision_id", "resolved_rule_id", "currency", "known_minimum_minor",
-    "owner_final_amount_minor", "decision_sha256", "decided_at",
+    "decision_id",
+    "resolved_rule_id",
+    "currency",
+    "known_minimum_minor",
+    "owner_final_amount_minor",
+    "decision_sha256",
+    "decided_at",
   ];
   return Object.keys(result).length === expected.length &&
     expected.every((key) => key in result) &&
     UUID.test(String(result.decision_id || "")) &&
-    typeof result.resolved_rule_id === "string" && result.resolved_rule_id.length > 0 &&
-    result.currency === "EUR" && Number.isSafeInteger(result.known_minimum_minor) &&
+    typeof result.resolved_rule_id === "string" &&
+    result.resolved_rule_id.length > 0 &&
+    result.currency === "EUR" &&
+    Number.isSafeInteger(result.known_minimum_minor) &&
     Number.isSafeInteger(result.owner_final_amount_minor) &&
-    Number(result.owner_final_amount_minor) >= Number(result.known_minimum_minor) &&
+    Number(result.owner_final_amount_minor) >=
+      Number(result.known_minimum_minor) &&
     SHA256.test(String(result.decision_sha256 || "")) &&
     typeof result.decided_at === "string" && result.decided_at.length > 0;
 }
@@ -1296,16 +1405,28 @@ function isWebsitePricingStateResponse(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const result = value as Record<string, unknown>;
   const expected = [
-    "quote_request_id", "intake_id", "pricing_snapshot_id",
-    "pricing_snapshot_sha256", "currency", "known_minimum_minor",
-    "contains_from_pricing", "decision_required", "can_decide", "resolved",
-    "decision", "quotation_draft_available", "billing_context_complete",
+    "quote_request_id",
+    "intake_id",
+    "pricing_snapshot_id",
+    "pricing_snapshot_sha256",
+    "currency",
+    "known_minimum_minor",
+    "contains_from_pricing",
+    "decision_required",
+    "can_decide",
+    "resolved",
+    "decision",
+    "quotation_draft_available",
+    "billing_context_complete",
     "billing_context",
   ];
   const billing = result.billing_context as Record<string, unknown> | null;
   const billingKeys = [
-    "billing_address", "billing_postal_code", "billing_city",
-    "billing_country", "billing_email",
+    "billing_address",
+    "billing_postal_code",
+    "billing_city",
+    "billing_country",
+    "billing_email",
   ];
   return Object.keys(result).length === expected.length &&
     expected.every((key) => key in result) &&
@@ -1313,16 +1434,27 @@ function isWebsitePricingStateResponse(
     UUID.test(String(result.intake_id || "")) &&
     UUID.test(String(result.pricing_snapshot_id || "")) &&
     SHA256.test(String(result.pricing_snapshot_sha256 || "")) &&
-    result.currency === "EUR" && Number.isSafeInteger(result.known_minimum_minor) &&
+    result.currency === "EUR" &&
+    Number.isSafeInteger(result.known_minimum_minor) &&
     Number(result.known_minimum_minor) >= 0 &&
-    ["contains_from_pricing", "decision_required", "can_decide", "resolved", "quotation_draft_available", "billing_context_complete"]
+    [
+      "contains_from_pricing",
+      "decision_required",
+      "can_decide",
+      "resolved",
+      "quotation_draft_available",
+      "billing_context_complete",
+    ]
       .every((key) => typeof result[key] === "boolean") &&
-    billing !== null && typeof billing === "object" && !Array.isArray(billing) &&
+    billing !== null && typeof billing === "object" &&
+    !Array.isArray(billing) &&
     Object.keys(billing).length === billingKeys.length &&
     billingKeys.every((key) =>
-      key in billing && (billing[key] === null || typeof billing[key] === "string")
+      key in billing &&
+      (billing[key] === null || typeof billing[key] === "string")
     ) &&
-    (result.decision === null || isWebsitePricingDecisionResponse(result.decision));
+    (result.decision === null ||
+      isWebsitePricingDecisionResponse(result.decision));
 }
 
 export async function executeWebsiteQuotationPricingStateAction(
@@ -1343,6 +1475,21 @@ export async function executeWebsiteQuotationPricingStateAction(
     throw new Error("INVALID_WEBSITE_PRICING_STATE_RESPONSE");
   }
   return data;
+}
+
+export async function executeWebsiteQuotationApprovalStatusAction(
+  input: WebsiteQuotationApprovalStatusActionInput,
+  options: Readonly<{ callerClient: QuotationBusinessDraftRpcClient }>,
+): Promise<Record<string, unknown>> {
+  const response = await options.callerClient.rpc(
+    "get_website_quotation_approval_status_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_intake_id: input.intake_id,
+    },
+  );
+  if (response.error) throw new Error(response.error.message);
+  return validateWebsiteQuotationApprovalStatusResult(response.data, input);
 }
 
 export async function executeCallerJwtQuotationVatReadinessAction(
@@ -1372,6 +1519,1072 @@ export async function executeApprovedQuotationIssuanceAction(
     { actorAuthUserId, quoteRequestId: input.quote_request_id },
     createQuotationRuntimeDependencies({ actorAuthUserId, ...options }),
   );
+}
+
+type WebsiteAgreementConceptRuntimeOptions = Readonly<{
+  callerClient: QuotationBusinessDraftRpcClient;
+  serviceClient: QuotationBusinessDraftRpcClient;
+  templateBytes: Uint8Array;
+  renderDocx(
+    input: Readonly<{
+      templateBytes: Uint8Array;
+      payload: Record<string, unknown>;
+    }>,
+  ): PromiseLike<
+    Readonly<{
+      buffer: Uint8Array;
+      sha256: string;
+      templateSha256: string;
+      agreementStatus: "UNSIGNED_CONCEPT";
+      issuanceStatus: "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED";
+    }>
+  >;
+}>;
+
+type WebsiteDeliveryDocumentRuntimeOptions = Readonly<{
+  callerClient: QuotationBusinessDraftRpcClient;
+  serviceClient: QuotationBusinessDraftRpcClient & Readonly<{
+    storage: Readonly<{
+      from(bucket: string): Readonly<{
+        upload(path: string, bytes: Uint8Array, options: Readonly<{ contentType: string; upsert: false }>): PromiseLike<Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>>;
+        download(path: string): PromiseLike<Readonly<{ data: Blob | null; error: Readonly<{ message: string }> | null }>>;
+        remove(paths: string[]): PromiseLike<Readonly<{ data: unknown; error: Readonly<{ message: string }> | null }>>;
+      }>;
+    }>;
+  }>;
+  templateBytes: Uint8Array;
+  renderDocx(input: Readonly<{ templateBytes: Uint8Array; payload: Record<string, unknown> }>): PromiseLike<Readonly<{
+    buffer: Uint8Array;
+    sha256: string;
+    templateSha256: string;
+  }>>;
+  startPdfConversion?(binding: Readonly<{
+    artifactId: string;
+    projectId: string;
+    previewVersionId: string;
+    documentVersion: number;
+    sourceDocxSha256: string;
+    generationPayloadSha256: string;
+    runtimeTemplateSha256: string;
+    idempotencyKey: string;
+    actor: string;
+  }>): PromiseLike<Readonly<{
+    taskId: string;
+    taskWasCreated: boolean;
+    dispatchStatus: string;
+  }>>;
+}>;
+
+const WEBSITE_DELIVERY_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const WEBSITE_DELIVERY_RUNTIME_TEMPLATE_REFERENCE =
+  "LWS_WEBSITE_DELIVERY_DOCUMENT_OPL_W_01_v2.docx";
+const WEBSITE_DELIVERY_RUNTIME_TEMPLATE_VERSION = "v2";
+const WEBSITE_DELIVERY_RUNTIME_TEMPLATE_SHA256 =
+  "84f16839f584e6949c9fc6389d72894160e65fbf67746eb3bc0effb0d546706d";
+
+type WebsiteDeliveryPdfBinding = Readonly<{
+  artifactId: string;
+  projectId: string;
+  previewVersionId: string;
+  documentVersion: number;
+  sourceDocxSha256: string;
+  generationPayloadSha256: string;
+  runtimeTemplateSha256: string;
+  idempotencyKey: string;
+  actor: string;
+}>;
+
+export function createWebsiteDeliveryPdfRuntimeStarter(
+  taskId: string,
+  actor: string,
+  client: QuotationBusinessDraftRpcClient,
+  createProvider?: () =>
+    | ReturnType<typeof createWebsiteDeliveryPdfWorkflowDispatch>
+    | PromiseLike<ReturnType<typeof createWebsiteDeliveryPdfWorkflowDispatch>>,
+) {
+  let providerPromise: ReturnType<
+    typeof createWebsiteDeliveryPdfWorkflowDispatch
+  > | null = null;
+  const provider = async () => {
+    if (providerPromise) return providerPromise;
+    if (createProvider) {
+      providerPromise = await createProvider();
+      return providerPromise;
+    }
+    const config = loadWebsiteDeliveryPdfDispatchAppConfig();
+    const http = createGitHubHttpClient({ fetch });
+    const signer = await initializeGitHubAppInputSigner(config.privateKey);
+    const broker = createGitHubAppTokenBroker({
+      now: Date.now,
+      sign: (_privateKey, signingInput) => signer(signingInput),
+      exchange: async (exchange) => {
+        const result = await http.execute({
+          kind: "TOKEN_EXCHANGE",
+          installationId: exchange.installationId,
+          appJwt: exchange.appJwt,
+          repositoryIds: exchange.repositoryIds,
+          permissions: exchange.permissions,
+        });
+        if (!("token" in result) || !("expiresAt" in result)) {
+          throw new Error("GITHUB_TOKEN_EXCHANGE_FAILED");
+        }
+        return result;
+      },
+    });
+    providerPromise = createWebsiteDeliveryPdfWorkflowDispatch({
+      now: Date.now,
+      fetch: (request) => fetch(request),
+      acquireToken: () =>
+        broker.issue(config, {
+          websiteWorkContextId: taskId,
+          target: "PRODUCTION",
+          organization: config.organization,
+          operation: "WEBSITE_DELIVERY_PDF_DISPATCH",
+          repositoryIds: [config.repositoryId],
+        }, {
+          websiteWorkContextId: taskId,
+          target: "PRODUCTION",
+          organization: config.organization,
+          repositoryIds: [config.repositoryId],
+        }),
+    });
+    return providerPromise;
+  };
+  const rpcRecord = async (name: string, parameters: Record<string, unknown>) => {
+    const response = await client.rpc(name, parameters);
+    if (response.error) throw new Error(response.error.message);
+    return websiteAgreementRecord(
+      response.data,
+      "INVALID_WEBSITE_DELIVERY_PDF_DISPATCH_RESPONSE",
+    );
+  };
+  return createWebsiteDeliveryPdfWorkflowStarter({
+    claim: async (claimedTaskId) =>
+      await rpcRecord("claim_website_delivery_pdf_dispatch_v1", {
+        p_task_id: claimedTaskId,
+        p_actor: actor,
+      }) as never,
+    record: async (recordedTaskId, attemptId, result) =>
+      await rpcRecord("record_website_delivery_pdf_dispatch_result_v1", {
+        p_task_id: recordedTaskId,
+        p_dispatch_attempt_id: attemptId,
+        p_status: result.status,
+        p_result_code: result.code,
+        p_actor: actor,
+      }) as never,
+    status: async (statusTaskId) =>
+      await rpcRecord("get_website_delivery_pdf_dispatch_status_v1", {
+        p_task_id: statusTaskId,
+      }) as never,
+    reconcile: async (reconciledTaskId, evidence) =>
+      await rpcRecord("reconcile_website_delivery_pdf_dispatch_unknown_v1", {
+        p_task_id: reconciledTaskId,
+        p_provider_run_id: evidence.providerRunId,
+        p_provider_run_attempt: evidence.providerRunAttempt,
+        p_provider_checked_at: evidence.checkedAt,
+        p_reconciliation_id: crypto.randomUUID(),
+        p_approved: false,
+        p_actor: actor,
+      }) as never,
+    reconcileRerun: async (reconciledTaskId, recoveryId, evidence) =>
+      await rpcRecord("reconcile_website_delivery_pdf_rerun_unknown_v1", {
+        p_task_id: reconciledTaskId,
+        p_recovery_id: recoveryId,
+        p_provider_run_id: evidence.providerRunId,
+        p_provider_run_attempt: evidence.providerRunAttempt,
+        p_provider_status: evidence.providerRunStatus,
+        p_provider_conclusion: evidence.providerRunConclusion,
+        p_provider_checked_at: evidence.checkedAt,
+        p_actor: actor,
+      }) as never,
+    claimRerun: async (recoveryTaskId, attemptId, evidence, approvalId) =>
+      await rpcRecord("claim_website_delivery_pdf_rerun_v1", {
+        p_task_id: recoveryTaskId,
+        p_expected_dispatch_attempt_id: attemptId,
+        p_provider_run_id: evidence.providerRunId,
+        p_provider_run_attempt: evidence.providerRunAttempt,
+        p_provider_status: evidence.providerRunStatus,
+        p_provider_conclusion: evidence.providerRunConclusion,
+        p_approval_id: approvalId,
+        p_provider_checked_at: evidence.checkedAt,
+        p_actor: actor,
+      }) as never,
+    recordRerun: async (recoveryTaskId, approvalId, result) =>
+      await rpcRecord("record_website_delivery_pdf_rerun_result_v1", {
+        p_task_id: recoveryTaskId,
+        p_approval_id: approvalId,
+        p_status: result.status,
+        p_result_code: result.code,
+        p_actor: actor,
+      }) as never,
+    dispatch: async (dispatchedTaskId) =>
+      (await provider()).dispatch(dispatchedTaskId),
+    rerun: async (recoveryTaskId, providerRunId) =>
+      (await provider()).rerun(recoveryTaskId, providerRunId),
+    findRun: async (readbackTaskId, dispatchStartedAt) =>
+      (await provider()).findRun(readbackTaskId, dispatchStartedAt),
+  });
+}
+
+async function startWebsiteDeliveryPdfConversion(
+  binding: WebsiteDeliveryPdfBinding,
+  client: QuotationBusinessDraftRpcClient,
+): Promise<Readonly<{
+  taskId: string;
+  taskWasCreated: boolean;
+  dispatchStatus: string;
+}>> {
+  const taskResponse = await client.rpc(
+    "create_website_delivery_pdf_conversion_task_v1",
+    {
+      p_artifact_id: binding.artifactId,
+      p_expected_project_id: binding.projectId,
+      p_expected_preview_version_id: binding.previewVersionId,
+      p_expected_document_version: binding.documentVersion,
+      p_expected_source_docx_sha256: binding.sourceDocxSha256,
+      p_expected_generation_payload_sha256: binding.generationPayloadSha256,
+      p_expected_runtime_template_sha256: binding.runtimeTemplateSha256,
+      p_idempotency_key: binding.idempotencyKey,
+      p_actor: binding.actor,
+    },
+  );
+  if (taskResponse.error) throw new Error(taskResponse.error.message);
+  const task = websiteAgreementRecord(
+    taskResponse.data,
+    "INVALID_WEBSITE_DELIVERY_PDF_TASK_RESPONSE",
+  );
+  const taskId = String(task.task_id || "");
+  if (
+    !UUID.test(taskId) || task.artifact_id !== binding.artifactId ||
+    task.project_id !== binding.projectId ||
+    task.preview_version_id !== binding.previewVersionId ||
+    task.document_version !== binding.documentVersion ||
+    task.source_docx_sha256 !== binding.sourceDocxSha256 ||
+    task.generation_payload_sha256 !== binding.generationPayloadSha256 ||
+    task.runtime_template_sha256 !== binding.runtimeTemplateSha256 ||
+    typeof task.was_created !== "boolean"
+  ) throw new Error("INVALID_WEBSITE_DELIVERY_PDF_TASK_RESPONSE");
+
+  const starter = createWebsiteDeliveryPdfRuntimeStarter(
+    taskId,
+    binding.actor,
+    client,
+  );
+  const dispatch = await starter.start(taskId);
+  return {
+    taskId,
+    taskWasCreated: task.was_created,
+    dispatchStatus: dispatch.status,
+  };
+}
+
+type WebsiteDeliveryDocumentViewRuntimeOptions = Readonly<{
+  callerClient: QuotationBusinessDraftRpcClient;
+  serviceClient: QuotationBusinessDraftRpcClient & Readonly<{
+    storage: Readonly<{
+      from(bucket: string): Readonly<{
+        download(path: string): PromiseLike<Readonly<{
+          data: Blob | null;
+          error: Readonly<{ message: string }> | null;
+        }>>;
+      }>;
+    }>;
+  }>;
+}>;
+
+type WebsiteDeliveryPdfRecoveryStarter = Readonly<{
+  read(taskId: string): Promise<Readonly<Record<string, unknown>>>;
+  inspect(taskId: string): Promise<Readonly<Record<string, unknown>>>;
+  recover(
+    taskId: string,
+    expectedDispatchAttemptId: string,
+    approvalId: string,
+  ): Promise<Readonly<Record<string, unknown>>>;
+}>;
+
+type WebsiteDeliveryPdfRecoveryRuntimeOptions = Readonly<{
+  callerClient: QuotationBusinessDraftRpcClient;
+  serviceClient: QuotationBusinessDraftRpcClient;
+  createStarter(
+    taskId: string,
+    actor: string,
+    serviceClient: QuotationBusinessDraftRpcClient,
+  ): WebsiteDeliveryPdfRecoveryStarter | PromiseLike<WebsiteDeliveryPdfRecoveryStarter>;
+}>;
+
+const WEBSITE_DELIVERY_PDF_SAFE_STATUS_FIELDS = [
+  "task_id",
+  "document_version",
+  "status",
+  "result_code",
+  "dispatch_attempt",
+  "dispatch_attempt_id",
+  "created_at",
+  "dispatch_started_at",
+  "dispatch_finished_at",
+  "provider_checked_at",
+  "running_at",
+  "completed_at",
+  "recovery_status",
+  "recovery_result_code",
+  "recovery_approved_at",
+  "rerun_started_at",
+  "rerun_finished_at",
+  "allowed_action",
+] as const;
+
+function websiteDeliveryPdfSafeStatus(
+  projectId: string,
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { project_id: projectId };
+  for (const field of WEBSITE_DELIVERY_PDF_SAFE_STATUS_FIELDS) {
+    if (value[field] !== undefined) result[field] = value[field];
+  }
+  return result;
+}
+
+export async function executeWebsiteDeliveryPdfRecoveryAction(
+  actorAuthUserId: string,
+  input: WebsiteDeliveryPdfStatusActionInput | WebsiteDeliveryPdfRerunActionInput,
+  options: WebsiteDeliveryPdfRecoveryRuntimeOptions,
+): Promise<Record<string, unknown>> {
+  const identityResponse = await options.callerClient.rpc(
+    "get_current_operator_identity_v1",
+    {},
+  );
+  if (identityResponse.error) throw new Error(identityResponse.error.message);
+  const identity = websiteAgreementRecord(
+    identityResponse.data,
+    "INVALID_OPERATOR_IDENTITY_RESPONSE",
+  );
+  if (
+    identity.status !== "ACTIVE" ||
+    !["owner", "admin"].includes(String(identity.role || ""))
+  ) throw new Error("OPERATOR_NOT_AUTHORIZED");
+
+  const authorization = await options.callerClient.rpc(
+    "get_operator_project_start_gate_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_project_id: input.project_id,
+    },
+  );
+  if (authorization.error || !authorization.data) {
+    throw new Error(authorization.error?.message || "OPERATOR_NOT_AUTHORIZED");
+  }
+
+  const statusResponse = await options.serviceClient.rpc(
+    "get_website_delivery_pdf_operator_status_v1",
+    { p_project_id: input.project_id },
+  );
+  if (statusResponse.error) throw new Error(statusResponse.error.message);
+  const status = websiteAgreementRecord(
+    statusResponse.data,
+    "INVALID_WEBSITE_DELIVERY_PDF_STATUS_RESPONSE",
+  );
+  if (status.project_id !== input.project_id) {
+    throw new Error("INVALID_WEBSITE_DELIVERY_PDF_STATUS_RESPONSE");
+  }
+  if (status.task_id === null) {
+    if (input.action === "approve_website_delivery_pdf_rerun") {
+      throw new Error("WEBSITE_DELIVERY_PDF_RECOVERY_STALE");
+    }
+    return websiteDeliveryPdfSafeStatus(input.project_id, status);
+  }
+  const taskId = String(status.task_id || "");
+  const attemptId = String(status.dispatch_attempt_id || "");
+  if (!UUID.test(taskId) || !UUID.test(attemptId)) {
+    throw new Error("INVALID_WEBSITE_DELIVERY_PDF_STATUS_RESPONSE");
+  }
+  if (
+    input.action === "approve_website_delivery_pdf_rerun" &&
+    (input.task_id !== taskId || input.expected_dispatch_attempt_id !== attemptId)
+  ) throw new Error("WEBSITE_DELIVERY_PDF_RECOVERY_STALE");
+
+  const starter = await options.createStarter(
+    taskId,
+    actorAuthUserId,
+    options.serviceClient,
+  );
+  if (input.action === "get_website_delivery_pdf_status") {
+    if (status.allowed_action === "INSPECT_PROVIDER") {
+      return websiteDeliveryPdfSafeStatus(
+        input.project_id,
+        { ...await starter.inspect(taskId) },
+      );
+    }
+    return websiteDeliveryPdfSafeStatus(
+      input.project_id,
+      { ...status, ...await starter.read(taskId) },
+    );
+  }
+  const recovery = await starter.recover(taskId, attemptId, input.approval_id);
+  const recoveryStatus = String(
+    recovery.recovery_status || recovery.status || "",
+  );
+  const recoveryResultCode = String(recovery.result_code || "");
+  if (
+    !/^(RERUN_UNKNOWN|RERUN_ACCEPTED|RERUN_FAILED|RUNNING|COMPLETED)$/.test(
+      recoveryStatus,
+    ) || !/^[A-Z][A-Z0-9_]{0,99}$/.test(recoveryResultCode)
+  ) throw new Error("INVALID_WEBSITE_DELIVERY_PDF_RECOVERY_RESPONSE");
+  return websiteDeliveryPdfSafeStatus(input.project_id, {
+    ...status,
+    recovery_status: recoveryStatus,
+    recovery_result_code: recoveryResultCode,
+    allowed_action: ["RERUN_UNKNOWN", "RERUN_ACCEPTED", "RUNNING"].includes(
+        recoveryStatus,
+      )
+      ? "WAIT_FOR_RERUN"
+      : "NONE",
+  });
+}
+
+export async function executeWebsiteDeliveryDocumentViewAction(
+  actorAuthUserId: string,
+  input: WebsiteDeliveryDocumentViewActionInput,
+  options: WebsiteDeliveryDocumentViewRuntimeOptions,
+): Promise<Response> {
+  const authorization = await options.callerClient.rpc(
+    "get_operator_project_start_gate_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_project_id: input.project_id,
+    },
+  );
+  if (authorization.error || !authorization.data) {
+    throw new Error(authorization.error?.message || "OPERATOR_NOT_AUTHORIZED");
+  }
+
+  const resolvedResponse = await options.serviceClient.rpc(
+    "resolve_current_website_delivery_document_view_v1",
+    { p_project_id: input.project_id },
+  );
+  if (resolvedResponse.error || !resolvedResponse.data) {
+    throw new Error(resolvedResponse.error?.message || "WEBSITE_DELIVERY_VIEW_NOT_FOUND");
+  }
+  const view = websiteAgreementRecord(
+    resolvedResponse.data,
+    "INVALID_WEBSITE_DELIVERY_VIEW_RESPONSE",
+  );
+  if (
+    !UUID.test(String(view.view_derivative_id || "")) ||
+    view.project_id !== input.project_id ||
+    !Number.isSafeInteger(view.document_version) || Number(view.document_version) < 1 ||
+    view.storage_bucket_id !== "website-delivery-document-views" ||
+    typeof view.storage_object_path !== "string" || !view.storage_object_path ||
+    view.content_type !== "application/pdf" ||
+    !SHA256.test(String(view.source_docx_sha256 || "")) ||
+    !SHA256.test(String(view.pdf_sha256 || "")) ||
+    !Number.isSafeInteger(view.pdf_bytes) || Number(view.pdf_bytes) < 1
+  ) throw new Error("INVALID_WEBSITE_DELIVERY_VIEW_RESPONSE");
+
+  const downloaded = await options.serviceClient.storage
+    .from(String(view.storage_bucket_id))
+    .download(String(view.storage_object_path));
+  if (downloaded.error || !downloaded.data) {
+    throw new Error(downloaded.error?.message || "WEBSITE_DELIVERY_VIEW_DOWNLOAD_FAILED");
+  }
+  const bytes = new Uint8Array(await downloaded.data.arrayBuffer());
+  const actualSha256 = await sha256Hex(bytes);
+  if (bytes.byteLength !== view.pdf_bytes || actualSha256 !== view.pdf_sha256) {
+    throw new Error("WEBSITE_DELIVERY_VIEW_HASH_MISMATCH");
+  }
+
+  const receiptResponse = await options.serviceClient.rpc(
+    "register_website_delivery_document_access_receipt_v1",
+    {
+      p_view_derivative_id: view.view_derivative_id,
+      p_viewer_kind: "OPERATOR",
+      p_operator_auth_user_id: actorAuthUserId,
+      p_preview_session_id: null,
+      p_served_pdf_sha256: actualSha256,
+      p_served_pdf_bytes: bytes.byteLength,
+      p_served_by: "commercial-operator-command",
+    },
+  );
+  if (receiptResponse.error || !receiptResponse.data) {
+    throw new Error(receiptResponse.error?.message || "WEBSITE_DELIVERY_VIEW_RECEIPT_FAILED");
+  }
+
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      "cache-control": "private, no-store",
+      "content-disposition": `inline; filename="opleverdocument-v${view.document_version}.pdf"`,
+      "content-length": String(bytes.byteLength),
+      "content-type": "application/pdf",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "x-lws-document-sha256": actualSha256,
+      "x-lws-document-version": String(view.document_version),
+      "x-lws-source-docx-sha256": String(view.source_docx_sha256),
+    },
+  });
+}
+
+export async function executeWebsiteDeliveryDocumentAction(
+  actor: string,
+  input: WebsiteDeliveryDocumentActionInput,
+  options: WebsiteDeliveryDocumentRuntimeOptions,
+): Promise<unknown> {
+  const identityResponse = await options.callerClient.rpc(
+    "get_current_operator_identity_v1",
+    {},
+  );
+  if (identityResponse.error) throw new Error(identityResponse.error.message);
+  const identity = websiteAgreementRecord(
+    identityResponse.data,
+    "INVALID_OPERATOR_IDENTITY_RESPONSE",
+  );
+  if (
+    identity.status !== "ACTIVE" ||
+    !["owner", "admin"].includes(String(identity.role || ""))
+  ) throw new Error("OPERATOR_NOT_AUTHORIZED");
+
+  const preparedResponse = await options.serviceClient.rpc(
+    "prepare_website_delivery_document_v1",
+    {
+      p_project_id: input.project_id,
+      p_delivery_date: input.delivery_date,
+      p_checklist: input.checklist,
+      p_remarks_state: input.remarks_state,
+      p_remarks_text: input.remarks_text,
+      p_contractor_signature_date: input.contractor_signature_date,
+      p_contractor_signature_place: input.contractor_signature_place,
+      // The customer signs date and place only on the accepted document; never before acceptance.
+      p_customer_signature_date: null,
+      p_customer_signature_place: null,
+      p_idempotency_key: input.idempotency_key,
+      p_actor: actor,
+    },
+  );
+  if (preparedResponse.error) throw new Error(preparedResponse.error.message);
+  const prepared = websiteAgreementRecord(
+    preparedResponse.data,
+    "INVALID_WEBSITE_DELIVERY_PREPARE_RESPONSE",
+  );
+  const candidateId = String(prepared.candidate_id || "");
+  const documentVersion = Number(prepared.document_version);
+  const generationPayloadSha256 = String(
+    prepared.generation_payload_sha256 || "",
+  );
+  const payload = websiteAgreementRecord(
+    prepared.generation_payload,
+    "INVALID_WEBSITE_DELIVERY_PREPARE_RESPONSE",
+  );
+  const lineage = websiteAgreementRecord(
+    payload.lineage,
+    "INVALID_WEBSITE_DELIVERY_PREPARE_RESPONSE",
+  );
+  const previewVersionId = String(lineage.preview_version_id || "");
+  if (
+    !UUID.test(candidateId) || !Number.isSafeInteger(documentVersion) ||
+    documentVersion < 1 || lineage.project_id !== input.project_id ||
+    !UUID.test(previewVersionId) ||
+    !SHA256.test(generationPayloadSha256) ||
+    typeof prepared.was_created !== "boolean"
+  ) throw new Error("INVALID_WEBSITE_DELIVERY_PREPARE_RESPONSE");
+
+  const rendered = await options.renderDocx({
+    templateBytes: options.templateBytes,
+    payload,
+  });
+  if (
+    !SHA256.test(rendered.sha256) ||
+    await sha256Hex(rendered.buffer) !== rendered.sha256 ||
+    rendered.templateSha256 !== WEBSITE_DELIVERY_RUNTIME_TEMPLATE_SHA256 ||
+    rendered.buffer.byteLength < 1 || rendered.buffer.byteLength > 10_485_760
+  ) throw new Error("INVALID_WEBSITE_DELIVERY_RENDER_RESPONSE");
+
+  const bucket = "website-delivery-documents";
+  const path = `projects/${input.project_id}/versions/${documentVersion}/${rendered.sha256}.docx`;
+  const storage = options.serviceClient.storage.from(bucket);
+  let uploadedByAttempt = false;
+  if (prepared.was_created) {
+    const uploaded = await storage.upload(path, rendered.buffer, {
+      contentType: WEBSITE_DELIVERY_MIME,
+      upsert: false,
+    });
+    uploadedByAttempt = !uploaded.error;
+    if (uploaded.error) {
+      const existing = await storage.download(path);
+      if (existing.error || !existing.data) {
+        throw new Error("WEBSITE_DELIVERY_STORAGE_UPLOAD_FAILED");
+      }
+    }
+  }
+
+  const readback = await storage.download(path);
+  if (readback.error || !readback.data) {
+    if (uploadedByAttempt) await storage.remove([path]);
+    throw new Error("WEBSITE_DELIVERY_STORAGE_READBACK_FAILED");
+  }
+  const storedBytes = new Uint8Array(await readback.data.arrayBuffer());
+  if (
+    storedBytes.byteLength !== rendered.buffer.byteLength ||
+    (readback.data.type && readback.data.type !== WEBSITE_DELIVERY_MIME) ||
+    await sha256Hex(storedBytes) !== rendered.sha256
+  ) {
+    if (uploadedByAttempt) await storage.remove([path]);
+    throw new Error("WEBSITE_DELIVERY_STORAGE_READBACK_MISMATCH");
+  }
+
+  const registrationInput = {
+      p_candidate_id: candidateId,
+      p_docx_sha256: rendered.sha256,
+      p_docx_bytes: rendered.buffer.byteLength,
+      p_content_type: WEBSITE_DELIVERY_MIME,
+      p_runtime_template_reference: WEBSITE_DELIVERY_RUNTIME_TEMPLATE_REFERENCE,
+      p_runtime_template_version: WEBSITE_DELIVERY_RUNTIME_TEMPLATE_VERSION,
+      p_runtime_template_sha256: rendered.templateSha256,
+      p_idempotency_key: candidateId,
+      p_actor: actor,
+  };
+  let registeredResponse = await options.serviceClient.rpc(
+    "register_website_delivery_document_artifact_v2",
+    registrationInput,
+  );
+  if (registeredResponse.error) {
+    registeredResponse = await options.serviceClient.rpc(
+      "register_website_delivery_document_artifact_v2",
+      registrationInput,
+    );
+    if (registeredResponse.error) throw new Error(registeredResponse.error.message);
+  }
+  const parseRegistered = (data: unknown) => {
+    try {
+      const value = websiteAgreementRecord(
+        data,
+        "INVALID_WEBSITE_DELIVERY_REGISTER_RESPONSE",
+      );
+      return UUID.test(String(value.artifact_id || "")) &&
+          value.storage_bucket_id === bucket && value.storage_object_path === path &&
+          value.docx_sha256 === rendered.sha256 &&
+          value.docx_bytes === rendered.buffer.byteLength &&
+          typeof value.was_created === "boolean"
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  let registered = parseRegistered(registeredResponse.data);
+  if (!registered) {
+    registeredResponse = await options.serviceClient.rpc(
+      "register_website_delivery_document_artifact_v2",
+      registrationInput,
+    );
+    if (registeredResponse.error) throw new Error(registeredResponse.error.message);
+    registered = parseRegistered(registeredResponse.data);
+    if (!registered) throw new Error("INVALID_WEBSITE_DELIVERY_REGISTER_RESPONSE");
+  }
+  // Once registration starts, an ambiguous response may hide a committed row.
+  // Preserve verified bytes rather than risk deleting an object's successful evidence.
+  uploadedByAttempt = false;
+  const pdfConversion = options.startPdfConversion
+    ? await options.startPdfConversion({
+      artifactId: String(registered.artifact_id),
+      projectId: input.project_id,
+      previewVersionId,
+      documentVersion,
+      sourceDocxSha256: rendered.sha256,
+      generationPayloadSha256,
+      runtimeTemplateSha256: rendered.templateSha256,
+      idempotencyKey: String(registered.artifact_id),
+      actor,
+    })
+    : null;
+  return {
+    project_id: input.project_id,
+    candidate_id: candidateId,
+    artifact_id: registered.artifact_id,
+    document_version: documentVersion,
+    preview_version_id: previewVersionId,
+    storage_bucket_id: bucket,
+    storage_object_path: path,
+    docx_sha256: rendered.sha256,
+    docx_bytes: rendered.buffer.byteLength,
+    generation_payload_sha256: generationPayloadSha256,
+    runtime_template_sha256: rendered.templateSha256,
+    candidate_was_created: prepared.was_created,
+    artifact_was_created: registered.was_created,
+    ...(pdfConversion
+      ? {
+        pdf_conversion_task_id: pdfConversion.taskId,
+        pdf_conversion_task_was_created: pdfConversion.taskWasCreated,
+        pdf_dispatch_status: pdfConversion.dispatchStatus,
+      }
+      : {}),
+  };
+}
+
+type WebsiteInvoiceAction = WebsiteInvoiceConceptActionInput["action"];
+
+type WebsiteInvoiceDocumentKind = "INVOICE_M1" | "INVOICE_M2" | "INVOICE_FINAL";
+
+export const WEBSITE_INVOICE_ACTION_AUTHORITIES: Readonly<
+  Record<
+    WebsiteInvoiceAction,
+    Readonly<{
+      documentKind: WebsiteInvoiceDocumentKind;
+      milestone: 1 | 2 | 3;
+      filename: string;
+    }>
+  >
+> = Object.freeze({
+  prepare_website_invoice_m1_concept: {
+    documentKind: "INVOICE_M1",
+    milestone: 1,
+    filename: "LWS_WEBSITE_INVOICE_M1_40_NONPRODUCTION_v1.docx",
+  },
+  prepare_website_invoice_m2_concept: {
+    documentKind: "INVOICE_M2",
+    milestone: 2,
+    filename: "LWS_WEBSITE_INVOICE_M2_40_NONPRODUCTION_v1.docx",
+  },
+  prepare_website_invoice_final_concept: {
+    documentKind: "INVOICE_FINAL",
+    milestone: 3,
+    filename: "LWS_WEBSITE_INVOICE_FINAL_REMAINDER_NONPRODUCTION_v1.docx",
+  },
+});
+
+type WebsiteInvoiceConceptRuntimeOptions = Readonly<{
+  callerClient: QuotationBusinessDraftRpcClient;
+  serviceClient: QuotationBusinessDraftRpcClient;
+  templateBytes: Uint8Array;
+  renderDocx(
+    input: Readonly<{
+      templateBytes: Uint8Array;
+      payload: Record<string, unknown>;
+    }>,
+  ): PromiseLike<
+    Readonly<{
+      buffer: Uint8Array;
+      sha256: string;
+      documentKind: WebsiteInvoiceDocumentKind | "AGREEMENT";
+      templateSha256: string;
+      issuanceStatus: "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED";
+    }>
+  >;
+}>;
+
+async function websiteInvoicePrepareKey(
+  projectId: string,
+  documentKind: WebsiteInvoiceDocumentKind,
+): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(
+        `website-invoice-concept-v1:${projectId}:${documentKind}`,
+      ),
+    ),
+  ).slice(0, 16);
+  digest[6] = (digest[6] & 0x0f) | 0x80;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
+  const hex = Array.from(digest, (value) => value.toString(16).padStart(2, "0"))
+    .join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${
+    hex.slice(16, 20)
+  }-${hex.slice(20)}`;
+}
+
+function websiteAgreementRecord(
+  value: unknown,
+  code: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(code);
+  }
+  return value as Record<string, unknown>;
+}
+
+function websiteExactRecord(
+  value: unknown,
+  keys: readonly string[],
+  code: string,
+): Record<string, unknown> {
+  const result = websiteAgreementRecord(value, code);
+  const actualKeys = Object.keys(result).sort();
+  const expectedKeys = [...keys].sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    throw new Error(code);
+  }
+  return result;
+}
+
+export async function executeWebsiteAgreementConceptAction(
+  input: WebsiteAgreementConceptActionInput,
+  options: WebsiteAgreementConceptRuntimeOptions,
+): Promise<unknown> {
+  const identityResponse = await options.callerClient.rpc(
+    "get_current_operator_identity_v1",
+    {},
+  );
+  if (identityResponse.error) throw new Error(identityResponse.error.message);
+  const identity = websiteAgreementRecord(
+    identityResponse.data,
+    "INVALID_OPERATOR_IDENTITY_RESPONSE",
+  );
+  if (
+    identity.status !== "ACTIVE" ||
+    !["owner", "admin"].includes(String(identity.role || ""))
+  ) {
+    throw new Error("OPERATOR_NOT_AUTHORIZED");
+  }
+
+  const preparedResponse = await options.serviceClient.rpc(
+    "prepare_website_commercial_document_concept_v1",
+    {
+      p_project_id: input.project_id,
+      p_document_kind: "AGREEMENT",
+      p_idempotency_key: input.project_id,
+    },
+  );
+  if (preparedResponse.error) throw new Error(preparedResponse.error.message);
+  const prepared = websiteAgreementRecord(
+    preparedResponse.data,
+    "INVALID_WEBSITE_AGREEMENT_PREPARE_RESPONSE",
+  );
+  const candidateId = String(prepared.candidate_id || "");
+  const payloadSha256 = String(prepared.generation_payload_sha256 || "");
+  const payload = websiteAgreementRecord(
+    prepared.generation_payload,
+    "INVALID_WEBSITE_AGREEMENT_PREPARE_RESPONSE",
+  );
+  const lineage = websiteAgreementRecord(
+    payload.lineage,
+    "INVALID_WEBSITE_AGREEMENT_PREPARE_RESPONSE",
+  );
+  const quoteRequestId = String(lineage.quote_request_id || "");
+  if (
+    !UUID.test(candidateId) || !SHA256.test(payloadSha256) ||
+    prepared.issuance_status !== "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED" ||
+    typeof prepared.was_created !== "boolean" ||
+    payload.document_kind !== "AGREEMENT" ||
+    lineage.project_id !== input.project_id ||
+    !UUID.test(quoteRequestId)
+  ) {
+    throw new Error(
+      lineage.project_id !== input.project_id
+        ? "WEBSITE_COMMERCIAL_PROJECT_BINDING_MISMATCH"
+        : "INVALID_WEBSITE_AGREEMENT_PREPARE_RESPONSE",
+    );
+  }
+
+  const rendered = await options.renderDocx({
+    templateBytes: options.templateBytes,
+    payload,
+  });
+  const registeredResponse = await options.serviceClient.rpc(
+    "register_website_commercial_document_render_v1",
+    {
+      p_candidate_id: candidateId,
+      p_expected_generation_payload_sha256: payloadSha256,
+      p_template_sha256: rendered.templateSha256,
+      p_docx_sha256: rendered.sha256,
+      p_docx_bytes: rendered.buffer.byteLength,
+      p_idempotency_key: candidateId,
+    },
+  );
+  if (registeredResponse.error) {
+    throw new Error(registeredResponse.error.message);
+  }
+  const registered = websiteAgreementRecord(
+    registeredResponse.data,
+    "INVALID_WEBSITE_AGREEMENT_REGISTER_RESPONSE",
+  );
+  const artifactId = String(registered.artifact_id || "");
+  if (
+    !UUID.test(artifactId) || typeof registered.was_created !== "boolean" ||
+    registered.issuance_status !== "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+  ) {
+    throw new Error("INVALID_WEBSITE_AGREEMENT_REGISTER_RESPONSE");
+  }
+  return {
+    project_id: input.project_id,
+    quote_request_id: quoteRequestId,
+    candidate_id: candidateId,
+    artifact_id: artifactId,
+    agreement_status: rendered.agreementStatus,
+    render_status: "LOCAL_RENDER_ONLY",
+    issuance_status: rendered.issuanceStatus,
+    storage_status: "NOT_STORED",
+    archive_status: "NOT_ARCHIVED",
+    delivery_status: "NOT_DELIVERED",
+    concept_was_created: prepared.was_created,
+    registration_was_created: registered.was_created,
+  };
+}
+
+export async function executeWebsiteInvoiceConceptAction(
+  input: Readonly<{ action: WebsiteInvoiceAction; project_id: string }>,
+  options: WebsiteInvoiceConceptRuntimeOptions,
+): Promise<unknown> {
+  const authority = WEBSITE_INVOICE_ACTION_AUTHORITIES[input.action];
+  if (!authority) throw new Error("INVALID_WEBSITE_INVOICE_ACTION");
+
+  const identityResponse = await options.callerClient.rpc(
+    "get_current_operator_identity_v1",
+    {},
+  );
+  if (identityResponse.error) throw new Error(identityResponse.error.message);
+  const identity = websiteAgreementRecord(
+    identityResponse.data,
+    "INVALID_OPERATOR_IDENTITY_RESPONSE",
+  );
+  if (
+    identity.status !== "ACTIVE" ||
+    !["owner", "admin"].includes(String(identity.role || ""))
+  ) {
+    throw new Error("OPERATOR_NOT_AUTHORIZED");
+  }
+
+  const preparedResponse = await options.serviceClient.rpc(
+    "prepare_website_commercial_document_concept_v1",
+    {
+      p_project_id: input.project_id,
+      p_document_kind: authority.documentKind,
+      p_idempotency_key: await websiteInvoicePrepareKey(
+        input.project_id,
+        authority.documentKind,
+      ),
+    },
+  );
+  if (preparedResponse.error) throw new Error(preparedResponse.error.message);
+  const prepared = websiteExactRecord(
+    preparedResponse.data,
+    [
+      "candidate_id",
+      "generation_payload",
+      "generation_payload_sha256",
+      "issuance_status",
+      "was_created",
+    ],
+    "INVALID_WEBSITE_INVOICE_PREPARE_RESPONSE",
+  );
+  const candidateId = String(prepared.candidate_id || "");
+  const payloadSha256 = String(prepared.generation_payload_sha256 || "");
+  const payload = websiteAgreementRecord(
+    prepared.generation_payload,
+    "INVALID_WEBSITE_INVOICE_PREPARE_RESPONSE",
+  );
+  const lineage = websiteAgreementRecord(
+    payload.lineage,
+    "INVALID_WEBSITE_INVOICE_PREPARE_RESPONSE",
+  );
+  const invoiceFiscal = websiteAgreementRecord(
+    payload.invoice_fiscal,
+    "INVALID_WEBSITE_INVOICE_PREPARE_RESPONSE",
+  );
+  const quoteRequestId = String(lineage.quote_request_id || "");
+  if (
+    !UUID.test(candidateId) || !SHA256.test(payloadSha256) ||
+    prepared.issuance_status !== "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED" ||
+    typeof prepared.was_created !== "boolean" ||
+    payload.document_kind !== authority.documentKind ||
+    lineage.project_id !== input.project_id ||
+    !UUID.test(quoteRequestId) ||
+    !UUID.test(String(lineage.obligation_id || "")) ||
+    invoiceFiscal.obligation_id !== lineage.obligation_id ||
+    invoiceFiscal.milestone !== authority.milestone
+  ) {
+    throw new Error(
+      lineage.project_id !== input.project_id
+        ? "WEBSITE_COMMERCIAL_PROJECT_BINDING_MISMATCH"
+        : "INVALID_WEBSITE_INVOICE_PREPARE_RESPONSE",
+    );
+  }
+
+  const rendered = await options.renderDocx({
+    templateBytes: options.templateBytes,
+    payload,
+  });
+  if (
+    rendered.documentKind !== authority.documentKind ||
+    rendered.issuanceStatus !== "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+  ) {
+    throw new Error("INVALID_WEBSITE_INVOICE_RENDER_RESPONSE");
+  }
+  const registeredResponse = await options.serviceClient.rpc(
+    "register_website_commercial_document_render_v1",
+    {
+      p_candidate_id: candidateId,
+      p_expected_generation_payload_sha256: payloadSha256,
+      p_template_sha256: rendered.templateSha256,
+      p_docx_sha256: rendered.sha256,
+      p_docx_bytes: rendered.buffer.byteLength,
+      p_idempotency_key: candidateId,
+    },
+  );
+  if (registeredResponse.error) {
+    throw new Error(registeredResponse.error.message);
+  }
+  const registered = websiteExactRecord(
+    registeredResponse.data,
+    ["artifact_id", "issuance_status", "was_created"],
+    "INVALID_WEBSITE_INVOICE_REGISTER_RESPONSE",
+  );
+  const artifactId = String(registered.artifact_id || "");
+  if (
+    !UUID.test(artifactId) || typeof registered.was_created !== "boolean" ||
+    registered.issuance_status !== "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+  ) {
+    throw new Error("INVALID_WEBSITE_INVOICE_REGISTER_RESPONSE");
+  }
+
+  return {
+    project_id: input.project_id,
+    quote_request_id: quoteRequestId,
+    candidate_id: candidateId,
+    artifact_id: artifactId,
+    document_kind: authority.documentKind,
+    milestone: authority.milestone,
+    render_status: "LOCAL_RENDER_ONLY",
+    issuance_status: rendered.issuanceStatus,
+    storage_status: "NOT_STORED",
+    archive_status: "NOT_ARCHIVED",
+    delivery_status: "NOT_DELIVERED",
+    concept_was_created: prepared.was_created,
+    registration_was_created: registered.was_created,
+  };
+}
+
+export async function executeWebsiteAgreementRegistrationStatusAction(
+  input: WebsiteAgreementRegistrationStatusActionInput,
+  options: Readonly<{ callerClient: QuotationBusinessDraftRpcClient }>,
+): Promise<Record<string, unknown>> {
+  const response = await options.callerClient.rpc(
+    "get_website_agreement_registration_status_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_project_id: input.project_id,
+    },
+  );
+  if (response.error) throw new Error(response.error.message);
+  return validateWebsiteAgreementRegistrationStatusResult(response.data, input);
+}
+
+export async function executeWebsiteCommercialDocumentStatusAction(
+  input: WebsiteCommercialDocumentStatusActionInput,
+  options: Readonly<{ callerClient: QuotationBusinessDraftRpcClient }>,
+): Promise<Record<string, unknown>> {
+  const response = await options.callerClient.rpc(
+    "get_website_commercial_document_status_v1",
+    {
+      p_quote_request_id: input.quote_request_id,
+      p_project_id: input.project_id,
+    },
+  );
+  if (response.error) throw new Error(response.error.message);
+  return validateWebsiteCommercialDocumentStatusResult(response.data, input);
 }
 
 type SdfQuotationIssuanceRuntimeOptions = Pick<
@@ -1959,13 +3172,17 @@ export async function executeCallerJwtInternalE2EAcceptedFileCleanupAction(
   return finalization.data;
 }
 
-export function normalizePendingSeenStateItems(data: unknown): Record<string, unknown>[] | null {
+export function normalizePendingSeenStateItems(
+  data: unknown,
+): Record<string, unknown>[] | null {
   const items = (data as { items?: unknown[] } | null)?.items;
   if (!Array.isArray(items)) return null;
   return items.map((value) => ({ ...value as Record<string, unknown> }));
 }
 
-export function normalizeWebsitePendingItems(data: unknown): Record<string, unknown>[] | null {
+export function normalizeWebsitePendingItems(
+  data: unknown,
+): Record<string, unknown>[] | null {
   const items = normalizePendingSeenStateItems(data);
   if (!items) return null;
   return items.map((value) => {
@@ -2091,25 +3308,49 @@ if (import.meta.main) {
           );
           if (error) throw new Error(error.message);
           const websiteItems = normalizeWebsitePendingItems(data);
-          if (!websiteItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+          if (!websiteItems) {
+            throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
+          }
           if (retentionState !== "ACTIVE") return { items: websiteItems };
-          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1",
+            { p_actor_auth_user_id: actorAuthUserId },
+          );
           if (sdf.error) throw new Error(sdf.error.message);
           const sdfItems = normalizePendingSeenStateItems(sdf.data);
           if (!sdfItems) throw new Error("INVALID_PENDING_INTAKES_RESPONSE");
-          return { items: [...websiteItems, ...sdfItems].sort((left, right) => String((right as Record<string, unknown>).last_activity_at).localeCompare(String((left as Record<string, unknown>).last_activity_at))) };
+          return {
+            items: [...websiteItems, ...sdfItems].sort((left, right) =>
+              String((right as Record<string, unknown>).last_activity_at)
+                .localeCompare(
+                  String((left as Record<string, unknown>).last_activity_at),
+                )
+            ),
+          };
         },
-        executePendingIntakeCount: async (jwt: string, actorAuthUserId: string) => {
+        executePendingIntakeCount: async (
+          jwt: string,
+          actorAuthUserId: string,
+        ) => {
           const { data, error } = await clientFor(jwt).rpc(
             "count_operator_active_pending_intakes_v1",
             { p_actor_auth_user_id: actorAuthUserId },
           );
           if (error) throw new Error(error.message);
-          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+          const sdf = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1",
+            { p_actor_auth_user_id: actorAuthUserId },
+          );
           if (sdf.error) throw new Error(sdf.error.message);
           const sdfItems = (sdf.data as { items?: unknown[] } | null)?.items;
-          if (!Array.isArray(sdfItems) || typeof (data as { active_count?: unknown } | null)?.active_count !== "number") throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
-          return { active_count: Number((data as { active_count: number }).active_count) + sdfItems.length };
+          if (
+            !Array.isArray(sdfItems) ||
+            typeof (data as { active_count?: unknown } | null)?.active_count !==
+              "number"
+          ) throw new Error("INVALID_PENDING_INTAKE_COUNT_RESPONSE");
+          return {
+            active_count:
+              Number((data as { active_count: number }).active_count) +
+              sdfItems.length,
+          };
         },
         executeDossierSubstance: async (
           jwt: string,
@@ -2213,7 +3454,7 @@ if (import.meta.main) {
             },
           );
           if (error) throw new Error(error.message);
-          return data;
+          return normalizeCommercialOperatorRateLimitResult(data);
         },
         executeApplicationAction: async (
           jwt: string,
@@ -2246,31 +3487,64 @@ if (import.meta.main) {
             );
           }
           if (input.action === "list_pending_sdf_qualification_intakes") {
-            const { data, error } = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1", { p_actor_auth_user_id: actorAuthUserId });
+            const { data, error } = await clientFor(jwt).rpc("list_operator_pending_sdf_intakes_v1",
+              { p_actor_auth_user_id: actorAuthUserId },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
-          if (input.action === "allow_sdf_qualification_intake" || input.action === "reissue_sdf_qualification_intake") {
+          if (
+            input.action === "allow_sdf_qualification_intake" ||
+            input.action === "reissue_sdf_qualification_intake"
+          ) {
             const rawToken = createRawIntakeToken();
             const digest = await hashIntakeToken(rawToken);
-            const encrypted = await encryptIntakeInvitationToken(rawToken, digest);
-            const rpcName = input.action === "allow_sdf_qualification_intake" ? "allow_sdf_qualification_intake_v1" : "reissue_sdf_qualification_intake_v1";
-            const { data, error } = await clientFor(jwt).rpc(rpcName, { p_quote_request_id: input.quote_request_id, p_customer_capability_digest: digest, p_encrypted_capability: encrypted, p_idempotency_key: input.idempotency_key });
+            const encrypted = await encryptIntakeInvitationToken(
+              rawToken,
+              digest,
+            );
+            const rpcName = input.action === "allow_sdf_qualification_intake"
+              ? "allow_sdf_qualification_intake_v1"
+              : "reissue_sdf_qualification_intake_v1";
+            const { data, error } = await clientFor(jwt).rpc(rpcName, {
+              p_quote_request_id: input.quote_request_id,
+              p_customer_capability_digest: digest,
+              p_encrypted_capability: encrypted,
+              p_idempotency_key: input.idempotency_key,
+            });
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "inspect_sdf_qualification_intake") {
-            const { data, error } = await clientFor(jwt).rpc("inspect_sdf_qualification_intake_for_operator_v1", { p_quote_request_id: input.quote_request_id });
+            const { data, error } = await clientFor(jwt).rpc(
+              "inspect_sdf_qualification_intake_for_operator_v1",
+              { p_quote_request_id: input.quote_request_id },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "transition_sdf_qualification_intake") {
-            const { data, error } = await clientFor(jwt).rpc("transition_sdf_qualification_intake_v1", { p_quote_request_id: input.quote_request_id, p_action: input.transition, p_reason: input.reason, p_idempotency_key: input.idempotency_key, p_encrypted_capability: null });
+            const { data, error } = await clientFor(jwt).rpc(
+              "transition_sdf_qualification_intake_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_action: input.transition,
+                p_reason: input.reason,
+                p_idempotency_key: input.idempotency_key,
+                p_encrypted_capability: null,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "authorize_sdf_quotation_preparation_v1") {
-            const { data, error } = await clientFor(jwt).rpc("authorize_sdf_quotation_preparation_v1", { p_quote_request_id: input.quote_request_id, p_idempotency_key: input.idempotency_key });
+            const { data, error } = await clientFor(jwt).rpc(
+              "authorize_sdf_quotation_preparation_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_idempotency_key: input.idempotency_key,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
@@ -2279,6 +3553,15 @@ if (import.meta.main) {
               jwt,
               input as SdfM1InvoicePreparationActionInput,
               clientFor,
+            );
+          }
+          if (
+            input.action === "create_website_delivery_pdf_c3_trial_fixture" ||
+            input.action === "close_website_delivery_pdf_c3_trial_fixture"
+          ) {
+            return await executeWebsiteDeliveryPdfC3TrialTransport(
+              clientFor(jwt),
+              input as WebsiteDeliveryPdfC3TrialActionInput,
             );
           }
           if (input.action === "get_assignment_operator_roster") {
@@ -2334,6 +3617,12 @@ if (import.meta.main) {
                 import.meta.url,
               ),
             );
+            const officialTemplateBytes = await Deno.readFile(
+              new URL(
+                "./assets/LWS_WEBSITE_QUOTATION_NL_BE_OFFICIAL_v1.docx",
+                import.meta.url,
+              ),
+            );
             return await executeApprovedQuotationIssuanceAction(
               actorAuthUserId,
               input as QuotationIssuanceActionInput,
@@ -2341,6 +3630,10 @@ if (import.meta.main) {
                 serviceClient: quotationClient,
                 templateBytes,
                 renderDocx: renderQuotationDocxBytes,
+                additionalTemplates: [{
+                  templateBytes: officialTemplateBytes,
+                  renderDocx: renderWebsiteQuotationDocxBytes,
+                }],
                 deliver: (deliveryInput) =>
                   deliverIssuedQuotation({
                     supabase: quotationClient,
@@ -2348,6 +3641,102 @@ if (import.meta.main) {
                   }),
                 email: { from, resendApiKey },
               },
+            );
+          }
+          if (input.action === "prepare_website_agreement_concept") {
+            const agreementTemplateBytes = await Deno.readFile(
+              new URL(
+                "./assets/LWS_WEBSITE_AGREEMENT_NL_BE_CONCEPT_v1.docx",
+                import.meta.url,
+              ),
+            );
+            return await executeWebsiteAgreementConceptAction(
+              input as WebsiteAgreementConceptActionInput,
+              {
+                callerClient: clientFor(jwt),
+                serviceClient: serviceClient(),
+                templateBytes: agreementTemplateBytes,
+                renderDocx: renderWebsiteAgreementConceptDocxBytes,
+              },
+            );
+          }
+          if (input.action === "prepare_website_delivery_document") {
+            const deliveryTemplateBytes = await Deno.readFile(
+              new URL(
+                "./assets/LWS_WEBSITE_DELIVERY_DOCUMENT_OPL_W_01_v2.docx",
+                import.meta.url,
+              ),
+            );
+            const deliveryServiceClient = serviceClient();
+            return await executeWebsiteDeliveryDocumentAction(
+              actorAuthUserId,
+              input as WebsiteDeliveryDocumentActionInput,
+              {
+                callerClient: clientFor(jwt),
+                serviceClient: deliveryServiceClient,
+                templateBytes: deliveryTemplateBytes,
+                renderDocx: renderWebsiteDeliveryDocumentDocxBytes,
+                startPdfConversion: (binding) =>
+                  startWebsiteDeliveryPdfConversion(
+                    binding,
+                    deliveryServiceClient,
+                  ),
+              },
+            );
+          }
+          if (
+            input.action === "get_website_delivery_pdf_status" ||
+            input.action === "approve_website_delivery_pdf_rerun"
+          ) {
+            return await executeWebsiteDeliveryPdfRecoveryAction(
+              actorAuthUserId,
+              input as WebsiteDeliveryPdfStatusActionInput |
+                WebsiteDeliveryPdfRerunActionInput,
+              {
+                callerClient: clientFor(jwt),
+                serviceClient: serviceClient(),
+                createStarter: (taskId, actor, client) =>
+                  createWebsiteDeliveryPdfRuntimeStarter(taskId, actor, client),
+              },
+            );
+          }
+          if (input.action === "view_website_delivery_document") {
+            return await executeWebsiteDeliveryDocumentViewAction(
+              actorAuthUserId,
+              input as WebsiteDeliveryDocumentViewActionInput,
+              {
+                callerClient: clientFor(jwt),
+                serviceClient: serviceClient(),
+              },
+            );
+          }
+          if (input.action in WEBSITE_INVOICE_ACTION_AUTHORITIES) {
+            const invoiceInput = input as WebsiteInvoiceConceptActionInput;
+            const authority =
+              WEBSITE_INVOICE_ACTION_AUTHORITIES[invoiceInput.action];
+            const invoiceTemplateBytes = await Deno.readFile(
+              new URL(`./assets/${authority.filename}`, import.meta.url),
+            );
+            return await executeWebsiteInvoiceConceptAction(
+              invoiceInput,
+              {
+                callerClient: clientFor(jwt),
+                serviceClient: serviceClient(),
+                templateBytes: invoiceTemplateBytes,
+                renderDocx: renderWebsiteCommercialConceptDocxBytes,
+              },
+            );
+          }
+          if (input.action === "get_website_agreement_registration_status") {
+            return await executeWebsiteAgreementRegistrationStatusAction(
+              input as WebsiteAgreementRegistrationStatusActionInput,
+              { callerClient: clientFor(jwt) },
+            );
+          }
+          if (input.action === "get_website_commercial_document_status") {
+            return await executeWebsiteCommercialDocumentStatusAction(
+              input as WebsiteCommercialDocumentStatusActionInput,
+              { callerClient: clientFor(jwt) },
             );
           }
           if (input.action === "issue_sdf_approved_quotation") {
@@ -2473,6 +3862,13 @@ if (import.meta.main) {
               clientFor,
             );
           }
+          if (input.action === "record_website_project_preview_ready") {
+            return await executeCallerJwtWebsiteProjectPreviewReadyAction(
+              jwt,
+              input as WebsiteProjectPreviewReadyActionInput,
+              clientFor,
+            );
+          }
           if (input.action === "provision_website_execution_workspace") {
             return await executeCallerJwtWebsiteExecutionWorkspaceProvisionAction(
               jwt,
@@ -2501,6 +3897,12 @@ if (import.meta.main) {
               actorAuthUserId,
               input as WebsiteQuotationPricingStateActionInput,
               clientFor(jwt),
+            );
+          }
+          if (input.action === "get_website_quotation_approval_status") {
+            return await executeWebsiteQuotationApprovalStatusAction(
+              input as WebsiteQuotationApprovalStatusActionInput,
+              { callerClient: clientFor(jwt) },
             );
           }
           if (input.action === "evaluate_quotation_vat_readiness") {
@@ -2680,57 +4082,75 @@ if (import.meta.main) {
           }
           if (input.action === "get_website_execution_workspace") {
             // V2 database contract remains: "get_website_execution_workspace_v2" with p_quote_request_id: input.quote_request_id.
-            const data = await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
-              jwt,
-              {
-                action: "get_website_execution_workspace",
-                quote_request_id: String(input.quote_request_id),
-              },
-              clientFor,
-            );
+            const data =
+              await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
+                jwt,
+                {
+                  action: "get_website_execution_workspace",
+                  quote_request_id: String(input.quote_request_id),
+                },
+                clientFor,
+              );
             return data;
           }
           if (input.action === "get_project_requirements_board") {
-            const { data, error } = await client.rpc("get_project_requirements_board_v1", {
-              p_quote_request_id: input.quote_request_id,
-              p_project_id: input.project_id,
-            });
+            const { data, error } = await client.rpc(
+              "get_project_requirements_board_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "create_project_requirements_board") {
-            const { data, error } = await client.rpc("create_project_requirements_board_v1", {
-              p_quote_request_id: input.quote_request_id,
-              p_project_id: input.project_id,
-              p_idempotency_key: input.idempotency_key,
-            });
+            const { data, error } = await client.rpc(
+              "create_project_requirements_board_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+                p_idempotency_key: input.idempotency_key,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "create_project_requirement") {
-            const { data, error } = await client.rpc("create_project_requirement_v1", {
-              p_quote_request_id: input.quote_request_id,
-              p_project_id: input.project_id,
-              p_requirements_board_id: input.requirements_board_id,
-              p_expected_board_revision: input.expected_board_revision,
-              p_item: input.item,
-              p_idempotency_key: input.idempotency_key,
-            });
+            const { data, error } = await client.rpc(
+              "create_project_requirement_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+                p_requirements_board_id: input.requirements_board_id,
+                p_expected_board_revision: input.expected_board_revision,
+                p_item: input.item,
+                p_idempotency_key: input.idempotency_key,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
           if (input.action === "finalize_project_requirements_board") {
-            const { data, error } = await client.rpc("finalize_project_requirements_board_v1", {
-              p_quote_request_id: input.quote_request_id,
-              p_project_id: input.project_id,
-              p_requirements_board_id: input.requirements_board_id,
-              p_expected_revision: input.expected_revision,
-              p_idempotency_key: input.idempotency_key,
-            });
+            const { data, error } = await client.rpc(
+              "finalize_project_requirements_board_v1",
+              {
+                p_quote_request_id: input.quote_request_id,
+                p_project_id: input.project_id,
+                p_requirements_board_id: input.requirements_board_id,
+                p_expected_revision: input.expected_revision,
+                p_idempotency_key: input.idempotency_key,
+              },
+            );
             if (error) throw new Error(error.message);
             return data;
           }
-          if (input.action === "start_project_requirement" || input.action === "block_project_requirement" || input.action === "complete_project_requirement" || input.action === "reopen_project_requirement") {
+          if (
+            input.action === "start_project_requirement" ||
+            input.action === "block_project_requirement" ||
+            input.action === "complete_project_requirement" ||
+            input.action === "reopen_project_requirement"
+          ) {
             const rpcName = `${input.action}_v1`;
             const parameters: Record<string, unknown> = {
               p_quote_request_id: input.quote_request_id,
@@ -2739,9 +4159,15 @@ if (import.meta.main) {
               p_expected_revision: input.expected_revision,
               p_idempotency_key: input.idempotency_key,
             };
-            if (input.action === "block_project_requirement") parameters.p_blocked_reason = input.reason;
-            if (input.action === "complete_project_requirement") parameters.p_evidence_reference = input.evidence_reference;
-            if (input.action === "reopen_project_requirement") parameters.p_reopen_reason = input.reason;
+            if (input.action === "block_project_requirement") {
+              parameters.p_blocked_reason = input.reason;
+            }
+            if (input.action === "complete_project_requirement") {
+              parameters.p_evidence_reference = input.evidence_reference;
+            }
+            if (input.action === "reopen_project_requirement") {
+              parameters.p_reopen_reason = input.reason;
+            }
             const { data, error } = await client.rpc(rpcName, parameters);
             if (error) throw new Error(error.message);
             return data;

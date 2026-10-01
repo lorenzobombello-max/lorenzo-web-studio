@@ -69,6 +69,11 @@ type RenderDocx = (input: Readonly<{
 }>)=>PromiseLike<Readonly<{ buffer: Uint8Array; sha256: string }>>
   | Readonly<{ buffer: Uint8Array; sha256: string }>;
 
+type QuotationTemplateRuntime = Readonly<{
+  templateBytes: Uint8Array;
+  renderDocx: RenderDocx;
+}>;
+
 type Delivery = (input: Readonly<{
   issuanceId: string;
   requestedExpiresAt: null;
@@ -85,6 +90,7 @@ export type QuotationRuntimeOptions = Readonly<{
   serviceClient: QuotationRuntimeServiceClient;
   templateBytes: Uint8Array;
   renderDocx: RenderDocx;
+  additionalTemplates?: readonly QuotationTemplateRuntime[];
   route?: "LEGACY" | "SDF";
   sdfAuthority?: Readonly<{
     businessDraftId: string;
@@ -212,6 +218,12 @@ export function createQuotationRuntimeDependencies(
   const client = options.serviceClient;
   const route = options.route ?? "LEGACY";
   let approvedTemplateSha256: string | null = null;
+  const primaryTemplate: QuotationTemplateRuntime = {
+    templateBytes: options.templateBytes,
+    renderDocx: options.renderDocx,
+  };
+  const templateCandidates = [primaryTemplate, ...(options.additionalTemplates ?? [])];
+  let selectedTemplate = primaryTemplate;
 
   return {
     resolveContext: async (actorAuthUserId, quoteRequestId)=>{
@@ -233,10 +245,15 @@ export function createQuotationRuntimeDependencies(
       };
       const templateSha256 = template.template_sha256;
       approvedTemplateSha256 = templateSha256;
-      if (!SHA256.test(templateSha256)
-        || await hashBytes(options.templateBytes) !== templateSha256) {
+      if (!SHA256.test(templateSha256)) {
         throw new Error("QUOTATION_TEMPLATE_HASH_INVALID");
       }
+      const matchingCandidates: QuotationTemplateRuntime[] = [];
+      for (const candidate of templateCandidates) {
+        if (await hashBytes(candidate.templateBytes) === templateSha256) matchingCandidates.push(candidate);
+      }
+      if (matchingCandidates.length !== 1) throw new Error("QUOTATION_TEMPLATE_HASH_INVALID");
+      selectedTemplate = matchingCandidates[0];
       return {
         route,
         approvalId: String(data.approval_id || ""),
@@ -308,13 +325,13 @@ export function createQuotationRuntimeDependencies(
       const expectedTemplateHash = route === "SDF"
         ? String(object(payloadTemplate, "QUOTATION_TEMPLATE_HASH_INVALID").template_sha256 || "")
         : approvedTemplateSha256;
-      const observedTemplateHash = await hashBytes(options.templateBytes);
+      const observedTemplateHash = await hashBytes(selectedTemplate.templateBytes);
       if (!expectedTemplateHash || !SHA256.test(expectedTemplateHash)
         || !SHA256.test(observedTemplateHash) || observedTemplateHash !== expectedTemplateHash) {
         throw new Error("QUOTATION_TEMPLATE_HASH_INVALID");
       }
-      const result = await options.renderDocx({
-        templateBytes: options.templateBytes,
+      const result = await selectedTemplate.renderDocx({
+        templateBytes: selectedTemplate.templateBytes,
         rendererPackage: {
           generation_payload: issuePayload.payload,
           display_markers: null,
