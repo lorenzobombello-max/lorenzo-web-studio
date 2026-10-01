@@ -85,3 +85,6 @@ verify_jwt = false
 
 [functions.website-project-preview-host]
 verify_jwt = false
+
+[functions.commercial-customer-approval]
+verify_jwt = false
