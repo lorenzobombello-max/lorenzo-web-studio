@@ -33,6 +33,7 @@ const APPLICATION_ACTIONS = new Set([
   "get_recruitment_publication_state",
   "set_recruitment_publication_enabled",
   "get_website_quotation_pricing_state",
+  "get_website_quotation_approval_status",
   "evaluate_quotation_vat_readiness",
   "upsert_quotation_business_draft",
   "promote_quotation_business_draft_to_approval",
@@ -84,6 +85,7 @@ const APPLICATION_ACTIONS = new Set([
   "request_website_project_preview_build",
   "get_website_project_preview_build_status",
   "create_website_project_preview_session",
+  "record_website_project_preview_ready",
   "get_website_requirements_board",
   "sync_website_requirements_from_intake",
   "start_website_requirement",
@@ -95,6 +97,18 @@ const APPLICATION_ACTIONS = new Set([
   "retire_website_requirement_source",
   "start_website_concept",
   "promote_website_concept",
+  "get_website_agreement_registration_status",
+  "get_website_commercial_document_status",
+  "prepare_website_agreement_concept",
+  "prepare_website_invoice_m1_concept",
+  "prepare_website_invoice_m2_concept",
+  "prepare_website_invoice_final_concept",
+  "prepare_website_delivery_document",
+  "view_website_delivery_document",
+  "get_website_delivery_pdf_status",
+  "approve_website_delivery_pdf_rerun",
+  "create_website_delivery_pdf_c3_trial_fixture",
+  "close_website_delivery_pdf_c3_trial_fixture",
   "start_project_work",
   "get_project_requirements_board",
   "create_project_requirements_board",
@@ -181,8 +195,19 @@ const CUSTOMER_REQUEST_TYPES = new Set([
   "OTHER",
 ]);
 const REQUIREMENT_CATEGORIES = new Set([
-  "PAGE", "CONTENT", "DESIGN", "FORM", "SEO", "INTEGRATION", "AUTOMATION",
-  "AUTH", "ECOMMERCE", "DOCUMENT_FLOW", "MULTIMEDIA", "TECHNICAL", "OTHER",
+  "PAGE",
+  "CONTENT",
+  "DESIGN",
+  "FORM",
+  "SEO",
+  "INTEGRATION",
+  "AUTOMATION",
+  "AUTH",
+  "ECOMMERCE",
+  "DOCUMENT_FLOW",
+  "MULTIMEDIA",
+  "TECHNICAL",
+  "OTHER",
 ]);
 const REQUIREMENT_MODES = new Set(["AUTO", "OPERATOR", "HYBRID", "EXTERNAL"]);
 const REQUIREMENT_LIFECYCLE_ACTIONS = new Set([
@@ -353,6 +378,69 @@ export type QuotationIssuanceActionInput = Readonly<{
   action: "issue_and_deliver_approved_quotation";
   quote_request_id: string;
 }>;
+export type WebsiteAgreementConceptActionInput = Readonly<{
+  action: "prepare_website_agreement_concept";
+  project_id: string;
+}>;
+export type WebsiteInvoiceConceptActionInput = Readonly<{
+  action:
+    | "prepare_website_invoice_m1_concept"
+    | "prepare_website_invoice_m2_concept"
+    | "prepare_website_invoice_final_concept";
+  project_id: string;
+}>;
+export type WebsiteDeliveryDocumentActionInput = Readonly<{
+  action: "prepare_website_delivery_document";
+  project_id: string;
+  delivery_date: string;
+  checklist: Record<string, "COMPLETED" | "NOT_APPLICABLE">;
+  remarks_state: "NONE_CONFIRMED" | "RECORDED";
+  remarks_text: string | null;
+  contractor_signature_date: string;
+  contractor_signature_place: string;
+  idempotency_key: string;
+}>;
+export type WebsiteDeliveryDocumentViewActionInput = Readonly<{
+  action: "view_website_delivery_document";
+  quote_request_id: string;
+  project_id: string;
+}>;
+export type WebsiteDeliveryPdfStatusActionInput = Readonly<{
+  action: "get_website_delivery_pdf_status";
+  quote_request_id: string;
+  project_id: string;
+}>;
+export type WebsiteDeliveryPdfRerunActionInput = Readonly<{
+  action: "approve_website_delivery_pdf_rerun";
+  quote_request_id: string;
+  project_id: string;
+  task_id: string;
+  expected_dispatch_attempt_id: string;
+  approval_id: string;
+}>;
+export type WebsiteDeliveryPdfC3TrialActionInput = Readonly<
+  | {
+    action: "create_website_delivery_pdf_c3_trial_fixture";
+    internal_e2e_run_id: string;
+    idempotency_key: string;
+  }
+  | {
+    action: "close_website_delivery_pdf_c3_trial_fixture";
+    fixture_id: string;
+    expected_revision: number;
+    idempotency_key: string;
+  }
+>;
+export type WebsiteAgreementRegistrationStatusActionInput = Readonly<{
+  action: "get_website_agreement_registration_status";
+  quote_request_id: string;
+  project_id: string;
+}>;
+export type WebsiteCommercialDocumentStatusActionInput = Readonly<{
+  action: "get_website_commercial_document_status";
+  quote_request_id: string;
+  project_id: string;
+}>;
 export type SdfQuotationIssuanceActionInput = Readonly<{
   action: "issue_sdf_approved_quotation";
   quote_request_id: string;
@@ -439,6 +527,11 @@ export type WebsiteQuotationPricingStateActionInput = Readonly<{
   quote_request_id: string;
   intake_id: string;
 }>;
+export type WebsiteQuotationApprovalStatusActionInput = Readonly<{
+  action: "get_website_quotation_approval_status";
+  quote_request_id: string;
+  intake_id: string;
+}>;
 export type WebsiteConceptStartActionInput = Readonly<{
   action: "start_website_concept";
   quote_request_id: string;
@@ -511,6 +604,13 @@ export type WebsiteProjectPreviewControlActionInput = Readonly<
     preview_build_id: string;
   }
 >;
+export type WebsiteProjectPreviewReadyActionInput = Readonly<{
+  action: "record_website_project_preview_ready";
+  quote_request_id: string;
+  project_id: string;
+  preview_build_id: string;
+  idempotency_key: string;
+}>;
 export type WebsiteRequirementsActionInput = Readonly<
   Record<string, unknown> & {
     action: string;
@@ -820,18 +920,24 @@ function validatePendingIntakesResult(value: unknown) {
       !UUID.test(String(item.intake_id || "")) ||
       typeof item.name !== "string" || !item.name ||
       (item.organization !== null && typeof item.organization !== "string") ||
-      typeof item.support_reference !== "string" || !/^#[0-9A-F]{8}$/.test(item.support_reference) ||
+      typeof item.support_reference !== "string" ||
+      !/^#[0-9A-F]{8}$/.test(item.support_reference) ||
       typeof item.email !== "string" || !item.email ||
       (item.phone !== null && typeof item.phone !== "string") ||
-      !["website", "slimme_documentenflow"].includes(String(item.request_kind)) ||
-      (item.sdf_package !== null && !["start", "groei", "maatwerk"].includes(String(item.sdf_package))) ||
+      !["website", "slimme_documentenflow"].includes(
+        String(item.request_kind),
+      ) ||
+      (item.sdf_package !== null &&
+        !["start", "groei", "maatwerk"].includes(String(item.sdf_package))) ||
       typeof item.website_type !== "string" || !item.website_type ||
       typeof item.invitation_created_at !== "string" ||
       !item.invitation_created_at ||
       (item.invitation_sent_at !== null &&
         typeof item.invitation_sent_at !== "string") ||
       (item.invitation_delivery_status !== null &&
-        !["pending", "processing", "sent", "retry_wait", "failed"].includes(String(item.invitation_delivery_status))) ||
+        !["pending", "processing", "sent", "retry_wait", "failed"].includes(
+          String(item.invitation_delivery_status),
+        )) ||
       !["invited", "in_progress"].includes(String(item.intake_status)) ||
       !["ACTIVE", "INTERRUPTED", "EXPIRED", "CANCELLED"].includes(
         String(item.effective_access),
@@ -875,74 +981,211 @@ function validatePendingIntakesResult(value: unknown) {
   return value as { items: Record<string, unknown>[] };
 }
 const WEBSITE_SUBSTANCE_FIELDS = [
-  "business_description", "target_audience", "has_existing_website",
-  "existing_website_url", "elements_to_keep", "improvement_areas",
-  "website_goals", "primary_conversion_goal", "requested_pages",
-  "other_pages", "requested_features", "shop_required", "shop_details",
-  "booking_required", "booking_details", "languages", "primary_language",
-  "additional_languages", "page_scope_details", "quote_form_details",
-  "multilingual_details", "download_details", "newsletter_details",
-  "content_media_details", "hosting_maintenance_details", "deadline_details",
-  "seo_details", "design_styles", "brand_status", "logo_status",
-  "brand_colors", "inspiration_sites", "disliked_styles", "content_status",
-  "image_status", "image_support", "domain_status", "domain_name",
-  "hosting_status", "hosting_support", "maintenance_interest", "seo_priority",
-  "seo_keywords", "social_channels", "integrations", "deadline_date",
-  "deadline_reason", "budget_confirmed", "budget_update_category",
-  "budget_notes", "priorities", "additional_notes", "confirmation",
+  "business_description",
+  "target_audience",
+  "has_existing_website",
+  "existing_website_url",
+  "elements_to_keep",
+  "improvement_areas",
+  "website_goals",
+  "primary_conversion_goal",
+  "requested_pages",
+  "other_pages",
+  "requested_features",
+  "shop_required",
+  "shop_details",
+  "booking_required",
+  "booking_details",
+  "languages",
+  "primary_language",
+  "additional_languages",
+  "page_scope_details",
+  "quote_form_details",
+  "multilingual_details",
+  "download_details",
+  "newsletter_details",
+  "content_media_details",
+  "hosting_maintenance_details",
+  "deadline_details",
+  "seo_details",
+  "design_styles",
+  "brand_status",
+  "logo_status",
+  "brand_colors",
+  "inspiration_sites",
+  "disliked_styles",
+  "content_status",
+  "image_status",
+  "image_support",
+  "domain_status",
+  "domain_name",
+  "hosting_status",
+  "hosting_support",
+  "maintenance_interest",
+  "seo_priority",
+  "seo_keywords",
+  "social_channels",
+  "integrations",
+  "deadline_date",
+  "deadline_reason",
+  "budget_confirmed",
+  "budget_update_category",
+  "budget_notes",
+  "priorities",
+  "additional_notes",
+  "confirmation",
 ];
 const WEBSITE_SUBSTANCE_OBJECT_FIELDS: Record<string, string[]> = {
-  shop_details: ["approx_product_count", "complex_product_count", "payment_provider_count", "shipping_scope", "categories", "online_payments", "shipping", "pickup", "pickup_scope", "existing_catalog", "customer_accounts", "catalog_import", "erp_api"],
-  booking_details: ["tier", "type", "existing_system", "existing_system_name", "calendar_integration"],
-  page_scope_details: ["portfolio", "reviews", "blog", "jobs", "gallery", "jobs_application", "search"],
-  quote_form_details: ["file_uploads", "database_workflow", "automated_processing", "review_approval", "custom_logic", "form_count", "structure_scope"],
-  multilingual_details: ["final_translations_supplied", "same_structure", "translation_required", "seo_per_language", "advanced_seo_research", "language_specific_integrations", "complex_scope"],
+  shop_details: [
+    "approx_product_count",
+    "complex_product_count",
+    "payment_provider_count",
+    "shipping_scope",
+    "categories",
+    "online_payments",
+    "shipping",
+    "pickup",
+    "pickup_scope",
+    "existing_catalog",
+    "customer_accounts",
+    "catalog_import",
+    "erp_api",
+  ],
+  booking_details: [
+    "tier",
+    "type",
+    "existing_system",
+    "existing_system_name",
+    "calendar_integration",
+  ],
+  page_scope_details: [
+    "portfolio",
+    "reviews",
+    "blog",
+    "jobs",
+    "gallery",
+    "jobs_application",
+    "search",
+  ],
+  quote_form_details: [
+    "file_uploads",
+    "database_workflow",
+    "automated_processing",
+    "review_approval",
+    "custom_logic",
+    "form_count",
+    "structure_scope",
+  ],
+  multilingual_details: [
+    "final_translations_supplied",
+    "same_structure",
+    "translation_required",
+    "seo_per_language",
+    "advanced_seo_research",
+    "language_specific_integrations",
+    "complex_scope",
+  ],
   download_details: ["access"],
   newsletter_details: ["scope", "analytics", "custom_integration"],
-  content_media_details: ["copywriting_scope", "copy_page_count", "image_work_scope", "paid_stock_handling", "branding_tier"],
-  hosting_maintenance_details: ["hosting_support", "maintenance_interest", "domain_service", "maintenance_plan"],
+  content_media_details: [
+    "copywriting_scope",
+    "copy_page_count",
+    "image_work_scope",
+    "paid_stock_handling",
+    "branding_tier",
+  ],
+  hosting_maintenance_details: [
+    "hosting_support",
+    "maintenance_interest",
+    "domain_service",
+    "maintenance_plan",
+  ],
   deadline_details: ["commercially_critical", "hard_deadline"],
   seo_details: ["scope", "extra_language_seo", "advanced_language_seo"],
 };
 function isNullableJsonValue(value: unknown): boolean {
   return value === null || typeof value === "string" ||
     typeof value === "number" || typeof value === "boolean" ||
-    (Array.isArray(value) && value.every((item) =>
-      item === null || typeof item === "string" || typeof item === "number" ||
-      typeof item === "boolean" || isRecord(item)
-    ));
+    (Array.isArray(value) &&
+      value.every((item) =>
+        item === null || typeof item === "string" || typeof item === "number" ||
+        typeof item === "boolean" || isRecord(item)
+      ));
 }
 function validateDossierSubstanceResult(value: unknown) {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["quote_request_id", "request_kind", "request", "customer", "intake", "documents"]) ||
+    !hasExactKeys(value, [
+      "quote_request_id",
+      "request_kind",
+      "request",
+      "customer",
+      "intake",
+      "documents",
+    ]) ||
     !UUID.test(String(value.quote_request_id || "")) ||
-    !["website", "slimme_documentenflow"].includes(String(value.request_kind)) ||
+    !["website", "slimme_documentenflow"].includes(
+      String(value.request_kind),
+    ) ||
     !isRecord(value.request) ||
-    !hasExactKeys(value.request, ["reference", "original_text", "requested_service", "requested_at"]) ||
+    !hasExactKeys(value.request, [
+      "reference",
+      "original_text",
+      "requested_service",
+      "requested_at",
+    ]) ||
     typeof value.request.reference !== "string" || !value.request.reference ||
-    (value.request.original_text !== null && typeof value.request.original_text !== "string") ||
-    typeof value.request.requested_service !== "string" || !value.request.requested_service ||
-    typeof value.request.requested_at !== "string" || !value.request.requested_at ||
+    (value.request.original_text !== null &&
+      typeof value.request.original_text !== "string") ||
+    typeof value.request.requested_service !== "string" ||
+    !value.request.requested_service ||
+    typeof value.request.requested_at !== "string" ||
+    !value.request.requested_at ||
     !isRecord(value.customer) ||
     !hasExactKeys(value.customer, ["name", "company", "email", "phone"]) ||
     typeof value.customer.name !== "string" || !value.customer.name ||
-    (value.customer.company !== null && typeof value.customer.company !== "string") ||
+    (value.customer.company !== null &&
+      typeof value.customer.company !== "string") ||
     typeof value.customer.email !== "string" || !value.customer.email ||
-    (value.customer.phone !== null && typeof value.customer.phone !== "string") ||
+    (value.customer.phone !== null &&
+      typeof value.customer.phone !== "string") ||
     !isRecord(value.intake) ||
-    !hasExactKeys(value.intake, ["intake_id", "status", "invitation_state", "invited_at", "started_at", "submitted_at", "structured_answers"]) ||
+    !hasExactKeys(value.intake, [
+      "intake_id",
+      "status",
+      "invitation_state",
+      "invited_at",
+      "started_at",
+      "submitted_at",
+      "structured_answers",
+    ]) ||
     !UUID.test(String(value.intake.intake_id || "")) ||
-    !["invited", "in_progress", "submitted", "reviewed", "under_review", "changes_requested", "qualification_complete", "closed"].includes(String(value.intake.status)) ||
+    ![
+      "invited",
+      "in_progress",
+      "submitted",
+      "reviewed",
+      "under_review",
+      "changes_requested",
+      "qualification_complete",
+      "closed",
+    ].includes(String(value.intake.status)) ||
     !["INVITED", "ACTIVATED"].includes(String(value.intake.invitation_state)) ||
     typeof value.intake.invited_at !== "string" || !value.intake.invited_at ||
-    (value.intake.started_at !== null && typeof value.intake.started_at !== "string") ||
-    (value.intake.submitted_at !== null && typeof value.intake.submitted_at !== "string") ||
+    (value.intake.started_at !== null &&
+      typeof value.intake.started_at !== "string") ||
+    (value.intake.submitted_at !== null &&
+      typeof value.intake.submitted_at !== "string") ||
     !isRecord(value.intake.structured_answers) ||
     !isRecord(value.documents) ||
-    !hasExactKeys(value.documents, ["customer_request_count", "uploaded_document_count"]) ||
-    !Number.isSafeInteger(value.documents.customer_request_count) || Number(value.documents.customer_request_count) < 0 ||
-    !Number.isSafeInteger(value.documents.uploaded_document_count) || Number(value.documents.uploaded_document_count) < 0
+    !hasExactKeys(value.documents, [
+      "customer_request_count",
+      "uploaded_document_count",
+    ]) ||
+    !Number.isSafeInteger(value.documents.customer_request_count) ||
+    Number(value.documents.customer_request_count) < 0 ||
+    !Number.isSafeInteger(value.documents.uploaded_document_count) ||
+    Number(value.documents.uploaded_document_count) < 0
   ) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
 
   const answers = value.intake.structured_answers;
@@ -952,31 +1195,84 @@ function validateDossierSubstanceResult(value: unknown) {
     }
     for (const [key, fieldValue] of Object.entries(answers)) {
       const nestedFields = WEBSITE_SUBSTANCE_OBJECT_FIELDS[key];
-      if (!nestedFields && !isNullableJsonValue(fieldValue)) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
-      if (nestedFields && fieldValue !== null &&
-        (!isRecord(fieldValue) || !hasExactKeys(fieldValue, nestedFields) || !Object.values(fieldValue).every(isNullableJsonValue))) {
+      if (!nestedFields && !isNullableJsonValue(fieldValue)) {
+        throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
+      }
+      if (
+        nestedFields && fieldValue !== null &&
+        (!isRecord(fieldValue) || !hasExactKeys(fieldValue, nestedFields) ||
+          !Object.values(fieldValue).every(isNullableJsonValue))
+      ) {
         throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
       }
     }
   } else {
     if (
-      !hasExactKeys(answers, ["documentPurpose", "workflowCapabilities", "businessRequirements", "sampleDocumentMetadata", "commercialQualification"]) ||
-      !isRecord(answers.documentPurpose) || !hasExactKeys(answers.documentPurpose, ["categories", "otherDescription"]) ||
-      !Array.isArray(answers.documentPurpose.categories) || !answers.documentPurpose.categories.every((item) => typeof item === "string") ||
-      !Array.isArray(answers.workflowCapabilities) || !answers.workflowCapabilities.every((item) => typeof item === "string") ||
-      !isRecord(answers.businessRequirements) || !hasExactKeys(answers.businessRequirements, ["currentWorkflow", "desiredWorkflow", "volumeBand", "frequency", "relevantDocumentTypes", "rolesUsers"]) ||
-      !Array.isArray(answers.businessRequirements.relevantDocumentTypes) || !answers.businessRequirements.relevantDocumentTypes.every((item) => typeof item === "string") ||
-      !Array.isArray(answers.businessRequirements.rolesUsers) || !answers.businessRequirements.rolesUsers.every((item) => typeof item === "string") ||
-      !isRecord(answers.sampleDocumentMetadata) || !hasExactKeys(answers.sampleDocumentMetadata, ["available", "requestedByLws", "uploadRequiredLater"]) ||
-      !isRecord(answers.commercialQualification) || !hasExactKeys(answers.commercialQualification, ["packageDirection", "customComplexity", "documentVolumes", "flowCount", "userCount"]) ||
+      !hasExactKeys(answers, [
+        "documentPurpose",
+        "workflowCapabilities",
+        "businessRequirements",
+        "sampleDocumentMetadata",
+        "commercialQualification",
+      ]) ||
+      !isRecord(answers.documentPurpose) ||
+      !hasExactKeys(answers.documentPurpose, [
+        "categories",
+        "otherDescription",
+      ]) ||
+      !Array.isArray(answers.documentPurpose.categories) ||
+      !answers.documentPurpose.categories.every((item) =>
+        typeof item === "string"
+      ) ||
+      !Array.isArray(answers.workflowCapabilities) ||
+      !answers.workflowCapabilities.every((item) => typeof item === "string") ||
+      !isRecord(answers.businessRequirements) ||
+      !hasExactKeys(answers.businessRequirements, [
+        "currentWorkflow",
+        "desiredWorkflow",
+        "volumeBand",
+        "frequency",
+        "relevantDocumentTypes",
+        "rolesUsers",
+      ]) ||
+      !Array.isArray(answers.businessRequirements.relevantDocumentTypes) ||
+      !answers.businessRequirements.relevantDocumentTypes.every((item) =>
+        typeof item === "string"
+      ) ||
+      !Array.isArray(answers.businessRequirements.rolesUsers) ||
+      !answers.businessRequirements.rolesUsers.every((item) =>
+        typeof item === "string"
+      ) ||
+      !isRecord(answers.sampleDocumentMetadata) ||
+      !hasExactKeys(answers.sampleDocumentMetadata, [
+        "available",
+        "requestedByLws",
+        "uploadRequiredLater",
+      ]) ||
+      !isRecord(answers.commercialQualification) ||
+      !hasExactKeys(answers.commercialQualification, [
+        "packageDirection",
+        "customComplexity",
+        "documentVolumes",
+        "flowCount",
+        "userCount",
+      ]) ||
       !Array.isArray(answers.commercialQualification.documentVolumes) ||
       !answers.commercialQualification.documentVolumes.every((item) =>
-        isRecord(item) && hasExactKeys(item, ["documentType", "documentCount", "period", "averagePagesPerDocument"]) &&
+        isRecord(item) &&
+        hasExactKeys(item, [
+          "documentType",
+          "documentCount",
+          "period",
+          "averagePagesPerDocument",
+        ]) &&
         Object.values(item).every(isNullableJsonValue)
       ) ||
       !Object.values(answers.documentPurpose).every(isNullableJsonValue) ||
       !Object.values(answers.businessRequirements).every(isNullableJsonValue) ||
-      !Object.values(answers.sampleDocumentMetadata).every(isNullableJsonValue) ||
+      !Object.values(answers.sampleDocumentMetadata).every(
+        isNullableJsonValue,
+      ) ||
       !Object.values(answers.commercialQualification).every(isNullableJsonValue)
     ) throw new Error("INVALID_DOSSIER_SUBSTANCE_RESPONSE");
   }
@@ -1097,12 +1393,19 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "limit", "offset"])
     : action === "list_pending_sdf_qualification_intakes"
     ? new Set(["action"])
-    : action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake"
+    : action === "allow_sdf_qualification_intake" ||
+        action === "reissue_sdf_qualification_intake"
     ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "inspect_sdf_qualification_intake"
     ? new Set(["action", "quote_request_id"])
     : action === "transition_sdf_qualification_intake"
-    ? new Set(["action", "quote_request_id", "transition", "reason", "idempotency_key"])
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "transition",
+      "reason",
+      "idempotency_key",
+    ])
     : action === "authorize_sdf_quotation_preparation_v1"
     ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "list_pending_intakes"
@@ -1145,7 +1448,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "request_kind",
       "search",
     ])
-    : action === "get_website_quotation_pricing_state"
+    : action === "get_website_quotation_pricing_state" ||
+        action === "get_website_quotation_approval_status"
     ? new Set(["action", "quote_request_id", "intake_id"])
     : action === "evaluate_quotation_vat_readiness"
     ? new Set(["action", "quote_request_id"])
@@ -1172,7 +1476,7 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "generation_contract_version",
     ])
     : action === "prepare_sdf_quotation_delivery" ||
-      action === "send_sdf_quotation_delivery"
+        action === "send_sdf_quotation_delivery"
     ? new Set([
       "action",
       "business_draft_id",
@@ -1222,12 +1526,17 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "idempotency_key"])
     : action === "provision_website_repository"
     ? new Set([
-      "action", "quote_request_id", "website_work_context_id",
-      "website_workspace_id", "idempotency_key",
+      "action",
+      "quote_request_id",
+      "website_work_context_id",
+      "website_workspace_id",
+      "idempotency_key",
     ])
     : action === "recover_existing_website_repository"
     ? new Set([
-      "action", "quote_request_id", "website_work_context_id",
+      "action",
+      "quote_request_id",
+      "website_work_context_id",
       "website_workspace_id",
     ])
     : action === "list_website_project_directory"
@@ -1251,22 +1560,79 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "idempotency_key",
     ])
     : action === "request_website_project_preview_build"
-    ? new Set(["action", "quote_request_id", "expected_commit_sha", "idempotency_key"])
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "expected_commit_sha",
+      "idempotency_key",
+    ])
     : action === "get_website_project_preview_build_status"
     ? new Set(["action", "lease_id"])
     : action === "create_website_project_preview_session"
     ? new Set(["action", "preview_build_id"])
+    : action === "record_website_project_preview_ready"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "project_id",
+      "preview_build_id",
+      "idempotency_key",
+    ])
+    : action === "prepare_website_agreement_concept" ||
+        action === "prepare_website_invoice_m1_concept" ||
+        action === "prepare_website_invoice_m2_concept" ||
+        action === "prepare_website_invoice_final_concept"
+    ? new Set(["action", "project_id"])
+    : action === "prepare_website_delivery_document"
+    ? new Set([
+      "action",
+      "project_id",
+      "delivery_date",
+      "checklist",
+      "remarks_state",
+      "remarks_text",
+      "contractor_signature_date",
+      "contractor_signature_place",
+      "idempotency_key",
+    ])
+    : action === "view_website_delivery_document"
+    ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "get_website_delivery_pdf_status"
+    ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "approve_website_delivery_pdf_rerun"
+    ? new Set([
+      "action",
+      "quote_request_id",
+      "project_id",
+      "task_id",
+      "expected_dispatch_attempt_id",
+      "approval_id",
+    ])
+    : action === "create_website_delivery_pdf_c3_trial_fixture"
+    ? new Set(["action", "internal_e2e_run_id", "idempotency_key"])
+    : action === "close_website_delivery_pdf_c3_trial_fixture"
+    ? new Set(["action", "fixture_id", "expected_revision", "idempotency_key"])
+    : action === "get_website_agreement_registration_status"
+    ? new Set(["action", "quote_request_id", "project_id"])
+    : action === "get_website_commercial_document_status"
+    ? new Set(["action", "quote_request_id", "project_id"])
     : action === "get_website_requirements_board"
     ? new Set(["action", "quote_request_id", "website_work_context_id"])
     : action === "sync_website_requirements_from_intake"
     ? new Set([
-      "action", "quote_request_id", "website_work_context_id",
-      "expected_board_revision", "idempotency_key",
+      "action",
+      "quote_request_id",
+      "website_work_context_id",
+      "expected_board_revision",
+      "idempotency_key",
     ])
     : WEBSITE_REQUIREMENTS_ACTIONS.has(action)
     ? new Set([
-      "action", "quote_request_id", "website_work_context_id",
-      "requirement_id", "expected_revision",
+      "action",
+      "quote_request_id",
+      "website_work_context_id",
+      "requirement_id",
+      "expected_revision",
       ...(action === "block_website_requirement" ||
           action === "reopen_website_requirement" ||
           WEBSITE_REQUIREMENT_SOURCE_ACTIONS.has(action)
@@ -1278,13 +1644,18 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ])
     : action === "start_website_concept"
     ? new Set([
-      "action", "quote_request_id", "expected_website_work_revision",
+      "action",
+      "quote_request_id",
+      "expected_website_work_revision",
       "idempotency_key",
     ])
     : action === "promote_website_concept"
     ? new Set([
-      "action", "quote_request_id", "website_work_context_id",
-      "expected_context_revision", "idempotency_key",
+      "action",
+      "quote_request_id",
+      "website_work_context_id",
+      "expected_context_revision",
+      "idempotency_key",
     ])
     : action === "get_project_requirements_board"
     ? new Set(["action", "quote_request_id", "project_id"])
@@ -1292,19 +1663,33 @@ function validateApplicationAction(value: UnvalidatedInput) {
     ? new Set(["action", "quote_request_id", "project_id", "idempotency_key"])
     : action === "create_project_requirement"
     ? new Set([
-      "action", "quote_request_id", "project_id", "requirements_board_id",
-      "expected_board_revision", "item", "idempotency_key",
+      "action",
+      "quote_request_id",
+      "project_id",
+      "requirements_board_id",
+      "expected_board_revision",
+      "item",
+      "idempotency_key",
     ])
     : action === "finalize_project_requirements_board"
     ? new Set([
-      "action", "quote_request_id", "project_id", "requirements_board_id",
-      "expected_revision", "idempotency_key",
+      "action",
+      "quote_request_id",
+      "project_id",
+      "requirements_board_id",
+      "expected_revision",
+      "idempotency_key",
     ])
     : REQUIREMENT_LIFECYCLE_ACTIONS.has(action)
     ? new Set([
-      "action", "quote_request_id", "project_id", "requirement_id",
-      "expected_revision", "idempotency_key",
-      ...(action === "block_project_requirement" || action === "reopen_project_requirement"
+      "action",
+      "quote_request_id",
+      "project_id",
+      "requirement_id",
+      "expected_revision",
+      "idempotency_key",
+      ...(action === "block_project_requirement" ||
+          action === "reopen_project_requirement"
         ? ["reason"]
         : action === "complete_project_requirement"
         ? ["evidence_reference"]
@@ -1482,7 +1867,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
     }
     const requirementId = String(value.requirement_id || "");
     if (
-      !UUID.test(requirementId) || !Number.isSafeInteger(value.expected_revision) ||
+      !UUID.test(requirementId) ||
+      !Number.isSafeInteger(value.expected_revision) ||
       Number(value.expected_revision) < 1
     ) throw new RequestError(400, "INVALID_REQUEST");
     const input: Record<string, unknown> = {
@@ -1498,7 +1884,9 @@ function validateApplicationAction(value: UnvalidatedInput) {
       action === "reopen_website_requirement" ||
       WEBSITE_REQUIREMENT_SOURCE_ACTIONS.has(action)
     ) {
-      const reason = typeof value.reason === "string" ? value.reason.trim() : "";
+      const reason = typeof value.reason === "string"
+        ? value.reason.trim()
+        : "";
       if (reason.length < 1 || reason.length > 500) {
         throw new RequestError(400, "INVALID_REQUEST");
       }
@@ -1525,7 +1913,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
   }
-  if (action === "get_website_quotation_pricing_state") {
+  if (
+    action === "get_website_quotation_pricing_state" ||
+    action === "get_website_quotation_approval_status"
+  ) {
     const quoteRequestId = String(value.quote_request_id || "");
     const intakeId = String(value.intake_id || "");
     if (!UUID.test(quoteRequestId) || !UUID.test(intakeId)) {
@@ -1582,10 +1973,12 @@ function validateApplicationAction(value: UnvalidatedInput) {
     const approvalVersion = value.approval_version;
     const approvalSha256 = String(value.approval_sha256 || "");
     const generationContractVersion = value.generation_contract_version;
-    if (!UUID.test(quoteRequestId) || !UUID.test(businessDraftId)
-      || !UUID.test(approvalId) || !Number.isSafeInteger(approvalVersion)
-      || Number(approvalVersion) < 1 || !/^[0-9a-f]{64}$/.test(approvalSha256)
-      || generationContractVersion !== 1) {
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(businessDraftId) ||
+      !UUID.test(approvalId) || !Number.isSafeInteger(approvalVersion) ||
+      Number(approvalVersion) < 1 || !/^[0-9a-f]{64}$/.test(approvalSha256) ||
+      generationContractVersion !== 1
+    ) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     return {
@@ -1651,22 +2044,53 @@ function validateApplicationAction(value: UnvalidatedInput) {
   if (action === "list_pending_sdf_qualification_intakes") return { action };
   if (action === "inspect_sdf_qualification_intake") {
     const quoteRequestId = String(value.quote_request_id || "");
-    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    if (!UUID.test(quoteRequestId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
     return { action, quote_request_id: quoteRequestId };
   }
-  if (action === "allow_sdf_qualification_intake" || action === "reissue_sdf_qualification_intake" || action === "authorize_sdf_quotation_preparation_v1") {
+  if (
+    action === "allow_sdf_qualification_intake" ||
+    action === "reissue_sdf_qualification_intake" ||
+    action === "authorize_sdf_quotation_preparation_v1"
+  ) {
     const quoteRequestId = String(value.quote_request_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
-    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)) throw new RequestError(400, "INVALID_REQUEST");
-    return { action, quote_request_id: quoteRequestId, idempotency_key: idempotencyKey };
+    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      idempotency_key: idempotencyKey,
+    };
   }
   if (action === "transition_sdf_qualification_intake") {
     const quoteRequestId = String(value.quote_request_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
     const transition = String(value.transition || "");
     const reason = typeof value.reason === "string" ? value.reason.trim() : "";
-    if (!UUID.test(quoteRequestId) || !UUID.test(idempotencyKey) || !["begin_review","request_more_information","mark_qualification_complete","close_qualification"].includes(transition) || ((transition === "request_more_information" || transition === "close_qualification") && (reason.length < 1 || reason.length > 2000)) || ((transition === "begin_review" || transition === "mark_qualification_complete") && reason.length > 0)) throw new RequestError(400, "INVALID_REQUEST");
-    return { action, quote_request_id: quoteRequestId, transition, reason: reason || null, idempotency_key: idempotencyKey };
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(idempotencyKey) ||
+      ![
+        "begin_review",
+        "request_more_information",
+        "mark_qualification_complete",
+        "close_qualification",
+      ].includes(transition) ||
+      ((transition === "request_more_information" ||
+        transition === "close_qualification") &&
+        (reason.length < 1 || reason.length > 2000)) ||
+      ((transition === "begin_review" ||
+        transition === "mark_qualification_complete") && reason.length > 0)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      transition,
+      reason: reason || null,
+      idempotency_key: idempotencyKey,
+    };
   }
   if (action === "list_pending_intakes") {
     const retentionState = value.retention_state ?? "ACTIVE";
@@ -2103,6 +2527,143 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(projectId)) throw new RequestError(400, "INVALID_REQUEST");
     return { action, project_id: projectId };
   }
+  if (
+    action === "prepare_website_agreement_concept" ||
+    action === "prepare_website_invoice_m1_concept" ||
+    action === "prepare_website_invoice_m2_concept" ||
+    action === "prepare_website_invoice_final_concept"
+  ) {
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return { action, project_id: projectId };
+  }
+  if (action === "prepare_website_delivery_document") {
+    const projectId = String(value.project_id || "");
+    const deliveryDate = String(value.delivery_date || "");
+    const contractorDate = String(value.contractor_signature_date || "");
+    const contractorPlace = String(value.contractor_signature_place || "").trim();
+    const idempotencyKey = String(value.idempotency_key || "");
+    const checklist = value.checklist;
+    const checklistKeys = [
+      "access_transfer", "backup", "desktop_browsers", "domain", "forms",
+      "hosting", "links", "mobile_tablet", "pages", "ssl", "technical_seo",
+    ];
+    const checklistRecord = checklist && typeof checklist === "object" && !Array.isArray(checklist)
+      ? checklist as Record<string, unknown>
+      : null;
+    const remarksState = String(value.remarks_state || "");
+    const remarksText = value.remarks_text == null ? null : String(value.remarks_text).trim();
+    if (
+      !UUID.test(projectId) || !UUID.test(idempotencyKey) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(contractorDate) ||
+      !contractorPlace || contractorPlace.length > 200 ||
+      !checklistRecord ||
+      Object.keys(checklistRecord).sort().join("|") !== checklistKeys.join("|") ||
+      Object.values(checklistRecord).some((item) => !["COMPLETED", "NOT_APPLICABLE"].includes(String(item))) ||
+      !["NONE_CONFIRMED", "RECORDED"].includes(remarksState) ||
+      (remarksState === "NONE_CONFIRMED" && remarksText !== null) ||
+      (remarksState === "RECORDED" && (!remarksText || remarksText.length > 4000))
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      project_id: projectId,
+      delivery_date: deliveryDate,
+      checklist: checklistRecord as Record<string, "COMPLETED" | "NOT_APPLICABLE">,
+      remarks_state: remarksState as "NONE_CONFIRMED" | "RECORDED",
+      remarks_text: remarksText,
+      contractor_signature_date: contractorDate,
+      contractor_signature_place: contractorPlace,
+      idempotency_key: idempotencyKey,
+    };
+  }
+  if (action === "view_website_delivery_document") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+    } as WebsiteDeliveryDocumentViewActionInput;
+  }
+  if (action === "get_website_delivery_pdf_status") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+    } as WebsiteDeliveryPdfStatusActionInput;
+  }
+  if (action === "approve_website_delivery_pdf_rerun") {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    const taskId = String(value.task_id || "");
+    const attemptId = String(value.expected_dispatch_attempt_id || "");
+    const approvalId = String(value.approval_id || "");
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(projectId) ||
+      !UUID.test(taskId) || !UUID.test(attemptId) || !UUID.test(approvalId)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+      task_id: taskId,
+      expected_dispatch_attempt_id: attemptId,
+      approval_id: approvalId,
+    } as WebsiteDeliveryPdfRerunActionInput;
+  }
+  if (action === "create_website_delivery_pdf_c3_trial_fixture") {
+    const internalE2ERunId = String(value.internal_e2e_run_id || "");
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (!UUID.test(internalE2ERunId) || !UUID.test(idempotencyKey)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      internal_e2e_run_id: internalE2ERunId,
+      idempotency_key: idempotencyKey,
+    } as WebsiteDeliveryPdfC3TrialActionInput;
+  }
+  if (action === "close_website_delivery_pdf_c3_trial_fixture") {
+    const fixtureId = String(value.fixture_id || "");
+    const expectedRevision = Number(value.expected_revision);
+    const idempotencyKey = String(value.idempotency_key || "");
+    if (
+      !UUID.test(fixtureId) || !Number.isInteger(expectedRevision) || expectedRevision < 0 ||
+      !UUID.test(idempotencyKey)
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      fixture_id: fixtureId,
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+    } as WebsiteDeliveryPdfC3TrialActionInput;
+  }
+  if (
+    action === "get_website_agreement_registration_status" ||
+    action === "get_website_commercial_document_status"
+  ) {
+    const quoteRequestId = String(value.quote_request_id || "");
+    const projectId = String(value.project_id || "");
+    if (!UUID.test(quoteRequestId) || !UUID.test(projectId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+    };
+  }
   if (action === "start_website_concept") {
     const quoteRequestId = String(value.quote_request_id || "");
     const expectedRevision = value.expected_website_work_revision;
@@ -2251,7 +2812,10 @@ function validateApplicationAction(value: UnvalidatedInput) {
     if (!UUID.test(String(value.lease_id || ""))) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
-    return { action, lease_id: value.lease_id } as WebsiteProjectPreviewControlActionInput;
+    return {
+      action,
+      lease_id: value.lease_id,
+    } as WebsiteProjectPreviewControlActionInput;
   }
   if (action === "create_website_project_preview_session") {
     if (!UUID.test(String(value.preview_build_id || ""))) {
@@ -2262,9 +2826,26 @@ function validateApplicationAction(value: UnvalidatedInput) {
       preview_build_id: value.preview_build_id,
     } as WebsiteProjectPreviewControlActionInput;
   }
+  if (action === "record_website_project_preview_ready") {
+    if (
+      !UUID.test(String(value.quote_request_id || "")) ||
+      !UUID.test(String(value.project_id || "")) ||
+      !UUID.test(String(value.preview_build_id || "")) ||
+      !UUID.test(String(value.idempotency_key || ""))
+    ) throw new RequestError(400, "INVALID_REQUEST");
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+      project_id: value.project_id,
+      preview_build_id: value.preview_build_id,
+      idempotency_key: value.idempotency_key,
+    } as WebsiteProjectPreviewReadyActionInput;
+  }
   if (action === "get_website_execution_workspace") {
     const quoteRequestId = String(value.quote_request_id || "");
-    if (!UUID.test(quoteRequestId)) throw new RequestError(400, "INVALID_REQUEST");
+    if (!UUID.test(quoteRequestId)) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
     return { action, quote_request_id: quoteRequestId };
   }
   if (action === "get_project_workspace") {
@@ -2291,10 +2872,18 @@ function validateApplicationAction(value: UnvalidatedInput) {
     const quoteRequestId = String(value.quote_request_id || "");
     const projectId = String(value.project_id || "");
     const idempotencyKey = String(value.idempotency_key || "");
-    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(idempotencyKey)) {
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(projectId) ||
+      !UUID.test(idempotencyKey)
+    ) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
-    return { action, quote_request_id: quoteRequestId, project_id: projectId, idempotency_key: idempotencyKey };
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+      idempotency_key: idempotencyKey,
+    };
   }
   if (action === "create_project_requirement") {
     const quoteRequestId = String(value.quote_request_id || "");
@@ -2304,59 +2893,135 @@ function validateApplicationAction(value: UnvalidatedInput) {
     const expectedBoardRevision = value.expected_board_revision;
     const item = value.item;
     const itemKeys = [
-      "item_number", "title", "description", "category", "source_reference",
-      "linked_page_or_module", "completion_mode", "completion_rule_key",
-      "completion_rule_version", "sort_order", "required",
+      "item_number",
+      "title",
+      "description",
+      "category",
+      "source_reference",
+      "linked_page_or_module",
+      "completion_mode",
+      "completion_rule_key",
+      "completion_rule_version",
+      "sort_order",
+      "required",
     ];
-    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(boardId) ||
-      !UUID.test(idempotencyKey) || !Number.isSafeInteger(expectedBoardRevision) ||
-      Number(expectedBoardRevision) < 1 || !isRecord(item) || !hasExactKeys(item, itemKeys)) {
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(projectId) ||
+      !UUID.test(boardId) ||
+      !UUID.test(idempotencyKey) ||
+      !Number.isSafeInteger(expectedBoardRevision) ||
+      Number(expectedBoardRevision) < 1 || !isRecord(item) ||
+      !hasExactKeys(item, itemKeys)
+    ) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
     const source = item.source_reference;
     const mode = String(item.completion_mode || "");
     const ruleKey = item.completion_rule_key;
     const ruleVersion = item.completion_rule_version;
-    if (!Number.isSafeInteger(item.item_number) || Number(item.item_number) < 1 ||
-      typeof item.title !== "string" || item.title.trim().length < 1 || item.title.trim().length > 120 ||
-      typeof item.description !== "string" || item.description.trim().length < 1 || item.description.trim().length > 1200 ||
+    if (
+      !Number.isSafeInteger(item.item_number) || Number(item.item_number) < 1 ||
+      typeof item.title !== "string" || item.title.trim().length < 1 ||
+      item.title.trim().length > 120 ||
+      typeof item.description !== "string" ||
+      item.description.trim().length < 1 ||
+      item.description.trim().length > 1200 ||
       !REQUIREMENT_CATEGORIES.has(String(item.category || "")) ||
-      !isRecord(source) || !hasExactKeys(source, ["authority_type", "authority_id", "json_path", "source_sha256"]) ||
-      !new Set(["ACCEPTED_PROJECT_SCOPE", "ACCEPTED_LINE_ITEM"]).has(String(source.authority_type || "")) ||
-      !UUID.test(String(source.authority_id || "")) || typeof source.json_path !== "string" ||
+      !isRecord(source) ||
+      !hasExactKeys(source, [
+        "authority_type",
+        "authority_id",
+        "json_path",
+        "source_sha256",
+      ]) ||
+      !new Set(["ACCEPTED_PROJECT_SCOPE", "ACCEPTED_LINE_ITEM"]).has(
+        String(source.authority_type || ""),
+      ) ||
+      !UUID.test(String(source.authority_id || "")) ||
+      typeof source.json_path !== "string" ||
       !/^[0-9a-f]{64}$/.test(String(source.source_sha256 || "")) ||
-      (item.linked_page_or_module !== null && (typeof item.linked_page_or_module !== "string" || item.linked_page_or_module.trim().length < 1 || item.linked_page_or_module.trim().length > 160)) ||
+      (item.linked_page_or_module !== null &&
+        (typeof item.linked_page_or_module !== "string" ||
+          item.linked_page_or_module.trim().length < 1 ||
+          item.linked_page_or_module.trim().length > 160)) ||
       !REQUIREMENT_MODES.has(mode) || !Number.isSafeInteger(item.sort_order) ||
       Number(item.sort_order) < 1 || typeof item.required !== "boolean" ||
       (mode === "OPERATOR" && (ruleKey !== null || ruleVersion !== null)) ||
-      (mode !== "OPERATOR" && (typeof ruleKey !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(ruleKey) || !Number.isSafeInteger(ruleVersion) || Number(ruleVersion) < 1))) {
+      (mode !== "OPERATOR" &&
+        (typeof ruleKey !== "string" ||
+          !/^[a-z][a-z0-9_]{0,63}$/.test(ruleKey) ||
+          !Number.isSafeInteger(ruleVersion) || Number(ruleVersion) < 1))
+    ) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
-    return { action, quote_request_id: quoteRequestId, project_id: projectId, requirements_board_id: boardId, expected_board_revision: expectedBoardRevision, item, idempotency_key: idempotencyKey };
+    return {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+      requirements_board_id: boardId,
+      expected_board_revision: expectedBoardRevision,
+      item,
+      idempotency_key: idempotencyKey,
+    };
   }
-  if (action === "finalize_project_requirements_board" || REQUIREMENT_LIFECYCLE_ACTIONS.has(action)) {
+  if (
+    action === "finalize_project_requirements_board" ||
+    REQUIREMENT_LIFECYCLE_ACTIONS.has(action)
+  ) {
     const quoteRequestId = String(value.quote_request_id || "");
     const projectId = String(value.project_id || "");
-    const targetId = String(action === "finalize_project_requirements_board" ? value.requirements_board_id : value.requirement_id || "");
+    const targetId = String(
+      action === "finalize_project_requirements_board"
+        ? value.requirements_board_id
+        : value.requirement_id || "",
+    );
     const expectedRevision = value.expected_revision;
     const idempotencyKey = String(value.idempotency_key || "");
-    if (!UUID.test(quoteRequestId) || !UUID.test(projectId) || !UUID.test(targetId) ||
-      !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 1 || !UUID.test(idempotencyKey)) {
+    if (
+      !UUID.test(quoteRequestId) || !UUID.test(projectId) ||
+      !UUID.test(targetId) ||
+      !Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 1 ||
+      !UUID.test(idempotencyKey)
+    ) {
       throw new RequestError(400, "INVALID_REQUEST");
     }
-    const base = { action, quote_request_id: quoteRequestId, project_id: projectId, expected_revision: expectedRevision, idempotency_key: idempotencyKey };
-    if (action === "finalize_project_requirements_board") return { ...base, requirements_board_id: targetId };
-    if (action === "block_project_requirement" || action === "reopen_project_requirement") {
-      const reason = typeof value.reason === "string" ? value.reason.trim() : "";
-      if (reason.length < 1 || reason.length > 500) throw new RequestError(400, "INVALID_REQUEST");
+    const base = {
+      action,
+      quote_request_id: quoteRequestId,
+      project_id: projectId,
+      expected_revision: expectedRevision,
+      idempotency_key: idempotencyKey,
+    };
+    if (action === "finalize_project_requirements_board") {
+      return { ...base, requirements_board_id: targetId };
+    }
+    if (
+      action === "block_project_requirement" ||
+      action === "reopen_project_requirement"
+    ) {
+      const reason = typeof value.reason === "string"
+        ? value.reason.trim()
+        : "";
+      if (reason.length < 1 || reason.length > 500) {
+        throw new RequestError(400, "INVALID_REQUEST");
+      }
       return { ...base, requirement_id: targetId, reason };
     }
     if (action === "complete_project_requirement") {
       const evidence = value.evidence_reference;
-      if (!isRecord(evidence) || !hasExactKeys(evidence, ["attestation"]) || typeof evidence.attestation !== "string" || evidence.attestation.trim().length < 1 || evidence.attestation.trim().length > 500) {
+      if (
+        !isRecord(evidence) || !hasExactKeys(evidence, ["attestation"]) ||
+        typeof evidence.attestation !== "string" ||
+        evidence.attestation.trim().length < 1 ||
+        evidence.attestation.trim().length > 500
+      ) {
         throw new RequestError(400, "INVALID_REQUEST");
       }
-      return { ...base, requirement_id: targetId, evidence_reference: { attestation: evidence.attestation.trim() } };
+      return {
+        ...base,
+        requirement_id: targetId,
+        evidence_reference: { attestation: evidence.attestation.trim() },
+      };
     }
     return { ...base, requirement_id: targetId };
   }
@@ -2498,11 +3163,187 @@ function validateApplicationAction(value: UnvalidatedInput) {
       : {}),
   };
 }
+export function validateWebsiteAgreementRegistrationStatusResult(
+  raw: unknown,
+  input: WebsiteAgreementRegistrationStatusActionInput,
+): Record<string, unknown> {
+  const keys = [
+    "quote_request_id",
+    "project_id",
+    "candidate_id",
+    "candidate_status",
+    "agreement_status",
+    "candidate_issuance_status",
+    "artifact_id",
+    "render_status",
+    "render_issuance_status",
+  ];
+  if (
+    !isRecord(raw) || !hasExactKeys(raw, keys) ||
+    raw.quote_request_id !== input.quote_request_id ||
+    raw.project_id !== input.project_id
+  ) {
+    throw new Error("INVALID_WEBSITE_AGREEMENT_STATUS_RESPONSE");
+  }
+  const hasCandidate = UUID.test(String(raw.candidate_id || ""));
+  const hasArtifact = UUID.test(String(raw.artifact_id || ""));
+  const candidateValid = hasCandidate
+    ? raw.candidate_status === "PREPARED_LOCAL_CONCEPT" &&
+      raw.agreement_status === "UNSIGNED_CONCEPT" &&
+      raw.candidate_issuance_status ===
+        "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+    : raw.candidate_id === null &&
+      raw.candidate_status === null &&
+      raw.agreement_status === null &&
+      raw.candidate_issuance_status === null;
+  const artifactValid = hasArtifact
+    ? hasCandidate &&
+      raw.render_status === "LOCAL_RENDER_ONLY" &&
+      raw.render_issuance_status === "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+    : raw.artifact_id === null &&
+      raw.render_status === null &&
+      raw.render_issuance_status === null;
+  if (!candidateValid || !artifactValid) {
+    throw new Error("INVALID_WEBSITE_AGREEMENT_STATUS_RESPONSE");
+  }
+  return raw;
+}
+
+export function validateWebsiteCommercialDocumentStatusResult(
+  raw: unknown,
+  input: WebsiteCommercialDocumentStatusActionInput,
+): Record<string, unknown> {
+  const responseKeys = ["quote_request_id", "project_id", "documents"];
+  const documentKeys = [
+    "document_kind",
+    "state",
+    "candidate_id",
+    "candidate_status",
+    "agreement_status",
+    "milestone",
+    "obligation_id",
+    "candidate_issuance_status",
+    "artifact_id",
+    "render_status",
+    "render_issuance_status",
+    "blocking_reason",
+  ];
+  const expected = [
+    { kind: "AGREEMENT", milestone: null },
+    { kind: "INVOICE_M1", milestone: 1 },
+    { kind: "INVOICE_M2", milestone: 2 },
+    { kind: "INVOICE_FINAL", milestone: 3 },
+  ] as const;
+  if (
+    !isRecord(raw) || !hasExactKeys(raw, responseKeys) ||
+    raw.quote_request_id !== input.quote_request_id ||
+    raw.project_id !== input.project_id ||
+    !Array.isArray(raw.documents) ||
+    raw.documents.length !== expected.length
+  ) {
+    throw new Error("INVALID_WEBSITE_COMMERCIAL_DOCUMENT_STATUS_RESPONSE");
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    const document = raw.documents[index];
+    const shape = expected[index];
+    if (
+      !isRecord(document) || !hasExactKeys(document, documentKeys) ||
+      document.document_kind !== shape.kind
+    ) {
+      throw new Error("INVALID_WEBSITE_COMMERCIAL_DOCUMENT_STATUS_RESPONSE");
+    }
+    const hasCandidate = UUID.test(String(document.candidate_id || ""));
+    const hasArtifact = UUID.test(String(document.artifact_id || ""));
+    const candidateShapeValid = shape.kind === "AGREEMENT"
+      ? document.agreement_status === "UNSIGNED_CONCEPT" &&
+        document.milestone === null && document.obligation_id === null
+      : document.agreement_status === null &&
+        document.milestone === shape.milestone &&
+        UUID.test(String(document.obligation_id || ""));
+    const candidateValid = hasCandidate
+      ? document.candidate_status === "PREPARED_LOCAL_CONCEPT" &&
+        document.candidate_issuance_status ===
+          "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED" &&
+        candidateShapeValid
+      : document.candidate_id === null && document.candidate_status === null &&
+        document.agreement_status === null && document.milestone === null &&
+        document.obligation_id === null &&
+        document.candidate_issuance_status === null;
+    const artifactValid = hasArtifact
+      ? hasCandidate && document.render_status === "LOCAL_RENDER_ONLY" &&
+        document.render_issuance_status ===
+          "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+      : document.artifact_id === null && document.render_status === null &&
+        document.render_issuance_status === null;
+    const stateValid = document.state === "ABSENT"
+      ? !hasCandidate && !hasArtifact &&
+        document.blocking_reason === "CONCEPT_NOT_PREPARED"
+      : document.state === "CANDIDATE_ONLY"
+      ? hasCandidate && !hasArtifact &&
+        document.blocking_reason === "LOCAL_RENDER_REGISTRATION_REQUIRED"
+      : document.state === "REGISTERED"
+      ? hasCandidate && hasArtifact &&
+        document.blocking_reason === "BLOCKED_NONPRODUCTION_FISCAL_UNRESOLVED"
+      : false;
+    if (!candidateValid || !artifactValid || !stateValid) {
+      throw new Error("INVALID_WEBSITE_COMMERCIAL_DOCUMENT_STATUS_RESPONSE");
+    }
+  }
+  return raw;
+}
+
+export function validateWebsiteQuotationApprovalStatusResult(
+  raw: unknown,
+  input: WebsiteQuotationApprovalStatusActionInput,
+): Record<string, unknown> {
+  const keys = [
+    "quote_request_id",
+    "intake_id",
+    "state",
+    "business_draft_id",
+    "business_revision",
+    "approval_id",
+    "approval_status",
+    "approved_at",
+  ];
+  if (
+    !isRecord(raw) || !hasExactKeys(raw, keys) ||
+    raw.quote_request_id !== input.quote_request_id ||
+    raw.intake_id !== input.intake_id
+  ) {
+    throw new Error("INVALID_WEBSITE_QUOTATION_APPROVAL_STATUS_RESPONSE");
+  }
+  const hasBusinessDraft = UUID.test(String(raw.business_draft_id || "")) &&
+    Number.isSafeInteger(raw.business_revision) &&
+    Number(raw.business_revision) >= 1;
+  const valid = raw.state === "NO_DRAFT"
+    ? raw.business_draft_id === null && raw.business_revision === null &&
+      raw.approval_id === null && raw.approval_status === null &&
+      raw.approved_at === null
+    : raw.state === "AWAITING_APPROVAL"
+    ? hasBusinessDraft && raw.approval_id === null &&
+      raw.approval_status === null && raw.approved_at === null
+    : raw.state === "APPROVED"
+    ? hasBusinessDraft && UUID.test(String(raw.approval_id || "")) &&
+      raw.approval_status === "APPROVED" &&
+      typeof raw.approved_at === "string" &&
+      Number.isFinite(Date.parse(raw.approved_at))
+    : false;
+  if (!valid) {
+    throw new Error("INVALID_WEBSITE_QUOTATION_APPROVAL_STATUS_RESPONSE");
+  }
+  return raw;
+}
+
 function mapDatabaseError(error: unknown) {
   const code = error instanceof Error ? error.message : "INTERNAL";
   if (
     code === "INVALID_WEBSITE_REQUIREMENTS_RESPONSE" ||
-    code === "INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE"
+    code === "INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE" ||
+    code === "INVALID_WEBSITE_AGREEMENT_STATUS_RESPONSE" ||
+    code === "INVALID_WEBSITE_COMMERCIAL_DOCUMENT_STATUS_RESPONSE" ||
+    code === "INVALID_WEBSITE_QUOTATION_APPROVAL_STATUS_RESPONSE" ||
+    code === "WEBSITE_COMMERCIAL_REGISTRATION_INCONSISTENT"
   ) {
     return response(500, "SERVER_RESPONSE_INVALID");
   }
@@ -2526,6 +3367,7 @@ function mapDatabaseError(error: unknown) {
       "WEBSITE_WORK_CONTEXT_NOT_FOUND",
       "WEBSITE_CONCEPT_NOT_FOUND",
       "WEBSITE_PROMOTION_PROJECT_NOT_FOUND",
+      "PROJECT_NOT_FOUND",
     ]
       .includes(code)
   ) return response(404, "NOT_FOUND");
@@ -2573,6 +3415,15 @@ function mapDatabaseError(error: unknown) {
       "WEBSITE_PROMOTION_PROJECT_NOT_ELIGIBLE",
       "WEBSITE_PROMOTION_CONTEXT_MISMATCH",
       "WEBSITE_PROMOTION_WORKSPACE_MISMATCH",
+      "WEBSITE_COMMERCIAL_PROJECT_BINDING_MISMATCH",
+      "WEBSITE_COMMERCIAL_PRODUCT_FAMILY_INVALID",
+      "WEBSITE_COMMERCIAL_PROJECT_STATE_REQUIRED",
+      "WEBSITE_COMMERCIAL_AGREEMENT_RENDER_REQUIRED",
+      "WEBSITE_COMMERCIAL_M1_RENDER_REQUIRED",
+      "WEBSITE_COMMERCIAL_M2_RENDER_REQUIRED",
+      "WEBSITE_PREVIEW_BUILD_BINDING_INVALID",
+      "WEBSITE_PREVIEW_READY_STATE_INVALID",
+      "PROJECT_REQUIREMENTS_NOT_READY",
     ].includes(code)
   ) return response(409, "COMMAND_REJECTED");
   const projectFileStatuses = new Map<string, number>([
@@ -2786,6 +3637,10 @@ function mapDatabaseError(error: unknown) {
       "APPROVAL_INTEGRITY_INVALID",
       "QUOTATION_TEMPLATE_NOT_APPROVED",
       "QUOTATION_VAT_BINDING_REQUIRED",
+      "WEBSITE_QUOTATION_PAYMENT_TERM_MISSING",
+      "WEBSITE_QUOTATION_PAYMENT_TERM_AMBIGUOUS",
+      "WEBSITE_QUOTATION_PAYMENT_TERM_DEVIATES_FROM_SELECTION",
+      "WEBSITE_QUOTATION_PAYMENT_TERM_RELEASE_REQUIRED",
       "SELLER_IDENTITY_INVALID",
     ].includes(code)
   ) return response(409, "QUOTATION_NOT_ISSUABLE");
@@ -2886,6 +3741,25 @@ export async function executeWebsiteConceptStartTransport(
     p_expected_website_work_revision: input.expected_website_work_revision,
     p_idempotency_key: input.idempotency_key,
   });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function executeWebsiteDeliveryPdfC3TrialTransport(
+  client: DossierAssignmentRpcClient,
+  input: WebsiteDeliveryPdfC3TrialActionInput,
+): Promise<unknown> {
+  const request = input.action === "create_website_delivery_pdf_c3_trial_fixture"
+    ? client.rpc("create_website_delivery_pdf_c3_trial_fixture_v1", {
+      p_internal_e2e_run_id: input.internal_e2e_run_id,
+      p_idempotency_key: input.idempotency_key,
+    })
+    : client.rpc("close_website_delivery_pdf_c3_trial_fixture_v1", {
+      p_fixture_id: input.fixture_id,
+      p_expected_revision: input.expected_revision,
+      p_idempotency_key: input.idempotency_key,
+    });
+  const { data, error } = await request;
   if (error) throw new Error(error.message);
   return data;
 }
@@ -3260,9 +4134,17 @@ function validateWebsiteRequirementsBoardResult(
   input: WebsiteRequirementsActionInput,
 ): unknown {
   const rootKeys = [
-    "contract_version", "quote_request_id", "website_work_context_id",
-    "project_id", "phase", "context", "board", "items", "progress",
-    "readiness", "empty_state",
+    "contract_version",
+    "quote_request_id",
+    "website_work_context_id",
+    "project_id",
+    "phase",
+    "context",
+    "board",
+    "items",
+    "progress",
+    "readiness",
+    "empty_state",
   ];
   if (
     !isRecord(value) || !hasExactKeys(value, rootKeys) ||
@@ -3274,7 +4156,9 @@ function validateWebsiteRequirementsBoardResult(
     !["PRE_PROJECT", "OFFICIAL_PROJECT"].includes(String(value.phase)) ||
     !isRecord(value.context) ||
     !hasExactKeys(value.context, [
-      "customer", "dossier_reference", "assigned_operator",
+      "customer",
+      "dossier_reference",
+      "assigned_operator",
     ]) || typeof value.context.customer !== "string" ||
     value.context.customer.length < 1 ||
     typeof value.context.dossier_reference !== "string" ||
@@ -3291,19 +4175,27 @@ function validateWebsiteRequirementsBoardResult(
       assignedOperator.display_name.length < 1)
   ) invalidWebsiteRequirementsResponse();
   if (value.board === null) {
-    if (value.empty_state !== "NO_BOARD" || !Array.isArray(value.items) || value.items.length !== 0) {
+    if (
+      value.empty_state !== "NO_BOARD" || !Array.isArray(value.items) ||
+      value.items.length !== 0
+    ) {
       invalidWebsiteRequirementsResponse();
     }
   } else if (
     !isRecord(value.board) ||
     !hasExactKeys(value.board, [
-      "requirements_board_id", "sync_state", "revision", "mapping_version",
-      "current_intake_id", "current_intake_revision",
+      "requirements_board_id",
+      "sync_state",
+      "revision",
+      "mapping_version",
+      "current_intake_id",
+      "current_intake_revision",
       "current_intake_snapshot_sha256",
     ]) || typeof value.board.requirements_board_id !== "string" ||
     !UUID.test(value.board.requirements_board_id) ||
     !["CURRENT", "REVIEW_REQUIRED"].includes(String(value.board.sync_state)) ||
-    !isPositiveInteger(value.board.revision) || value.board.mapping_version !== 1 ||
+    !isPositiveInteger(value.board.revision) ||
+    value.board.mapping_version !== 1 ||
     typeof value.board.current_intake_id !== "string" ||
     !UUID.test(value.board.current_intake_id) ||
     !isPositiveInteger(value.board.current_intake_revision) ||
@@ -3313,15 +4205,30 @@ function validateWebsiteRequirementsBoardResult(
   ) invalidWebsiteRequirementsResponse();
   if (!Array.isArray(value.items)) invalidWebsiteRequirementsResponse();
   const itemKeys = [
-    "requirement_id", "item_number", "title", "description", "category",
-    "source", "linked_page_or_module", "status", "completion_mode",
-    "sort_order", "required", "started_at", "completed_at",
-    "verification_result", "blocked_reason", "revision",
-    "source_review_state", "permitted_actions",
+    "requirement_id",
+    "item_number",
+    "title",
+    "description",
+    "category",
+    "source",
+    "linked_page_or_module",
+    "status",
+    "completion_mode",
+    "sort_order",
+    "required",
+    "started_at",
+    "completed_at",
+    "verification_result",
+    "blocked_reason",
+    "revision",
+    "source_review_state",
+    "permitted_actions",
   ];
   const permittedActions = new Set([
-    "start_website_requirement", "block_website_requirement",
-    "complete_website_requirement", "reopen_website_requirement",
+    "start_website_requirement",
+    "block_website_requirement",
+    "complete_website_requirement",
+    "reopen_website_requirement",
     "accept_website_requirement_source_change",
     "keep_existing_website_requirement_source",
     "retire_website_requirement_source",
@@ -3329,45 +4236,73 @@ function validateWebsiteRequirementsBoardResult(
   for (const item of value.items) {
     if (
       !isRecord(item) || !hasExactKeys(item, itemKeys) ||
-      typeof item.requirement_id !== "string" || !UUID.test(item.requirement_id) ||
+      typeof item.requirement_id !== "string" ||
+      !UUID.test(item.requirement_id) ||
       !isPositiveInteger(item.item_number) || typeof item.title !== "string" ||
       item.title.length < 1 || typeof item.description !== "string" ||
       item.description.length < 1 ||
       !REQUIREMENT_CATEGORIES.has(String(item.category)) ||
       !isRecord(item.source) || !hasExactKeys(item.source, [
-        "authority_type", "source_key", "intake_id", "intake_revision",
-        "submitted_at", "mapping_version",
+        "authority_type",
+        "source_key",
+        "intake_id",
+        "intake_revision",
+        "submitted_at",
+        "mapping_version",
       ]) || item.source.authority_type !== "WEBSITE_INTAKE" ||
-      typeof item.source.source_key !== "string" || item.source.source_key.length < 1 ||
-      typeof item.source.intake_id !== "string" || !UUID.test(item.source.intake_id) ||
+      typeof item.source.source_key !== "string" ||
+      item.source.source_key.length < 1 ||
+      typeof item.source.intake_id !== "string" ||
+      !UUID.test(item.source.intake_id) ||
       !isPositiveInteger(item.source.intake_revision) ||
       typeof item.source.submitted_at !== "string" ||
       Number.isNaN(Date.parse(item.source.submitted_at)) ||
       item.source.mapping_version !== 1 ||
       !isWebsiteNullableString(item.linked_page_or_module) ||
-      !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(String(item.status)) ||
+      !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(
+        String(item.status),
+      ) ||
       !REQUIREMENT_MODES.has(String(item.completion_mode)) ||
-      !isNonNegativeInteger(item.sort_order) || typeof item.required !== "boolean" ||
-      !isTimestampOrNull(item.started_at) || !isTimestampOrNull(item.completed_at) ||
-      !["PASS", "FAIL", "UNKNOWN", "NOT_APPLICABLE"].includes(String(item.verification_result)) ||
-      !isWebsiteNullableString(item.blocked_reason) || !isPositiveInteger(item.revision) ||
-      !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(String(item.source_review_state)) ||
+      !isNonNegativeInteger(item.sort_order) ||
+      typeof item.required !== "boolean" ||
+      !isTimestampOrNull(item.started_at) ||
+      !isTimestampOrNull(item.completed_at) ||
+      !["PASS", "FAIL", "UNKNOWN", "NOT_APPLICABLE"].includes(
+        String(item.verification_result),
+      ) ||
+      !isWebsiteNullableString(item.blocked_reason) ||
+      !isPositiveInteger(item.revision) ||
+      !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(
+        String(item.source_review_state),
+      ) ||
       !Array.isArray(item.permitted_actions) ||
       item.permitted_actions.some((action) =>
         typeof action !== "string" || !permittedActions.has(action)
-      ) || new Set(item.permitted_actions).size !== item.permitted_actions.length
+      ) ||
+      new Set(item.permitted_actions).size !== item.permitted_actions.length
     ) invalidWebsiteRequirementsResponse();
   }
   if (
     !isRecord(value.progress) || !hasExactKeys(value.progress, [
-      "required_total", "required_completed", "required_open",
-      "required_blocked", "review_pending",
-    ]) || Object.values(value.progress).some((count) => !isNonNegativeInteger(count)) ||
+      "required_total",
+      "required_completed",
+      "required_open",
+      "required_blocked",
+      "review_pending",
+    ]) ||
+    Object.values(value.progress).some((count) =>
+      !isNonNegativeInteger(count)
+    ) ||
     !isRecord(value.readiness) || !hasExactKeys(value.readiness, [
-      "ready_for_preview", "readiness", "reason",
+      "ready_for_preview",
+      "readiness",
+      "reason",
     ]) || typeof value.readiness.ready_for_preview !== "boolean" ||
-    !["READY", "BLOCKED", "UNKNOWN"].includes(String(value.readiness.readiness)) ||
-    typeof value.readiness.reason !== "string" || value.readiness.reason.length < 1
+    !["READY", "BLOCKED", "UNKNOWN"].includes(
+      String(value.readiness.readiness),
+    ) ||
+    typeof value.readiness.reason !== "string" ||
+    value.readiness.reason.length < 1
   ) invalidWebsiteRequirementsResponse();
   return value;
 }
@@ -3378,27 +4313,51 @@ function validateWebsiteRequirementsSyncResult(
 ): unknown {
   if (
     !isRecord(value) || !hasExactKeys(value, [
-      "contract_version", "outcome", "quote_request_id",
-      "website_work_context_id", "requirements_board_id", "board_revision",
-      "intake_id", "intake_revision", "intake_sha256", "mapping_version",
-      "sync_run_id", "replayed", "review_required", "counts",
+      "contract_version",
+      "outcome",
+      "quote_request_id",
+      "website_work_context_id",
+      "requirements_board_id",
+      "board_revision",
+      "intake_id",
+      "intake_revision",
+      "intake_sha256",
+      "mapping_version",
+      "sync_run_id",
+      "replayed",
+      "review_required",
+      "counts",
     ]) || value.contract_version !== 1 || value.mapping_version !== 1 ||
     value.quote_request_id !== input.quote_request_id ||
     value.website_work_context_id !== input.website_work_context_id ||
-    !["SYNCED", "REPLAYED", "REVIEW_REQUIRED"].includes(String(value.outcome)) ||
-    typeof value.requirements_board_id !== "string" || !UUID.test(value.requirements_board_id) ||
-    !isPositiveInteger(value.board_revision) || typeof value.intake_id !== "string" ||
+    !["SYNCED", "REPLAYED", "REVIEW_REQUIRED"].includes(
+      String(value.outcome),
+    ) ||
+    typeof value.requirements_board_id !== "string" ||
+    !UUID.test(value.requirements_board_id) ||
+    !isPositiveInteger(value.board_revision) ||
+    typeof value.intake_id !== "string" ||
     !UUID.test(value.intake_id) || !isPositiveInteger(value.intake_revision) ||
-    typeof value.intake_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(value.intake_sha256) ||
+    typeof value.intake_sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(value.intake_sha256) ||
     typeof value.sync_run_id !== "string" || !UUID.test(value.sync_run_id) ||
-    typeof value.replayed !== "boolean" || typeof value.review_required !== "boolean" ||
+    typeof value.replayed !== "boolean" ||
+    typeof value.review_required !== "boolean" ||
     (value.outcome === "SYNCED" && (value.replayed || value.review_required)) ||
-    (value.outcome === "REPLAYED" && (!value.replayed || value.review_required)) ||
-    (value.outcome === "REVIEW_REQUIRED" && (value.replayed || !value.review_required)) ||
+    (value.outcome === "REPLAYED" &&
+      (!value.replayed || value.review_required)) ||
+    (value.outcome === "REVIEW_REQUIRED" &&
+      (value.replayed || !value.review_required)) ||
     !isRecord(value.counts) || !hasExactKeys(value.counts, [
-      "created", "updated", "unchanged", "retired", "change_pending",
-      "removal_pending", "revived",
-    ]) || Object.values(value.counts).some((count) => !isNonNegativeInteger(count))
+      "created",
+      "updated",
+      "unchanged",
+      "retired",
+      "change_pending",
+      "removal_pending",
+      "revived",
+    ]) ||
+    Object.values(value.counts).some((count) => !isNonNegativeInteger(count))
   ) invalidWebsiteRequirementsResponse();
   return value;
 }
@@ -3422,22 +4381,42 @@ function validateWebsiteRequirementMutationResult(
     : ["REOPEN", null];
   if (
     !isRecord(value) || !hasExactKeys(value, [
-      "contract_version", "command", "quote_request_id",
-      "website_work_context_id", "requirements_board_id", "requirement_id",
-      "previous_status", "status", "previous_source_review_state",
-      "source_review_state", "resolution", "requirement_revision",
-      "board_revision", "replayed",
+      "contract_version",
+      "command",
+      "quote_request_id",
+      "website_work_context_id",
+      "requirements_board_id",
+      "requirement_id",
+      "previous_status",
+      "status",
+      "previous_source_review_state",
+      "source_review_state",
+      "resolution",
+      "requirement_revision",
+      "board_revision",
+      "replayed",
     ]) || value.contract_version !== 1 || value.command !== expected[0] ||
-    value.resolution !== expected[1] || value.quote_request_id !== input.quote_request_id ||
+    value.resolution !== expected[1] ||
+    value.quote_request_id !== input.quote_request_id ||
     value.website_work_context_id !== input.website_work_context_id ||
     value.requirement_id !== input.requirement_id ||
-    typeof value.requirements_board_id !== "string" || !UUID.test(value.requirements_board_id) ||
-    !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(String(value.previous_status)) ||
-    !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(String(value.status)) ||
-    !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(String(value.previous_source_review_state)) ||
-    !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(String(value.source_review_state)) ||
+    typeof value.requirements_board_id !== "string" ||
+    !UUID.test(value.requirements_board_id) ||
+    !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(
+      String(value.previous_status),
+    ) ||
+    !["PENDING", "ACTIVE", "BLOCKED", "COMPLETED"].includes(
+      String(value.status),
+    ) ||
+    !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(
+      String(value.previous_source_review_state),
+    ) ||
+    !["CURRENT", "CHANGE_PENDING", "REMOVAL_PENDING", "RETIRED"].includes(
+      String(value.source_review_state),
+    ) ||
     !isPositiveInteger(value.requirement_revision) ||
-    !isPositiveInteger(value.board_revision) || typeof value.replayed !== "boolean"
+    !isPositiveInteger(value.board_revision) ||
+    typeof value.replayed !== "boolean"
   ) invalidWebsiteRequirementsResponse();
   return value;
 }
@@ -3461,12 +4440,22 @@ function validateWebsiteConceptPromotionResult(
 ): unknown {
   if (
     !isRecord(value) || !hasExactKeys(value, [
-      "contract_version", "outcome", "quote_request_id",
-      "website_work_context_id", "concept_id", "project_id",
-      "previous_phase", "phase", "previous_context_revision",
-      "context_revision", "website_workspace_id",
-      "workspace_binding_revision", "requirements_board_id",
-      "requirements_board_revision", "promotion_event_id", "promoted_at",
+      "contract_version",
+      "outcome",
+      "quote_request_id",
+      "website_work_context_id",
+      "concept_id",
+      "project_id",
+      "previous_phase",
+      "phase",
+      "previous_context_revision",
+      "context_revision",
+      "website_workspace_id",
+      "workspace_binding_revision",
+      "requirements_board_id",
+      "requirements_board_revision",
+      "promotion_event_id",
+      "promoted_at",
       "replayed",
     ]) || value.contract_version !== 1 || value.outcome !== "PROMOTED" ||
     value.quote_request_id !== input.quote_request_id ||
@@ -3497,6 +4486,28 @@ function validateWebsiteConceptPromotionResult(
   if (!workspacePairValid || !requirementsPairValid) {
     throw new Error("INVALID_WEBSITE_CONCEPT_PROMOTION_RESPONSE");
   }
+  return value;
+}
+
+function validateWebsiteProjectPreviewReadyResult(
+  value: unknown,
+  input: WebsiteProjectPreviewReadyActionInput,
+): unknown {
+  if (
+    !isRecord(value) || !hasExactKeys(value, [
+      "project_id",
+      "resulting_state",
+      "revision",
+      "command_type",
+      "match_status",
+      "entity_id",
+    ]) || value.project_id !== input.project_id ||
+    value.resulting_state !== "PREVIEW_READY" ||
+    !isPositiveInteger(value.revision) ||
+    value.command_type !== "record_preview_ready" ||
+    value.match_status !== null ||
+    typeof value.entity_id !== "string" || !UUID.test(value.entity_id)
+  ) throw new Error("INVALID_WEBSITE_PREVIEW_READY_RESPONSE");
   return value;
 }
 
@@ -3548,7 +4559,18 @@ export async function handleCommercialOperator(
         input.action === "get_website_project_preview_build_status" ||
         input.action === "create_website_project_preview_session" ||
         input.action === "provision_website_repository" ||
-        input.action === "recover_existing_website_repository"
+        input.action === "recover_existing_website_repository" ||
+        input.action === "promote_quotation_business_draft_to_approval" ||
+        input.action === "prepare_website_agreement_concept" ||
+        input.action === "prepare_website_invoice_m1_concept" ||
+        input.action === "prepare_website_invoice_m2_concept" ||
+        input.action === "prepare_website_invoice_final_concept" ||
+        input.action === "prepare_website_delivery_document" ||
+        input.action === "view_website_delivery_document" ||
+        input.action === "get_website_delivery_pdf_status" ||
+        input.action === "approve_website_delivery_pdf_rerun" ||
+        input.action === "create_website_delivery_pdf_c3_trial_fixture" ||
+        input.action === "close_website_delivery_pdf_c3_trial_fixture"
       ) {
         try {
           requireOperatorAal2(claims, sub);
@@ -3557,6 +4579,9 @@ export async function handleCommercialOperator(
         }
       }
       if (input.action === "permanently_delete_pending_intake") {
+        requireOperatorAal2(claims, sub);
+      }
+      if (input.action === "record_website_project_preview_ready") {
         requireOperatorAal2(claims, sub);
       }
       if (input.action === "list_pending_intakes") {
@@ -3577,7 +4602,11 @@ export async function handleCommercialOperator(
       }
       if (input.action === "get_dossier_substance") {
         const result = validateDossierSubstanceResult(
-          await deps.executeDossierSubstance(jwt, user.id, String(input.quote_request_id)),
+          await deps.executeDossierSubstance(
+            jwt,
+            user.id,
+            String(input.quote_request_id),
+          ),
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
@@ -3620,11 +4649,19 @@ export async function handleCommercialOperator(
           ? await deps.signOperatorCursor(nextPosition, input)
           : null;
         return response(200, "APPLICATION_ACTION_ACCEPTED", {
-          result: { items: raw.items, has_more: raw.has_more, next_cursor: nextCursor },
+          result: {
+            items: raw.items,
+            has_more: raw.has_more,
+            next_cursor: nextCursor,
+          },
         });
       }
       if (input.action === "get_application_facets_v2") {
-        const result = await deps.executeApplicationFacetsV2(jwt, user.id, input);
+        const result = await deps.executeApplicationFacetsV2(
+          jwt,
+          user.id,
+          input,
+        );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
       if (input.action === "list_website_project_directory") {
@@ -3666,7 +4703,17 @@ export async function handleCommercialOperator(
         );
         return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
       }
-      const rawResult = await deps.executeApplicationAction(jwt, input, user.id);
+      const rawResult = await deps.executeApplicationAction(
+        jwt,
+        input,
+        user.id,
+      );
+      if (input.action === "view_website_delivery_document") {
+        if (!(rawResult instanceof Response)) {
+          throw new Error("INVALID_WEBSITE_DELIVERY_VIEW_RESPONSE");
+        }
+        return rawResult;
+      }
       const result = input.action === "promote_website_concept"
         ? validateWebsiteConceptPromotionResult(
           rawResult,
@@ -3677,10 +4724,37 @@ export async function handleCommercialOperator(
           rawResult,
           input as WebsiteRequirementsActionInput,
         )
+        : input.action === "get_website_agreement_registration_status"
+        ? validateWebsiteAgreementRegistrationStatusResult(
+          rawResult,
+          input as WebsiteAgreementRegistrationStatusActionInput,
+        )
+        : input.action === "get_website_commercial_document_status"
+        ? validateWebsiteCommercialDocumentStatusResult(
+          rawResult,
+          input as WebsiteCommercialDocumentStatusActionInput,
+        )
+        : input.action === "record_website_project_preview_ready"
+        ? validateWebsiteProjectPreviewReadyResult(
+          rawResult,
+          input as WebsiteProjectPreviewReadyActionInput,
+        )
+        : input.action === "get_website_quotation_approval_status"
+        ? validateWebsiteQuotationApprovalStatusResult(
+          rawResult,
+          input as WebsiteQuotationApprovalStatusActionInput,
+        )
         : rawResult;
       return response(200, "APPLICATION_ACTION_ACCEPTED", { result });
     }
     const input = validate(parsed);
+    if (input.command_type === "prepare_milestone_1") {
+      try {
+        requireOperatorAal2(claims, sub);
+      } catch {
+        throw new RequestError(403, "OPERATOR_NOT_AUTHORIZED");
+      }
+    }
     const limit = await deps.consumeRateLimit(jwt, input.project_id);
     if (!limit.allowed) {
       return response(429, "RATE_LIMITED", {
@@ -3695,7 +4769,9 @@ export async function handleCommercialOperator(
     if (error instanceof RequestError) {
       return response(error.status, error.code);
     }
-    const recoveryDiagnosticCode = productionRepositoryRecoveryDiagnosticCode(error);
+    const recoveryDiagnosticCode = productionRepositoryRecoveryDiagnosticCode(
+      error,
+    );
     if (recoveryDiagnosticCode) {
       return response(500, recoveryDiagnosticCode);
     }

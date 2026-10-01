@@ -43,6 +43,15 @@ export type GitHubTask13RuntimeConfig = Readonly<{
   lab: GitHubAppConfig;
 }>;
 
+export type WebsiteDeliveryPdfDispatchAppConfig = Readonly<{
+  appId: string;
+  installationId: string;
+  organization: "lorenzobombello-max";
+  repository: "lorenzo-web-studio";
+  repositoryId: "1320223175";
+  privateKey: string;
+}>;
+
 export class GitHubProviderDisabledError extends Error {
   readonly code = GITHUB_PROVIDER_DISABLED;
 
@@ -72,6 +81,39 @@ function read(
   const value = environment.get(name)?.trim();
   if (!value) invalid();
   return value;
+}
+
+export function loadWebsiteDeliveryPdfDispatchAppConfig(
+  environment: GitHubProviderEnvironment = Deno.env,
+): WebsiteDeliveryPdfDispatchAppConfig {
+  const appId = read(environment, "LWS_DELIVERY_PDF_DISPATCH_APP_ID");
+  const installationId = read(
+    environment,
+    "LWS_DELIVERY_PDF_DISPATCH_INSTALLATION_ID",
+  );
+  let privateKey: string;
+  try {
+    privateKey = normalizeGitHubAppPrivateKey(
+      read(environment, "LWS_DELIVERY_PDF_DISPATCH_PRIVATE_KEY"),
+    );
+  } catch {
+    invalid();
+  }
+  if (!NUMERIC_ID.test(appId) || !NUMERIC_ID.test(installationId)) invalid();
+  const config = {
+    appId,
+    installationId,
+    organization: "lorenzobombello-max" as const,
+    repository: "lorenzo-web-studio" as const,
+    repositoryId: "1320223175" as const,
+  };
+  Object.defineProperty(config, "privateKey", {
+    value: privateKey,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return Object.freeze(config) as WebsiteDeliveryPdfDispatchAppConfig;
 }
 
 export function loadGitHubAppConfig(

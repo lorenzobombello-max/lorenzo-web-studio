@@ -1,0 +1,52 @@
+name: Convert Website Delivery PDF
+run-name: PDF ${{ github.event.inputs.task_id }}
+
+# Local C2 contract only. It is intentionally unpublished and has no schedule.
+# OIDC binding: audience lws-website-delivery-pdf-conversion; repository
+# lorenzobombello-max/lorenzo-web-studio (1320223175); ref refs/heads/main;
+# subject repo:lorenzobombello-max/lorenzo-web-studio:ref:refs/heads/main.
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Immutable website delivery PDF task UUID"
+        required: true
+        type: string
+
+concurrency:
+  group: website-delivery-pdf-${{ github.event.inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout conversion runtime without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.5"
+
+      - name: Build and verify pinned converter image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag lws-opl-w-01-pdf-converter:a1 scripts/website-delivery-pdf/libreoffice
+          actual="$(docker image inspect lws-opl-w-01-pdf-converter:a1 --format '{{.Id}}')"
+          expected="sha256:ec39c3eadebfd3f31656548725e8eb4a7c4cf91d3ab91f015289e4e25f848314"
+          test "$actual" = "$expected"
+
+      - name: Convert exact immutable task
+        shell: bash
+        run: deno run --allow-env --allow-net --allow-read --allow-write --allow-run scripts/website-delivery-pdf/run-conversion-task.ts
+        env:
+          LWS_DELIVERY_PDF_TASK_ID: ${{ github.event.inputs.task_id }}
+          LWS_DELIVERY_PDF_CONVERSION_ENDPOINT: ${{ vars.LWS_DELIVERY_PDF_CONVERSION_ENDPOINT }}
+          LWS_DELIVERY_PDF_OIDC_AUDIENCE: lws-website-delivery-pdf-conversion
