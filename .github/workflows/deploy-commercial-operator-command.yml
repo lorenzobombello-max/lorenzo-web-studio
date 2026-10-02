@@ -86,7 +86,7 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           LWS_SUPABASE_PROJECT_REF: ${{ vars.LWS_SUPABASE_PROJECT_REF }}
-        run: npx --no-install supabase functions deploy commercial-operator-command --project-ref "$LWS_SUPABASE_PROJECT_REF"
+        run: npx --no-install supabase functions deploy commercial-operator-command --use-api --project-ref "$LWS_SUPABASE_PROJECT_REF"
 
   continuity-postdeploy:
     runs-on: ubuntu-latest
