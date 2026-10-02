@@ -43,6 +43,13 @@ function moduleNavigationTarget(event, link) {
   return url.origin === window.location.origin && url.pathname === window.location.pathname ? url : null;
 }
 
+function bindManagedWindowButtons(master) {
+  if (!master) return;
+  for (const button of document.querySelectorAll("[data-operator-window-module]")) {
+    master.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
+  }
+}
+
 document.addEventListener("click", (event)=>{
   const link = event.target.closest?.("[data-finance-tab]");
   if (!link || !financeNavigation?.identity) return;
@@ -119,12 +126,6 @@ try {
           if (moduleKey === "dossiers") document.querySelector("[data-dossiers-workspace]")?.operatorDossiersController?.refresh();
         },
       });
-      const bindManagedWindowButtons = (master)=>{
-        if (!master) return;
-        for (const button of document.querySelectorAll("[data-operator-window-module]")) {
-          master.bindModuleButton(button, button.dataset.operatorWindowModule, button.dataset.operatorWindowSlot || "main");
-        }
-      };
       const unbindManagedWindowButtons = (master)=>{
         if (!master) return;
         for (const button of document.querySelectorAll("[data-operator-window-module]")) {

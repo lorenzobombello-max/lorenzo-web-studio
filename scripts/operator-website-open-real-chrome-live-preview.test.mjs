@@ -287,6 +287,17 @@ function createSupabaseMock() {
           await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(identity) });
           return;
         }
+        if (rpcName === "get_current_operator_profile_v1") {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+            profile_code: "OP-01",
+            display_name: "Lorenzo Owner",
+            email: "owner@example.test",
+            role: "owner",
+            role_label: "Owner",
+            status: "ACTIVE",
+          }) });
+          return;
+        }
         if (rpcName === "acquire_operator_workspace_v1") {
           state.acquireCalls += 1;
           const masterWindowId = String(body?.p_master_window_id || "");
@@ -486,9 +497,47 @@ async function loadActiveWebsiteDossier(page, origin) {
   await page.locator('[data-dossiers-website-open]').waitFor({ state: "visible", timeout: 20_000 });
 }
 
+async function navigateToOpenWebsiteDossier(page, origin) {
+  await page.goto(`${origin}/operator/dashboard/?module=profile`, { waitUntil: "domcontentloaded" });
+  await page.locator("#operatorDashboard").waitFor({ state: "visible", timeout: 20_000 });
+  await page.getByRole("link", { name: "Dossiers" }).click();
+  await page.waitForURL("**/operator/dashboard/?module=dossiers");
+  await page.getByRole("button", { name: "Open in nieuw venster" }).waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator('[data-dossiers-zone="ACTIVE"]').click();
+  await page.locator('[data-dossiers-select="0"]').waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator('[data-dossiers-select="0"]').click();
+  await page.getByRole("button", { name: "WEBSITE OPENEN" }).waitFor({ state: "visible", timeout: 20_000 });
+}
+
 function diagnosticsSummary(diagnostics) {
   return JSON.stringify(diagnostics, null, 2);
 }
+
+test("dashboard navigation rebinds controls for an OPEN_WEBSITE dossier", { timeout: 180_000 }, async () => {
+  const env = await launchEnvironment();
+  try {
+    const page = await env.context.newPage();
+    env.attach(page);
+    await navigateToOpenWebsiteDossier(page, env.origin);
+
+    const popupPromise = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "WEBSITE OPENEN" }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL((value) => new URL(value).pathname === "/operator/window/", { timeout: 20_000 });
+    await popup.getByRole("button", { name: "Requirements openen" }).waitFor({ state: "visible", timeout: 20_000 });
+    assert.equal(
+      await popup.getByRole("link", { name: "Preview openen" }).isHidden(),
+      true,
+      "website workspace access must not imply that a preview already exists",
+    );
+    assert.deepEqual(env.diagnostics.pageErrors, [], `page errors:\n${diagnosticsSummary(env.diagnostics)}`);
+    assert.deepEqual(env.diagnostics.consoleErrors, [], `console errors:\n${diagnosticsSummary(env.diagnostics)}`);
+    await popup.close();
+    await page.close();
+  } finally {
+    await env.close();
+  }
+});
 
 test("real dashboard WEBSITE OPENEN opens the real popup and reuses it on second click", { timeout: 180_000 }, async () => {
   const env = await launchEnvironment();
