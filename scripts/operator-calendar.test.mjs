@@ -250,10 +250,10 @@ test("calendar selection release identity reaches dashboard and standalone windo
     readFile(new URL("../operator/window/index.html", import.meta.url), "utf8"),
   ]);
   assert.ok(dashboard.includes(`operator-calendar.mjs?v=${release}`));
-  assert.ok(dashboardGuard.includes("operator-dashboard.js?v=20260917-pre-project-workspace-r2"));
+  assert.ok(dashboardGuard.includes("operator-dashboard.js?v=20261003-workspace-recovery-v6-r1"));
   assert.ok(dashboardHtml.includes("operator-dashboard.css?v=20260922-action-message-readable-r2"));
   assert.ok(registry.includes(`operator-calendar.mjs?v=${release}`));
-  assert.ok(windowGuard.includes("operator-module-registry.mjs?v=20260922-preview-error-code-r1"));
+  assert.ok(windowGuard.includes("operator-module-registry.mjs?v=20261003-workspace-recovery-v6-r1"));
   assert.ok(windowHtml.includes("operator-dashboard.css?v=20260922-action-message-readable-r2"));
 });
 

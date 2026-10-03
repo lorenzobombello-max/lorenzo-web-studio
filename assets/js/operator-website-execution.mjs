@@ -29,6 +29,7 @@ const ROOT_KEYS = [
   "website_work_context_id", "context_revision", "briefing_status",
   "commercially_released", "project", "start_gate", "workspace", "requirements",
 ];
+const ROOT_V6_KEYS = [...ROOT_KEYS, "permitted_actions"];
 const WORKSPACE_KEYS = [
   "website_workspace_id", "website_work_context_id", "project_id",
   "quote_request_id", "workspace_state", "repository_operation_state",
@@ -231,14 +232,20 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
         || (expected?.conceptId !== null && !UUID.test(String(expected?.conceptId || "")))))) {
     throw new Error("INVALID_WEBSITE_EXECUTION_CONTEXT");
   }
-  if (!exactKeys(value, ROOT_KEYS) || ![4, 5].includes(value.contract_version)
+  const rootKeys = value?.contract_version === 6 ? ROOT_V6_KEYS : ROOT_KEYS;
+  if (!exactKeys(value, rootKeys) || ![4, 5, 6].includes(value.contract_version)
     || value.mode !== expected.mode
     || value.quote_request_id !== expected.quoteRequestId
     || value.website_work_context_id !== expected.websiteWorkContextId
     || !Number.isSafeInteger(value.context_revision) || value.context_revision < 1
     || !["LIMITED", "COMPLETE"].includes(value.briefing_status)
     || typeof value.commercially_released !== "boolean"
-    || !exactKeys(value.requirements, ["state", "message"])) {
+    || !exactKeys(value.requirements, ["state", "message"])
+    || value.contract_version === 6 && (
+      !Array.isArray(value.permitted_actions)
+      || new Set(value.permitted_actions).size !== value.permitted_actions.length
+      || value.permitted_actions.some((action) => action !== "promote_website_concept")
+    )) {
     throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
   }
   if (value.concept_id !== expected.conceptId || value.project_id !== expected.projectId) {
@@ -261,10 +268,10 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
   let workspace = null;
   if (value.workspace !== null) {
     workspace = value.workspace;
-    const workspaceKeys = value.contract_version === 5
+    const workspaceKeys = value.contract_version >= 5
       ? WORKSPACE_KEYS
       : WORKSPACE_KEYS.filter((key) => key !== "repository_recovery_operation_id");
-    const capabilityKeys = value.contract_version === 5
+    const capabilityKeys = value.contract_version >= 5
       ? [
         "project_files_read", "project_files_write",
         "repository_retry_allowed", "repository_recovery_required",
@@ -294,7 +301,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       || !exactKeys(workspace.capabilities, capabilityKeys)
       || typeof workspace.capabilities.project_files_read !== "boolean"
       || typeof workspace.capabilities.project_files_write !== "boolean"
-      || (value.contract_version === 5 && (
+      || (value.contract_version >= 5 && (
         typeof workspace.capabilities.repository_retry_allowed !== "boolean"
         || typeof workspace.capabilities.repository_recovery_required !== "boolean"
         || (workspace.capabilities.repository_retry_allowed

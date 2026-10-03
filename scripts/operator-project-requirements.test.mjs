@@ -681,7 +681,7 @@ test("Requirements invalidation is exact-quote scoped and shared by all three ch
 });
 
 test("Task 11 synchronization has one coherent source hard-refresh cache chain", () => {
-  const token = "20260917-pre-project-workspace-r2";
+  const token = "20261003-workspace-recovery-v6-r1";
   const paths = [
     "../assets/js/operator-dashboard-guard.mjs",
     "../assets/js/operator-workspace-master.mjs",
@@ -693,7 +693,7 @@ test("Task 11 synchronization has one coherent source hard-refresh cache chain",
     assert.match(readFileSync(new URL(path, import.meta.url), "utf8"), new RegExp(token));
   }
   assert.match(registrySource, new RegExp(token));
-  const managedToken = "20260922-preview-error-code-r1";
+  const managedToken = token;
   assert.equal(
     readFileSync(new URL("../operator/window/index.html", import.meta.url), "utf8").includes(managedToken),
     true,

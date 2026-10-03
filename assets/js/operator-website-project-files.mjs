@@ -832,7 +832,7 @@ export function mountWebsiteProjectFilesTree(host, options) {
 
   function clearAuthorityState(reason = "access_denied") {
     const nextStatus = [
-      "provider_unavailable", "stale_binding", "failure",
+      "idle", "provider_unavailable", "stale_binding", "failure",
     ].includes(reason) ? reason : "access_denied";
     controller?.clearAuthorityState(nextStatus);
     controller = null;
@@ -919,11 +919,12 @@ export function mountWebsiteProjectFilesTree(host, options) {
       const nextContext = value === null ? null : frozenClone(value);
       const unchanged = sameAuthority(context, nextContext)
         && available() && eligibleContext(nextContext, options.ownerEligible);
-      if (!unchanged) clearAuthorityState(
-        nextContext && eligibleContext(nextContext, options.ownerEligible)
-          ? "stale_binding" : "access_denied",
-      );
       context = nextContext;
+      if (!unchanged) clearAuthorityState(
+        eligibleContext(context, options.ownerEligible) ? "stale_binding"
+          : context && options.ownerEligible ? "idle"
+            : "access_denied",
+      );
       if (!unchanged && eligibleContext(context, options.ownerEligible)) {
         controller = createController();
         authorityValid = true;

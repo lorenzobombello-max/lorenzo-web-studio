@@ -5,7 +5,7 @@ import {
 import {
   createOperatorDossierAuthority,
   dossierReference,
-} from "./operator-dossiers.mjs?v=20260917-pre-project-workspace-r2";
+} from "./operator-dossiers.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   createWebsiteConceptPromotionIntent,
   quoteRequestIdFromWebsiteExecutionSlot,
@@ -19,7 +19,7 @@ import {
   websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
-} from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
+} from "./operator-website-execution.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   requirementsBoardSlot,
   requirementsInvalidationMatches,
@@ -30,7 +30,7 @@ import {
 } from "./operator-project-requirements.mjs?v=20260912-dossier-continuity-project-r1";
 import {
   mountWebsiteProjectFilesTree,
-} from "./operator-website-project-files.mjs?v=20260919-project-files-tree-r1";
+} from "./operator-website-project-files.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   createPreviewBuildController,
 } from "./operator-website-preview-build.mjs?v=20260923-async-preview-r1";
@@ -609,7 +609,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
         requirementsState: Object.freeze({ state: "LOADING", summary: null }),
         view: websiteExecutionView(projection),
         canProvision: identity.role === "owner",
-        canPromote: identity.role === "owner",
+        canPromote: identity.role === "owner"
+          && projection.permitted_actions?.includes("promote_website_concept") === true,
         promotionPending,
         promotionRetry: promotionIntent !== null,
         repositoryRetryEligible:

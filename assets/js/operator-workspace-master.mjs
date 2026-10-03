@@ -11,7 +11,7 @@ import {
   workspaceChannelName,
   workspaceReservationWindowName,
 } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
-import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20260917-pre-project-workspace-r2";
+import { resolveStandaloneOperatorModule, validOperatorSlotKey } from "./operator-module-registry.mjs?v=20261003-workspace-recovery-v6-r1";
 
 async function requestLocalMasterLock(navigatorObject) {
   if (!navigatorObject?.locks?.request) return { acquired: false, release() {} };
@@ -350,7 +350,10 @@ export async function createOperatorWorkspaceMaster({
   }
 
   const heartbeatTimer = setIntervalFn(()=>publish("HEARTBEAT"), LOCAL_HEARTBEAT_INTERVAL_MS);
-  const renewalTimer = setIntervalFn(()=>void renew(), MASTER_SERVER_RENEWAL_INTERVAL_MS);
+  const renewalTimer = setIntervalFn(
+    ()=>void renew({ recoverExpired: true }),
+    MASTER_SERVER_RENEWAL_INTERVAL_MS,
+  );
   const safetyTimer = setIntervalFn(()=>{
     if (!leaseExpiresAt) lockWorkspace("MASTER_LEASE_EXPIRED");
   }, 1_000);

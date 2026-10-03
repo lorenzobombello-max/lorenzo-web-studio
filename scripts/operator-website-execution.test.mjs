@@ -673,11 +673,23 @@ test("Website child has compact and mobile overflow contracts", async () => {
 test("commercial command dispatch uses the exact caller-scoped Website RPC", async () => {
   const handler = await read("supabase/functions/commercial-operator-command/handler.ts");
   const index = await read("supabase/functions/commercial-operator-command/index.ts");
+  const promotionAuthority = await read(
+    "supabase/migrations/20261003010000_project_website_promotion_action_v1.sql",
+  );
   assert.match(handler, /"get_website_execution_workspace"/);
   const branch = index.match(/if \(input\.action === "get_website_execution_workspace"\) \{[^]*?return data;\s*\}/)?.[0] || "";
   assert.match(branch, /executeCallerJwtWebsiteExecutionWorkspaceReadAction/);
-  assert.match(index, /"get_website_execution_workspace_v5"[^]*p_quote_request_id: input\.quote_request_id/);
+  assert.match(index, /"get_website_execution_workspace_v6"[^]*p_quote_request_id: input\.quote_request_id/);
   assert.doesNotMatch(branch, /p_project_id/);
+  assert.match(promotionAuthority, /get_website_execution_workspace_v6/);
+  assert.match(promotionAuthority, /assert_operator_aal2_v1/);
+  assert.match(promotionAuthority, /operator\.status = 'ACTIVE'/);
+  assert.match(promotionAuthority, /operator\.role = 'owner'/);
+  assert.match(promotionAuthority, /context\.phase = 'PRE_PROJECT'/);
+  assert.match(promotionAuthority, /concept\.concept_status = 'ACTIVE'/);
+  assert.match(promotionAuthority, /quote_request_quotation_acceptances/);
+  assert.match(promotionAuthority, /quote_request_quotation_issuances/);
+  assert.match(promotionAuthority, /jsonb_build_array\('promote_website_concept'\)/);
 });
 
 test("Website Requirements summary accepts only validated Website board data", () => {
@@ -775,8 +787,8 @@ test("Website Requirements summary has compact responsive no-overflow contracts"
 });
 
 test("PRE_PROJECT workspace release has one coherent active cache chain", async () => {
-  const token = "20260917-pre-project-workspace-r2";
-  const managedToken = "20260922-preview-error-code-r1";
+  const token = "20261003-workspace-recovery-v6-r1";
+  const managedToken = token;
   const cssToken = "20260922-action-message-readable-r2";
   const [windowPage, guard, registry, child, dossiers, pagesArtifact] = await Promise.all([
     "operator/window/index.html",
@@ -836,12 +848,12 @@ let projectId = mode === "OFFICIAL_PROJECT" ? officialProjectId : null;
 let conceptId = mode === "PRE_PROJECT" ? "${conceptId}" : null;
 let promotionAttempts = 0;
 const detail = { quote_request_id: quoteRequestId, request_kind: "website", application_reference: "LWS-AAN-2099-0001", website_work: { state: mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", mode, briefing_status: "COMPLETE", commercially_released: false, revision: 1, permitted_actions: ["OPEN_WEBSITE"] } };
-const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: role === "owner", project_files_write: role === "owner" } } : null;
-if (workspaceMode === "pending") Object.assign(workspace, { workspace_state: "PENDING_REPOSITORY", repository_operation_state: null, repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
-if (workspaceMode === "provisioning") Object.assign(workspace, { workspace_state: "REPOSITORY_PROVISIONING", repository_operation_state: "CREATING", repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
-if (workspaceMode === "failed") Object.assign(workspace, { workspace_state: "REPOSITORY_FAILED", repository_operation_state: params.get("operation") || "TERMINAL_FAILED", repository_failure_category: params.get("category") || "TERMINAL", repository_recovery_guidance: params.get("guidance") || "CONTACT_OWNER", repository_owner: params.get("bound") === "1" ? "lws-studio" : null, repository_name: params.get("bound") === "1" ? "lws-web-2099-0001" : null, repository_navigation_url: params.get("bound") === "1" ? "https://github.com/lws-studio/lws-web-2099-0001" : null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false } });
+const workspace = hasWorkspace ? { website_workspace_id: "a1800000-0000-4000-8000-000000000006", website_work_context_id: "${websiteWorkContextId}", project_id: projectId, quote_request_id: quoteRequestId, workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lws-studio", repository_name: "lws-web-2099-0001", repository_navigation_url: "https://github.com/lws-studio/lws-web-2099-0001", default_branch: "main", preview_branch: null, preview_url: null, last_commit_sha: null, last_commit_at: null, last_build_result: null, last_build_at: null, binding_revision: 1, provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", created_at: "2099-01-01T10:00:00Z", updated_at: "2099-01-01T10:00:00Z", repository_recovery_operation_id: null, capabilities: { project_files_read: role === "owner", project_files_write: role === "owner", repository_retry_allowed: false, repository_recovery_required: false } } : null;
+if (workspaceMode === "pending") Object.assign(workspace, { workspace_state: "PENDING_REPOSITORY", repository_operation_state: null, repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false, repository_retry_allowed: false, repository_recovery_required: false } });
+if (workspaceMode === "provisioning") Object.assign(workspace, { workspace_state: "REPOSITORY_PROVISIONING", repository_operation_state: "CREATING", repository_recovery_guidance: "WAIT", repository_owner: null, repository_name: null, repository_navigation_url: null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false, repository_retry_allowed: false, repository_recovery_required: false } });
+if (workspaceMode === "failed") Object.assign(workspace, { workspace_state: "REPOSITORY_FAILED", repository_operation_state: params.get("operation") || "TERMINAL_FAILED", repository_failure_category: params.get("category") || "TERMINAL", repository_recovery_guidance: params.get("guidance") || "CONTACT_OWNER", repository_owner: params.get("bound") === "1" ? "lws-studio" : null, repository_name: params.get("bound") === "1" ? "lws-web-2099-0001" : null, repository_navigation_url: params.get("bound") === "1" ? "https://github.com/lws-studio/lws-web-2099-0001" : null, last_commit_sha: null, capabilities: { project_files_read: false, project_files_write: false, repository_retry_allowed: role === "owner", repository_recovery_required: false } });
 if (workspace && params.get("recovery") === "required") Object.assign(workspace, { repository_recovery_operation_id: "a1800000-0000-4000-8000-000000000012", capabilities: { project_files_read: false, project_files_write: false, repository_retry_allowed: false, repository_recovery_required: true } });
-const projection = { contract_version: params.get("recovery") === "required" ? 5 : 4, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." } };
+const projection = { contract_version: 6, mode, quote_request_id: quoteRequestId, concept_id: conceptId, project_id: projectId, website_work_context_id: "${websiteWorkContextId}", context_revision: 1, briefing_status: "COMPLETE", commercially_released: false, project: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, site: null } : null, start_gate: mode === "OFFICIAL_PROJECT" ? { project_id: projectId, quote_request_id: quoteRequestId } : null, workspace, requirements: mode === "OFFICIAL_PROJECT" ? { state: "PROJECT_BOUND", message: null } : { state: "NOT_AVAILABLE", message: "Requirements volgen na intake-sync." }, permitted_actions: params.get("promotionEligible") === "1" ? ["promote_website_concept"] : [] };
 const requirements = { contract_version: 1, quote_request_id: quoteRequestId, website_work_context_id: "${websiteWorkContextId}", project_id: projectId, phase: mode, context: { customer: "Preview customer", dossier_reference: "LWS-AAN-2099-0001", assigned_operator: null }, board: { requirements_board_id: "a1800000-0000-4000-8000-000000000003", sync_state: params.get("requirements") === "review" ? "REVIEW_REQUIRED" : "CURRENT", revision: 12, mapping_version: 1, current_intake_id: "a1800000-0000-4000-8000-000000000007", current_intake_revision: 3, current_intake_snapshot_sha256: "a".repeat(64) }, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: params.get("requirements") === "review" ? 1 : 0 }, readiness: { ready_for_preview: true, readiness: "READY", reason: "REQUIREMENTS_READY" }, empty_state: null };
 const emptyRequirements = { ...requirements, board: null, items: [], progress: { required_total: 0, required_completed: 0, required_open: 0, required_blocked: 0, review_pending: 0 }, readiness: { ready_for_preview: false, readiness: "BLOCKED", reason: "REQUIRED_REQUIREMENTS_OPEN" }, empty_state: "NO_BOARD" };
 let requirementsSynchronized = workspaceMode !== "pending";
@@ -906,7 +918,7 @@ const client = { functions: { async invoke(_name, { body }) {
     if (params.get("provision") === "fail") return { data: null, error: new Error("provider detail must stay private") };
     if (params.get("provision") === "ambiguous" && repositoryProvisionAttempts === 1) return { data: null, error: new Error("Failed to send a request to the Edge Function") };
     const repositoryName = "lws-web-" + "${websiteWorkContextId}".replaceAll("-", "");
-    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true } });
+    Object.assign(workspace, { workspace_state: "REPOSITORY_READY", repository_operation_state: "COMPLETE", repository_failure_category: null, repository_recovery_guidance: null, repository_provider: "GITHUB", repository_owner: "lorenzo-web-solutions", repository_name: repositoryName, repository_navigation_url: "https://github.com/lorenzo-web-solutions/" + repositoryName, last_commit_sha: "b".repeat(40), provisioned_by: "a1800000-0000-4000-8000-000000000010", provisioned_at: "2099-01-01T10:00:00Z", capabilities: { project_files_read: true, project_files_write: true, repository_retry_allowed: false, repository_recovery_required: false } });
     result = { provider: "GITHUB", providerRepositoryId: "1369000001", providerNodeId: "R_production_repository", owner: "lorenzo-web-solutions", name: repositoryName, visibility: "PRIVATE", defaultBranch: "main", starterSource: "lorenzo-web-solutions/lws-website-starter", starterVersion: "1.0.0", starterCommitSha: "a".repeat(40), repositoryMarkerCommitSha: "b".repeat(40), replayed: false };
   } else if (body.action === "recover_existing_website_repository") {
     window.task8RecoveryRequests.push(structuredClone(body));
@@ -1887,14 +1899,15 @@ test("Website Execution uses only safe server-projected GitHub navigation", asyn
   assert.doesNotMatch(source, /`https:\/\/github\.com\/\$\{/);
 });
 
-test("promotion control is owner-only and PRE_PROJECT-only", async () => {
+test("promotion control requires the existing server-projected promotion action", async () => {
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
     for (const scenario of [
-      { query: "role=owner&mode=PRE_PROJECT&workspace=present", visible: true },
-      { query: "role=operator&mode=PRE_PROJECT&workspace=present", visible: false },
-      { query: "role=owner&mode=OFFICIAL_PROJECT&workspace=present", visible: false },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1", visible: true },
+      { query: "role=owner&mode=PRE_PROJECT&workspace=present", visible: false },
+      { query: "role=operator&mode=PRE_PROJECT&workspace=present&promotionEligible=1", visible: false },
+      { query: "role=owner&mode=OFFICIAL_PROJECT&workspace=present&promotionEligible=1", visible: false },
     ]) {
       const page = await openTask8Page(browser, server, scenario.query);
       const control = page.locator('[data-website-action="promote"]');
@@ -1913,7 +1926,7 @@ test("promotion confirms, requires AAL2, sends no project authority, and refresh
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present");
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1");
     await page.locator('[data-website-action="promote"]').click();
     await page.waitForFunction(() => window.task8Invalidations.length === 1);
     const request = await page.evaluate(() => window.task8PromotionRequests[0]);
@@ -1948,7 +1961,7 @@ test("ambiguous promotion retry reuses the exact immutable request and reruns AA
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=ambiguous");
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&promotion=ambiguous");
     await page.locator('[data-website-action="promote"]').click();
     await page.waitForFunction(() => document.querySelector('[data-website-action="promotion-retry"]')?.hidden === false);
     assert.equal(await page.locator("[data-website-message]").textContent(), "Uitkomst niet bevestigd. Opnieuw proberen gebruikt dezelfde veilige promotieaanvraag.");
@@ -1971,14 +1984,14 @@ test("promotion AAL2 denial and definitive rejection never retain retry authorit
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const denied = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&aal2=deny");
+    const denied = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&aal2=deny");
     await denied.locator('[data-website-action="promote"]').click();
     await denied.waitForFunction(() => document.querySelector("[data-website-message]")?.textContent.length > 0);
     assert.deepEqual(await denied.evaluate(() => window.task8PromotionRequests), []);
     assert.equal(await denied.locator('[data-website-action="promotion-retry"]').isVisible(), false);
     await denied.close();
 
-    const rejected = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=command-rejected");
+    const rejected = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&promotion=command-rejected");
     await rejected.locator('[data-website-action="promote"]').click();
     await rejected.waitForFunction(() => document.querySelector("[data-website-message]")?.textContent.includes("Promotie is niet meer toegestaan"));
     assert.equal(await rejected.locator('[data-website-action="promotion-retry"]').isVisible(), false);
@@ -1994,7 +2007,7 @@ test("pending promotion blocks parallel execution and a disposed child ignores i
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=delay");
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&promotion=delay");
     const promote = page.locator('[data-website-action="promote"]');
     await promote.click();
     await page.waitForFunction(() => window.task8PromotionRequests.length === 1);
@@ -2015,7 +2028,7 @@ test("promotion response after an authoritative context switch is ignored", asyn
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=delay");
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&promotion=delay");
     await page.locator('[data-website-action="promote"]').click();
     await page.waitForFunction(() => window.task8PromotionRequests.length === 1);
     await page.evaluate(async () => {
@@ -2037,7 +2050,7 @@ test("authoritative promotion with failed local refresh invalidates and reports 
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotion=refresh-fail");
+    const page = await openTask8Page(browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&promotionEligible=1&promotion=refresh-fail");
     await page.locator('[data-website-action="promote"]').click();
     await page.waitForFunction(() => window.task8Invalidations.length === 1);
     assert.equal(

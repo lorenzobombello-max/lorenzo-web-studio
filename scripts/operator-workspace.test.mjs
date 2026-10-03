@@ -1237,6 +1237,107 @@ test("launch recovers when an in-flight periodic renewal discovers expiry", asyn
   assert.equal(parseChildBootstrap(navigations[0]).workspaceId, recoveredWorkspaceId);
 });
 
+test("periodic expiry locks the old epoch, recovers once, and reopens on the recovered workspace", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const oldChild = childHarness();
+  const timers = timerHarness();
+  const recoveredWorkspaceId = "f4000000-0000-4000-8000-000000000006";
+  const recoveredRenewalToken = "f4000000-0000-4000-8000-000000000007";
+  const ids = [masterWindowId, reservationId, launchNonce];
+  const calls = [];
+  const navigations = [];
+  let renewalCalls = 0;
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name, parameters)=>{
+      calls.push({ name, parameters });
+      if (name === "acquire_operator_workspace_v1") {
+        return { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: childWindowId, lease_expires_at: new Date(25_000).toISOString() }, error: null };
+      }
+      if (name === "renew_operator_workspace_lease_v1") {
+        renewalCalls += 1;
+        return renewalCalls === 1
+          ? { data: null, error: { code: "42501", message: "WORKSPACE_NOT_ACTIVE" } }
+          : { data: { valid: true, lease_expires_at: new Date(45_000).toISOString() }, error: null };
+      }
+      if (name === "recover_operator_workspace_v1") {
+        return { data: { recovered: true, workspace_id: recoveredWorkspaceId, epoch: epoch + 1, renewal_token: recoveredRenewalToken, lease_expires_at: new Date(40_000).toISOString(), window_claims: [] }, error: null };
+      }
+      assert.fail(`unexpected RPC ${name}`);
+    } },
+    windowObject: {
+      BroadcastChannel: FakeBroadcastChannel,
+      crypto: { randomUUID: ()=>ids.shift() },
+      location: { origin: "https://operator.local" },
+      open() {
+        return { closed: false, focus() {}, close() { this.closed = true; }, location: { replace(target) { navigations.push(target); } } };
+      },
+    },
+    navigatorObject: availableWebLock(),
+    now: ()=>20_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+  });
+  const oldChannel = FakeBroadcastChannel.instances[1];
+
+  timers.timer(MASTER_SERVER_RENEWAL_INTERVAL_MS).callback();
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(master.active, true);
+  assert.equal(master.workspaceId, recoveredWorkspaceId);
+  assert.equal(master.epoch, epoch + 1);
+  assert.equal(oldChannel.closed, true);
+  assert.equal(oldChannel.messages.filter(({ type })=>type === "LOCK").length, 1);
+  oldChild.channel.emit(oldChannel.messages.find(({ type })=>type === "LOCK"));
+  assert.deepEqual(oldChild.locks, ["WORKSPACE_LOCKED"]);
+  assert.equal(calls.filter(({ name })=>name === "recover_operator_workspace_v1").length, 1);
+
+  assert.equal(master.openOperatorModuleWindow("dossiers", "website-a1800000-0000-4000-8000-000000000001"), true);
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(navigations.length, 1);
+  const reopened = parseChildBootstrap(navigations[0]);
+  assert.equal(reopened.workspaceId, recoveredWorkspaceId);
+  assert.equal(reopened.epoch, epoch + 1);
+  assert.equal(calls.filter(({ name })=>name === "recover_operator_workspace_v1").length, 1);
+});
+
+test("failed periodic expiry recovery locks the workspace and stops renewal", async ()=>{
+  FakeBroadcastChannel.instances = [];
+  const timers = timerHarness();
+  const invalidations = [];
+  const calls = [];
+  const master = await createOperatorWorkspaceMaster({
+    client: { rpc: async (name)=>{
+      calls.push(name);
+      if (name === "acquire_operator_workspace_v1") {
+        return { data: { acquired: true, workspace_id: workspaceId, epoch, renewal_token: launchNonce, lease_expires_at: new Date(25_000).toISOString() }, error: null };
+      }
+      if (name === "renew_operator_workspace_lease_v1") {
+        return { data: null, error: { code: "42501", message: "WORKSPACE_NOT_ACTIVE" } };
+      }
+      if (name === "recover_operator_workspace_v1") {
+        return { data: null, error: { code: "42501", message: "WORKSPACE_REVOKED" } };
+      }
+      assert.fail(`unexpected RPC ${name}`);
+    } },
+    windowObject: { BroadcastChannel: FakeBroadcastChannel, crypto: { randomUUID: ()=>masterWindowId }, location: { origin: "https://operator.local" }, open: ()=>null },
+    navigatorObject: availableWebLock(),
+    now: ()=>20_000,
+    setIntervalFn: timers.setIntervalFn,
+    clearIntervalFn: timers.clearIntervalFn,
+    onInvalidWorkspace: (reason)=>invalidations.push(reason),
+  });
+  const renewalTimer = timers.timer(MASTER_SERVER_RENEWAL_INTERVAL_MS);
+
+  renewalTimer.callback();
+  await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(master.active, false);
+  assert.equal(renewalTimer.cleared, true);
+  assert.deepEqual(invalidations, ["MASTER_RECOVERY_FAILED"]);
+  const callCount = calls.length;
+  await renewalTimer.callback();
+  assert.equal(calls.length, callCount);
+  assert.equal(master.openOperatorModuleWindow("dossiers", "main"), false);
+});
+
 test("failed expired-workspace recovery closes the reserved child and remains fail-closed", async ()=>{
   FakeBroadcastChannel.instances = [];
   const timers = timerHarness();

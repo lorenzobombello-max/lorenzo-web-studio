@@ -34,7 +34,7 @@ import { projectWorkspaceRequest } from "./operator-project-workspace.mjs?v=2026
 import {
   websiteExecutionRequest,
   websiteExecutionSlot,
-} from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
+} from "./operator-website-execution.mjs?v=20261003-workspace-recovery-v6-r1";
 
 const FILTERS = Object.freeze([
   ["ALL", "Alle"],
