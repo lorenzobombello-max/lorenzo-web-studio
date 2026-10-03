@@ -793,18 +793,72 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
   const sessionTokenHash = await sha256Hex(
     new TextEncoder().encode(sessionToken),
   );
+  const opensExisting = input.action === "open_existing_website_project_preview";
   const { data, error } = await client.rpc(
-    "create_website_project_preview_session_v1",
-    {
-      p_preview_build_id: input.preview_build_id,
-      p_session_token_hash: sessionTokenHash,
-    },
+    opensExisting
+      ? "open_existing_website_project_preview_v1"
+      : "create_website_project_preview_session_v1",
+    opensExisting
+      ? {
+        p_quote_request_id: input.quote_request_id,
+        p_session_token_hash: sessionTokenHash,
+      }
+      : {
+        p_preview_build_id: input.preview_build_id,
+        p_session_token_hash: sessionTokenHash,
+      },
   );
   if (error) throw new Error(error.message);
-  if (!(data as { previewSessionId?: unknown } | null)?.previewSessionId) {
+  const session = data as {
+    previewSessionId?: unknown;
+    previewBuildId?: unknown;
+    buildStatus?: unknown;
+    builtCommitSha?: unknown;
+    currentCommitSha?: unknown;
+    builtAt?: unknown;
+    expiresAt?: unknown;
+    isCurrentCommit?: unknown;
+    quoteRequestId?: unknown;
+    websiteWorkContextId?: unknown;
+    websiteWorkspaceId?: unknown;
+    bindingRevision?: unknown;
+  } | null;
+  if (typeof session?.previewSessionId !== "string") {
     throw new Error("PROJECT_PREVIEW_SESSION_RESPONSE_INVALID");
   }
-  return { handoff_url: `${previewHostUrl}/handoff?token=${sessionToken}` };
+  const result: Record<string, unknown> = {
+    handoff_url: `${previewHostUrl}/handoff?token=${sessionToken}`,
+  };
+  if (opensExisting) {
+    if (
+      typeof session.previewBuildId !== "string" ||
+      !["PASS", "PASS_WITH_WARNINGS"].includes(String(session.buildStatus)) ||
+      !/^[0-9a-f]{40}$/.test(String(session.builtCommitSha || "")) ||
+      !/^[0-9a-f]{40}$/.test(String(session.currentCommitSha || "")) ||
+      typeof session.builtAt !== "string" ||
+      typeof session.expiresAt !== "string" ||
+      typeof session.isCurrentCommit !== "boolean" ||
+      typeof session.quoteRequestId !== "string" ||
+      typeof session.websiteWorkContextId !== "string" ||
+      typeof session.websiteWorkspaceId !== "string" ||
+      !Number.isSafeInteger(session.bindingRevision) ||
+      Number(session.bindingRevision) < 1
+    ) throw new Error("PROJECT_PREVIEW_SESSION_RESPONSE_INVALID");
+    Object.assign(result, {
+      preview_build_id: session.previewBuildId,
+      build_status: session.buildStatus,
+      built_commit_sha: session.builtCommitSha,
+      current_commit_sha: session.currentCommitSha,
+      built_at: session.builtAt,
+      expires_at: session.expiresAt,
+      is_current_commit: session.isCurrentCommit,
+      quote_request_id: session.quoteRequestId,
+      website_work_context_id: session.websiteWorkContextId,
+      website_workspace_id: session.websiteWorkspaceId,
+      binding_revision: session.bindingRevision,
+    });
+  }
+  return result;
 }
 
 function projectFilesError(code: string): Error {
