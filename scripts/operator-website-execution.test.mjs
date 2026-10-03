@@ -789,6 +789,7 @@ test("Website Requirements summary has compact responsive no-overflow contracts"
 test("PRE_PROJECT workspace release has one coherent active cache chain", async () => {
   const token = "20261003-workspace-recovery-v6-r1";
   const managedToken = token;
+  const websiteExecutionChildToken = "20261003-preview-reopen-r1";
   const cssToken = "20260922-action-message-readable-r2";
   const [windowPage, guard, registry, child, dossiers, pagesArtifact] = await Promise.all([
     "operator/window/index.html",
@@ -801,7 +802,7 @@ test("PRE_PROJECT workspace release has one coherent active cache chain", async 
   assert.equal(windowPage.includes(`operator-dashboard.css?v=${cssToken}`), true);
   assert.equal(windowPage.includes(`operator-window-guard.mjs?v=${managedToken}`), true);
   assert.equal(guard.includes(`operator-module-registry.mjs?v=${managedToken}`), true);
-  assert.equal(registry.includes(`operator-website-execution-child.mjs?v=${managedToken}`), true);
+  assert.equal(registry.includes(`operator-website-execution-child.mjs?v=${websiteExecutionChildToken}`), true);
   assert.equal(child.includes(`operator-website-execution.mjs?v=${token}`), true);
   assert.equal(child.includes(`operator-dossiers.mjs?v=${token}`), true);
   assert.match(child, /operator-website-preview-build\.mjs\?v=20260923-async-preview-r1/);
@@ -839,9 +840,18 @@ window.task8Invalidations = [];
 window.task8Confirmations = [];
 window.task6Requests = [];
 window.task7Opens = [];
+window.task8PreviewNavigations = [];
 window.task6Fail = params.get("requirements") === "error";
 window.confirm = (message) => { window.task8Confirmations.push(message); return params.get("confirm") !== "cancel"; };
-window.open = () => window.task8Events.push("window.open");
+window.open = () => {
+  window.task8Events.push("window.open");
+  if (params.get("popup") === "blocked") return null;
+  return {
+    opener: window,
+    location: { replace: (url) => window.task8PreviewNavigations.push(url) },
+    close: () => window.task8Events.push("window.close"),
+  };
+};
 const quoteRequestId = "${quoteRequestId}";
 const officialProjectId = "${projectId}";
 let projectId = mode === "OFFICIAL_PROJECT" ? officialProjectId : null;
@@ -1043,6 +1053,42 @@ const client = { functions: { async invoke(_name, { body }) {
       handoff_url: params.get("preview") === "async"
         ? "https://preview.example.test/session-1"
         : \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\`,
+    };
+  } else if (body.action === "open_existing_website_project_preview") {
+    window.task8Events.push("gateway");
+    window.task8Requests.push(structuredClone(body));
+    if (params.get("preview") === "noBuild") {
+      return {
+        data: null,
+        error: {
+          context: new Response(
+            JSON.stringify({ ok: false, code: "PROJECT_PREVIEW_BUILD_NOT_FOUND" }),
+            { status: 404, headers: { "content-type": "application/json" } },
+          ),
+        },
+      };
+    }
+    if (params.get("preview") === "delay") {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    const sessionNumber = window.task8Requests.filter(
+      (request) => request.action === "open_existing_website_project_preview",
+    ).length;
+    result = {
+      handoff_url: params.get("preview") === "content"
+        ? \`https://preview.example.test/index.html?content=\${encodeURIComponent(savedContent)}\`
+        : \`https://preview.example.test/session-\${sessionNumber}\`,
+      preview_build_id: "build-existing",
+      build_status: "PASS_WITH_WARNINGS",
+      built_commit_sha: "a".repeat(40),
+      current_commit_sha: "b".repeat(40),
+      built_at: "2099-01-01T09:00:00.000Z",
+      expires_at: "2099-01-01T09:30:00.000Z",
+      is_current_commit: false,
+      quote_request_id: quoteRequestId,
+      website_work_context_id: workspace.website_work_context_id,
+      website_workspace_id: workspace.website_workspace_id,
+      binding_revision: workspace.binding_revision,
     };
   }
   return { data: { ok: true, result }, error: null };
@@ -1536,7 +1582,6 @@ test("Preview failure surfaces only the safe backend machine code", async () => 
       "Preview kon niet veilig worden gebouwd. (PREVIEW_ERROR: PREVIEW_ARTIFACT_STORAGE_FAILED)",
     );
     assert.doesNotMatch(message, /storage detail|super-secret|token=/i);
-    assert.equal(await page.locator("[data-website-preview-open]").isHidden(), true);
     await page.close();
   } finally {
     await browser.close();
@@ -1544,7 +1589,170 @@ test("Preview failure surfaces only the safe backend machine code", async () => 
   }
 });
 
-test("Preview button starts once, polls to success, and opens the terminal preview", async () => {
+test("Preview openen reuses a dossier build with a fresh session and never starts a build", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present",
+    );
+    await page.locator('[data-website-action="preview-open"]').click();
+    try {
+      await page.waitForFunction(() => window.task8Requests.some(
+        (request) => request.action === "open_existing_website_project_preview",
+      ), null, { timeout: 2_000 });
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        message: document.querySelector("[data-website-message]")?.textContent,
+        requests: window.task8Requests,
+        buttonDisabled: document.querySelector('[data-website-action="preview-open"]')?.disabled,
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(diagnostics)}`);
+    }
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => window.task8Requests.filter(
+      (request) => request.action === "open_existing_website_project_preview",
+    ).length === 2);
+    try {
+      await page.waitForFunction(() => /oudere versie/i.test(
+        document.querySelector("[data-website-message]")?.textContent || "",
+      ), null, { timeout: 2_000 });
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        message: document.querySelector("[data-website-message]")?.textContent,
+        requests: window.task8Requests,
+        events: window.task8Events,
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(diagnostics)}`);
+    }
+
+    const previewRequests = await page.evaluate(() => window.task8Requests.filter(
+      (request) => request.action?.includes("website_project_preview"),
+    ));
+    assert.deepEqual(previewRequests, [
+      { action: "open_existing_website_project_preview", quote_request_id: quoteRequestId },
+      { action: "open_existing_website_project_preview", quote_request_id: quoteRequestId },
+    ]);
+    const navigations = await page.evaluate(() => window.task8PreviewNavigations);
+    assert.equal(navigations.length, 2);
+    assert.notEqual(navigations[0], navigations[1]);
+    assert.match(
+      await page.locator("[data-website-message]").textContent(),
+      /oudere versie a{7}.*huidige versie b{7}/i,
+    );
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview openen survives dashboard reload and requests a new session", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present",
+    );
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => window.task8PreviewNavigations.length === 1);
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector("[data-website-content]")?.hidden === false);
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => window.task8PreviewNavigations.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.task8Requests), [
+      { action: "open_existing_website_project_preview", quote_request_id: quoteRequestId },
+    ]);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview openen reports no suitable build without starting one", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&preview=noBuild",
+    );
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => /nog geen geschikte preview-build/i.test(
+      document.querySelector("[data-website-message]")?.textContent || "",
+    ));
+    assert.equal(await page.evaluate(() => window.task8Requests.some(
+      (request) => request.action === "request_website_project_preview_build",
+    )), false);
+    assert.equal(await page.evaluate(() => window.task8PreviewNavigations.length), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview openen issues no session when the popup is blocked", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&popup=blocked",
+    );
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => /Sta pop-ups toe/i.test(
+      document.querySelector("[data-website-message]")?.textContent || "",
+    ));
+    assert.equal(await page.evaluate(() => window.task8Requests.length), 0);
+    assert.equal(await page.evaluate(() => window.task8PreviewNavigations.length), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview openen is unavailable for a repository-blocked dossier", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=failed",
+    );
+    assert.equal(await page.locator('[data-website-action="preview-open"]').isHidden(), true);
+    assert.equal(await page.evaluate(() => window.task8Requests.length), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview response cannot cross a dossier context switch", async () => {
+  const server = await serveProvisionControlHarness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openTask8Page(
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&preview=delay",
+    );
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => window.task8Requests.some(
+      (request) => request.action === "open_existing_website_project_preview",
+    ));
+    await page.evaluate(() => window.task8SwitchContext());
+    await page.locator('[data-website-action="refresh"]').click();
+    await page.waitForFunction(() => /CONTEXT_CHANGED/.test(
+      document.querySelector("[data-website-message]")?.textContent || "",
+    ));
+    assert.equal(await page.evaluate(() => window.task8PreviewNavigations.length), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Preview build starts once, polls to success, and does not create a viewer session", async () => {
   const server = await serveProvisionControlHarness();
   const browser = await chromium.launch({ headless: true });
   try {
@@ -1560,7 +1768,9 @@ test("Preview button starts once, polls to success, and opens the terminal previ
       button.click();
     });
     try {
-      await page.waitForSelector("[data-website-preview-open]:not([hidden])");
+      await page.waitForFunction(() =>
+        document.querySelector("[data-website-message]")?.textContent === "Preview gereed"
+      );
     } catch (error) {
       const diagnostics = await page.evaluate(() => ({
         message: document.querySelector("[data-website-message]")?.textContent,
@@ -1579,17 +1789,12 @@ test("Preview button starts once, polls to success, and opens the terminal previ
       previewRequests.filter((request) => request.action === "get_website_project_preview_build_status").length >= 2,
       true,
     );
-    assert.equal(
-      previewRequests.some((request) => request.action === "create_website_project_preview_session"),
-      true,
-    );
+    assert.equal(previewRequests.some(
+      (request) => request.action === "create_website_project_preview_session",
+    ), false);
     assert.equal(
       await page.locator("[data-website-message]").textContent(),
       "Preview gereed",
-    );
-    assert.equal(
-      await page.locator("[data-website-preview-open]").getAttribute("href"),
-      "https://preview.example.test/session-1",
     );
     await page.close();
   } finally {
@@ -1603,7 +1808,7 @@ test("edited index.html is saved and visible in the opened preview", async () =>
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await openTask8Page(
-      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present",
+      browser, server, "role=owner&mode=PRE_PROJECT&workspace=present&preview=content",
     );
     await page.context().route("https://preview.example.test/**", async (route) => {
       const content = new URL(route.request().url()).searchParams.get("content") || "";
@@ -1632,21 +1837,21 @@ test("edited index.html is saved and visible in the opened preview", async () =>
     assert.match(await editor.inputValue(), /Werkelijke wijziging/);
 
     await page.locator('[data-website-action="preview-build"]').click();
-    await page.waitForSelector("[data-website-preview-open]:not([hidden])");
+    await page.waitForFunction(() =>
+      document.querySelector("[data-website-message]")?.textContent === "Preview gereed"
+    );
     const buildRequest = await page.evaluate(() => window.task8Requests.find(
       (request) => request.action === "request_website_project_preview_build",
     ));
     assert.equal(buildRequest.expected_commit_sha, "b".repeat(40));
-    const [preview] = await Promise.all([
-      page.waitForEvent("popup"),
-      page.locator("[data-website-preview-open]").click(),
-    ]);
-    await preview.waitForLoadState("domcontentloaded");
-    assert.equal(await preview.locator("h1").textContent(), "Werkelijke wijziging");
+    await page.locator('[data-website-action="preview-open"]').click();
+    await page.waitForFunction(() => window.task8PreviewNavigations.length === 1);
+    const previewUrl = await page.evaluate(() => window.task8PreviewNavigations[0]);
     assert.equal(await page.evaluate(() => window.task8Requests.some(
       (request) => /deploy|publish|commercial|quotation|quote|mail|email|payment|invoice/i.test(request.action),
     )), false);
-    await preview.close();
+    await page.goto(previewUrl);
+    assert.equal(await page.locator("h1").textContent(), "Werkelijke wijziging");
     await page.close();
   } finally {
     await browser.close();
@@ -1734,9 +1939,9 @@ test("HIT001 keeps one Website child with bounded editor and preview actions", a
   assert.match(child, /Preview openen/);
   assert.match(child, /request_website_project_preview_build/);
   assert.match(child, /get_website_project_preview_build_status/);
-  assert.match(child, /create_website_project_preview_session/);
+  assert.match(child, /open_existing_website_project_preview/);
   assert.doesNotMatch(child, /Open in VS Code Web|data-website-link="vscode"/);
-  assert.doesNotMatch(child, /window\.open|vscode\.dev|github\.dev/);
+  assert.doesNotMatch(child, /vscode\.dev|github\.dev/);
   assert.equal((registry.match(/startsWith\("website-"\)/g) || []).length, 1);
   assert.doesNotMatch(registry, /startsWith\("(?:files|build|editor)-"\)/);
   assert.match(css, /\.website-project-files/);

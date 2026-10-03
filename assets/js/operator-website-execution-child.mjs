@@ -61,7 +61,7 @@ function websiteProjectPreviewRequest(quoteRequestId, expectedCommitSha) {
 
 async function websiteProjectPreviewGateway(client, request) {
   if (!["request_website_project_preview_build", "get_website_project_preview_build_status",
-    "create_website_project_preview_session"].includes(request?.action)) {
+    "open_existing_website_project_preview"].includes(request?.action)) {
     throw new Error("WEBSITE_PROJECT_PREVIEW_ACTION_NOT_ALLOWED");
   }
   const response = await client.functions.invoke("commercial-operator-command", {
@@ -276,8 +276,8 @@ function childMarkup() {
         <button type="button" class="secondary-action" data-website-action="promotion-retry" hidden>Opnieuw proberen</button>
         <a class="primary-action primary-action--compact" data-website-link="github" target="_blank" rel="noopener noreferrer">Open GitHub</a>
         <button type="button" class="secondary-action" data-website-action="files">Projectbestanden</button>
+        <button type="button" class="primary-action primary-action--compact" data-website-action="preview-open">Preview openen</button>
         <button type="button" class="secondary-action" data-website-action="preview-build">Preview bouwen / vernieuwen</button>
-        <a class="primary-action primary-action--compact" data-website-preview-open target="_blank" rel="noopener noreferrer" hidden>Preview openen</a>
         <button type="button" class="secondary-action" data-website-action="back" data-website-project-back>Terug naar Project</button>
       </nav>
       <p class="action-message" data-website-message role="status" aria-live="polite"></p>
@@ -414,6 +414,10 @@ function renderChild(workspace, state, background = false) {
   const retry = workspace.querySelector("[data-website-action=\"promotion-retry\"]");
   retry.hidden = state.promotionRetry !== true;
   retry.disabled = state.promotionPending === true;
+  const previewEligible = state.canProvision
+    && state.projection.workspace?.workspace_state === "REPOSITORY_READY";
+  workspace.querySelector('[data-website-action="preview-open"]').hidden = !previewEligible;
+  workspace.querySelector('[data-website-action="preview-build"]').hidden = !previewEligible;
   // A background auto-refresh (interval/focus/visibilitychange) must not erase
   // a just-shown recovery status message before the operator can read it. Any
   // foreground render (a new explicit action, the initial load, etc.) clears
@@ -469,6 +473,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   let promotionIntent = null;
   let promotionPending = false;
   let previewPending = false;
+  let previewOpenPending = false;
   let technicalPreparationPending = false;
   let repositoryProvisionIntent = null;
   let repositoryRetryAuthorityEligible = false;
@@ -501,6 +506,86 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     },
   });
 
+  async function openExistingPreview() {
+    const snapshot = currentSnapshot;
+    const workspaceProjection = snapshot?.projection.workspace;
+    if (disposed || previewOpenPending || identity.role !== "owner"
+      || typeof options.requireAal2 !== "function") return false;
+    if (workspaceProjection?.workspace_state !== "REPOSITORY_READY") {
+      workspace.querySelector("[data-website-message]").textContent =
+        "Preview openen is niet beschikbaar zolang de technische werkruimte niet gereed is.";
+      return false;
+    }
+    const previewContext = Object.freeze({
+      quoteRequestId: snapshot.context.quoteRequestId,
+      websiteWorkContextId: snapshot.context.websiteWorkContextId,
+      websiteWorkspaceId: workspaceProjection.website_workspace_id,
+      bindingRevision: workspaceProjection.binding_revision,
+    });
+    const button = workspace.querySelector('[data-website-action="preview-open"]');
+    const message = workspace.querySelector("[data-website-message]");
+    let previewWindow = null;
+    try {
+      const candidate = root.defaultView?.open("about:blank", "_blank");
+      if (candidate && typeof candidate.location?.replace === "function"
+        && typeof candidate.close === "function") {
+        candidate.opener = null;
+        previewWindow = candidate;
+      }
+    } catch {}
+    if (!previewWindow) {
+      message.textContent = "Preview kon niet worden geopend. Sta pop-ups toe en probeer opnieuw.";
+      return false;
+    }
+    previewOpenPending = true;
+    button.disabled = true;
+    message.textContent = "Preview wordt veilig geopend.";
+    try {
+      await options.requireAal2();
+      const session = await websiteProjectPreviewGateway(client, {
+        action: "open_existing_website_project_preview",
+        quote_request_id: previewContext.quoteRequestId,
+      });
+      const currentWorkspace = currentSnapshot?.projection.workspace;
+      if (session.quote_request_id !== previewContext.quoteRequestId
+        || session.website_work_context_id !== previewContext.websiteWorkContextId
+        || session.website_workspace_id !== previewContext.websiteWorkspaceId
+        || session.binding_revision !== previewContext.bindingRevision
+        || currentSnapshot?.context.quoteRequestId !== previewContext.quoteRequestId
+        || currentSnapshot?.context.websiteWorkContextId !== previewContext.websiteWorkContextId
+        || currentWorkspace?.website_workspace_id !== previewContext.websiteWorkspaceId
+        || currentWorkspace?.binding_revision !== previewContext.bindingRevision) {
+        throw new Error("WEBSITE_PROJECT_PREVIEW_CONTEXT_CHANGED");
+      }
+      if (typeof session.handoff_url !== "string"
+        || !session.handoff_url.startsWith("https://")) {
+        throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
+      }
+      if (previewWindow) previewWindow.location.replace(session.handoff_url);
+      const builtCommit = String(session.built_commit_sha || "").slice(0, 7);
+      const currentCommit = String(session.current_commit_sha || "").slice(0, 7);
+      setRecoveryStatusMessage(workspace, session.is_current_commit === false
+        ? `Preview geopend met oudere versie ${builtCommit}; huidige versie ${currentCommit}.`
+        : `Preview geopend met versie ${builtCommit}.`);
+      return true;
+    } catch (error) {
+      previewWindow?.close();
+      const candidate = typeof error?.code === "string" ? error.code
+        : typeof error?.message === "string" ? error.message
+        : "";
+      const code = /^[A-Z][A-Z0-9_]*$/.test(candidate) ? candidate : "UNKNOWN";
+      message.textContent = code === "PROJECT_PREVIEW_BUILD_NOT_FOUND"
+        ? "Er is nog geen geschikte preview-build voor dit dossier."
+        : code === "PROJECT_PREVIEW_REPOSITORY_NOT_READY"
+        ? "Preview openen is niet beschikbaar zolang de technische werkruimte niet gereed is."
+        : `Preview kon niet veilig worden geopend. (PREVIEW_ERROR: ${code})`;
+      return false;
+    } finally {
+      previewOpenPending = false;
+      button.disabled = false;
+    }
+  }
+
   async function buildPreview() {
     const commitSha = projectFiles.currentCommitSha()
       || currentSnapshot?.projection.workspace?.last_commit_sha;
@@ -508,7 +593,6 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       || typeof options.requireAal2 !== "function") return false;
     previewPending = true;
     const button = workspace.querySelector('[data-website-action="preview-build"]');
-    const open = workspace.querySelector("[data-website-preview-open]");
     const message = workspace.querySelector("[data-website-message]");
     button.disabled = true;
     message.textContent = "Preview wordt gebouwd.";
@@ -520,20 +604,8 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       ));
       if (!["PASS", "PASS_WITH_WARNINGS"].includes(result.status)
         || typeof result.previewBuildId !== "string") return false;
-      const session = await websiteProjectPreviewGateway(client, {
-        action: "create_website_project_preview_session",
-        preview_build_id: result.previewBuildId,
-      });
-      if (typeof session.handoff_url !== "string"
-        || !session.handoff_url.startsWith("https://")) {
-        throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
-      }
-      open.href = session.handoff_url;
-      open.hidden = false;
       return true;
     } catch (error) {
-      open.hidden = true;
-      open.removeAttribute("href");
       const candidate = typeof error?.code === "string" ? error.code
         : typeof error?.message === "string" ? error.message
         : "";
@@ -1034,6 +1106,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     if (action === "promotion-retry") void promote({ retry: true });
     if (action === "files") void projectFiles.activate();
     if (action === "preview-build") void buildPreview();
+    if (action === "preview-open") void openExistingPreview();
     if (action === "requirements" && currentSnapshot?.context) {
       options.requestOpen?.(
         "dossiers",

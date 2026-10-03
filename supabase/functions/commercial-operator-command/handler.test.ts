@@ -46,6 +46,7 @@ import {
   executeApplicationDetailRead,
   executeCallerJwtWebsiteProjectFilesAction,
   executeCallerJwtWebsiteProjectPreviewBuildAction,
+  executeCallerJwtWebsiteProjectPreviewControlAction,
   executeCallerJwtWorkforceCalendarAction,
   executeCustomerRequestUploadInboxPromotionAction,
   executeWebsiteQuotationPricingStateAction,
@@ -535,6 +536,10 @@ const websiteProjectPreviewControlRequests = [
     quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
     expected_commit_sha: websiteProjectPreviewBuildRequest.expected_commit_sha,
     idempotency_key: "c1a00000-0000-4000-8000-000000000006",
+  },
+  {
+    action: "open_existing_website_project_preview",
+    quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
   },
   {
     action: "get_website_project_preview_build_status",
@@ -1310,7 +1315,10 @@ Deno.test("async project preview controls route closed intent with caller JWT", 
     const response = await handleCommercialOperator(request(input, ownerAal2Jwt), harness.deps);
     assertEquals(response.status, 200);
   }
-  assertEquals(seen.map(({ token }) => token), [ownerAal2Jwt, ownerAal2Jwt, ownerAal2Jwt]);
+  assertEquals(
+    seen.map(({ token }) => token),
+    websiteProjectPreviewControlRequests.map(() => ownerAal2Jwt),
+  );
   assertEquals(seen.map(({ input }) => input), [...websiteProjectPreviewControlRequests]);
 
   for (const input of websiteProjectPreviewControlRequests) {
@@ -1319,6 +1327,97 @@ Deno.test("async project preview controls route closed intent with caller JWT", 
       harness.deps,
     );
     assertEquals(response.status, 400);
+  }
+
+  for (const field of ["preview_build_id", "lease_id", "website_workspace_id"]) {
+    const response = await handleCommercialOperator(
+      request({
+        action: "open_existing_website_project_preview",
+        quote_request_id: websiteProjectPreviewBuildRequest.quote_request_id,
+        [field]: "c1a00000-0000-4000-8000-000000000099",
+      }, ownerAal2Jwt),
+      harness.deps,
+    );
+    assertEquals(response.status, 400, field);
+  }
+});
+
+Deno.test("existing project preview opening selects by dossier and issues a fresh session token", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const rpcResult = {
+    previewSessionId: "c1a00000-0000-4000-8000-000000000020",
+    previewBuildId: "c1a00000-0000-4000-8000-000000000021",
+    buildStatus: "PASS_WITH_WARNINGS",
+    builtCommitSha: "a".repeat(40),
+    currentCommitSha: "b".repeat(40),
+    builtAt: "2099-01-01T09:00:00.000Z",
+    expiresAt: "2099-01-01T09:30:00.000Z",
+    isCurrentCommit: false,
+    quoteRequestId: websiteProjectPreviewBuildRequest.quote_request_id,
+    websiteWorkContextId: "c1a00000-0000-4000-8000-000000000022",
+    websiteWorkspaceId: "c1a00000-0000-4000-8000-000000000023",
+    bindingRevision: 1,
+  };
+  const dependencies = {
+    clientFor: (_jwt: string) => ({
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        calls.push({ name, args });
+        return { data: rpcResult, error: null };
+      },
+    }),
+    previewHostUrl: "https://preview.example.test",
+  };
+  const input = websiteProjectPreviewControlRequests.find(
+    (request) => request.action === "open_existing_website_project_preview",
+  )!;
+
+  const first = await executeCallerJwtWebsiteProjectPreviewControlAction(
+    ownerAal2Jwt,
+    input,
+    dependencies,
+  ) as Record<string, unknown>;
+  const second = await executeCallerJwtWebsiteProjectPreviewControlAction(
+    ownerAal2Jwt,
+    input,
+    dependencies,
+  ) as Record<string, unknown>;
+
+  assertEquals(calls.map(({ name }) => name), [
+    "open_existing_website_project_preview_v1",
+    "open_existing_website_project_preview_v1",
+  ]);
+  assertEquals(calls.map(({ args }) => args.p_quote_request_id), [
+    input.quote_request_id,
+    input.quote_request_id,
+  ]);
+  const tokenHashes = calls.map(({ args }) => String(args.p_session_token_hash));
+  assertEquals(tokenHashes.every((hash) => /^[0-9a-f]{64}$/.test(hash)), true);
+  assertEquals(tokenHashes[0] === tokenHashes[1], false);
+  assertEquals(first.preview_build_id, rpcResult.previewBuildId);
+  assertEquals(first.is_current_commit, false);
+  assertEquals(String(first.handoff_url).includes(tokenHashes[0]), false);
+  assertEquals(first.handoff_url === second.handoff_url, false);
+});
+
+Deno.test("existing project preview opening requires owner AAL2 before dispatch", async () => {
+  const input = websiteProjectPreviewControlRequests.find(
+    (request) => request.action === "open_existing_website_project_preview",
+  )!;
+  for (const [token, verifiedUserId] of [
+    [ownerAal1Jwt, "c9bcd3ef-1e7e-4889-8a12-db827f1b97b0"],
+    [createUnsignedTestJwt({ sub: userId, role: "authenticated", aal: "aal2", exp: 4102444800 }), userId],
+  ] as const) {
+    let dispatches = 0;
+    const harness = dependencies({
+      verifyUser: async () => ({ id: verifiedUserId }),
+      executeWebsiteProjectPreviewControl: async () => {
+        dispatches++;
+        return {};
+      },
+    });
+    const response = await handleCommercialOperator(request(input, token), harness.deps);
+    assertEquals(response.status, 403);
+    assertEquals(dispatches, 0);
   }
 });
 

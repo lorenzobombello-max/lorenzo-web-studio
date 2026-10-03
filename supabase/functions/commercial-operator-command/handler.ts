@@ -83,6 +83,7 @@ const APPLICATION_ACTIONS = new Set([
   "save_website_project_file",
   "build_website_project_preview",
   "request_website_project_preview_build",
+  "open_existing_website_project_preview",
   "get_website_project_preview_build_status",
   "create_website_project_preview_session",
   "record_website_project_preview_ready",
@@ -594,6 +595,10 @@ export type WebsiteProjectPreviewControlActionInput = Readonly<
     quote_request_id: string;
     expected_commit_sha: string;
     idempotency_key: string;
+  }
+  | {
+    action: "open_existing_website_project_preview";
+    quote_request_id: string;
   }
   | {
     action: "get_website_project_preview_build_status";
@@ -1566,6 +1571,8 @@ function validateApplicationAction(value: UnvalidatedInput) {
       "expected_commit_sha",
       "idempotency_key",
     ])
+    : action === "open_existing_website_project_preview"
+    ? new Set(["action", "quote_request_id"])
     : action === "get_website_project_preview_build_status"
     ? new Set(["action", "lease_id"])
     : action === "create_website_project_preview_session"
@@ -2808,6 +2815,15 @@ function validateApplicationAction(value: UnvalidatedInput) {
       idempotency_key: value.idempotency_key,
     } as WebsiteProjectPreviewControlActionInput;
   }
+  if (action === "open_existing_website_project_preview") {
+    if (!UUID.test(String(value.quote_request_id || ""))) {
+      throw new RequestError(400, "INVALID_REQUEST");
+    }
+    return {
+      action,
+      quote_request_id: value.quote_request_id,
+    } as WebsiteProjectPreviewControlActionInput;
+  }
   if (action === "get_website_project_preview_build_status") {
     if (!UUID.test(String(value.lease_id || ""))) {
       throw new RequestError(400, "INVALID_REQUEST");
@@ -3397,6 +3413,7 @@ function mapDatabaseError(error: unknown) {
   if (
     [
       "WEBSITE_REQUIREMENTS_INTAKE_NOT_ELIGIBLE",
+      "PROJECT_PREVIEW_BUILD_NOT_FOUND",
       "WEBSITE_REQUIREMENTS_MAPPING_UNSUPPORTED",
       "WEBSITE_ACTIVE_REQUIREMENT_CONFLICT",
       "WEBSITE_REQUIREMENT_SOURCE_PROPOSAL_NOT_FOUND",
@@ -3425,7 +3442,14 @@ function mapDatabaseError(error: unknown) {
       "WEBSITE_PREVIEW_READY_STATE_INVALID",
       "PROJECT_REQUIREMENTS_NOT_READY",
     ].includes(code)
-  ) return response(409, "COMMAND_REJECTED");
+  ) {
+    return code === "PROJECT_PREVIEW_BUILD_NOT_FOUND"
+      ? response(404, code)
+      : response(409, "COMMAND_REJECTED");
+  }
+  if (code === "PROJECT_PREVIEW_REPOSITORY_NOT_READY") {
+    return response(409, code);
+  }
   const projectFileStatuses = new Map<string, number>([
     ["INVALID_REQUEST", 400],
     ["INVALID_PROJECT_PATH", 400],
@@ -4556,6 +4580,7 @@ export async function handleCommercialOperator(
         input.action === "save_website_project_file" ||
         input.action === "build_website_project_preview" ||
         input.action === "request_website_project_preview_build" ||
+        input.action === "open_existing_website_project_preview" ||
         input.action === "get_website_project_preview_build_status" ||
         input.action === "create_website_project_preview_session" ||
         input.action === "provision_website_repository" ||
@@ -4694,6 +4719,7 @@ export async function handleCommercialOperator(
       }
       if (
         input.action === "request_website_project_preview_build" ||
+        input.action === "open_existing_website_project_preview" ||
         input.action === "get_website_project_preview_build_status" ||
         input.action === "create_website_project_preview_session"
       ) {
