@@ -743,6 +743,35 @@ test("every authority-loss path clears content and disables reads until revalida
   }
 });
 
+test("repository failure renders lifecycle recovery guidance instead of access denial", async () => {
+  const server = await serveTask9Harness();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const address = server.address();
+    await page.goto(`http://127.0.0.1:${address.port}/task9`);
+    await page.waitForFunction(() => window.task9Ready === true);
+    await page.evaluate((context) => window.projectFiles.updateContext(context), task9Context({
+      projectFilesRead: false,
+      projectFilesWrite: false,
+      workspaceState: "REPOSITORY_FAILED",
+      repositoryOperationState: "TERMINAL_FAILED",
+      failureCategory: "TERMINAL",
+      recoveryGuidance: "CONTACT_OWNER",
+    }));
+    assert.equal(
+      await page.locator(".website-project-files__status").textContent(),
+      "Repository is niet beschikbaar. Neem contact op met de eigenaar.",
+    );
+    assert.equal(await page.locator(".website-project-files__refresh").isDisabled(), true);
+    assert.equal(await page.evaluate(() => window.task9Requests.length), 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("Website child forwards exact authority identity and clears on auth or refresh loss", async () => {
   const child = await readFile(new URL(
     "../assets/js/operator-website-execution-child.mjs",

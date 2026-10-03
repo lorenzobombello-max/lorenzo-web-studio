@@ -18,6 +18,10 @@ select has_function(
   array['uuid', 'uuid', 'bigint', 'uuid'],
   'promotion RPC has the exact server-derived-project signature'
 );
+select has_function(
+  'public', 'get_website_execution_workspace_v6', array['uuid'],
+  'Website execution V6 projects promotion authority'
+);
 
 select columns_are(
   'public', 'website_concept_promotion_commands',
@@ -435,13 +439,11 @@ insert into public.commercial_projects(
   project_id, customer_id, quotation_issuance_id, acceptance_id,
   accepted_total_minor, currency, m1_minor, m2_minor, m3_minor,
   current_state, revision
-) values
-  ('d81a0000-0000-4000-8000-000000000001', 'd8190000-0000-4000-8000-000000000001',
+) values (
+  'd81a0000-0000-4000-8000-000000000001', 'd8190000-0000-4000-8000-000000000001',
    'd8150000-0000-4000-8000-000000000001', 'd8180000-0000-4000-8000-000000000001',
-   10000, 'EUR', 4000, 4000, 2000, 'QUOTE_ACCEPTED', 1),
-  ('d81a0000-0000-4000-8000-000000000002', 'd8190000-0000-4000-8000-000000000002',
-   'd8150000-0000-4000-8000-000000000002', 'd8180000-0000-4000-8000-000000000002',
-   10000, 'EUR', 4000, 4000, 2000, 'QUOTE_ACCEPTED', 1);
+   10000, 'EUR', 4000, 4000, 2000, 'QUOTE_ACCEPTED', 1
+);
 insert into public.website_concepts(
   concept_id, quote_request_id, mode, briefing_status, concept_status, revision, created_by
 ) values
@@ -534,6 +536,13 @@ insert into public.website_requirement_verifications(
 set local session_replication_role = origin;
 
 select pg_temp.set_promotion_claims_v1('c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal1');
+select is(
+  public.get_website_execution_workspace_v6(
+    'd8100000-0000-4000-8000-000000000001'
+  )->'permitted_actions',
+  '[]'::jsonb,
+  'owner AAL1 receives no promotion action'
+);
 select throws_ok(
   $$select public.promote_website_concept_v1(
     'd8100000-0000-4000-8000-000000000001',
@@ -543,6 +552,12 @@ select throws_ok(
 );
 select pg_temp.set_promotion_claims_v1('bd2ab636-0d42-4069-88a9-60bd97f2b335', 'aal2');
 select throws_ok(
+  $$select public.get_website_execution_workspace_v6(
+    'd8100000-0000-4000-8000-000000000001')$$,
+  '42501', 'APPLICATION_SCOPE_DENIED',
+  'non-operator AAL2 keeps the V6 projection fail-closed'
+);
+select throws_ok(
   $$select public.promote_website_concept_v1(
     'd8100000-0000-4000-8000-000000000001',
     'd81c0000-0000-4000-8000-000000000001', 7,
@@ -551,6 +566,13 @@ select throws_ok(
   'non-owner AAL2 cannot promote'
 );
 select pg_temp.set_promotion_claims_v1('c9bcd3ef-1e7e-4889-8a12-db827f1b97b0', 'aal2');
+select is(
+  public.get_website_execution_workspace_v6(
+    'd8100002-0000-4000-8000-000000000002'
+  )->'permitted_actions',
+  '[]'::jsonb,
+  'zero eligible projects project no promotion action'
+);
 select throws_ok(
   $$select public.promote_website_concept_v1(
     'd8100002-0000-4000-8000-000000000002',
@@ -558,6 +580,27 @@ select throws_ok(
     'd8230000-0000-4000-8000-000000000007')$$,
   'P0001', 'WEBSITE_PROMOTION_PROJECT_NOT_FOUND',
   'zero eligible projects reject without creating promotion authority'
+);
+
+set local session_replication_role = replica;
+insert into public.commercial_projects(
+  project_id, customer_id, quotation_issuance_id, acceptance_id,
+  accepted_total_minor, currency, m1_minor, m2_minor, m3_minor,
+  current_state, revision
+) values (
+  'd81a0000-0000-4000-8000-000000000002',
+  'd8190000-0000-4000-8000-000000000002',
+  'd8150000-0000-4000-8000-000000000002',
+  'd8180000-0000-4000-8000-000000000002',
+  10000, 'EUR', 4000, 4000, 2000, 'QUOTE_ACCEPTED', 1
+);
+set local session_replication_role = origin;
+
+select throws_ok(
+  $$select public.get_website_execution_workspace_v6(
+    'd8100000-0000-4000-8000-000000000001')$$,
+  'P0001', 'WEBSITE_WORK_CONTEXT_BINDING_MISMATCH',
+  'multiple eligible projects keep the V6 projection fail-closed'
 );
 select throws_ok(
   $$select public.promote_website_concept_v1(
@@ -580,6 +623,14 @@ delete from public.quote_request_quotation_acceptances where id = 'd8180000-0000
 delete from public.quote_request_quotation_issuances where id = 'd8150000-0000-4000-8000-000000000002';
 delete from public.quote_request_quotation_approvals where id = 'd8130000-0000-4000-8000-000000000002';
 set local session_replication_role = origin;
+
+select is(
+  public.get_website_execution_workspace_v6(
+    'd8100000-0000-4000-8000-000000000001'
+  )->'permitted_actions',
+  '["promote_website_concept"]'::jsonb,
+  'exactly one eligible project projects only the existing promotion action'
+);
 
 select throws_ok(
   $$select public.promote_website_concept_v1(
@@ -641,6 +692,12 @@ select public.promote_website_concept_v1(
 ) as result;
 select is((select result->>'outcome' from promotion_runtime_result), 'PROMOTED',
   'owner AAL2 promotes the Website context');
+select throws_ok(
+  $$select public.get_website_execution_workspace_v6(
+    'd8100000-0000-4000-8000-000000000001')$$,
+  'P0001', 'WEBSITE_WORKSPACE_NOT_ELIGIBLE',
+  'completed promotion keeps the V6 projection fail-closed'
+);
 select is((select result->>'project_id' from promotion_runtime_result),
   'd81a0000-0000-4000-8000-000000000001',
   'promotion resolves the accepted-quotation project server-side');

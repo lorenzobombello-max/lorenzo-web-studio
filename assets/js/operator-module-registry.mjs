@@ -114,7 +114,7 @@ const registry = new Map(OPERATOR_MODULE_DESCRIPTORS.map((descriptor)=>[descript
 const standaloneInitializers = new Map([
   ["dossiers", async ({ root, client, identity, onInvalidate, onAuthorizationFailure, requireAal2, requestOpen, slotKey })=>{
     if (String(slotKey || "").startsWith("project-req-")) {
-      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20260913-requirements-wiring-r1");
+      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20261003-workspace-recovery-v6-r1");
       return initializeOperatorProjectRequirements(root, client, identity, {
         slotKey,
         onInvalidate,
@@ -124,7 +124,7 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("req-")) {
-      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20260913-requirements-wiring-r1");
+      const { initializeOperatorProjectRequirements } = await import("./operator-project-requirements-child.mjs?v=20261003-workspace-recovery-v6-r1");
       return initializeOperatorProjectRequirements(root, client, identity, {
         slotKey,
         onInvalidate,
@@ -134,7 +134,7 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("website-")) {
-      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20260922-preview-error-code-r1");
+      const { initializeOperatorWebsiteExecution } = await import("./operator-website-execution-child.mjs?v=20261003-workspace-recovery-v6-r1");
       return initializeOperatorWebsiteExecution(root, client, identity, {
         slotKey,
         onInvalidate,
@@ -144,7 +144,7 @@ const standaloneInitializers = new Map([
       });
     }
     if (String(slotKey || "").startsWith("project-")) {
-      const { initializeOperatorProjectWorkspace } = await import("./operator-project-workspace-child.mjs?v=20260917-pre-project-workspace-r2");
+      const { initializeOperatorProjectWorkspace } = await import("./operator-project-workspace-child.mjs?v=20261003-workspace-recovery-v6-r1");
       return initializeOperatorProjectWorkspace(root, client, identity, {
         slotKey,
         onInvalidate,
@@ -152,7 +152,7 @@ const standaloneInitializers = new Map([
         requestOpen,
       });
     }
-    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20260912-project-refresh-retention-r1");
+    const { initializeOperatorDossiers } = await import("./operator-dossiers.mjs?v=20261003-workspace-recovery-v6-r1");
     const controller = initializeOperatorDossiers(root, client, identity, { onAuthorizationFailure, requireAal2 });
     return {
       dispose: ()=>controller.dispose(),

@@ -7,7 +7,7 @@ import {
   projectWorkspaceRequest,
   projectWorkspaceSlot,
 } from "./operator-project-workspace.mjs?v=20260912-dossier-continuity-project-r1";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   buildVatReadinessAction,
   canComposeQuotationFromVatReadiness,

@@ -22,7 +22,7 @@ import {
   projectRequirementsRequest,
   projectRequirementsSummary,
 } from "./operator-project-requirements.mjs?v=20260917-pre-project-workspace-r2";
-import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20260917-pre-project-workspace-r2";
+import { websiteExecutionSlot } from "./operator-website-execution.mjs?v=20261003-workspace-recovery-v6-r1";
 
 const PROJECT_CHILD_ROLES = new Set(["owner"]);
 
