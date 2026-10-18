@@ -586,6 +586,131 @@ async function artifactIssuanceFirst(tokenHash) {
   }
 }
 
+async function artifactReopenSweepFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_reopen_sweep_holder";
+  const waiterName = "lws_preview_artifact_reopen_waiter";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      select pg_backend_pid(), 'ARTIFACT_REOPEN_SWEEP_HELD';
+    `, "ARTIFACT_REOPEN_SWEEP_HELD");
+    await holder.ready;
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.open_existing_website_project_preview_v1(
+        '${quoteRequestId}',
+        '${tokenHash}'
+      )::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    const after = sweepSnapshot(tokenHash);
+    if (holderResult.code !== 0) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_HOLDER_FAILED:${JSON.stringify({
+        holderResult,
+        waiterResult,
+        after,
+      })}`);
+    }
+    if (waiterResult.code === 0) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_DANGLING_SESSION:${JSON.stringify({
+        waiterResult,
+        after,
+      })}`);
+    }
+    const sqlstate = extractSqlState(waiterResult.stderr);
+    if (
+      sqlstate !== "P0001"
+      || !waiterResult.stderr.includes("PROJECT_PREVIEW_BUILD_NOT_FOUND")
+      || Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 0
+      || Number(after.active_session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_STATE_INVALID:${JSON.stringify({
+        sqlstate,
+        waiterResult,
+        after,
+      })}`);
+    }
+    return {
+      lock,
+      after,
+      sqlstate,
+      message: "PROJECT_PREVIEW_BUILD_NOT_FOUND",
+    };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
+async function artifactReopenFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_reopen_holder";
+  const waiterName = "lws_preview_artifact_reopen_sweeper";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.open_existing_website_project_preview_v1(
+        '${quoteRequestId}',
+        '${tokenHash}'
+      )::text;
+      select pg_backend_pid(), 'ARTIFACT_REOPEN_HELD';
+    `, "ARTIFACT_REOPEN_HELD");
+    await holder.ready;
+    const before = sweepSnapshot(tokenHash);
+    if (
+      Number(before.artifact_count) !== 1
+      || Number(before.session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_PRECOMMIT_INVALID:${JSON.stringify(before)}`);
+    }
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    if (holderResult.code !== 0 || waiterResult.code !== 0) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_RESULT_INVALID:${JSON.stringify({
+        holderResult,
+        waiterResult,
+      })}`);
+    }
+    const after = sweepSnapshot(tokenHash);
+    if (
+      Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 1
+      || Number(after.active_session_count) !== 0
+      || Number(after.revoked_session_count) !== 1
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_STATE_INVALID:${JSON.stringify(after)}`);
+    }
+    return { lock, before, after };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
 async function artifactCleanedHistoryNotRelocked(tokenHash) {
   resetSweepCase();
   const initialSweep = JSON.parse(query(`
@@ -724,6 +849,9 @@ async function main() {
     evidence.cases.artifact_issuance_first = await artifactIssuanceFirst("6".repeat(64));
     evidence.cases.artifact_cleaned_history_not_relocked =
       await artifactCleanedHistoryNotRelocked("7".repeat(64));
+    evidence.cases.artifact_reopen_sweep_first =
+      await artifactReopenSweepFirst("8".repeat(64));
+    evidence.cases.artifact_reopen_first = await artifactReopenFirst("9".repeat(64));
   } catch (error) {
     runError = error;
   } finally {

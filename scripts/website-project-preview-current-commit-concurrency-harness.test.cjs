@@ -47,6 +47,8 @@ for (const caseName of [
   "artifact_sweep_first",
   "artifact_issuance_first",
   "artifact_cleaned_history_not_relocked",
+  "artifact_reopen_sweep_first",
+  "artifact_reopen_first",
 ]) {
   assert.match(harness, new RegExp(caseName));
 }
@@ -69,6 +71,9 @@ for (const requiredContract of [
   "ARTIFACT_ISSUANCE_FIRST_DANGLING_SESSION",
   "ARTIFACT_CLEANED_HISTORY_RELOCKED",
   "ARTIFACT_MISSING_UNREVOKED_SESSION_NOT_CLEANED",
+  "ARTIFACT_REOPEN_SWEEP_FIRST_DANGLING_SESSION",
+  "ARTIFACT_REOPEN_SWEEP_FIRST_STATE_INVALID",
+  "ARTIFACT_REOPEN_FIRST_STATE_INVALID",
   "lock_timeout",
   "CLEANED_HISTORY_BUILD_HELD",
 ]) {
