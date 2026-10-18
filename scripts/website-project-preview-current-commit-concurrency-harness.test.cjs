@@ -44,6 +44,11 @@ for (const caseName of [
   "reopen_update_first",
   "create_session_issuance_first",
   "create_session_update_first",
+  "artifact_sweep_first",
+  "artifact_issuance_first",
+  "artifact_cleaned_history_not_relocked",
+  "artifact_reopen_sweep_first",
+  "artifact_reopen_first",
 ]) {
   assert.match(harness, new RegExp(caseName));
 }
@@ -55,6 +60,7 @@ for (const requiredContract of [
   "open_existing_website_project_preview_v1",
   "create_website_project_preview_session_v1",
   "resolve_website_project_preview_session_v1",
+  "sweep_expired_website_project_preview_artifacts_v1",
   "pg_backend_pid()",
   "wait_event_type",
   "pg_blocking_pids",
@@ -62,6 +68,14 @@ for (const requiredContract of [
   "PROJECT_PREVIEW_BUILD_NOT_READY",
   "cleanupFixtures",
   "assertZeroResidue",
+  "ARTIFACT_ISSUANCE_FIRST_DANGLING_SESSION",
+  "ARTIFACT_CLEANED_HISTORY_RELOCKED",
+  "ARTIFACT_MISSING_UNREVOKED_SESSION_NOT_CLEANED",
+  "ARTIFACT_REOPEN_SWEEP_FIRST_DANGLING_SESSION",
+  "ARTIFACT_REOPEN_SWEEP_FIRST_STATE_INVALID",
+  "ARTIFACT_REOPEN_FIRST_STATE_INVALID",
+  "lock_timeout",
+  "CLEANED_HISTORY_BUILD_HELD",
 ]) {
   assert.match(harness, new RegExp(requiredContract.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }

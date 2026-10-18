@@ -228,6 +228,69 @@ function resetCase() {
   `);
 }
 
+function resetSweepCase() {
+  query(`
+    begin;
+    set local session_replication_role = replica;
+    delete from lws_internal.website_project_preview_sessions
+      where preview_build_id = '${buildId}';
+    update public.website_execution_workspaces
+    set last_commit_sha = '${commitN}', last_commit_at = clock_timestamp()
+    where website_workspace_id = '${workspaceId}';
+    update lws_internal.website_project_preview_builds
+    set commit_sha = '${commitN}',
+        build_status = 'PASS',
+        built_at = clock_timestamp() - interval '48 hours'
+    where preview_build_id = '${buildId}';
+    insert into lws_internal.website_project_preview_build_artifacts(
+      artifact_id, preview_build_id, relative_path, content_type, sha256, bytes
+    ) values (
+      'eec31000-0000-4000-8000-000000000010',
+      '${buildId}',
+      'index.html',
+      'text/html',
+      repeat('a', 64),
+      100
+    )
+    on conflict (preview_build_id, relative_path) do update
+    set content_type = excluded.content_type,
+        sha256 = excluded.sha256,
+        bytes = excluded.bytes;
+    set local session_replication_role = origin;
+    commit;
+  `);
+}
+
+function sweepSnapshot(tokenHash) {
+  return JSON.parse(query(`
+    select jsonb_build_object(
+      'artifact_count', (
+        select count(*)
+        from lws_internal.website_project_preview_build_artifacts
+        where preview_build_id = '${buildId}'
+      ),
+      'session_count', (
+        select count(*)
+        from lws_internal.website_project_preview_sessions
+        where session_token_hash = '${tokenHash}'
+      ),
+      'active_session_count', (
+        select count(*)
+        from lws_internal.website_project_preview_sessions
+        where session_token_hash = '${tokenHash}'
+          and revoked_at is null
+          and expires_at > clock_timestamp()
+      ),
+      'revoked_session_count', (
+        select count(*)
+        from lws_internal.website_project_preview_sessions
+        where session_token_hash = '${tokenHash}'
+          and revoked_at is not null
+      )
+    )::text
+  `));
+}
+
 function humanClaims() {
   return `select set_config(
     'request.jwt.claims',
@@ -403,6 +466,360 @@ async function updateFirst(kind, tokenHash, expectedSqlState, expectedMessage) {
   }
 }
 
+async function artifactSweepFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_sweep_holder";
+  const waiterName = "lws_preview_artifact_issuance_waiter";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      select pg_backend_pid(), 'ARTIFACT_SWEEP_HELD';
+    `, "ARTIFACT_SWEEP_HELD");
+    await holder.ready;
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.create_website_project_preview_session_v1(
+        '${buildId}',
+        '${tokenHash}'
+      )::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    if (
+      holderResult.code !== 0
+      || waiterResult.code === 0
+      || !waiterResult.stderr.includes("PROJECT_PREVIEW_BUILD_NOT_READY")
+    ) {
+      throw new Error(`ARTIFACT_SWEEP_FIRST_RESULT_INVALID:${JSON.stringify({
+        holderResult,
+        waiterResult,
+      })}`);
+    }
+    const sqlstate = extractSqlState(waiterResult.stderr);
+    const after = sweepSnapshot(tokenHash);
+    if (
+      sqlstate !== "42501"
+      || Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 0
+      || Number(after.active_session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_SWEEP_FIRST_STATE_INVALID:${JSON.stringify({
+        sqlstate,
+        after,
+      })}`);
+    }
+    return {
+      lock,
+      after,
+      sqlstate,
+      message: "PROJECT_PREVIEW_BUILD_NOT_READY",
+    };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
+async function artifactIssuanceFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_issuance_holder";
+  const waiterName = "lws_preview_artifact_sweep_waiter";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.create_website_project_preview_session_v1(
+        '${buildId}',
+        '${tokenHash}'
+      )::text;
+      select pg_backend_pid(), 'ARTIFACT_ISSUANCE_HELD';
+    `, "ARTIFACT_ISSUANCE_HELD");
+    await holder.ready;
+    const before = sweepSnapshot(tokenHash);
+    if (
+      Number(before.artifact_count) !== 1
+      || Number(before.session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_ISSUANCE_FIRST_PRECOMMIT_INVALID:${JSON.stringify(before)}`);
+    }
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    if (holderResult.code !== 0 || waiterResult.code !== 0) {
+      throw new Error(`ARTIFACT_ISSUANCE_FIRST_RESULT_INVALID:${JSON.stringify({
+        holderResult,
+        waiterResult,
+      })}`);
+    }
+    const after = sweepSnapshot(tokenHash);
+    if (
+      Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 1
+      || Number(after.active_session_count) !== 0
+      || Number(after.revoked_session_count) !== 1
+    ) {
+      throw new Error(`ARTIFACT_ISSUANCE_FIRST_DANGLING_SESSION:${JSON.stringify(after)}`);
+    }
+    return { lock, before, after };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
+async function artifactReopenSweepFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_reopen_sweep_holder";
+  const waiterName = "lws_preview_artifact_reopen_waiter";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      select pg_backend_pid(), 'ARTIFACT_REOPEN_SWEEP_HELD';
+    `, "ARTIFACT_REOPEN_SWEEP_HELD");
+    await holder.ready;
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.open_existing_website_project_preview_v1(
+        '${quoteRequestId}',
+        '${tokenHash}'
+      )::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    const after = sweepSnapshot(tokenHash);
+    if (holderResult.code !== 0) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_HOLDER_FAILED:${JSON.stringify({
+        holderResult,
+        waiterResult,
+        after,
+      })}`);
+    }
+    if (waiterResult.code === 0) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_DANGLING_SESSION:${JSON.stringify({
+        waiterResult,
+        after,
+      })}`);
+    }
+    const sqlstate = extractSqlState(waiterResult.stderr);
+    if (
+      sqlstate !== "P0001"
+      || !waiterResult.stderr.includes("PROJECT_PREVIEW_BUILD_NOT_FOUND")
+      || Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 0
+      || Number(after.active_session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_SWEEP_FIRST_STATE_INVALID:${JSON.stringify({
+        sqlstate,
+        waiterResult,
+        after,
+      })}`);
+    }
+    return {
+      lock,
+      after,
+      sqlstate,
+      message: "PROJECT_PREVIEW_BUILD_NOT_FOUND",
+    };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
+async function artifactReopenFirst(tokenHash) {
+  resetSweepCase();
+  const holderName = "lws_preview_artifact_reopen_holder";
+  const waiterName = "lws_preview_artifact_reopen_sweeper";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      set local role authenticated;
+      ${humanClaims()}
+      select public.open_existing_website_project_preview_v1(
+        '${quoteRequestId}',
+        '${tokenHash}'
+      )::text;
+      select pg_backend_pid(), 'ARTIFACT_REOPEN_HELD';
+    `, "ARTIFACT_REOPEN_HELD");
+    await holder.ready;
+    const before = sweepSnapshot(tokenHash);
+    if (
+      Number(before.artifact_count) !== 1
+      || Number(before.session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_PRECOMMIT_INVALID:${JSON.stringify(before)}`);
+    }
+    const waiter = run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      commit;
+    `);
+    const lock = await proveBlocked(waiterName, holderName);
+    const holderResult = await holder.release();
+    holder = null;
+    const waiterResult = await waiter;
+    if (holderResult.code !== 0 || waiterResult.code !== 0) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_RESULT_INVALID:${JSON.stringify({
+        holderResult,
+        waiterResult,
+      })}`);
+    }
+    const after = sweepSnapshot(tokenHash);
+    if (
+      Number(after.artifact_count) !== 0
+      || Number(after.session_count) !== 1
+      || Number(after.active_session_count) !== 0
+      || Number(after.revoked_session_count) !== 1
+    ) {
+      throw new Error(`ARTIFACT_REOPEN_FIRST_STATE_INVALID:${JSON.stringify(after)}`);
+    }
+    return { lock, before, after };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
+async function artifactCleanedHistoryNotRelocked(tokenHash) {
+  resetSweepCase();
+  const initialSweep = JSON.parse(query(`
+    begin;
+    set local role service_role;
+    select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+    commit;
+  `));
+  const afterInitialSweep = sweepSnapshot(tokenHash);
+  if (
+    Number(initialSweep.orphanedArtifactRowsDeleted) !== 1
+    || Number(afterInitialSweep.artifact_count) !== 0
+    || Number(afterInitialSweep.active_session_count) !== 0
+  ) {
+    throw new Error(`ARTIFACT_CLEANED_HISTORY_SETUP_INVALID:${JSON.stringify({
+      initialSweep,
+      afterInitialSweep,
+    })}`);
+  }
+
+  query(`
+    insert into lws_internal.website_project_preview_sessions (
+      preview_build_id, session_token_hash, actor_auth_user_id, expires_at
+    ) values (
+      '${buildId}',
+      '${tokenHash}',
+      '${authUserId}',
+      clock_timestamp() + interval '30 minutes'
+    )
+  `);
+  const orphanedSessionSweep = JSON.parse(query(`
+    begin;
+    set local role service_role;
+    select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+    commit;
+  `));
+  const afterOrphanedSessionSweep = sweepSnapshot(tokenHash);
+  if (
+    Number(orphanedSessionSweep.expiredSessionsRevoked) !== 1
+    || Number(orphanedSessionSweep.orphanedArtifactRowsDeleted) !== 0
+    || Number(afterOrphanedSessionSweep.artifact_count) !== 0
+    || Number(afterOrphanedSessionSweep.active_session_count) !== 0
+    || Number(afterOrphanedSessionSweep.revoked_session_count) !== 1
+  ) {
+    throw new Error(`ARTIFACT_MISSING_UNREVOKED_SESSION_NOT_CLEANED:${JSON.stringify({
+      orphanedSessionSweep,
+      afterOrphanedSessionSweep,
+    })}`);
+  }
+
+  const holderName = "lws_preview_cleaned_history_holder";
+  const waiterName = "lws_preview_cleaned_history_sweeper";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      select preview_build_id
+      from lws_internal.website_project_preview_builds
+      where preview_build_id = '${buildId}'
+      for update;
+      select pg_backend_pid(), 'CLEANED_HISTORY_BUILD_HELD';
+    `, "CLEANED_HISTORY_BUILD_HELD");
+    await holder.ready;
+    const waiterResult = await run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local lock_timeout = '500ms';
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      commit;
+    `);
+    if (waiterResult.code !== 0) {
+      const sqlstate = extractSqlState(waiterResult.stderr);
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_RELOCKED:SQLSTATE_${sqlstate}`);
+    }
+    const holderResult = await holder.release();
+    holder = null;
+    if (holderResult.code !== 0) {
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_HOLDER_FAILED:${JSON.stringify(holderResult)}`);
+    }
+    const sweepResult = JSON.parse(
+      waiterResult.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? "",
+    );
+    const after = sweepSnapshot(tokenHash);
+    if (
+      Number(sweepResult.expiredSessionsRevoked) !== 0
+      || Number(sweepResult.orphanedArtifactRowsDeleted) !== 0
+      || Number(after.artifact_count) !== 0
+      || Number(after.active_session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_STATE_INVALID:${JSON.stringify({
+        sweepResult,
+        after,
+      })}`);
+    }
+    return {
+      initialSweep,
+      afterInitialSweep,
+      orphanedSessionSweep,
+      afterOrphanedSessionSweep,
+      sweepResult,
+      after,
+    };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
 async function main() {
   assertLocalTarget();
   let runError;
@@ -428,6 +845,13 @@ async function main() {
       "42501",
       "PROJECT_PREVIEW_BUILD_NOT_READY",
     );
+    evidence.cases.artifact_sweep_first = await artifactSweepFirst("5".repeat(64));
+    evidence.cases.artifact_issuance_first = await artifactIssuanceFirst("6".repeat(64));
+    evidence.cases.artifact_cleaned_history_not_relocked =
+      await artifactCleanedHistoryNotRelocked("7".repeat(64));
+    evidence.cases.artifact_reopen_sweep_first =
+      await artifactReopenSweepFirst("8".repeat(64));
+    evidence.cases.artifact_reopen_first = await artifactReopenFirst("9".repeat(64));
   } catch (error) {
     runError = error;
   } finally {
