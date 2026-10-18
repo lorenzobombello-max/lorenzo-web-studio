@@ -251,3 +251,72 @@ from public, anon, authenticated, service_role;
 grant execute on function
   public.create_website_project_preview_session_v1(uuid, text)
 to authenticated;
+
+create or replace function public.sweep_expired_website_project_preview_artifacts_v1(
+  p_retention_hours integer default 24
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, lws_internal, auth, pg_catalog
+as $function$
+declare
+  v_retention_cutoff timestamptz :=
+    clock_timestamp() - make_interval(hours => p_retention_hours);
+  v_expired_build_id uuid;
+  v_expired_build_ids uuid[] := array[]::uuid[];
+  v_expired_lease_count integer;
+  v_expired_session_count integer;
+  v_deleted_artifact_count integer;
+begin
+  update lws_internal.website_project_preview_build_leases as lease
+  set released_at = clock_timestamp()
+  where lease.released_at is null
+    and lease.expires_at <= clock_timestamp()
+    and not exists (
+      select 1 from lws_internal.website_project_preview_builds as build
+      where build.lease_id = lease.preview_lease_id
+    );
+  get diagnostics v_expired_lease_count = row_count;
+
+  for v_expired_build_id in
+    select build.preview_build_id
+    from lws_internal.website_project_preview_builds as build
+    where build.built_at <= v_retention_cutoff
+    order by build.preview_build_id
+    for update
+  loop
+    v_expired_build_ids :=
+      array_append(v_expired_build_ids, v_expired_build_id);
+  end loop;
+
+  update lws_internal.website_project_preview_sessions as session
+  set revoked_at = clock_timestamp()
+  where session.revoked_at is null
+    and session.preview_build_id = any(v_expired_build_ids);
+  get diagnostics v_expired_session_count = row_count;
+
+  delete from lws_internal.website_project_preview_build_artifacts as artifact
+  where artifact.preview_build_id = any(v_expired_build_ids);
+  get diagnostics v_deleted_artifact_count = row_count;
+
+  return jsonb_build_object(
+    'expiredLeasesReleased', v_expired_lease_count,
+    'expiredSessionsRevoked', v_expired_session_count,
+    'orphanedArtifactRowsDeleted', v_deleted_artifact_count
+  );
+end;
+$function$;
+
+alter function
+  public.sweep_expired_website_project_preview_artifacts_v1(integer)
+owner to postgres;
+
+revoke all on function
+  public.sweep_expired_website_project_preview_artifacts_v1(integer)
+from public, anon, authenticated, service_role;
+
+grant execute on function
+  public.sweep_expired_website_project_preview_artifacts_v1(integer)
+to service_role;
