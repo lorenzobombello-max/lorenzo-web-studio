@@ -586,6 +586,115 @@ async function artifactIssuanceFirst(tokenHash) {
   }
 }
 
+async function artifactCleanedHistoryNotRelocked(tokenHash) {
+  resetSweepCase();
+  const initialSweep = JSON.parse(query(`
+    begin;
+    set local role service_role;
+    select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+    commit;
+  `));
+  const afterInitialSweep = sweepSnapshot(tokenHash);
+  if (
+    Number(initialSweep.orphanedArtifactRowsDeleted) !== 1
+    || Number(afterInitialSweep.artifact_count) !== 0
+    || Number(afterInitialSweep.active_session_count) !== 0
+  ) {
+    throw new Error(`ARTIFACT_CLEANED_HISTORY_SETUP_INVALID:${JSON.stringify({
+      initialSweep,
+      afterInitialSweep,
+    })}`);
+  }
+
+  query(`
+    insert into lws_internal.website_project_preview_sessions (
+      preview_build_id, session_token_hash, actor_auth_user_id, expires_at
+    ) values (
+      '${buildId}',
+      '${tokenHash}',
+      '${authUserId}',
+      clock_timestamp() + interval '30 minutes'
+    )
+  `);
+  const orphanedSessionSweep = JSON.parse(query(`
+    begin;
+    set local role service_role;
+    select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+    commit;
+  `));
+  const afterOrphanedSessionSweep = sweepSnapshot(tokenHash);
+  if (
+    Number(orphanedSessionSweep.expiredSessionsRevoked) !== 1
+    || Number(orphanedSessionSweep.orphanedArtifactRowsDeleted) !== 0
+    || Number(afterOrphanedSessionSweep.artifact_count) !== 0
+    || Number(afterOrphanedSessionSweep.active_session_count) !== 0
+    || Number(afterOrphanedSessionSweep.revoked_session_count) !== 1
+  ) {
+    throw new Error(`ARTIFACT_MISSING_UNREVOKED_SESSION_NOT_CLEANED:${JSON.stringify({
+      orphanedSessionSweep,
+      afterOrphanedSessionSweep,
+    })}`);
+  }
+
+  const holderName = "lws_preview_cleaned_history_holder";
+  const waiterName = "lws_preview_cleaned_history_sweeper";
+  let holder;
+  try {
+    holder = startHoldingSession(`
+      set application_name = '${holderName}';
+      begin;
+      select preview_build_id
+      from lws_internal.website_project_preview_builds
+      where preview_build_id = '${buildId}'
+      for update;
+      select pg_backend_pid(), 'CLEANED_HISTORY_BUILD_HELD';
+    `, "CLEANED_HISTORY_BUILD_HELD");
+    await holder.ready;
+    const waiterResult = await run(`
+      set application_name = '${waiterName}';
+      begin;
+      set local lock_timeout = '500ms';
+      set local role service_role;
+      select public.sweep_expired_website_project_preview_artifacts_v1(24)::text;
+      commit;
+    `);
+    if (waiterResult.code !== 0) {
+      const sqlstate = extractSqlState(waiterResult.stderr);
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_RELOCKED:SQLSTATE_${sqlstate}`);
+    }
+    const holderResult = await holder.release();
+    holder = null;
+    if (holderResult.code !== 0) {
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_HOLDER_FAILED:${JSON.stringify(holderResult)}`);
+    }
+    const sweepResult = JSON.parse(
+      waiterResult.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? "",
+    );
+    const after = sweepSnapshot(tokenHash);
+    if (
+      Number(sweepResult.expiredSessionsRevoked) !== 0
+      || Number(sweepResult.orphanedArtifactRowsDeleted) !== 0
+      || Number(after.artifact_count) !== 0
+      || Number(after.active_session_count) !== 0
+    ) {
+      throw new Error(`ARTIFACT_CLEANED_HISTORY_STATE_INVALID:${JSON.stringify({
+        sweepResult,
+        after,
+      })}`);
+    }
+    return {
+      initialSweep,
+      afterInitialSweep,
+      orphanedSessionSweep,
+      afterOrphanedSessionSweep,
+      sweepResult,
+      after,
+    };
+  } finally {
+    if (holder) await holder.abort();
+  }
+}
+
 async function main() {
   assertLocalTarget();
   let runError;
@@ -613,6 +722,8 @@ async function main() {
     );
     evidence.cases.artifact_sweep_first = await artifactSweepFirst("5".repeat(64));
     evidence.cases.artifact_issuance_first = await artifactIssuanceFirst("6".repeat(64));
+    evidence.cases.artifact_cleaned_history_not_relocked =
+      await artifactCleanedHistoryNotRelocked("7".repeat(64));
   } catch (error) {
     runError = error;
   } finally {

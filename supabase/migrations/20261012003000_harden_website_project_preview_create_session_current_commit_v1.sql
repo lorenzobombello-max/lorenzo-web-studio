@@ -252,6 +252,10 @@ grant execute on function
   public.create_website_project_preview_session_v1(uuid, text)
 to authenticated;
 
+create index website_project_preview_sessions_unrevoked_build_id_idx
+  on lws_internal.website_project_preview_sessions (preview_build_id)
+  where revoked_at is null;
+
 create or replace function public.sweep_expired_website_project_preview_artifacts_v1(
   p_retention_hours integer default 24
 )
@@ -282,10 +286,19 @@ begin
 
   for v_expired_build_id in
     select build.preview_build_id
-    from lws_internal.website_project_preview_builds as build
+    from (
+      select artifact.preview_build_id
+      from lws_internal.website_project_preview_build_artifacts as artifact
+      union
+      select session.preview_build_id
+      from lws_internal.website_project_preview_sessions as session
+      where session.revoked_at is null
+    ) as pending_build
+    join lws_internal.website_project_preview_builds as build
+      on build.preview_build_id = pending_build.preview_build_id
     where build.built_at <= v_retention_cutoff
     order by build.preview_build_id
-    for update
+    for update of build
   loop
     v_expired_build_ids :=
       array_append(v_expired_build_ids, v_expired_build_id);
