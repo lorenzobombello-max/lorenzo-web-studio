@@ -6,6 +6,7 @@ declare
   v_function regprocedure :=
     'public.prepare_website_delivery_document_v1(uuid,date,jsonb,text,text,date,text,date,text,uuid,text)'::regprocedure;
   v_definition text;
+  v_definition_canonical text;
   v_repaired text;
   v_owner oid;
   v_acl aclitem[];
@@ -61,21 +62,58 @@ $anchor$;
     raise exception using errcode = 'P0001', message = 'WEBSITE_DELIVERY_IDEMPOTENCY_CONFLICT';
   end if;
 $replacement$;
+  v_anchor_canonical text;
+  v_replacement_canonical text;
+  v_anchor_original text;
+  v_replacement_original text;
+  v_anchor_crlf text;
+  v_replacement_crlf text;
+  v_lf_match_count integer;
+  v_crlf_match_count integer;
 begin
   select pg_get_functiondef(v_function), proowner, proacl, prosecdef, proconfig
   into v_definition, v_owner, v_acl, v_security_definer, v_config
   from pg_proc
   where oid = v_function;
 
+  v_definition_canonical := replace(v_definition, E'\r\n', E'\n');
+  v_anchor_canonical := replace(v_anchor, E'\r\n', E'\n');
+  v_replacement_canonical := replace(v_replacement, E'\r\n', E'\n');
+
   if (
-    length(v_definition) - length(replace(v_definition, v_anchor, ''))
-  ) <> length(v_anchor) then
+    length(v_definition_canonical)
+      - length(replace(v_definition_canonical, v_anchor_canonical, ''))
+  ) <> length(v_anchor_canonical) then
     raise exception using
       errcode = 'P0001',
       message = 'WEBSITE_DELIVERY_LEGACY_IDEMPOTENCY_SOURCE_MISMATCH';
   end if;
 
-  v_repaired := replace(v_definition, v_anchor, v_replacement);
+  v_anchor_original := v_anchor_canonical;
+  v_replacement_original := v_replacement_canonical;
+  v_anchor_crlf := replace(v_anchor_canonical, E'\n', E'\r\n');
+  v_replacement_crlf := replace(v_replacement_canonical, E'\n', E'\r\n');
+  v_lf_match_count := (
+    length(v_definition)
+      - length(replace(v_definition, v_anchor_original, ''))
+  ) / length(v_anchor_original);
+  v_crlf_match_count := (
+    length(v_definition)
+      - length(replace(v_definition, v_anchor_crlf, ''))
+  ) / length(v_anchor_crlf);
+
+  if v_lf_match_count + v_crlf_match_count <> 1 then
+    raise exception using
+      errcode = 'P0001',
+      message = 'WEBSITE_DELIVERY_LEGACY_IDEMPOTENCY_SOURCE_MISMATCH';
+  end if;
+
+  if v_crlf_match_count = 1 then
+    v_anchor_original := v_anchor_crlf;
+    v_replacement_original := v_replacement_crlf;
+  end if;
+
+  v_repaired := replace(v_definition, v_anchor_original, v_replacement_original);
   execute v_repaired;
 
   if not exists (
