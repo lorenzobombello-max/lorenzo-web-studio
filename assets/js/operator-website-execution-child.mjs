@@ -34,6 +34,9 @@ import {
 import {
   createPreviewBuildController,
 } from "./operator-website-preview-build.mjs?v=20260923-async-preview-r1";
+import {
+  createWindowId,
+} from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
 
 const WEBSITE_CHILD_ROLES = new Set([
   "owner",
@@ -526,7 +529,11 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
     const message = workspace.querySelector("[data-website-message]");
     let previewWindow = null;
     try {
-      const candidate = root.defaultView?.open("about:blank", "_blank");
+      const candidate = root.defaultView?.open(
+        "about:blank",
+        `lws-preview-${createWindowId(root.defaultView.crypto)}`,
+        "popup",
+      );
       if (candidate && typeof candidate.location?.replace === "function"
         && typeof candidate.close === "function") {
         candidate.opener = null;
@@ -1094,6 +1101,36 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   }
 
   const click = (event) => {
+    const githubLink = event.target.closest?.('[data-website-link="github"]');
+    if (githubLink) {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (disposed || githubLink.hidden || !githubLink.hasAttribute("href")) return;
+      let githubWindow = null;
+      try {
+        githubWindow = root.defaultView?.open(
+          "about:blank",
+          `lws-github-${createWindowId(root.defaultView.crypto)}`,
+          "popup",
+        );
+        if (!githubWindow) {
+          workspace.querySelector("[data-website-message]").textContent =
+            "GitHub kon niet worden geopend. Sta pop-ups toe en probeer opnieuw.";
+          return;
+        }
+        githubWindow.opener = null;
+        const referrer = githubWindow.document.createElement("meta");
+        referrer.name = "referrer";
+        referrer.content = "no-referrer";
+        githubWindow.document.head.append(referrer);
+        githubWindow.location.replace(githubLink.href);
+      } catch {
+        githubWindow?.close();
+        workspace.querySelector("[data-website-message]").textContent =
+          "GitHub kon niet veilig worden geopend. Probeer opnieuw.";
+      }
+      return;
+    }
     const target = event.target.closest?.("[data-website-action]");
     const action = target?.dataset.websiteAction;
     if (action === "refresh") void refresh();
