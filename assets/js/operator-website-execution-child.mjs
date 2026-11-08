@@ -33,7 +33,7 @@ import {
 } from "./operator-website-project-files.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   createPreviewBuildController,
-} from "./operator-website-preview-build.mjs?v=20260923-async-preview-r1";
+} from "./operator-website-preview-build.mjs?v=20261108-preview-status-r1";
 import {
   createWindowId,
 } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
@@ -488,7 +488,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       if (typeof result.lease_id !== "string") {
         throw new Error("INVALID_WEBSITE_PROJECT_PREVIEW_RESPONSE");
       }
-      return { leaseId: result.lease_id };
+      return { leaseId: result.lease_id, status: result.status, reason: result.reason };
     },
     getBuildStatus: async (leaseId) => {
       const result = await websiteProjectPreviewGateway(client, {
@@ -501,6 +501,7 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       return {
         status: result.status,
         previewBuildId: result.preview_build_id ?? null,
+        reason: result.reason ?? null,
       };
     },
     onStateChange: (state) => {

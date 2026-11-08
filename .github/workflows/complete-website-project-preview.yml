@@ -1,0 +1,26 @@
+name: Complete Website Project Preview
+on:
+  workflow_run:
+    workflows: ["Build Website Project Preview (async, multi-file)"]
+    types: [completed]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  complete:
+    if: github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.5"
+      - name: Confirm provider outcome and finalize the existing lease
+        run: deno run --allow-env --allow-read --allow-net scripts/website-project-preview-complete.ts
+        env:
+          LWS_PREVIEW_COMPLETION_ENDPOINT: ${{ vars.LWS_PREVIEW_COMPLETION_ENDPOINT }}
+          LWS_PREVIEW_COMPLETION_OIDC_AUDIENCE: ${{ vars.LWS_PREVIEW_COMPLETION_OIDC_AUDIENCE }}

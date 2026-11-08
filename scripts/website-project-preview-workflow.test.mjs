@@ -25,6 +25,8 @@ test("fetch exchanges its own OIDC token and checks out only the exact authorize
   assert.match(fetchJob, /ref: \$\{\{ github\.event\.inputs\.commit_sha \}\}/);
   assert.match(fetchJob, /token: \$\{\{ steps\.source_token\.outputs\.token \}\}/);
   assert.match(fetchJob, /git -C source rev-parse HEAD/);
+  assert.match(fetchJob, /\$lease\.commit_sha -cne \$env:COMMIT_SHA/);
+  assert.match(fetchJob, /\$lease\.repository_id -cne \$env:LWS_PREVIEW_REPOSITORY_ID/);
   assert.match(fetchJob, /rm -rf source\/\.git/);
   assert.doesNotMatch(fetchJob, /NOT_YET_IMPLEMENTED/);
 });
@@ -52,4 +54,23 @@ test("workflow remains manual and preserves server-authorized lease and build in
   assert.match(workflow, /build_id:/);
   assert.match(fetchJob, /LWS_PREVIEW_BUILD_ID: \$\{\{ github\.event\.inputs\.build_id \}\}/);
   assert.match(fetchJob, /LWS_PREVIEW_REPOSITORY_ID: \$\{\{ github\.event\.inputs\.repository_id \}\}/);
+});
+
+test("workflow has durable correlation, bounded jobs, LF directory mount and no npm retries", () => {
+  assert.match(workflow, /run-name: LWS preview lease=/);
+  for (const section of [fetchJob, buildJob, uploadJob]) assert.match(section, /timeout-minutes:/);
+  assert.match(buildJob, /\/etc\/tinyproxy:ro/);
+  assert.match(buildJob, /npm_config_fetch_retries=0/);
+  assert.match(buildJob, /--ignore-scripts/);
+  assert.match(buildJob, /--read-only/);
+  assert.match(buildJob, /website-project-preview-validate\.ts/);
+});
+
+test("completion monitor handles completed workflows without executing customer artifacts", async () => {
+  const monitor = await readFile(new URL("../.github/workflows/complete-website-project-preview.yml", import.meta.url), "utf8");
+  assert.match(monitor, /workflow_run:/);
+  assert.match(monitor, /types: \[completed\]/);
+  assert.match(monitor, /id-token: write/);
+  assert.match(monitor, /website-project-preview-complete\.ts/);
+  assert.doesNotMatch(monitor, /download-artifact|npm ci|npm run|contents: write/);
 });

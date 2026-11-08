@@ -29,6 +29,9 @@ async function fixture(overrides: Record<string, unknown> = {}) {
     sha: "c".repeat(40),
     ref: "refs/heads/main",
     run_id: "9876",
+    run_attempt: "1",
+    workflow_sha: "c".repeat(40),
+    event_name: "workflow_dispatch",
     workflow_ref: "lorenzo-web-solutions/platform/.github/workflows/build-website-project-preview.yml@refs/heads/main",
     iat: now - 5,
     nbf: now - 5,
@@ -61,7 +64,20 @@ const expected = {
   runId: "9876",
   leaseId: "11111111-1111-4111-8111-111111111111",
   buildId: "22222222-2222-4222-8222-222222222222",
+  workflowSha: "c".repeat(40),
 };
+
+Deno.test("rejects reruns, workflow revision drift and non-dispatch events", async () => {
+  for (const [override, code] of [
+    [{ run_attempt: "2" }, "OIDC_RUN_ATTEMPT_INVALID"],
+    [{ workflow_sha: "d".repeat(40) }, "OIDC_WORKFLOW_REVISION_MISMATCH"],
+    [{ event_name: "push" }, "OIDC_EVENT_MISMATCH"],
+  ] as const) {
+    const oidc = await fixture(override);
+    await assertRejects(() => verifyGitHubActionsOidcToken(oidc.token, expected, { fetch: oidc.fetch }),
+      WebsiteProjectPreviewOidcError, code);
+  }
+});
 
 Deno.test("binds GitHub OIDC to the platform workflow while retaining separate customer authority", async () => {
   const oidc = await fixture();

@@ -17,6 +17,24 @@ async function cleanup(root: string) {
   await Deno.remove(root, { recursive: true });
 }
 
+Deno.test("unknown executable, map and secret files are rejected on both manifest and final-byte paths", async () => {
+  const root = await tempTree(async (dir) => {
+    for (const path of ["worker.exe", "script.map", ".env", "payload.bin"]) {
+      await Deno.writeTextFile(`${dir}/${path}`, "not static output");
+    }
+  });
+  try {
+    const manifest = await buildWebsiteProjectPreviewArtifactManifest(root);
+    assertEquals(manifest.accepted.length, 0);
+    assertEquals(manifest.rejected.length, 4);
+    for (const entry of manifest.rejected) {
+      assertEquals(entry.reason, "ASSET_TYPE_BLOCKED");
+      await assertRejects(() => readWebsiteProjectPreviewArtifactFinalBytes(root, entry.path),
+        WebsiteProjectPreviewArtifactManifestError, "ASSET_TYPE_BLOCKED");
+    }
+  } finally { await cleanup(root); }
+});
+
 Deno.test("accepts a legitimate multi-file static build with no rejections", async () => {
   const root = await tempTree(async (dir) => {
     await Deno.mkdir(`${dir}/_astro`, { recursive: true });
@@ -106,8 +124,8 @@ Deno.test("rejects an individual file over the per-file size limit", async () =>
 
 Deno.test("fails closed on total build size exceeding the aggregate limit", async () => {
   const root = await tempTree(async (dir) => {
-    await Deno.writeFile(`${dir}/a.bin`, new Uint8Array(600));
-    await Deno.writeFile(`${dir}/b.bin`, new Uint8Array(600));
+    await Deno.writeFile(`${dir}/a.png`, new Uint8Array(600));
+    await Deno.writeFile(`${dir}/b.png`, new Uint8Array(600));
   });
   try {
     await assertRejects(

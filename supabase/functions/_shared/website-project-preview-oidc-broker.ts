@@ -50,6 +50,8 @@ export type WebsiteProjectPreviewOidcAuthority = Readonly<{
   workflowRepositoryId: string;
   workflowRef: string;
   workflowRefName: string;
+  workflowSha: string;
+  workflowEvent?: "workflow_dispatch" | "workflow_run";
   customerRepository: string;
   customerRepositoryId: string;
   customerCommitSha: string;
@@ -68,7 +70,8 @@ export async function verifyGitHubActionsOidcToken(
   }>,
 ): Promise<WebsiteProjectPreviewOidcAuthority> {
   if (!UUID.test(expected.leaseId) || !UUID.test(expected.buildId)
-    || !SHA.test(expected.customerCommitSha) || !DIGITS.test(expected.customerRepositoryId)
+    || !SHA.test(expected.customerCommitSha) || !SHA.test(expected.workflowSha)
+    || !DIGITS.test(expected.customerRepositoryId)
     || !DIGITS.test(expected.workflowRepositoryId) || !DIGITS.test(expected.runId)
     || !expected.workflowRepository || !expected.workflowRef || !expected.workflowRefName) {
     fail("OIDC_AUTHORITY_INVALID");
@@ -130,6 +133,11 @@ export async function verifyGitHubActionsOidcToken(
   if (claims.repository_id !== expected.workflowRepositoryId) fail("OIDC_REPOSITORY_MISMATCH");
   if (claims.ref !== expected.workflowRefName) fail("OIDC_REF_MISMATCH");
   if (claims.workflow_ref !== expected.workflowRef) fail("OIDC_WORKFLOW_MISMATCH");
+  if (claims.workflow_sha !== expected.workflowSha || claims.sha !== expected.workflowSha) {
+    fail("OIDC_WORKFLOW_REVISION_MISMATCH");
+  }
+  if (claims.run_attempt !== "1") fail("OIDC_RUN_ATTEMPT_INVALID");
+  if (claims.event_name !== (expected.workflowEvent ?? "workflow_dispatch")) fail("OIDC_EVENT_MISMATCH");
   if (claims.run_id !== expected.runId) fail("OIDC_RUN_MISMATCH");
   const [owner, repository] = expected.workflowRepository.split("/");
   const legacySubject = `repo:${expected.workflowRepository}:ref:${expected.workflowRefName}`;

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { reconcileWebsiteProjectHead, RECONCILIATION_QUOTE_ID } from "../_shared/website-project-head-reconciliation.ts";
 import {
   type CustomerRequestActionInput,
   type CustomerRequestUploadInboxPromotionActionInput,
@@ -139,6 +140,7 @@ import {
 import { createGitHubAppTokenBroker } from "../_shared/github-app-token.ts";
 import { createGitHubHttpClient } from "../_shared/github-http.ts";
 import { createWebsiteDeliveryPdfWorkflowDispatch } from "../_shared/website-delivery-pdf-workflow-dispatch.ts";
+import { createWebsiteProjectPreviewRuntimeDispatch } from "../_shared/website-project-preview-dispatch-runtime.ts";
 import { createWebsiteDeliveryPdfWorkflowStarter } from "../_shared/website-delivery-pdf-workflow-starter.ts";
 import {
   createWebsiteProjectFilesProvider,
@@ -731,15 +733,24 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
   dependencies: Readonly<{
     clientFor(jwt: string): WebsiteProjectPreviewBuildRpcClient;
     previewHostUrl?: string;
+    reconcileHead?: (quoteRequestId: string, expectedCommitSha: string) => Promise<string>;
+    dispatch?: Readonly<{ dispatch(leaseId: string, buildId: string, expectedCommitSha: string): Promise<unknown> }>;
   }>,
 ): Promise<unknown> {
   const client = dependencies.clientFor(jwt);
   if (input.action === "request_website_project_preview_build") {
+    if (!dependencies.dispatch) throw new Error("PROJECT_PREVIEW_WORKFLOW_NOT_CONFIGURED");
+    const commitSha = input.quote_request_id === RECONCILIATION_QUOTE_ID
+      ? await (() => {
+        if (!dependencies.reconcileHead) throw new Error("PROJECT_HEAD_RECONCILIATION_NOT_CONFIGURED");
+        return dependencies.reconcileHead(input.quote_request_id, input.expected_commit_sha);
+      })()
+      : input.expected_commit_sha;
     const { data, error } = await client.rpc(
       "acquire_website_project_preview_build_v1",
       {
         p_quote_request_id: input.quote_request_id,
-        p_expected_commit_sha: input.expected_commit_sha,
+        p_expected_commit_sha: commitSha,
         p_idempotency_key: input.idempotency_key,
       },
     );
@@ -752,11 +763,7 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
     ) {
       throw new Error("PROJECT_PREVIEW_LEASE_RESPONSE_INVALID");
     }
-    return {
-      lease_id: leaseId,
-      build_id: buildId,
-      status: "BUILD_IN_PROGRESS",
-    };
+    return await dependencies.dispatch.dispatch(leaseId, buildId, commitSha);
   }
   if (input.action === "get_website_project_preview_build_status") {
     const { data, error } = await client.rpc(
@@ -774,6 +781,9 @@ export async function executeCallerJwtWebsiteProjectPreviewControlAction(
       status,
       preview_build_id: typeof previewBuildId === "string"
         ? previewBuildId
+        : null,
+      reason: typeof (data as { reason?: unknown } | null)?.reason === "string"
+        ? (data as { reason: string }).reason
         : null,
     };
   }
@@ -954,17 +964,18 @@ export async function executeCallerJwtWebsiteProjectFilesAction(
     const releaseName = isSave
       ? "release_website_project_files_write_v1"
       : "release_website_project_files_read_v1";
-    if (finalized) return;
-    try {
-      const released = await client.rpc(releaseName, {
-        p_lease_id: authority.leaseId,
-      });
-      if (released.error && primaryError === null) {
-        throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
-      }
-    } catch {
-      if (primaryError === null) {
-        throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+    if (!finalized) {
+      try {
+        const released = await client.rpc(releaseName, {
+          p_lease_id: authority.leaseId,
+        });
+        if (released.error && primaryError === null) {
+          throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+        }
+      } catch {
+        if (primaryError === null) {
+          throw projectFilesError("PROJECT_FILES_PROVIDER_UNAVAILABLE");
+        }
       }
     }
   }
@@ -1286,6 +1297,13 @@ export async function executeCallerJwtWebsiteRepositoryRecoveryAction(
 async function createWebsiteProjectFilesRuntimeService(
   signal: AbortSignal,
 ): Promise<WebsiteProjectFilesService> {
+  return createWebsiteProjectFilesService({
+    provider: await createWebsiteProjectFilesRuntimeProvider(signal),
+    cursorSecret: Deno.env.get("LWS_WEBSITE_PROJECT_FILES_CURSOR_SIGNING_KEY_V1"),
+  });
+}
+
+async function createWebsiteProjectFilesRuntimeProvider(signal: AbortSignal) {
   const config = loadGitHubAppConfig();
   const httpClient = createGitHubHttpClient({
     fetch: (input, init) => fetch(input, { ...init, signal }),
@@ -1308,17 +1326,11 @@ async function createWebsiteProjectFilesRuntimeService(
       return result;
     },
   });
-  const provider = createWebsiteProjectFilesProvider({
+  return createWebsiteProjectFilesProvider({
     config,
     signal,
     tokenBroker,
     httpClient,
-  });
-  return createWebsiteProjectFilesService({
-    provider,
-    cursorSecret: Deno.env.get(
-      "LWS_WEBSITE_PROJECT_FILES_CURSOR_SIGNING_KEY_V1",
-    ),
   });
 }
 
@@ -3497,6 +3509,15 @@ if (import.meta.main) {
           await executeCallerJwtWebsiteProjectPreviewControlAction(jwt, input, {
             clientFor,
             previewHostUrl: Deno.env.get("LWS_PREVIEW_HOST_URL"),
+            reconcileHead: async (quoteRequestId, expectedCommitSha) =>
+              reconcileWebsiteProjectHead(quoteRequestId, expectedCommitSha, {
+                caller: clientFor(jwt),
+                finalizer: serviceClient(),
+                provider: await createWebsiteProjectFilesRuntimeProvider(AbortSignal.timeout(10_000)),
+              }),
+            dispatch: input.action === "request_website_project_preview_build"
+              ? createWebsiteProjectPreviewRuntimeDispatch(clientFor(jwt))
+              : undefined,
           }),
         consumeRateLimit: async (jwt: string, projectId: string) => {
           const { data, error } = await clientFor(jwt).rpc(

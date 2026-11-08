@@ -86,11 +86,7 @@ export const DEFAULT_ARTIFACT_MANIFEST_LIMITS: WebsiteProjectPreviewArtifactMani
     maxFileCount: 500,
   });
 
-// Fixed, narrow extension allowlist->content-type map. Anything not
-// listed here still gets a safe, generic content type
-// (application/octet-stream) rather than being guessed/sniffed from
-// content - guessing content type from bytes is itself a historical
-// source of browser content-sniffing vulnerabilities.
+// Unknown extensions are never published, including source maps and secrets.
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   html: "text/html; charset=utf-8",
   htm: "text/html; charset=utf-8",
@@ -111,7 +107,9 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   woff2: "font/woff2",
 });
 
-const BLOCKED_EXTENSIONS: ReadonlySet<string> = new Set(["svg"]);
+function blockedExtension(extension: string): boolean {
+  return !Object.hasOwn(CONTENT_TYPES, extension);
+}
 
 function extensionOf(relativePath: string): string {
   const lastSegment = relativePath.split(/[\\/]/).pop() ?? relativePath;
@@ -120,7 +118,13 @@ function extensionOf(relativePath: string): string {
 }
 
 function contentTypeFor(extension: string): string {
-  return CONTENT_TYPES[extension] ?? "application/octet-stream";
+  if (blockedExtension(extension)) fail("ASSET_TYPE_BLOCKED");
+  return CONTENT_TYPES[extension];
+}
+
+export function isAllowedStaticPreviewArtifactType(relativePath: string, mediaType: string): boolean {
+  const extension = extensionOf(relativePath);
+  return !blockedExtension(extension) && CONTENT_TYPES[extension].split(";", 1)[0] === mediaType;
 }
 
 function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -196,7 +200,7 @@ export async function readWebsiteProjectPreviewArtifactFinalBytes(
   const rawBytes = await Deno.readFile(full);
   if (rawBytes.byteLength > limits.maxFileBytes) fail("FILE_TOO_LARGE");
   const extension = extensionOf(relativePath);
-  if (BLOCKED_EXTENSIONS.has(extension)) fail("ASSET_TYPE_BLOCKED");
+  if (blockedExtension(extension)) fail("ASSET_TYPE_BLOCKED");
   const finalBytes = await sanitizeIfHtml(extension, rawBytes);
   if (finalBytes === null) fail("MARKUP_UNSAFE");
   return finalBytes;
@@ -250,7 +254,7 @@ async function walk(
       continue;
     }
     const extension = extensionOf(relative);
-    if (BLOCKED_EXTENSIONS.has(extension)) {
+    if (blockedExtension(extension)) {
       rejected.push({ path: relative, reason: "ASSET_TYPE_BLOCKED" });
       continue;
     }

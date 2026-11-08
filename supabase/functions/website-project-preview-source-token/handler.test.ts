@@ -8,6 +8,7 @@ const AUTHORITY = Object.freeze({
   workflowRepositoryId: "123456",
   workflowRef: "lorenzo-web-solutions/platform/.github/workflows/build-website-project-preview.yml@refs/heads/main",
   workflowRefName: "refs/heads/main",
+  workflowSha: "c".repeat(40),
   customerRepository: "lorenzo-web-solutions/lws-web-a88b1e8792714ad199ccb385b7982a8b",
   customerRepositoryId: "1378797607",
   customerCommitSha: "1f19bf01c61c6da79fa4c7374333a91b70f9bf48",
@@ -15,6 +16,9 @@ const AUTHORITY = Object.freeze({
   leaseId: "11111111-1111-4111-8111-111111111111",
   buildId: "22222222-2222-4222-8222-222222222222",
 });
+const UNUSED_LEASE = { token: "unused", expiresAt: "unused",
+  repository: AUTHORITY.customerRepository, repositoryId: AUTHORITY.customerRepositoryId,
+  commitSha: AUTHORITY.customerCommitSha };
 
 function request(body: Record<string, unknown>, authorization = "Bearer oidc.jwt"): Request {
   return new Request("http://local/", {
@@ -31,7 +35,9 @@ Deno.test("source-token endpoint forwards only workflow OIDC and server authorit
     {
       issue: async (input) => {
         received = input;
-        return { token: "ghs_scoped", expiresAt: "2026-09-23T12:00:00.000Z" };
+        return { token: "ghs_scoped", expiresAt: "2026-09-23T12:00:00.000Z",
+          repository: AUTHORITY.customerRepository, repositoryId: AUTHORITY.customerRepositoryId,
+          commitSha: AUTHORITY.customerCommitSha };
       },
     },
   );
@@ -47,6 +53,9 @@ Deno.test("source-token endpoint forwards only workflow OIDC and server authorit
     ok: true,
     token: "ghs_scoped",
     expires_at: "2026-09-23T12:00:00.000Z",
+    repository: AUTHORITY.customerRepository,
+    repository_id: AUTHORITY.customerRepositoryId,
+    commit_sha: AUTHORITY.customerCommitSha,
   });
 });
 
@@ -60,7 +69,7 @@ Deno.test("source-token endpoint rejects caller-selected repository or permissio
       repositoryId: "999",
       permissions: { contents: "write" },
     }),
-    { issue: async () => { called = true; return { token: "unused", expiresAt: "unused" }; } },
+    { issue: async () => { called = true; return UNUSED_LEASE; } },
   );
 
   assertEquals(response.status, 400);
@@ -69,7 +78,7 @@ Deno.test("source-token endpoint rejects caller-selected repository or permissio
 });
 
 Deno.test("source-token endpoint requires a bearer token and POST", async () => {
-  const service = { issue: async () => ({ token: "unused", expiresAt: "unused" }) };
+  const service = { issue: async () => UNUSED_LEASE };
   const missingBearer = await handleWebsiteProjectPreviewSourceToken(
     request({ leaseId: "lease", buildId: "build", workflowRunId: "42" }, ""),
     service,
@@ -107,6 +116,7 @@ Deno.test("source-token service resolves and verifies authority before one exact
       assertEquals(authority, AUTHORITY);
       return authority;
     },
+    claimRun: async () => { calls.push("claim"); },
     issueInstallationToken: async (input) => {
       calls.push("exchange");
       exchangeInput = input;
@@ -124,6 +134,7 @@ Deno.test("source-token service resolves and verifies authority before one exact
   assertEquals(calls, [
     `resolve:${AUTHORITY.leaseId}:${AUTHORITY.buildId}:${AUTHORITY.runId}`,
     "verify:oidc.jwt",
+    "claim",
     "exchange",
   ]);
   assertEquals(exchangeInput, {
@@ -132,7 +143,9 @@ Deno.test("source-token service resolves and verifies authority before one exact
     repositoryIds: [AUTHORITY.customerRepositoryId],
     permissions: { contents: "read" },
   });
-  assertEquals(result, { token: "ghs_scoped", expiresAt: "2026-09-23T12:00:00.000Z" });
+  assertEquals(result, { token: "ghs_scoped", expiresAt: "2026-09-23T12:00:00.000Z",
+    repository: AUTHORITY.customerRepository, repositoryId: AUTHORITY.customerRepositoryId,
+    commitSha: AUTHORITY.customerCommitSha });
 });
 
 Deno.test("source-token service never exchanges after authority or OIDC failure", async () => {
@@ -140,11 +153,13 @@ Deno.test("source-token service never exchanges after authority or OIDC failure"
   const failingResolve = createWebsiteProjectPreviewSourceTokenService({
     resolveAuthority: async () => { throw new Error("PROJECT_PREVIEW_LEASE_INVALID"); },
     verifyOidc: async (_token, authority) => authority,
+    claimRun: async () => { throw new Error("UNEXPECTED_CLAIM"); },
     issueInstallationToken: async () => { exchanges += 1; return { token: "unused", expiresAt: "unused" }; },
   });
   const failingOidc = createWebsiteProjectPreviewSourceTokenService({
     resolveAuthority: async () => AUTHORITY,
     verifyOidc: async () => { throw new Error("OIDC_REPOSITORY_MISMATCH"); },
+    claimRun: async () => { throw new Error("UNEXPECTED_CLAIM"); },
     issueInstallationToken: async () => { exchanges += 1; return { token: "unused", expiresAt: "unused" }; },
   });
   const input = {

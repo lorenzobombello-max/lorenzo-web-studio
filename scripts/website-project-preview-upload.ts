@@ -24,6 +24,8 @@ async function jsonRequest(
 ): Promise<Record<string, unknown>> {
   const response = await fetch(endpoint, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(30000),
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -36,6 +38,8 @@ async function githubOidcToken(audience: string): Promise<string> {
   const requestUrl = new URL(required("ACTIONS_ID_TOKEN_REQUEST_URL"));
   requestUrl.searchParams.set("audience", audience);
   const response = await fetch(requestUrl, {
+    redirect: "error",
+    signal: AbortSignal.timeout(10000),
     headers: { authorization: `Bearer ${required("ACTIONS_ID_TOKEN_REQUEST_TOKEN")}` },
   });
   const result = await response.json() as Record<string, unknown>;
@@ -54,6 +58,8 @@ async function uploadFile(
   uploadUrl.searchParams.set("action", "upload");
   const response = await fetch(uploadUrl, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(30000),
     headers: {
       authorization: `Bearer ${sessionToken}`,
       "content-type": entry.contentType,
@@ -116,7 +122,11 @@ export async function runWebsiteProjectPreviewUpload(): Promise<void> {
     }
     await jsonRequest(endpoint, sessionToken, { action: "finalize", ...binding });
   } catch (error) {
-    await jsonRequest(endpoint, sessionToken, { action: "abort", ...binding }).catch(() => {});
+    try {
+      await jsonRequest(endpoint, sessionToken, { action: "abort", ...binding });
+    } catch {
+      throw new Error("ARTIFACT_UPLOAD_AND_CLEANUP_FAILED");
+    }
     throw error;
   }
 }

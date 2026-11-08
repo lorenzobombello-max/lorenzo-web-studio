@@ -6,6 +6,7 @@ import {
   type SupabaseKeyBindingEnvironment,
 } from "../_shared/supabase-key-bindings.ts";
 import { handleWebsiteProjectPreviewArtifact } from "./handler.ts";
+import { assertPreviewWorkflowConfiguration, previewRpc } from "../_shared/website-project-preview-dispatch.ts";
 
 const BUCKET = "website-project-previews";
 
@@ -24,6 +25,7 @@ export function createWebsiteProjectPreviewArtifactRuntime(
     throw new Error("SERVER_CONFIGURATION_ERROR");
   }
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  assertPreviewWorkflowConfiguration(workflowRepository, workflowRepositoryId, workflowRef, workflowRefName);
   const storage = client.storage.from(BUCKET);
   const rpc = async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
     const { data, error } = await client.rpc(name, args);
@@ -43,6 +45,7 @@ export function createWebsiteProjectPreviewArtifactRuntime(
         workflowRepositoryId,
         workflowRef,
         workflowRefName,
+        workflowSha: String(resolved.workflowSha ?? ""),
         customerRepository: String(resolved.repository ?? ""),
         customerRepositoryId: String(resolved.repositoryId ?? ""),
         customerCommitSha: String(resolved.commitSha ?? ""),
@@ -51,7 +54,13 @@ export function createWebsiteProjectPreviewArtifactRuntime(
         buildId: String(resolved.buildId ?? ""),
       };
     },
-    verifyOidc: (token, expected) => verifyGitHubActionsOidcToken(token, expected, { fetch: oidcFetch }),
+    verifyOidc: async (token, expected) => {
+      const verified = await verifyGitHubActionsOidcToken(token, expected, { fetch: oidcFetch });
+      await previewRpc(client, "assert_website_project_preview_run_v1", {
+        p_lease_id: verified.leaseId, p_build_id: verified.buildId, p_workflow_run_id: Number(verified.runId),
+      });
+      return verified;
+    },
     issueToken: (input) => rpc("issue_website_project_preview_artifact_token_v1", {
       p_token_hash: input.tokenHash,
       p_lease_id: input.authority.leaseId,

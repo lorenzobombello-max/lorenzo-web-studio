@@ -23,6 +23,12 @@ export function isTerminalBuildStatus(status) {
 // work earlier in this session.
 export function describePreviewBuildState(status) {
   switch (status) {
+    case "BUILD_REQUESTED":
+      return { label: "Previewaanvraag wordt gecontroleerd\u2026", tone: "progress" };
+    case "BUILD_QUEUED":
+      return { label: "Preview staat in de wachtrij\u2026", tone: "progress" };
+    case "DISPATCH_UNKNOWN":
+      return { label: "Ontvangst van previewaanvraag onzeker \u2013 geen nieuwe aanvraag starten", tone: "warning" };
     case "BUILD_IN_PROGRESS":
       return { label: "Preview wordt gebouwd\u2026", tone: "progress" };
     case "PASS":
@@ -33,7 +39,7 @@ export function describePreviewBuildState(status) {
         tone: "warning",
       };
     case "FAILED":
-      return { label: "Preview mislukt \u2013 probeer opnieuw", tone: "error" };
+      return { label: "Preview mislukt \u2013 controle vereist", tone: "error" };
     default:
       return { label: "Status onbekend", tone: "error" };
   }
@@ -66,8 +72,13 @@ export function createPreviewBuildController(dependencies) {
   return Object.freeze({
     async start(input) {
       cancelled = false;
-      emit({ status: "BUILD_IN_PROGRESS", ...describePreviewBuildState("BUILD_IN_PROGRESS") });
-      const { leaseId } = await startBuild(input);
+      emit({ status: "BUILD_REQUESTED", ...describePreviewBuildState("BUILD_REQUESTED") });
+      const initial = await startBuild(input);
+      const { leaseId } = initial;
+      if (initial.status) {
+        emit({ ...initial, ...describePreviewBuildState(initial.status) });
+        if (isTerminalBuildStatus(initial.status)) return initial;
+      }
       const startedAt = now();
       for (;;) {
         if (cancelled) return { status: "CANCELLED" };

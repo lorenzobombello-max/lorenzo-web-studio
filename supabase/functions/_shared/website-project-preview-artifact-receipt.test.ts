@@ -10,6 +10,7 @@ const authority = Object.freeze({
   workflowRepositoryId: "9001",
   workflowRef: "lorenzo/platform/.github/workflows/build.yml@refs/heads/main",
   workflowRefName: "refs/heads/main",
+  workflowSha: "c".repeat(40),
   customerRepository: "lorenzo/customer-site",
   customerRepositoryId: "7300000001",
   customerCommitSha: "a".repeat(40),
@@ -76,6 +77,20 @@ Deno.test("artifact broker resolves authority server-side and persists only a to
   assertEquals(fixture.calls.map((call) => call.name), ["verify", "issue"]);
   assertEquals(fixture.calls[1].value === result.token, false);
   assertEquals(fixture.calls[1].value?.length, 64);
+});
+
+Deno.test("server rejects unknown extensions and mismatched media types before opening Storage", async () => {
+  for (const [relativePath, contentType] of [["payload.bin", "text/plain"], ["photo.png", "text/html"]]) {
+    const fixture = dependencies();
+    const service = createWebsiteProjectPreviewArtifactReceiptService(fixture.dependencies);
+    await assertRejects(() => service.begin({
+      receiptToken: "f".repeat(64), leaseId: authority.leaseId, buildId: authority.buildId,
+      repositoryId: authority.customerRepositoryId, commitSha: authority.customerCommitSha,
+      workflowRunId: authority.runId, primaryRelativePath: relativePath, buildStatus: "PASS",
+      manifest: [{ relativePath, contentType, sha256: "a".repeat(64), bytes: 0 }],
+    }), WebsiteProjectPreviewArtifactReceiptError, "ARTIFACT_TYPE_BLOCKED");
+    assertEquals(fixture.calls.length, 0);
+  }
 });
 
 Deno.test("one-time receipt authorization opens one hash-only bounded upload session", async () => {

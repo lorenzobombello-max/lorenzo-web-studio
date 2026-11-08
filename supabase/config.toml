@@ -83,6 +83,9 @@ verify_jwt = false
 [functions.website-project-preview-source-token]
 verify_jwt = false
 
+[functions.website-project-preview-completion]
+verify_jwt = false
+
 [functions.website-project-preview-host]
 verify_jwt = false
 

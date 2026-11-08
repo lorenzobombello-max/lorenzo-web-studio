@@ -27,6 +27,8 @@ export type GitHubTokenOperation =
   | "PRODUCTION_REPOSITORY_READ"
   | "PRODUCTION_REPOSITORY_WRITE"
   | "WEBSITE_DELIVERY_PDF_DISPATCH"
+  | "WEBSITE_PROJECT_PREVIEW_DISPATCH"
+  | "WEBSITE_PROJECT_PREVIEW_MONITOR"
   | "LAB_REPOSITORY_CREATE"
   | "LAB_REPOSITORY_READ"
   | "LAB_REPOSITORY_WRITE";
@@ -48,7 +50,7 @@ export type GitHubTokenAuthority = Readonly<{
 
 export type GitHubInstallationPermissions =
   | Readonly<{ metadata: "read"; administration: "write" }>
-  | Readonly<{ metadata: "read"; actions: "write" }>
+  | Readonly<{ metadata: "read"; actions: "read" | "write" }>
   | Readonly<{ metadata: "read"; contents: "read" }>
   | Readonly<{ metadata: "read"; contents: "write" }>;
 
@@ -221,7 +223,9 @@ function validAuthority(
   request: GitHubTokenRequest,
   authority: GitHubTokenAuthority,
 ): boolean {
-  const pdfDispatch = request.operation === "WEBSITE_DELIVERY_PDF_DISPATCH";
+  const platformDispatch = request.operation === "WEBSITE_DELIVERY_PDF_DISPATCH" ||
+    request.operation === "WEBSITE_PROJECT_PREVIEW_DISPATCH" ||
+    request.operation === "WEBSITE_PROJECT_PREVIEW_MONITOR";
   if (
     !exactKeys(request, [
       "websiteWorkContextId",
@@ -247,6 +251,8 @@ function validAuthority(
       "WEBSITE_PROJECT_FILES_READ",
       "WEBSITE_PROJECT_FILES_WRITE",
       "WEBSITE_DELIVERY_PDF_DISPATCH",
+      "WEBSITE_PROJECT_PREVIEW_DISPATCH",
+      "WEBSITE_PROJECT_PREVIEW_MONITOR",
       "PRODUCTION_REPOSITORY_CREATE",
       "PRODUCTION_REPOSITORY_READ",
       "PRODUCTION_REPOSITORY_WRITE",
@@ -257,7 +263,7 @@ function validAuthority(
       .includes(request.operation)
   ) return false;
 
-  if (pdfDispatch) {
+  if (platformDispatch) {
     return !("target" in config) && request.target === "PRODUCTION" &&
       request.organization === "lorenzobombello-max" &&
       authority.organization === "lorenzobombello-max" &&
@@ -303,7 +309,10 @@ function validAuthority(
 function permissionsFor(
   operation: GitHubTokenOperation,
 ): GitHubInstallationPermissions {
-  if (operation === "WEBSITE_DELIVERY_PDF_DISPATCH") {
+  if (operation === "WEBSITE_PROJECT_PREVIEW_MONITOR") {
+    return Object.freeze({ metadata: "read", actions: "read" });
+  }
+  if (operation === "WEBSITE_DELIVERY_PDF_DISPATCH" || operation === "WEBSITE_PROJECT_PREVIEW_DISPATCH") {
     return Object.freeze({ metadata: "read", actions: "write" });
   }
   if (operation === "STARTER_SNAPSHOT_READ") {

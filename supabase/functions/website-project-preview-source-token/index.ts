@@ -9,6 +9,7 @@ import { getSupabaseServerSecretKey, type SupabaseKeyBindingEnvironment } from "
 import { initializeGitHubAppInputSigner } from "../github-app-gate6-probe/runtime.ts";
 import { handleWebsiteProjectPreviewSourceToken } from "./handler.ts";
 import { createWebsiteProjectPreviewSourceTokenService } from "./service.ts";
+import { assertPreviewWorkflowConfiguration, previewRpc } from "../_shared/website-project-preview-dispatch.ts";
 
 export function createWebsiteProjectPreviewGitHubTokenExchange(
   runtimeFetch: typeof fetch,
@@ -58,6 +59,7 @@ export async function createWebsiteProjectPreviewSourceTokenRuntime(
   }
 
   const config = loadGitHubAppConfig(environment);
+  assertPreviewWorkflowConfiguration(workflowRepository, workflowRepositoryId, workflowRef, workflowRefName);
   if (config.target !== "PRODUCTION") throw new Error("GITHUB_TOKEN_AUTHORITY_INVALID");
   const signer = await initializeGitHubAppInputSigner(config.privateKey);
   const client = createClient(supabaseUrl, getSupabaseServerSecretKey("default", environment), {
@@ -84,6 +86,7 @@ export async function createWebsiteProjectPreviewSourceTokenRuntime(
         workflowRepositoryId,
         workflowRef,
         workflowRefName,
+        workflowSha: String(resolved.workflowSha ?? ""),
         customerRepository: String(resolved.repository ?? ""),
         customerRepositoryId: String(resolved.repositoryId ?? ""),
         customerCommitSha: String(resolved.commitSha ?? ""),
@@ -93,6 +96,10 @@ export async function createWebsiteProjectPreviewSourceTokenRuntime(
       };
     },
     verifyOidc: (token, authority) => verifyGitHubActionsOidcToken(token, authority, { fetch: runtimeFetch }),
+    claimRun: (authority) => previewRpc(client, "claim_website_project_preview_run_v1", {
+      p_lease_id: authority.leaseId, p_build_id: authority.buildId,
+      p_workflow_run_id: Number(authority.runId), p_run_attempt: 1, p_workflow_sha: authority.workflowSha,
+    }),
     issueInstallationToken: async (input) => {
       const [owner] = input.repository.split("/");
       if (owner !== config.organization || input.repositoryIds.length !== 1 || input.permissions.contents !== "read") {

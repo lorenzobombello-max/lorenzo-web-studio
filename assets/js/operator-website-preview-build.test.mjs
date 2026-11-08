@@ -14,6 +14,21 @@ test("isTerminalBuildStatus recognizes exactly the three terminal statuses", () 
   assert.equal(isTerminalBuildStatus("SOMETHING_ELSE"), false);
 });
 
+test("queued and unknown dispatch are not labeled as an executing worker", () => {
+  assert.equal(describePreviewBuildState("BUILD_QUEUED").tone, "progress");
+  assert.equal(describePreviewBuildState("DISPATCH_UNKNOWN").tone, "warning");
+});
+
+test("a terminal dispatch rejection stops without polling or a second request", async () => {
+  let starts = 0;
+  const controller = createPreviewBuildController({
+    startBuild: async () => { starts++; return { leaseId: "lease-1", status: "FAILED" }; },
+    getBuildStatus: async () => { throw new Error("must not poll"); },
+  });
+  assert.equal((await controller.start({})).status, "FAILED");
+  assert.equal(starts, 1);
+});
+
 test("describePreviewBuildState never exposes anything beyond a fixed label/tone pair", () => {
   for (const status of ["BUILD_IN_PROGRESS", "PASS", "PASS_WITH_WARNINGS", "FAILED", "UNKNOWN"]) {
     const described = describePreviewBuildState(status);
@@ -41,7 +56,7 @@ test("controller polls until PASS and emits BUILD_IN_PROGRESS then the terminal 
   const result = await controller.start({ quoteRequestId: "qr-1" });
   assert.equal(result.status, "PASS");
   assert.equal(result.previewBuildId, "build-1");
-  assert.deepEqual(emitted, ["BUILD_IN_PROGRESS", "BUILD_IN_PROGRESS", "BUILD_IN_PROGRESS", "PASS"]);
+  assert.deepEqual(emitted, ["BUILD_REQUESTED", "BUILD_IN_PROGRESS", "BUILD_IN_PROGRESS", "PASS"]);
 });
 
 test("controller reports PASS_WITH_WARNINGS as a terminal state without further polling", async () => {

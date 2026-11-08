@@ -1,10 +1,12 @@
+import type { SourceTokenResult } from "./service.ts";
+
 type SourceTokenService = Readonly<{
   issue(input: Readonly<{
     oidcToken: string;
     leaseId: string;
     buildId: string;
     workflowRunId: string;
-  }>): PromiseLike<Readonly<{ token: string; expiresAt: string }>>;
+  }>): PromiseLike<SourceTokenResult>;
 }>;
 
 const BODY_KEYS = ["buildId", "leaseId", "workflowRunId"] as const;
@@ -71,7 +73,8 @@ export async function handleWebsiteProjectPreviewSourceToken(
       buildId: String(body.buildId ?? ""),
       workflowRunId: String(body.workflowRunId ?? ""),
     });
-    return json(200, { ok: true, token: result.token, expires_at: result.expiresAt });
+    return json(200, { ok: true, token: result.token, expires_at: result.expiresAt,
+      repository: result.repository, repository_id: result.repositoryId, commit_sha: result.commitSha });
   } catch (error) {
     const candidate = error instanceof Error ? error.message : "";
     const code = SAFE_CODES.has(candidate) ? candidate : "SOURCE_TOKEN_EXCHANGE_FAILED";

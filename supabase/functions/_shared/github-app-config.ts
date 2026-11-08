@@ -86,15 +86,28 @@ function read(
 export function loadWebsiteDeliveryPdfDispatchAppConfig(
   environment: GitHubProviderEnvironment = Deno.env,
 ): WebsiteDeliveryPdfDispatchAppConfig {
-  const appId = read(environment, "LWS_DELIVERY_PDF_DISPATCH_APP_ID");
+  return loadPlatformActionsAppConfig(environment, "LWS_DELIVERY_PDF_DISPATCH");
+}
+
+export function loadWebsiteProjectPreviewDispatchAppConfig(
+  environment: GitHubProviderEnvironment = Deno.env,
+): WebsiteDeliveryPdfDispatchAppConfig {
+  return loadWebsiteDeliveryPdfDispatchAppConfig(environment);
+}
+
+function loadPlatformActionsAppConfig(
+  environment: GitHubProviderEnvironment,
+  prefix: string,
+): WebsiteDeliveryPdfDispatchAppConfig {
+  const appId = read(environment, `${prefix}_APP_ID`);
   const installationId = read(
     environment,
-    "LWS_DELIVERY_PDF_DISPATCH_INSTALLATION_ID",
+    `${prefix}_INSTALLATION_ID`,
   );
   let privateKey: string;
   try {
     privateKey = normalizeGitHubAppPrivateKey(
-      read(environment, "LWS_DELIVERY_PDF_DISPATCH_PRIVATE_KEY"),
+      read(environment, `${prefix}_PRIVATE_KEY`),
     );
   } catch {
     invalid();

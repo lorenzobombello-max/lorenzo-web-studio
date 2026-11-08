@@ -302,13 +302,20 @@ test("Pages and Edge releases require the same runtime-authenticated pre and pos
   assert.match(preservation, /invoke-dossier-continuity-release-gate\.ps1 -Phase Local/);
 });
 
-test("Edge release deploys only the operator through server-side API bundling", async () => {
+test("Edge release deploys the operator and authorized preview workers through server-side API bundling", async () => {
   const edge = await text(".github/workflows/deploy-commercial-operator-command.yml");
 
   assert.match(
     edge,
     /run:\s*npx --no-install supabase functions deploy commercial-operator-command --use-api --project-ref "\$LWS_SUPABASE_PROJECT_REF"/,
   );
+  const deployed = [...edge.matchAll(/supabase functions deploy ([a-z-]+) --use-api/g)].map((match) => match[1]);
+  assert.deepEqual(deployed, [
+    "commercial-operator-command",
+    "website-project-preview-source-token",
+    "website-project-preview-artifact",
+    "website-project-preview-completion",
+  ]);
 });
 
 test("Edge release workflow re-triggers on every file in the release-gate call graph", async () => {

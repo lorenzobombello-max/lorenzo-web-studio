@@ -1,4 +1,5 @@
 import type { WebsiteProjectPreviewOidcAuthority } from "./website-project-preview-oidc-broker.ts";
+import { isAllowedStaticPreviewArtifactType } from "./website-project-preview-artifact-manifest.ts";
 
 const SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -146,7 +147,9 @@ async function validateFiles(
       || file.relativePath.includes("..") || paths.has(file.relativePath)) {
       fail("ARTIFACT_PATH_INVALID");
     }
-    if (!ALLOWED_MEDIA_TYPES.has(mediaType)) fail("ARTIFACT_TYPE_BLOCKED");
+    if (!ALLOWED_MEDIA_TYPES.has(mediaType) || !isAllowedStaticPreviewArtifactType(file.relativePath, mediaType)) {
+      fail("ARTIFACT_TYPE_BLOCKED");
+    }
     if (!SHA256.test(file.sha256)) fail("ARTIFACT_HASH_INVALID");
     const bytes = Uint8Array.from(file.bytes);
     if (bytes.byteLength > MAX_FILE_BYTES) fail("ARTIFACT_FILE_TOO_LARGE");
@@ -172,7 +175,9 @@ function validateManifest(
       || entry.relativePath.includes("..") || paths.has(entry.relativePath)) {
       fail("ARTIFACT_PATH_INVALID");
     }
-    if (!ALLOWED_MEDIA_TYPES.has(mediaType)) fail("ARTIFACT_TYPE_BLOCKED");
+    if (!ALLOWED_MEDIA_TYPES.has(mediaType) || !isAllowedStaticPreviewArtifactType(entry.relativePath, mediaType)) {
+      fail("ARTIFACT_TYPE_BLOCKED");
+    }
     if (!SHA256.test(entry.sha256)) fail("ARTIFACT_HASH_INVALID");
     if (!Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || entry.bytes > MAX_FILE_BYTES) {
       fail("ARTIFACT_FILE_TOO_LARGE");

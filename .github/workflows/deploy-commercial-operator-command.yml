@@ -8,6 +8,9 @@ on:
       - "supabase/functions/commercial-operator-command/**"
       - "supabase/functions/_shared/**"
       - "supabase/functions/github-app-gate6-probe/runtime.ts"
+      - "supabase/functions/website-project-preview-source-token/**"
+      - "supabase/functions/website-project-preview-artifact/**"
+      - "supabase/functions/website-project-preview-completion/**"
       # Release-gate call graph: the continuity-predeploy/continuity-postdeploy
       # steps below execute exactly these files. Any one of them can change
       # whether a production release is allowed, so this workflow must
@@ -87,6 +90,15 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           LWS_SUPABASE_PROJECT_REF: ${{ vars.LWS_SUPABASE_PROJECT_REF }}
         run: npx --no-install supabase functions deploy commercial-operator-command --use-api --project-ref "$LWS_SUPABASE_PROJECT_REF"
+
+      - name: Deploy authorized preview workers within the same continuity gates
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          LWS_SUPABASE_PROJECT_REF: ${{ vars.LWS_SUPABASE_PROJECT_REF }}
+        run: |
+          npx --no-install supabase functions deploy website-project-preview-source-token --use-api --project-ref "$LWS_SUPABASE_PROJECT_REF"
+          npx --no-install supabase functions deploy website-project-preview-artifact --use-api --project-ref "$LWS_SUPABASE_PROJECT_REF"
+          npx --no-install supabase functions deploy website-project-preview-completion --use-api --project-ref "$LWS_SUPABASE_PROJECT_REF"
 
   continuity-postdeploy:
     runs-on: ubuntu-latest
