@@ -422,3 +422,18 @@ Do not publish this entire non-git source copy, overwrite the protected
 navigation release, touch the customer repository, or directly patch customer
 rows. A permitted 006 OWNER/AAL2 request performs reconciliation only after the
 server verifies the then-current head.
+
+### Production dispatch transport correction (2026-11-08)
+
+The first normal 006 request reconciled the Dutch repository head, then failed
+closed before any GitHub workflow run: the shared HTTP adapter did not admit
+the exact `metadata:read` plus `actions:read|write` permission shapes already
+required by the preview token broker. The adapter now admits those exact shapes
+without relaxing response equality or repository authority. The configuration
+test now crosses the real HTTP adapter rather than mocking the token exchange;
+it reproduced the failure before the correction. All 91 focused HTTP/broker/
+preview-configuration tests pass afterward.
+
+The terminal rejected dispatch is retained. No automatic retry or replacement
+build is authorized by this correction. A hosted seven-page preview has not
+been verified.

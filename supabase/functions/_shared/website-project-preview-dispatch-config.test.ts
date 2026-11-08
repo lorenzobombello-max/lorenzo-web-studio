@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { loadWebsiteProjectPreviewDispatchAppConfig } from "./github-app-config.ts";
 import { createGitHubAppTokenBroker } from "./github-app-token.ts";
+import { createGitHubHttpClient } from "./github-http.ts";
 
 Deno.test("preview reuses the existing platform App without expanding repository or Actions scope", async () => {
   const keys = await crypto.subtle.generateKey({
@@ -20,14 +21,32 @@ Deno.test("preview reuses the existing platform App without expanding repository
   assert.equal(config.repositoryId, "1320223175");
   assert.equal(JSON.stringify(config).includes(pem), false);
   let actionPermission = "write";
+  let exchanges = 0;
+  const http = createGitHubHttpClient({
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      assert.equal(request.url, "https://api.github.com/app/installations/456/access_tokens");
+      const body = await request.json();
+      assert.deepEqual(body.repository_ids, [1320223175]);
+      assert.deepEqual(body.permissions, { metadata: "read", actions: actionPermission });
+      exchanges++;
+      return Response.json({
+        token: "gh" + `s_${"a".repeat(36)}`, expires_at: new Date(Date.now() + 60000).toISOString(),
+        repository_selection: "selected", permissions: body.permissions,
+      });
+    },
+  });
   const broker = createGitHubAppTokenBroker({
     now: Date.now,
     sign: async () => new Uint8Array([1, 2, 3]),
     exchange: async (input) => {
       assert.deepEqual(input.repositoryIds, ["1320223175"]);
       assert.deepEqual(input.permissions, { metadata: "read", actions: actionPermission });
-      return { token: "gh" + `s_${"a".repeat(36)}`, expiresAt: new Date(Date.now() + 60000).toISOString(),
-        repositorySelection: "selected", permissions: input.permissions };
+      const result = await http.execute({ kind: "TOKEN_EXCHANGE",
+        installationId: input.installationId, appJwt: input.appJwt,
+        repositoryIds: input.repositoryIds, permissions: input.permissions });
+      if (!("token" in result) || !("expiresAt" in result)) throw new Error("TOKEN_EXCHANGE_INVALID");
+      return result;
     },
   });
   const authority = { websiteWorkContextId: "11111111-1111-4111-8111-111111111111",
@@ -35,6 +54,7 @@ Deno.test("preview reuses the existing platform App without expanding repository
   await broker.issue(config, { ...authority, operation: "WEBSITE_PROJECT_PREVIEW_DISPATCH" }, authority);
   actionPermission = "read";
   await broker.issue(config, { ...authority, operation: "WEBSITE_PROJECT_PREVIEW_MONITOR" }, authority);
+  assert.equal(exchanges, 2);
   await assert.rejects(() => broker.issue(config, {
     ...authority, repositoryIds: ["123"], operation: "WEBSITE_PROJECT_PREVIEW_DISPATCH",
   }, { ...authority, repositoryIds: ["123"] }));

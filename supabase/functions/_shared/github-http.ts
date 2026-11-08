@@ -451,7 +451,9 @@ function validPermissions(
     exactKeys(value, ["metadata", "contents"]) &&
       value.metadata === "read" && value.contents === "read" ||
     exactKeys(value, ["metadata", "contents"]) &&
-      value.metadata === "read" && value.contents === "write";
+      value.metadata === "read" && value.contents === "write" ||
+    exactKeys(value, ["metadata", "actions"]) &&
+      value.metadata === "read" && (value.actions === "read" || value.actions === "write");
 }
 
 function samePermissions(
