@@ -8,7 +8,7 @@ function run(args) {
   if (result.status !== 0) throw new Error(result.stderr || result.stdout);
   return result.stdout;
 }
-if (process.argv[2] === "all") {
+if (["all", "all-projection"].includes(process.argv[2])) {
   run(["run", "-d", "--name", container, "--network", "none", "-e", "POSTGRES_PASSWORD=local-disposable-only",
     "public.ecr.aws/supabase/postgres:17.6.1.171"]);
   try {
@@ -27,7 +27,7 @@ if (process.argv[2] === "all") {
       "-e", "AUTH_JWT_SECRET=local-disposable-preview-only-32-characters", "-e", "ANON_KEY=local",
       "-e", "SERVICE_KEY=local", "-e", "TENANT_ID=local", "-e", "REGION=local", "-e", "GLOBAL_S3_BUCKET=local",
       "public.ecr.aws/supabase/storage-api:v1.77.5", "node", "dist/scripts/migrate-call.js"]);
-    for (const phase of ["migrate","test"]) {
+    for (const phase of ["migrate", process.argv[2] === "all-projection" ? "projection-test" : "test"]) {
       const result = spawnSync(process.execPath,[__filename,phase],{stdio:"inherit"});
       if (result.status !== 0) throw new Error(`LOCAL_${phase.toUpperCase()}_FAILED`);
     }
@@ -50,6 +50,17 @@ if (process.argv[2] === "migrate") {
   console.log("All migrations applied to isolated PostgreSQL.");
 }
 module.exports = { sql };
+if (process.argv[2] === "projection-test") {
+  const source = readFileSync(path.join(root, "supabase/tests/website_project_preview_reopen_current_commit_v1.sql"), "utf8");
+  const end = "set local session_replication_role = origin;";
+  const fixture = source.slice(0, source.indexOf(end) + end.length)
+    .replaceAll("c9bcd3ef-1e7e-4889-8a12-db827f1b97b0", "bb731000-0000-4000-8000-000000000001")
+    .replaceAll("preview/current-pass.tar", "index.html");
+  const output = sql(fixture + "\n" + readFileSync(path.join(root,
+    "supabase/tests/website_execution_existing_preview_projection_v1.sql"), "utf8"));
+  console.log(output);
+  if (/\bnot ok\b/.test(output)) throw new Error("Existing preview projection assertions failed");
+}
 if (process.argv[2] === "test") (async () => {
   const scheduler = sql(readFileSync(path.join(root, "supabase/tests/website_project_preview_deadline_scheduler_v1.sql"), "utf8"));
   console.log(scheduler);

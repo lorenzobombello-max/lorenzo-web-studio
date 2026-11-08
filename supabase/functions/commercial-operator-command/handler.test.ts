@@ -2077,7 +2077,7 @@ Deno.test("project preview runtime releases lease on build failure", async () =>
   ]);
 });
 
-Deno.test("Website Execution read uses v5 and v118 provisioning remains present", async () => {
+Deno.test("Website Execution read uses v7 and v118 provisioning remains present", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   await executeCallerJwtWebsiteExecutionWorkspaceReadAction(
     jwt,
@@ -2093,7 +2093,7 @@ Deno.test("Website Execution read uses v5 and v118 provisioning remains present"
     }),
   );
   assertEquals(calls, [{
-    name: "get_website_execution_workspace_v5",
+    name: "get_website_execution_workspace_v7",
     args: { p_quote_request_id: websiteProjectFileRequest.quote_request_id },
   }]);
   const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));

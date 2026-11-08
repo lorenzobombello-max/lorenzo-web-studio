@@ -14,7 +14,7 @@ const statusUrl = new URL(statusImport, assets);
 const { createPreviewBuildController } = await import(statusUrl.href);
 
 Deno.test("release invalidates both previously cached child and status module URLs", () => {
-  assert.equal(childUrl.searchParams.get("v"), "20261108-preview-status-r1");
+  assert.equal(childUrl.searchParams.get("v"), "20261108-existing-preview-status-r1");
   assert.equal(statusUrl.searchParams.get("v"), "20261108-preview-status-r1");
 });
 

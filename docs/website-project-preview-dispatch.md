@@ -437,3 +437,17 @@ preview-configuration tests pass afterward.
 The terminal rejected dispatch is retained. No automatic retry or replacement
 build is authorized by this correction. A hosted seven-page preview has not
 been verified.
+# Existing preview status in the workspace
+
+The read-only `get_website_execution_workspace_v7` projection retains the v6
+authorization and workspace fields and adds `preview_artifact`. It selects only
+a successful artifact for the current dossier, workspace, repository binding and
+commit. `PASS_WITH_WARNINGS` is preserved, rather than read from the legacy
+workspace build columns. Missing or stale artifacts yield `null`.
+
+The frontend accepts both earlier contracts and v7. Its status labels use the
+artifact evidence; the preview and GitHub popup handlers are unchanged. Reading
+the status does not acquire a lease, dispatch a workflow, or create a preview
+session. Publish the compatible frontend before switching the backend to v7.
+
+Focused database validation: `node scripts/website-project-preview-repair-local.cjs all-projection`.

@@ -1069,7 +1069,7 @@ export async function executeCallerJwtWebsiteExecutionWorkspaceReadAction(
   clientFor: (jwt: string) => WebsiteProjectFilesRpcClient,
 ): Promise<unknown> {
   const { data, error } = await clientFor(jwt).rpc(
-    "get_website_execution_workspace_v6",
+    "get_website_execution_workspace_v7",
     { p_quote_request_id: input.quote_request_id },
   );
   if (error) throw new Error(error.message);
