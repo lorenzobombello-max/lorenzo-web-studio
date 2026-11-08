@@ -19,7 +19,7 @@ import {
   websiteExecutionRequest,
   websiteRequirementsSummary,
   websiteExecutionView,
-} from "./operator-website-execution.mjs?v=20261003-workspace-recovery-v6-r1";
+} from "./operator-website-execution.mjs?v=20261108-existing-preview-status-r1";
 import {
   requirementsBoardSlot,
   requirementsInvalidationMatches,

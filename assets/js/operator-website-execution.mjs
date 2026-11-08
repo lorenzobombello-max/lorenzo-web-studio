@@ -30,6 +30,7 @@ const ROOT_KEYS = [
   "commercially_released", "project", "start_gate", "workspace", "requirements",
 ];
 const ROOT_V6_KEYS = [...ROOT_KEYS, "permitted_actions"];
+const ROOT_V7_KEYS = [...ROOT_V6_KEYS, "preview_artifact"];
 const WORKSPACE_KEYS = [
   "website_workspace_id", "website_work_context_id", "project_id",
   "quote_request_id", "workspace_state", "repository_operation_state",
@@ -232,8 +233,9 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
         || (expected?.conceptId !== null && !UUID.test(String(expected?.conceptId || "")))))) {
     throw new Error("INVALID_WEBSITE_EXECUTION_CONTEXT");
   }
-  const rootKeys = value?.contract_version === 6 ? ROOT_V6_KEYS : ROOT_KEYS;
-  if (!exactKeys(value, rootKeys) || ![4, 5, 6].includes(value.contract_version)
+  const rootKeys = value?.contract_version === 7 ? ROOT_V7_KEYS
+    : value?.contract_version === 6 ? ROOT_V6_KEYS : ROOT_KEYS;
+  if (!exactKeys(value, rootKeys) || ![4, 5, 6, 7].includes(value.contract_version)
     || value.mode !== expected.mode
     || value.quote_request_id !== expected.quoteRequestId
     || value.website_work_context_id !== expected.websiteWorkContextId
@@ -241,7 +243,7 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
     || !["LIMITED", "COMPLETE"].includes(value.briefing_status)
     || typeof value.commercially_released !== "boolean"
     || !exactKeys(value.requirements, ["state", "message"])
-    || value.contract_version === 6 && (
+    || value.contract_version >= 6 && (
       !Array.isArray(value.permitted_actions)
       || new Set(value.permitted_actions).size !== value.permitted_actions.length
       || value.permitted_actions.some((action) => action !== "promote_website_concept")
@@ -323,6 +325,18 @@ export function validateWebsiteExecutionWorkspace(value, expected) {
       preview_url: optionalHttpsUrl(workspace.preview_url),
     };
   }
+  if (value.contract_version === 7 && value.preview_artifact !== null) {
+    const artifact = value.preview_artifact;
+    if (!workspace || workspace.workspace_state !== "REPOSITORY_READY"
+      || !exactKeys(artifact, ["preview_build_id", "commit_sha", "build_status", "built_at"])
+      || !UUID.test(String(artifact.preview_build_id || ""))
+      || !COMMIT_SHA.test(String(artifact.commit_sha || ""))
+      || artifact.commit_sha !== workspace.last_commit_sha
+      || !["PASS", "PASS_WITH_WARNINGS"].includes(artifact.build_status)
+      || artifact.built_at === null || !validTimestamp(artifact.built_at)) {
+      throw new Error("INVALID_WEBSITE_EXECUTION_RESPONSE");
+    }
+  }
   return Object.freeze({
     ...structuredClone(value),
     startGate: value.start_gate,
@@ -381,10 +395,16 @@ export function websiteExecutionView(value) {
       ? "Commercieel vrijgegeven" : "Niet commercieel vrijgegeven",
     repository: `${workspace.repository_owner}/${workspace.repository_name}`,
     branch: workspace.preview_branch || workspace.default_branch,
-    preview: workspace.preview_url || "Preview nog niet beschikbaar",
+    preview: value.preview_artifact
+      ? value.preview_artifact.build_status === "PASS_WITH_WARNINGS"
+        ? "Preview beschikbaar met waarschuwingen via Preview openen"
+        : "Preview beschikbaar via Preview openen"
+      : value.contract_version === 7 ? "Preview nog niet beschikbaar"
+      : workspace.preview_url || "Preview nog niet beschikbaar",
     production: productionUrl || "Production URL nog niet beschikbaar",
     commit: workspace.last_commit_sha || "Nog geen commit geregistreerd",
-    buildResult: workspace.last_build_result || "UNKNOWN",
+    buildResult: value.preview_artifact?.build_status
+      || (value.contract_version === 7 ? "UNKNOWN" : workspace.last_build_result || "UNKNOWN"),
     links: Object.freeze({
       github: workspace.repository_navigation_url,
       preview: workspace.preview_url,
