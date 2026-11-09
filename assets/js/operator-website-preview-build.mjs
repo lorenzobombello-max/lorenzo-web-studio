@@ -17,6 +17,33 @@ export function isTerminalBuildStatus(status) {
   return TERMINAL_BUILD_STATUSES.includes(status);
 }
 
+export function describeConceptGenerationError(code) {
+  switch (code) {
+    case "CONCEPT_TARGET_ALREADY_EXISTS":
+      return "De bestaande conceptbranch is behouden. Eerst is controle van de herkomst nodig.";
+    case "CONCEPT_STARTER_NOT_VERIFIED":
+      return "De oorspronkelijke starter kon niet worden bevestigd. Er is geen conceptbranch aangemaakt.";
+    case "CONCEPT_SOURCE_STALE":
+      return "De bron is ondertussen gewijzigd. Er is niets overschreven; controleer de conceptbranch.";
+    case "CONCEPT_SOURCE_CONFLICT":
+      return "Handmatige wijzigingen zijn behouden. Het concept is niet overschreven; controleer de bron.";
+    case "CONCEPT_IN_PROGRESS":
+      return "Er is al een conceptgeneratie bezig. Er is geen tweede previewbuild gestart.";
+    case "CONCEPT_RECONCILIATION_REQUIRED":
+    case "CONCEPT_WRITE_UNCERTAIN":
+      return "De bronvastlegging is onzeker. Start niet opnieuw; eerst is een broncontrole nodig.";
+    case "CONCEPT_INTAKE_STALE":
+    case "CONCEPT_SOURCE_COMMITTED_STALE_INTAKE":
+      return "De intake is ondertussen gewijzigd. Er is geen previewbuild gestart; controleer de actuele intake.";
+    case "CONCEPT_SUBMITTED_INTAKE_REQUIRED":
+      return "Een ingediende, eenduidige klantintake ontbreekt. Er is geen concept gegenereerd.";
+    default:
+      return typeof code === "string" && /^CONCEPT_[A-Z0-9_]{1,80}$/.test(code)
+        ? "Het websiteconcept kon niet veilig worden voorbereid. Controleer de intake en bron."
+        : null;
+  }
+}
+
 // Only ever surfaces the fixed, safe status string and (once terminal) a
 // handoff URL - never raw build logs or internal diagnostics, matching
 // the CI-log-only observability convention established in the REL-002

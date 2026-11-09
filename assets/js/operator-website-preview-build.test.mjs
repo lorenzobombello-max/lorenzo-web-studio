@@ -3,8 +3,20 @@ import test from "node:test";
 import {
   createPreviewBuildController,
   describePreviewBuildState,
+  describeConceptGenerationError,
   isTerminalBuildStatus,
 } from "./operator-website-preview-build.mjs";
+
+test("generation errors explain conflicts and never expose arbitrary messages", () => {
+  assert.match(describeConceptGenerationError("CONCEPT_SOURCE_CONFLICT"), /Handmatige/);
+  assert.match(describeConceptGenerationError("CONCEPT_IN_PROGRESS"), /bezig/);
+  assert.match(describeConceptGenerationError("CONCEPT_RECONCILIATION_REQUIRED"), /niet opnieuw/);
+  assert.match(describeConceptGenerationError("CONCEPT_SOURCE_COMMITTED_STALE_INTAKE"), /intake/);
+  assert.equal(describeConceptGenerationError("private customer text"), null);
+  assert.match(describeConceptGenerationError("CONCEPT_TARGET_ALREADY_EXISTS"), /conceptbranch.*behouden/);
+  assert.match(describeConceptGenerationError("CONCEPT_STARTER_NOT_VERIFIED"), /starter/);
+  assert.match(describeConceptGenerationError("CONCEPT_SOURCE_STALE"), /gewijzigd/);
+});
 
 test("isTerminalBuildStatus recognizes exactly the three terminal statuses", () => {
   assert.equal(isTerminalBuildStatus("PASS"), true);

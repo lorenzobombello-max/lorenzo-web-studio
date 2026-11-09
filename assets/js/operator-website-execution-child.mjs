@@ -33,7 +33,8 @@ import {
 } from "./operator-website-project-files.mjs?v=20261003-workspace-recovery-v6-r1";
 import {
   createPreviewBuildController,
-} from "./operator-website-preview-build.mjs?v=20261108-preview-status-r1";
+  describeConceptGenerationError,
+} from "./operator-website-preview-build.mjs?v=20261108-concept-canary-r1";
 import {
   createWindowId,
 } from "./operator-workspace-protocol.mjs?v=20260913-user-gesture-handoff-r1";
@@ -572,9 +573,10 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
       if (previewWindow) previewWindow.location.replace(session.handoff_url);
       const builtCommit = String(session.built_commit_sha || "").slice(0, 7);
       const currentCommit = String(session.current_commit_sha || "").slice(0, 7);
+      const previewLabel = session.source_kind === "CONCEPT" ? "Conceptpreview" : "Preview";
       setRecoveryStatusMessage(workspace, session.is_current_commit === false
-        ? `Preview geopend met oudere versie ${builtCommit}; huidige versie ${currentCommit}.`
-        : `Preview geopend met versie ${builtCommit}.`);
+        ? `${previewLabel} geopend met oudere versie ${builtCommit}; huidige versie ${currentCommit}.`
+        : `${previewLabel} geopend met versie ${builtCommit}.`);
       return true;
     } catch (error) {
       previewWindow?.close();
@@ -595,30 +597,39 @@ export function initializeOperatorWebsiteExecution(root, client, identity, optio
   }
 
   async function buildPreview() {
-    const commitSha = projectFiles.currentCommitSha()
-      || currentSnapshot?.projection.workspace?.last_commit_sha;
-    if (disposed || previewPending || identity.role !== "owner" || !commitSha
+    const context = currentSnapshot?.context;
+    if (disposed || previewPending || identity.role !== "owner" || !context
       || typeof options.requireAal2 !== "function") return false;
     previewPending = true;
     const button = workspace.querySelector('[data-website-action="preview-build"]');
     const message = workspace.querySelector("[data-website-message]");
     button.disabled = true;
-    message.textContent = "Preview wordt gebouwd.";
+    message.textContent = "Websitebron wordt gecontroleerd; daarna wordt de preview gebouwd.";
     try {
       await options.requireAal2();
+      if (disposed || currentSnapshot?.context.websiteWorkContextId !== context.websiteWorkContextId) return false;
+      if (!await refresh({ background: true })) return false;
+      if (disposed || currentSnapshot?.context.websiteWorkContextId !== context.websiteWorkContextId ||
+        currentSnapshot?.context.quoteRequestId !== context.quoteRequestId) return false;
+      const commitSha = currentSnapshot.projection.workspace?.last_commit_sha;
+      if (typeof commitSha !== "string" || !/^[a-f0-9]{40}$/i.test(commitSha)) {
+        throw new Error("PROJECT_FILES_STALE_REVISION");
+      }
+      button.disabled = true;
       const result = await previewController.start(websiteProjectPreviewRequest(
-        currentSnapshot.context.quoteRequestId,
+        context.quoteRequestId,
         commitSha,
       ));
       if (!["PASS", "PASS_WITH_WARNINGS"].includes(result.status)
         || typeof result.previewBuildId !== "string") return false;
       return true;
     } catch (error) {
+      if (disposed || currentSnapshot?.context.websiteWorkContextId !== context.websiteWorkContextId) return false;
       const candidate = typeof error?.code === "string" ? error.code
         : typeof error?.message === "string" ? error.message
         : "";
       const code = /^[A-Z][A-Z0-9_]*$/.test(candidate) ? candidate : "UNKNOWN";
-      message.textContent = "Preview kon niet veilig worden gebouwd."
+      message.textContent = (describeConceptGenerationError(code) || "Preview kon niet veilig worden gebouwd.")
         + ` (PREVIEW_ERROR: ${code})`;
       return false;
     } finally {
